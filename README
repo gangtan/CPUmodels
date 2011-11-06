@@ -15,8 +15,8 @@ x86model/RockSalt
 x86model/fuzz
 	A fuzz tester for the x86 model
 
-x86/cdriver
+x86model/cdriver
 	A C implementation of an SFI checker using our certified DFAs
 
-x86/semantics_trace
+x86model/semantics_trace
 	Simulation and instrumentation of x86 binaries
