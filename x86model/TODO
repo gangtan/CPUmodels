@@ -1,9 +1,5 @@
 Things to do, but not necessarily prioritized:
 
-* Add more instructions to the model -- we should be able to compile
-some standard benchmark suite, or ideally, the native client test cases
-with our tools, and validate them.
-
 * Build top-level O'Caml code for running the fast-verifier -- need
 to be able to read in an Elf file, break it into segments, etc.  There's
 also going to be some hair with the trampolines and verification there...
@@ -20,7 +16,9 @@ stuff, we could over-approximate this by having reads from memory
 return oracle bits, unless those are from the addresses that hold
 the code...
 
-* Fix the treatment of segments in the model.  
+* Fix the treatment of segments in the model. That is, now we just
+  model starts/limits. But really at the systems level there is a table
+  that contains this information.
 
 * Allow the oracle to be refined so that we can e.g., require that
 we get a bit vector out that satisfies a certain property.  This
@@ -33,23 +31,18 @@ of micro-ops for the instruction, (c) information needed to pretty-print
 the instruction, and possibly (d) an assembler for turning the instruction
 back into bits.
 
-* Break all of the theorems about parsing out into a separate file.
-
 * Re-factor the regexp stuff so that we don't use a type-index on it.
 This should greatly simplify a lot of things, including the DFA construction.
 Instead, generalize the wf_regexp predicate and carry this around as needed.
 This should get rid of all of our need to do dependent destruction/
 induction every where.
 
-* Prove correctness of first-version of fast-verifier.  
-
 * Get rid of the use of the heavy-weight parser in the fast-verifier
 to extract branch targets -- do this manually and prove it's the same
 as running the heavyweight parser. 
 
-* Write some C code using Frama-C or some other tool that corresponds
-to the fast-verifier and prove its correctness.  Alternatively, write
-some x86 code!
+* Validate C code using Frama-C or some other tool 
+Alternatively, write some x86 code!
 
 * Refactor the approach to heavyweight parsing.  The problem now is
 that our use of Map makes it so that we don't have a finite number
