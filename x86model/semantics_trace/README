@@ -2,12 +2,13 @@ Overview:
 ---------------
 
 This is a tool for testing the X86 semantics and parser. It consists of two parts:
-a tracer (gntrace) and simulators (test.byte, test2.byte testSFI.byte). 
+a tracer (gntrace, memlist) and simulators (test.native). 
 
 The tracer runs a binary and uses Intel's Pin instrumentation tool to record
 the values of various regisers and memory locations as the program runs and
-then outputs them in "mem.txt" and "regs.txt". The tracer stops the program
-after 1000 instructions or after it reaches the label "fin" in the binary.
+then outputs them in "mem0.txt", "mem1.txt", and "regs.txt". The tracer stops the
+program after a certain number of instructions have been executed or a pre-defined
+stop symbol is reached.
 
 The memory values/addresses stored in "mem.txt" are addresses containing
 instructions that were decoded. These addresses/values also include some values

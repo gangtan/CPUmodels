@@ -2285,7 +2285,7 @@ Ltac unfold_instr_conv_tac :=
     conv_CLD, conv_HLT, conv_STOS, conv_CLC, conv_CMC,
     conv_MOVS, conv_BT, conv_LAHF, conv_SAHF, conv_STC, conv_STD,
     conv_AAA_AAS, conv_AAD, conv_AAM, conv_DAA_DAS, conv_DEC,
-    conv_POPF, conv_PUSHF, conv_POP_pseudo,
+    conv_POP_pseudo,
     testcarryAdd, testcarrySub,
     extract_and_set, get_and_place,
     get_AL, get_AH, set_AL, set_AH, ifset,
@@ -2642,8 +2642,6 @@ Proof. intros.
   (* POPA *)
   right; left; prove_instr.
   (* PUSHA *)
-  right; left; prove_instr.
-  (* PUSHF *)
   right; left; prove_instr.
   (* RCL *)
   get_segment_op_aos_tac op1.

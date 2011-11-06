@@ -425,14 +425,10 @@ Proof.
   unop POP_p.
   (* POPA_p *)
   punf POPA_p.
-  (* POPF_p *)
-  punf POPF_p.
   (* PUSH_p *)
   unop PUSH_p.
   (* PUSHA_p *)
   unop PUSHA_p.
-  (* PUSHF_p *)
-  unop PUSHF_p.
   (* RCL_p *)
   rot RCL_p.
   (* RCR_p *)

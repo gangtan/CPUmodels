@@ -1835,6 +1835,9 @@ Definition get_and_place T dst pos fl: Conv (pseudo_reg T) :=
   tmp <- @arith _ shl_op byt pos;  
   dst <- @arith _ or_op dst tmp;
   Return dst.
+(*
+This is not quite right. Plus those more sketchy flags
+are not being modeled yet since they're more systemszy.
 
 Definition conv_PUSHF pre :=
   dst <- load_Z (opsize (op_override pre) true) 0;
@@ -1857,7 +1860,7 @@ Definition conv_PUSHF pre :=
   dst <- get_and_place dst 2 PF;
   dst <- get_and_place dst 0 CF;
   conv_PUSH_pseudo pre true dst.  
-
+*)
 
 Definition conv_POP_pseudo (pre: prefix) :=
 (*Segment cannot be overriden*)
@@ -1882,7 +1885,8 @@ Definition extract_and_set T value pos fl: Conv unit :=
   tmp <- @arith _ and_op tmp one;
   b <- test eq_op one tmp;
   set_flag fl b.
-
+(*
+This is not quite right.
 Definition conv_POPF pre :=
   v <- conv_POP_pseudo pre;
 
@@ -1903,7 +1907,7 @@ Definition conv_POPF pre :=
   extract_and_set v 4 AF;;
   extract_and_set v 2 PF;;
   extract_and_set v 0 CF.
-
+*)
 
   (************************)
   (* Control-Flow Ops     *)
@@ -2494,8 +2498,6 @@ Definition conv_POPF pre :=
          | POPA => conv_POPA pre
          | PUSH w op => conv_PUSH pre w op
          | PUSHA => conv_PUSHA pre
-         | POPF => conv_POPF pre
-         | PUSHF => conv_PUSHF pre 
          | RET ss disp => conv_RET pre ss disp
          | ROL w op1 op2 => conv_ROL pre w op1 op2
          | ROR w op1 op2 => conv_ROR pre w op1 op2

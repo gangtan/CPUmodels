@@ -71,8 +71,8 @@ Definition non_cflow_instrs_nosize_pre : list (parser instruction_t) :=
   IDIV_p :: 
   IMUL_p false :: INC_p :: LAHF_p :: LEA_p :: LEAVE_p :: MOV_p false 
   :: MOVSX_p :: MOVZX_p :: 
-  MUL_p :: NEG_p :: NOT_p :: POP_p :: POPA_p :: POPF_p :: PUSH_p :: PUSHA_p :: 
-  PUSHF_p :: RCL_p :: RCR_p :: ROL_p :: ROR_p :: SAHF_p :: SAR_p :: SETcc_p :: 
+  MUL_p :: NEG_p :: NOT_p :: POP_p :: POPA_p :: PUSH_p :: PUSHA_p :: 
+  RCL_p :: RCR_p :: ROL_p :: ROR_p :: SAHF_p :: SAR_p :: SETcc_p :: 
   SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: STC_p :: STD_p :: TEST_p false :: XADD_p :: XCHG_p :: 
   nil.
 
@@ -310,10 +310,8 @@ Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool :=
     | NOT w op1 => either_prefix pfx && no_imm_op op1
     | POP op1 => only_gs_seg_override pfx && no_imm_op op1
     | POPA => only_gs_seg_override pfx  
-    | POPF => only_gs_seg_override pfx  
     | PUSH w op1 => only_gs_seg_override pfx
     | PUSHA => only_gs_seg_override pfx 
-    | PUSHF => only_gs_seg_override pfx 
     | RCL w op1 ri => only_gs_seg_override pfx && no_imm_op op1
     | RCR w op1 ri => only_gs_seg_override pfx && no_imm_op op1
     | ROL w op1 ri => only_gs_seg_override pfx && no_imm_op op1
