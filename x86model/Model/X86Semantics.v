@@ -1598,6 +1598,20 @@ Definition conv_SAHF: Conv unit :=
   Definition testcarrySub s (p1:pseudo_reg s) p2 (p3:pseudo_reg s) : Conv (pseudo_reg size1) :=
     test ltu_op p1 p2.
 
+  (*Use oracle for now*)
+  Definition conv_DAA_DAS (op1: bit_vector_op) 
+    (tester: (pseudo_reg size8) -> (pseudo_reg size8) -> (pseudo_reg size8) ->
+      Conv (pseudo_reg size1)) : Conv unit :=
+    pal <- fresh (@choose_rtl size8);
+    set_AL pal;;
+    undef_flag CF;;
+    undef_flag AF;;
+    undef_flag SF;;
+    undef_flag ZF;;
+    undef_flag PF;;
+    undef_flag OF
+  .
+(*
   Definition conv_DAA_DAS (op1: bit_vector_op) tester: Conv unit :=
     pal <- get_AL;
     pcf <- get_flag CF;
@@ -1658,7 +1672,7 @@ Definition conv_SAHF: Conv unit :=
     undef_flag OF
 .
     
-    
+*)
     
   (************************)
   (* Logical Ops          *)
