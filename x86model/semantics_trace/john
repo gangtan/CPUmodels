@@ -1,0 +1,7 @@
+#!/bin/bash
+
+csmith --no-checksum > tmp.c
+gcc -w -I/home/tristan/Code/csmith-2.0.0/runtime/ -static tmp$1.c -o tmp > /dev/null
+setarch i386 -R $PIN_PATH/pin -injection child -t ../memlist.so -e "platform_main_end" -m 12000 -- ./tmp
+setarch i386 -R $PIN_PATH/pin -injection child -t ../gntrace.so -e "platform_main_end" -m 12000 -- ./tmp
+../test.native "mem0.txt" "regs0.txt" > log

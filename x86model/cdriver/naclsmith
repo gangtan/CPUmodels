@@ -1,0 +1,15 @@
+#!/bin/bash
+
+rm log
+rm interesting_smith/*.nexe
+for i in {1..1000}
+do
+    j=$[$i/10] 
+    printf "\r %d%%" $j
+    echo Number $i >> log
+    csmith --no-checksum > smith.c 
+    nacl-gcc -I/home/tristan/Code/csmith-2.0.0/runtime smith.c -o smith.nexe >& /dev/null
+    cp smith.nexe interesting_smith/smith$i.nexe
+    ncval smith.nexe | grep RESULT >> log
+    ncval smith.nexe --dfa | grep RESULT >> log
+done

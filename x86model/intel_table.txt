@@ -1,0 +1,399 @@
+Table B-13. General Purpose Instruction Formats and Encodings for Non-64-Bit Modes
+
+AAA – ASCII Adjust after Addition               |0011 0111
+AAD – ASCII Adjust AX before Division           |1101 0101 : 0000 1010
+AAM – ASCII Adjust AX after Multiply            |1101 0100 : 0000 1010
+AAS – ASCII Adjust AL after Subtraction         |0011 1111
+ADC – ADD with Carry
+  register1 to register2                        |0001 000w : 11 reg1 reg2
+  register2 to register1                        |0001 001w : 11 reg1 reg2
+  memory to register                            |0001 001w : mod reg r/m
+  register to memory                            |0001 000w : mod reg r/m
+  immediate to register                         |1000 00sw : 11 010 reg : immediate data
+  immediate to AL, AX, or EAX                   |0001 010w : immediate data
+  immediate to memory                           |1000 00sw : mod 010 r/m : immediate data
+ADD – Add
+  register1 to register2                        |0000 000w : 11 reg1 reg2
+  register2 to register1                        |0000 001w : 11 reg1 reg2
+  memory to register                            |0000 001w : mod reg r/m
+  register to memory                            |0000 000w : mod reg r/m
+  immediate to register                         |1000 00sw : 11 000 reg : immediate data
+  immediate to AL, AX, or EAX                   |0000 010w : immediate data
+  immediate to memory                           |1000 00sw : mod 000 r/m : immediate data
+AND – Logical AND
+  register1 to register2                        |0010 000w : 11 reg1 reg2
+  register2 to register1                        |0010 001w : 11 reg1 reg2
+  memory to register                            |0010 001w : mod reg r/m
+  register to memory                            |0010 000w : mod reg r/m
+  immediate to register                         |1000 00sw : 11 100 reg : immediate data
+  immediate to AL, AX, or EAX                   |0010 010w : immediate data
+  immediate to memory                           |1000 00sw : mod 100 r/m : immediate data
+ARPL – Adjust RPL Field of Selector
+  from register                                 |0110 0011 : 11 reg1 reg2
+  from memory                                   |0110 0011 : mod reg r/m
+BOUND – Check Array Against Bounds              |0110 0010 : modA reg r/m
+BSF – Bit Scan Forward
+  register1, register2                          |0000 1111 : 1011 1100 : 11 reg1 reg2
+  memory, register                              |0000 1111 : 1011 1100 : mod reg r/m
+BSR – Bit Scan Reverse
+  register1, register2                          |0000 1111 : 1011 1101 : 11 reg1 reg2
+  memory, register                              |0000 1111 : 1011 1101 : mod reg r/m
+BSWAP – Byte Swap                               |0000 1111 : 1100 1 reg
+BT – Bit Test
+  register, immediate                           |0000 1111 : 1011 1010 : 11 100 reg: imm8 data
+  memory, immediate                             |0000 1111 : 1011 1010 : mod 100 r/m : imm8 data
+  register1, register2                          |0000 1111 : 1010 0011 : 11 reg2 reg1
+  memory, reg                                   |0000 1111 : 1010 0011 : mod reg r/m
+BTC – Bit Test and Complement
+  register, immediate                           |0000 1111 : 1011 1010 : 11 111 reg: imm8 data
+  memory, immediate                             |0000 1111 : 1011 1010 : mod 111 r/m : imm8 data
+  register1, register2                          |0000 1111 : 1011 1011 : 11 reg2 reg1
+  memory, reg                                   |0000 1111 : 1011 1011 : mod reg r/m
+BTR – Bit Test and Reset
+  register, immediate                           |0000 1111 : 1011 1010 : 11 110 reg: imm8 data
+  memory, immediate                             |0000 1111 : 1011 1010 : mod 110 r/m : imm8 data
+  register1, register2                          |0000 1111 : 1011 0011 : 11 reg2 reg1
+  memory, reg                                   |0000 1111 : 1011 0011 : mod reg r/m
+BTS – Bit Test and Set
+  register, immediate                           |0000 1111 : 1011 1010 : 11 101 reg: imm8 data
+  memory, immediate                             |0000 1111 : 1011 1010 : mod 101 r/m : imm8 data
+  register1, register2                          |0000 1111 : 1010 1011 : 11 reg2 reg1
+  memory, reg                                   |0000 1111 : 1010 1011 : mod reg r/m
+CALL – Call Procedure (in same segment)
+  direct                                        |1110 1000 : full displacement
+  register indirect                             |1111 1111 : 11 010 reg
+  memory indirect                               |1111 1111 : mod 010 r/m
+CALL – Call Procedure (in other segment)
+  direct                                        |1001 1010 : unsigned full offset, selector
+  indirect                                      |1111 1111 : mod 011 r/m
+CBW – Convert Byte to Word                      |1001 1000
+CDQ – Convert Doubleword to Qword               |1001 1001
+CLC – Clear Carry Flag                          |1111 1000
+CLD – Clear Direction Flag                      |1111 1100
+CLI – Clear Interrupt Flag                      |1111 1010
+CLTS – Clear Task-Switched Flag in CR0          |0000 1111 : 0000 0110
+CMC – Complement Carry Flag                     |1111 0101
+CMP – Compare Two Operands
+  register1 with register2                      |0011 100w : 11 reg1 reg2
+  register2 with register1                      |0011 101w : 11 reg1 reg2
+  memory with register                          |0011 100w : mod reg r/m
+  register with memory                          |0011 101w : mod reg r/m
+  immediate with register                       |1000 00sw : 11 111 reg : immediate data
+  immediate with AL, AX, or EAX                 |0011 110w : immediate data
+  immediate with memory                         |1000 00sw : mod 111 r/m : immediate data
+CMPS/CMPSB/CMPSW/CMPSD – Compare String Oprdss  |1010 011w
+CMPXCHG – Compare and Exchange
+  register1, register2                          |0000 1111 : 1011 000w : 11 reg2 reg1
+  memory, register                              |0000 1111 : 1011 000w : mod reg r/m
+CPUID – CPU Identification                      |0000 1111 : 1010 0010
+CWD – Convert Word to Doubleword                |1001 1001
+CWDE – Convert Word to Doubleword               |1001 1000
+DAA – Decimal Adjust AL after Addition          |0010 0111
+DAS – Decimal Adjust AL after Subtraction       |0010 1111
+DEC – Decrement by 1
+  register                                      |1111 111w : 11 001 reg
+  register (alternate encoding)                 |0100 1 reg
+  memory                                        |1111 111w : mod 001 r/m
+DIV – Unsigned Divide
+  AL, AX, or EAX by register                    |1111 011w : 11 110 reg
+  AL, AX, or EAX by memory                      |1111 011w : mod 110 r/m
+HLT – Halt                                      |1111 0100
+IDIV – Signed Divide
+  AL, AX, or EAX by register                    |1111 011w : 11 111 reg
+  AL, AX, or EAX by memory                      |1111 011w : mod 111 r/m
+IMUL – Signed Multiply
+  AL, AX, or EAX with register                  |1111 011w : 11 101 reg
+  AL, AX, or EAX with memory                    |1111 011w : mod 101 reg
+  register1 with register2                      |0000 1111 : 1010 1111 : 11 : reg1 reg2
+  register with memory                          |0000 1111 : 1010 1111 : mod reg r/m
+  register1 with immediate to register2         |0110 10s1 : 11 reg1 reg2 : immediate data
+  memory with immediate to register             |0110 10s1 : mod reg r/m : immediate data
+IN – Input From Port
+  fixed port                                    |1110 010w : port number
+  variable port                                 |1110 110w
+INC – Increment by 1
+  reg                                           |1111 111w : 11 000 reg
+  reg (alternate encoding)                      |0100 0 reg
+  memory                                        |1111 111w : mod 000 r/m
+INS – Input from DX Port                        |0110 110w
+INT n – Interrupt Type n                        |1100 1101 : type
+INT – Single-Step Interrupt 3                   |1100 1100
+INTO – Interrupt 4 on Overflow                  |1100 1110
+INVD – Invalidate Cache                         |0000 1111 : 0000 1000
+INVLPG – Invalidate TLB Entry                   |0000 1111 : 0000 0001 : mod 111 r/m
+IRET/IRETD – Interrupt Return                   |1100 1111
+Jcc – Jump if Condition is Met
+  8-bit displacement                            |0111 tttn : 8-bit displacement
+  full displacement                             |0000 1111 : 1000 tttn : full displacement
+JCXZ/JECXZ – Jump on CX/ECX Zero
+Address-size prefix differentiates JCXZ & JECXZ |1110 0011 : 8-bit displacement
+JMP – Unconditional Jump (to same segment)
+  short                                         |1110 1011 : 8-bit displacement
+  direct                                        |1110 1001 : full displacement
+  register indirect                             |1111 1111 : 11 100 reg
+  memory indirect                               |1111 1111 : mod 100 r/m
+JMP – Unconditional Jump (to other segment)
+  direct intersegment                           |1110 1010 : unsigned full offset, selector
+  indirect intersegment                         |1111 1111 : mod 101 r/m
+LAHF – Load Flags into AHRegister               |1001 1111
+LAR – Load Access Rights Byte
+  from register                                 |0000 1111 : 0000 0010 : 11 reg1 reg2
+  from memory                                   |0000 1111 : 0000 0010 : mod reg r/m
+LDS – Load Pointer to DS                        |1100 0101 : modA,B reg r/m
+LEA – Load Effective Address                    |1000 1101 : modA reg r/m
+LEAVE – High Level Procedure Exit               |1100 1001
+LES – Load Pointer to ES                        |1100 0100 : modA,B reg r/m
+LFS – Load Pointer to FS                        |0000 1111 : 1011 0100 : modA reg r/m
+LGDT – Load Global Descriptor Table Register    |0000 1111 : 0000 0001 : modA 010 r/m
+LGS – Load Pointer to GS                        |0000 1111 : 1011 0101 : modA reg r/m
+LIDT – Load Interrupt Descriptor Table Register |0000 1111 : 0000 0001 : modA 011 r/m
+LLDT – Load Local Descriptor Table Register
+  LDTR from register                            |0000 1111 : 0000 0000 : 11 010 reg
+  LDTR from memory                              |0000 1111 : 0000 0000 : mod 010 r/m
+LMSW – Load Machine Status Word
+  from register                                 |0000 1111 : 0000 0001 : 11 110 reg
+  from memory                                   |0000 1111 : 0000 0001 : mod 110 r/m
+LOCK – Assert LOCK# Signal Prefix               |1111 0000
+LODS/LODSB/LODSW/LODSD – Load String Operand    |1010 110w
+LOOP – Loop Count                               |1110 0010 : 8-bit displacement
+LOOPZ/LOOPE – Loop Count while Zero/Equal       |1110 0001 : 8-bit displacement
+LOOPNZ/LOOPNE – Loop Count while not Zero/Equal 1110 0000 : 8-bit displacement
+LSL – Load Segment Limit
+  from register                                 |0000 1111 : 0000 0011 : 11 reg1 reg2
+  from memory                                   |0000 1111 : 0000 0011 : mod reg r/m
+LSS – Load Pointer to SS                        |0000 1111 : 1011 0010 : modA reg r/m
+LTR – Load Task Register
+  from register                                 |0000 1111 : 0000 0000 : 11 011 reg
+  from memory                                   |0000 1111 : 0000 0000 : mod 011 r/m
+MOV – Move Data
+  register1 to register2                        |1000 100w : 11 reg1 reg2
+  register2 to register1                        |1000 101w : 11 reg1 reg2
+  memory to reg                                 |1000 101w : mod reg r/m
+  reg to memory                                 |1000 100w : mod reg r/m
+  immediate to register                         |1100 011w : 11 000 reg : immediate data
+  immediate to register (alternate encoding)    |1011 w reg : immediate data
+  immediate to memory                           |1100 011w : mod 000 r/m : immediate data
+  memory to AL, AX, or EAX                      |1010 000w : full displacement
+  AL, AX, or EAX to memory                      |1010 001w : full displacement
+MOV – Move to/from Control Registers
+  CR0 from register                             |0000 1111 : 0010 0010 : 11 000 reg
+  CR2 from register                             |0000 1111 : 0010 0010 : 11 010reg
+  CR3 from register                             |0000 1111 : 0010 0010 : 11 011 reg
+  CR4 from register                             |0000 1111 : 0010 0010 : 11 100 reg
+  register from CR0-CR4                         |0000 1111 : 0010 0000 : 11 eee reg
+MOV – Move to/from Debug Registers
+  DR0-DR3 from register                         |0000 1111 : 0010 0011 : 11 eee reg
+  DR4-DR5 from register                         |0000 1111 : 0010 0011 : 11 eee reg
+  DR6-DR7 from register                         |0000 1111 : 0010 0011 : 11 eee reg
+  register from DR6-DR7                         |0000 1111 : 0010 0001 : 11 eee reg
+  register from DR4-DR5                         |0000 1111 : 0010 0001 : 11 eee reg
+  register from DR0-DR3                         |0000 1111 : 0010 0001 : 11 eee reg
+MOV – Move to/from Segment Registers
+  register to segment register                  |1000 1110 : 11 sreg3 reg
+  register to SS                                |1000 1110 : 11 sreg3 reg
+  memory to segment reg                         |1000 1110 : mod sreg3 r/m
+  memory to SS                                  |1000 1110 : mod sreg3 r/m
+  segment register to register                  |1000 1100 : 11 sreg3 reg
+  segment register to memory                    |1000 1100 : mod sreg3 r/m
+MOVBE – Move data after swapping bytes
+  memory to register                            |0000 1111 : 0011 1000:1111 0000 : mod reg r/m
+  register to memory                            |0000 1111 : 0011 1000:1111 0001 : mod reg r/m
+MOVS/MOVSB/MOVSW/MOVSD – Move String to String  |1010 010w
+MOVSX – Move with Sign-Extend
+  memory to reg                                 |0000 1111 : 1011 111w : mod reg r/m
+MOVZX – Move with Zero-Extend
+  register2 to register1                        |0000 1111 : 1011 011w : 11 reg1 reg2
+  memory to register                            |0000 1111 : 1011 011w : mod reg r/m
+MUL – Unsigned Multiply
+  AL, AX, or EAX with register                  |1111 011w : 11 100 reg
+  AL, AX, or EAX with memory                    |1111 011w : mod 100 r/m
+NEG – Two's Complement Negation
+  register                                      |1111 011w : 11 011 reg
+  memory                                        |1111 011w : mod 011 r/m
+NOP – No Operation                              |1001 0000
+NOP – Multi-byte No Operation1
+  register                                      |0000 1111 0001 1111 : 11 000 reg
+  memory                                        |0000 1111 0001 1111 : mod 000 r/m
+NOT – One's Complement Negation
+  register                                      |1111 011w : 11 010 reg
+  memory                                        |1111 011w : mod 010 r/m
+OR – Logical Inclusive OR
+  register1 to register2                        |0000 100w : 11 reg1 reg2
+  register2 to register1                        |0000 101w : 11 reg1 reg2
+  memory to register                            |0000 101w : mod reg r/m
+  register to memory                            |0000 100w : mod reg r/m
+  immediate to register                         |1000 00sw : 11 001 reg : immediate data
+  immediate to AL, AX, or EAX                   |0000 110w : immediate data
+  immediate to memory                           |1000 00sw : mod 001 r/m : immediate data
+OUT – Output to Port
+  fixed port                                    |1110 011w : port number
+  variable port                                 |1110 111w
+OUTS – Output to DX Port                        |0110 111w
+POP – Pop a Word from the Stack
+  register                                      |1000 1111 : 11 000 reg
+  register (alternate encoding)                 |0101 1 reg
+  memory                                        |1000 1111 : mod 000 r/m
+POP – Pop a Segment Register from the Stack
+(Note: CS cannot be sreg2 in this usage.)
+  segment register DS, ES                       |000 sreg2 111
+  segment register SS                           |000 sreg2 111
+  segment register FS, GS                       |0000 1111: 10 sreg3 001
+POPA/POPAD – Pop All General Registers          |0110 0001
+POPF/POPFD – Pop Stack into (E)FLAGS            |1001 1101
+PUSH – Push Operand onto the Stack
+  register                                      |1111 1111 : 11 110 reg
+  register (alternate encoding)                 |0101 0 reg
+  memory                                        |1111 1111 : mod 110 r/m
+  immediate                                     |0110 10s0 : immediate data
+PUSH – Push Segment Register onto the Stack
+  segment register CS,DS,ES,SS                  |000 sreg2 110
+  segment register FS,GS                        |0000 1111: 10 sreg3 000
+PUSHA/PUSHAD – Push All General Registers       |0110 0000
+PUSHF/PUSHFD – Push Flags Register onto Stack   |1001 1100
+RCL – Rotate thru Carry Left
+  register by 1                                 |1101 000w : 11 010 reg
+  memory by 1                                   |1101 000w : mod 010 r/m
+  register by CL                                |1101 001w : 11 010 reg
+  memory by CL                                  |1101 001w : mod 010 r/m
+  register by immediate count                   |1100 000w : 11 010 reg : imm8 data
+  memory by immediate count                     |1100 000w : mod 010 r/m : imm8 data
+RCR – Rotate thru Carry Right
+  register by 1                                 |1101 000w : 11 011 reg
+  memory by 1                                   |1101 000w : mod 011 r/m
+  register by CL                                |1101 001w : 11 011 reg
+  memory by CL                                  |1101 001w : mod 011 r/m
+  register by immediate count                   |1100 000w : 11 011 reg : imm8 data
+  memory by immediate count                     |1100 000w : mod 011 r/m : imm8 data
+RDMSR – Read from Model-Specific Register       |0000 1111 : 0011 0010
+RDPMC – Read Performance Monitoring Counters    |0000 1111 : 0011 0011
+RDTSC – Read Time-Stamp Counter                 |0000 1111 : 0011 0001
+RDTSCP – Read Time-Stamp Counter & Processor ID 0000 1111 : 0000 0001: 1111 1001
+REP INS – Input String                          |1111 0011 : 0110 110w
+REP LODS – Load String                          |1111 0011 : 1010 110w
+REP MOVS – Move String                          |1111 0011 : 1010 010w
+REP OUTS – Output String                        |1111 0011 : 0110 111w
+REP STOS – Store String                         |1111 0011 : 1010 101w
+REPE CMPS – Compare String                      |1111 0011 : 1010 011w
+REPE SCAS – Scan String                         |1111 0011 : 1010 111w
+REPNE CMPS – Compare String                     |1111 0010 : 1010 011w
+REPNE SCAS – Scan String                        |1111 0010 : 1010 111w
+RET – Return from Procedure (to same segment)
+  no argument                                   |1100 0011
+  adding immediate to SP                        |1100 0010 : 16-bit displacement
+RET – Return from Procedure (to other segment)
+  intersegment                                  |1100 1011
+  adding immediate to SP                        |1100 1010 : 16-bit displacement
+ROL – Rotate Left
+  register by 1                                 |1101 000w : 11 000 reg
+  memory by 1                                   |1101 000w : mod 000 r/m
+  register by CL                                |1101 001w : 11 000 reg
+  memory by CL                                  |1101 001w : mod 000 r/m
+  register by immediate count                   |1100 000w : 11 000 reg : imm8 data
+  memory by immediate count                     |1100 000w : mod 000 r/m : imm8 data
+ROR – Rotate Right
+  register by 1                                 |1101 000w : 11 001 reg
+  memory by 1                                   |1101 000w : mod 001 r/m
+  register by CL                                |1101 001w : 11 001 reg
+  memory by CL                                  |1101 001w : mod 001 r/m
+  register by immediate count                   |1100 000w : 11 001 reg : imm8 data
+  memory by immediate count                     |1100 000w : mod 001 r/m : imm8 data
+RSM – Resume from System Management Mode        |0000 1111 : 1010 1010
+SAHF – Store AH into Flags                      |1001 1110
+SAR – Shift Arithmetic Right
+  register by 1                                 |1101 000w : 11 111 reg
+  memory by 1                                   |1101 000w : mod 111 r/m
+  register by CL                                |1101 001w : 11 111 reg
+  memory by CL                                  |1101 001w : mod 111 r/m
+  register by immediate count                   |1100 000w : 11 111 reg : imm8 data
+  memory by immediate count                     |1100 000w : mod 111 r/m : imm8 data
+SBB – Integer Subtraction with Borrow
+  register1 to register2                        |0001 100w : 11 reg1 reg2
+  register2 to register1                        |0001 101w : 11 reg1 reg2
+  memory to register                            |0001 101w : mod reg r/m
+  register to memory                            |0001 100w : mod reg r/m
+  immediate to register                         |1000 00sw : 11 011 reg : immediate data
+  immediate to AL, AX, or EAX                   |0001 110w : immediate data
+  immediate to memory                           |1000 00sw : mod 011 r/m : immediate data
+SCAS/SCASB/SCASW/SCASD – Scan String            |1010 111w
+SETcc – Byte Set on Condition
+  register                                      |0000 1111 : 1001 tttn : 11 000 reg
+  memory                                        |0000 1111 : 1001 tttn : mod 000 r/m
+SGDT – Store Global Descriptor Table Register   |0000 1111 : 0000 0001 : modA 000 r/m
+SHL – Shift Left
+  register by 1                                 |1101 000w : 11 100 reg
+  memory by 1                                   |1101 000w : mod 100 r/m
+  register by CL                                |1101 001w : 11 100 reg
+  memory by CL                                  |1101 001w : mod 100 r/m
+  register by immediate count                   |1100 000w : 11 100 reg : imm8 data
+  memory by immediate count                     |1100 000w : mod 100 r/m : imm8 data
+SHLD – Double Precision Shift Left
+  register by immediate count                   |0000 1111 : 1010 0100 : 11 reg2 reg1 : imm8
+  memory by immediate count                     |0000 1111 : 1010 0100 : mod reg r/m : imm8
+  register by CL                                |0000 1111 : 1010 0101 : 11 reg2 reg1
+  memory by CL                                  |0000 1111 : 1010 0101 : mod reg r/m
+SHR – Shift Right
+  register by 1                                 |1101 000w : 11 101 reg
+  memory by 1                                   |1101 000w : mod 101 r/m
+  register by CL                                |1101 001w : 11 101 reg
+  memory by CL                                  |1101 001w : mod 101 r/m
+  register by immediate count                   |1100 000w : 11 101 reg : imm8 data
+  memory by immediate count                     |1100 000w : mod 101 r/m : imm8 data
+SHRD – Double Precision Shift Right
+  register by immediate count                   |0000 1111 : 1010 1100 : 11 reg2 reg1 : imm8
+  memory by immediate count                     |0000 1111 : 1010 1100 : mod reg r/m : imm8
+  register by CL                                |0000 1111 : 1010 1101 : 11 reg2 reg1
+  memory by CL                                  |0000 1111 : 1010 1101 : mod reg r/m
+SIDT – Store Interrupt Descriptor Table Reg     |0000 1111 : 0000 0001 : modA 001 r/m
+SLDT – Store Local Descriptor Table Register
+  to register                                   |0000 1111 : 0000 0000 : 11 000 reg
+  to memory                                     |0000 1111 : 0000 0000 : mod 000 r/m
+SMSW – Store Machine Status Word
+  to register                                   |0000 1111 : 0000 0001 : 11 100 reg
+  to memory                                     |0000 1111 : 0000 0001 : mod 100 r/m
+STC – Set Carry Flag                            |1111 1001
+STD – Set Direction Flag                        |1111 1101
+STI – Set Interrupt Flag                        |1111 1011
+STOS/STOSB/STOSW/STOSD – Store String Data      |1010 101w
+STR – Store Task Register
+  to register                                   |0000 1111 : 0000 0000 : 11 001 reg
+  to memory                                     |0000 1111 : 0000 0000 : mod 001 r/m
+SUB – Integer Subtraction
+  register1 to register2                        |0010 100w : 11 reg1 reg2
+  register2 to register1                        |0010 101w : 11 reg1 reg2
+  memory to register                            |0010 101w : mod reg r/m
+  register to memory                            |0010 100w : mod reg r/m
+  immediate to register                         |1000 00sw : 11 101 reg : immediate data
+  immediate to AL, AX, or EAX                   |0010 110w : immediate data
+  immediate to memory                           |1000 00sw : mod 101 r/m : immediate data
+TEST – Logical Compare
+  register1 and register2                       |1000 010w : 11 reg1 reg2
+  memory and register                           |1000 010w : mod reg r/m
+  immediate and register                        |1111 011w : 11 000 reg : immediate data
+  immediate and AL, AX, or EAX                  |1010 100w : immediate data
+  immediate and memory                          |1111 011w : mod 000 r/m : immediate data
+UD2 – Undefined instruction                     |0000 FFFF : 0000 1011
+VERR – Verify a Segment for Reading
+  register                                      |0000 1111 : 0000 0000 : 11 100 reg
+  memory                                        |0000 1111 : 0000 0000 : mod 100 r/m
+VERW – Verify a Segment for Writing
+  register                                      |0000 1111 : 0000 0000 : 11 101 reg
+  memory                                        |0000 1111 : 0000 0000 : mod 101 r/m
+WAIT – Wait                                     |1001 1011
+WBINVD – Writeback and Invalidate Data Cache    |0000 1111 : 0000 1001
+WRMSR – Write to Model-Specific Register        |0000 1111 : 0011 0000
+XADD – Exchange and Add
+  register1, register2                          |0000 1111 : 1100 000w : 11 reg2 reg1
+  memory, reg                                   |0000 1111 : 1100 000w : mod reg r/m
+XCHG – Exchange Register/Memory with Register
+  register1 with register2                      |1000 011w : 11 reg1 reg2
+  AX or EAX with reg                            |1001 0 reg
+  memory with reg                               |1000 011w : mod reg r/m
+XLAT/XLATB – Table Look-up Translation          |1101 0111
+XOR – Logical Exclusive OR
+  register1 to register2                        |0011 000w : 11 reg1 reg2
+  register2 to register1                        |0011 001w : 11 reg1 reg2
+  memory to register                            |0011 001w : mod reg r/m
+  register to memory                            |0011 000w : mod reg r/m
+  immediate to register                         |1000 00sw : 11 110 reg : immediate data
+  immediate to AL, AX, or EAX                   |0011 010w : immediate data
+  immediate to memory                           |1000 00sw : mod 110 r/m : immediate data

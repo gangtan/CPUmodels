@@ -1,0 +1,17 @@
+#!/bin/bash
+
+
+clear
+for i in *.c
+do
+    nacl-gcc $i -msoft-float dummy.o dummylm.o -o `basename $i .c`.nexe >& /dev/null
+    if test -e `basename $i .c`.nexe
+    then 
+	echo $i: compilation successfull 
+	ncval `basename $i .c`.nexe | grep RESULT
+	ncval `basename $i .c`.nexe --dfa | grep RESULT
+    else echo $i: failure to compile
+    fi
+    echo 
+done
+

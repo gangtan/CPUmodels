@@ -1,0 +1,67 @@
+Things to do, but not necessarily prioritized:
+
+* Add more instructions to the model -- we should be able to compile
+some standard benchmark suite, or ideally, the native client test cases
+with our tools, and validate them.
+
+* Build top-level O'Caml code for running the fast-verifier -- need
+to be able to read in an Elf file, break it into segments, etc.  There's
+also going to be some hair with the trampolines and verification there...
+
+* Further validate the model to the best of our abilities.  
+
+* Rework the micro-op model a little so that we have a valid multi-
+processor model.  I think the way to do this is to parameterize the
+development by a number of cores, and to have each core hold its
+own "write buffer", and service all reads from the write buffer.
+Then the oracle should be used to cycle between the different cores,
+and to periodically flush the write buffers to memory.  For the SFI
+stuff, we could over-approximate this by having reads from memory
+return oracle bits, unless those are from the addresses that hold
+the code...
+
+* Fix the treatment of segments in the model.  
+
+* Allow the oracle to be refined so that we can e.g., require that
+we get a bit vector out that satisfies a certain property.  This
+could be useful for modeling things like floating point, where we
+just want to axiomitize the operations. 
+
+* Refactor instructions into records -- get rid of instruction datatype.
+The records should hold (a) the parser for the instruction, (b) the list
+of micro-ops for the instruction, (c) information needed to pretty-print
+the instruction, and possibly (d) an assembler for turning the instruction
+back into bits.
+
+* Break all of the theorems about parsing out into a separate file.
+
+* Re-factor the regexp stuff so that we don't use a type-index on it.
+This should greatly simplify a lot of things, including the DFA construction.
+Instead, generalize the wf_regexp predicate and carry this around as needed.
+This should get rid of all of our need to do dependent destruction/
+induction every where.
+
+* Prove correctness of first-version of fast-verifier.  
+
+* Get rid of the use of the heavy-weight parser in the fast-verifier
+to extract branch targets -- do this manually and prove it's the same
+as running the heavyweight parser. 
+
+* Write some C code using Frama-C or some other tool that corresponds
+to the fast-verifier and prove its correctness.  Alternatively, write
+some x86 code!
+
+* Refactor the approach to heavyweight parsing.  The problem now is
+that our use of Map makes it so that we don't have a finite number
+of derivatives when there's a use of Star -- this is because we keep
+pushing stuff onto a list that appears in the derivative.  What we
+probably need to do is factor parsing into two passes -- one that
+constructs parse-trees, and one that then applies the Map operations
+to the parse trees.  Notice that this could also get rid of the need
+for type-indexing on the internal representations.  
+
+* Fix the treatment of address translation (i.e., page tables) in the
+model.  
+
+* Connect the model to CompCert to validate the very last bits of 
+code generation.  

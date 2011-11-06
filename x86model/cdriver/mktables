@@ -1,0 +1,12 @@
+#!/bin/bash
+
+echo "coqc Tables.v"
+coqc Tables.v
+rm tables.mli
+echo "cat dfa_export.ml >> tables.ml"
+cat dfa_export.ml >> tables.ml
+echo "ocamlopt tables.ml -o tables"
+ocamlopt tables.ml -o tables
+echo "./tables > tables.h"
+./tables > tables.h
+rm tables.cmx tables.cmi Tables.glob tables.ml tables.o Tables.vo tables
