@@ -4,6 +4,11 @@
    a program executes. Replaces an earlier less-portable pthread tool. 
 
    Depends on the Pin instrumentation/dynamic analysis tool developed by Intel. 
+   See the examples in the manual, especially pinatrace for information about
+   accessing memory operands with Pin.
+ 
+   Basically the same as memlist.cpp except this prints out the mem values
+   and register values. See the documentation in memlist.cpp for guidance.
  
 */
 
@@ -14,6 +19,13 @@
 #include <stdlib.h>
 #include "pin.H"
 #include "tracer.h"
+
+/* Some options. KNOBs are Pin's way of setting up config info.
+   -s switch specifies the starting function to trace from
+   -e is the symbol name to stop tracing at
+   -m is the maximum number of instructions to trace
+*/
+ 
 
 KNOB<string> KnobStartSymbol(KNOB_MODE_WRITEONCE, "pintool",
 			     "s", "main", "specify function to start tracing from");
