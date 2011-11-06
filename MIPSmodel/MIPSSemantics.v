@@ -774,7 +774,7 @@ Module MIPS_Decode.
   (*Main translation function*)
   Definition instr_to_rtl (i: instr) :=
     runConv (
-      (*Increment the PC before executing any instruction. Not sure if this is right*)
+      (*Increment the PC before executing any instruction.*)
       incr_pc;;
       (*Different preprocessing behaviors are needed to deal with branch delayed instructions*)
       match (iscflow i) with
@@ -839,9 +839,6 @@ Module MIPS_Decode.
     ).
 
 End MIPS_Decode.
-
-(* Maybe this should go in the X86_Decode module? Not really sure
-   what the intended structure is supposed to be here *)
 
 Local Open Scope Z_scope.
 Local Open Scope monad_scope.

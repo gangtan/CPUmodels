@@ -18,5 +18,3 @@ run "make extract" in the MIPSModel/extracted/ directory to extract ml
 run "make compile" in the MIPSModel/extracted/ directory to compile ml
 run "make" in MIPSModel/extracted/tests directory to assemble MARS MIPS asm code in "test.asm" into hex values
 run "make run" in MIPSModel/extracted to run the test
-
---EG

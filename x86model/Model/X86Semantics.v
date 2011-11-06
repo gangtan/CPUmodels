@@ -1484,7 +1484,7 @@ Definition conv_SAHF: Conv unit :=
   (* Binary Coded Dec Ops *)
   (************************)
 
-  (*EG: The semantics for these operations are described using slightly different pseudocode in the
+  (* The semantics for these operations are described using slightly different pseudocode in the
      old and new intel manuals, although they are operationally equivalent. These definitions
      are structured based on the new manual, so it may look strange when compared with the old
      manual *)
@@ -1725,9 +1725,6 @@ Definition conv_SAHF: Conv unit :=
   (* Stack Ops            *)
   (************************)
 
-  (* FIX - We're assuming stack addr size and op size are 32 bits;
-     should use prefix to switch this *)
-  (*Above is fixed, but why doesn't POP have a w bit? *)
   Definition conv_POP (pre: prefix) (op: operand) :=
     (*Segment cannot be overriden*)
     let seg := SS in 
@@ -1762,7 +1759,6 @@ Definition conv_SAHF: Conv unit :=
     poprtl ECX;;
     poprtl EAX.
 
-  (* I don't think we actually need a w bit here. *)
   Definition conv_PUSH (pre: prefix) (w: bool) (op: operand) :=
     let seg := SS in
     let load := load_op pre true seg in
@@ -1936,8 +1932,6 @@ Definition conv_POPF pre :=
 
   Definition conv_CALL (pre: prefix) (near absolute: bool) (op: operand)
     (sel: option selector) :=
-    (*let seg := get_segment_op pre SS op in*) (* FIX: is this SS or not? *) 
-  (*Doing a PUSH always uses SS*)
       oldpc <- get_pc;
       oldesp <- load_reg ESP;
       four <- load_Z size32 4;
@@ -1947,7 +1941,6 @@ Definition conv_POPF pre :=
       conv_JMP pre near absolute op sel.
   
   Definition conv_RET (pre: prefix) (same_segment: bool) (disp: option int16) :=
-    (*let seg := get_segment pre SS in*) (* FIX: is this SS or not? *)
       if same_segment then
         oldesp <- load_reg ESP;
         value <- load_mem32 SS oldesp;
@@ -1964,7 +1957,6 @@ Definition conv_POPF pre :=
       else
         emit error_rtl.
   
-  (* FIX - We're assuming stack addr size and op size are 32 bits *)
   Definition conv_LEAVE pre := 
     ebp_val <- load_reg EBP;
     set_reg ebp_val ESP;;
@@ -2084,7 +2076,7 @@ Definition conv_POPF pre :=
     let set := set_mem pre w seg in
     value <- load addr;
     newvalue <- modify_Bit value poff bitval;
-    (* G.T.: adding copy_ps makes the proof much easier since it meets the pattern 
+    (* adding copy_ps makes the proof much easier since it meets the pattern 
              "addr <- v; set_mem_n ... addr" *)
     newaddr <- copy_ps addr; 
     set newvalue newaddr.
@@ -2235,11 +2227,6 @@ Definition conv_POPF pre :=
         res <- load seg op2;
         set seg res op1.
 
-  (* FIX: One thing that's unclear from the manual is
-     suppose the source operand is outside of the DS segment,
-     but the conditional evaluates to false (so no move takes place) - is a seg
-     fault still triggered? From my little bit of testing it appears it does *)
-    
   (* Note that cmov does not have a byte mode - however we use it as a pseudo-instruction
      to simplify some of the other instructions (e.g. CMPXCHG *)
 
@@ -2518,9 +2505,6 @@ Definition conv_POPF pre :=
 
 End X86_Decode.
 
-(* Maybe this should go in the X86_Decode module? Not really sure
-   what the intended structure is supposed to be here *)
-
 Local Open Scope Z_scope.
 Local Open Scope monad_scope.
 Import X86_Decode.
@@ -2608,7 +2592,7 @@ Definition run_rep
       set_loc (reg_loc ECX) (Word.sub ecx Word.one);;
       RTL_step_list (X86_Decode.instr_to_rtl pre ins);;
       ecx' <- get_loc (reg_loc ECX);
-      (if (Word.eq ecx' Word.zero) then  (** ??? why testing zero again here *)
+      (if (Word.eq ecx' Word.zero) then 
         set_loc pc_loc default_new_pc
         else ret tt);;
        (* For CMPS we also need to break from the loop if ZF = 0 *)
