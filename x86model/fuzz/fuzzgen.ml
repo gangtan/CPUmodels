@@ -63,8 +63,7 @@ let parser_to_fuzz1 = Cat_p (Obj.magic(), Obj.magic(), coq_SAHF_p,
 	coq_BTS_p; coq_BTR_p; coq_BSWAP_p; coq_CWDE_p; coq_CDQ_p; coq_MOV_p false; coq_CMOVcc_p;
 	coq_CMOVcc_p; coq_MOVZX_p; coq_MOVSX_p; coq_XCHG_p; coq_CLC_p; coq_CLD_p; coq_STD_p; coq_STC_p;
 	coq_MOVS_p; coq_CMPXCHG_p; coq_CMPS_p; coq_STOS_p; coq_LEA_p; coq_SETcc_p; coq_POP_p; coq_PUSH_p;
-	coq_PUSHF_p;  coq_ROL_p; coq_ROR_p; coq_RCL_p; coq_RCR_p; coq_LAHF_p; coq_CMC_p; 
-        (*coq_LOOP_p; coq_LOOPZ_p; coq_LOOPNZ_p*)]) 
+	coq_ROL_p; coq_ROR_p; coq_RCL_p; coq_RCR_p; coq_LAHF_p; coq_CMC_p])
 
 
 let instr_parsers_opsize_pre_nodiv =

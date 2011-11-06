@@ -33,6 +33,7 @@ _binary_fuzz_hex_start. All it does in main() is just call this function
 pointer. Which, after linking with fuzz.obj, will be the generated code we want
 to run!
 
-The result is test.out, which you can trace using ./run.sh. Then you can load
-the emitted mem0.txt, regs0.txt, mem1.txt trace files using the simulator
-as described in ../semantics_test/
+The result is test.out, which you can trace using ./run.sh. You will want to
+stop at the symbol "_binary_fuzz_hex_end". Then you can load the emitted
+mem0.txt, regs0.txt, mem1.txt trace files using the simulator as described in
+../semantics_test/
