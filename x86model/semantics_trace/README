@@ -1,20 +1,20 @@
+*** CAUTION : This is only tested and known to work on Linux systems 
+
 Overview:
 ---------------
 
-This is a tool for testing the X86 semantics and parser. It consists of two parts:
-a tracer (gntrace, memlist) and simulators (test.native). 
+This is a tool for testing the X86 semantics and parser. It consists of two
+parts: a tracer (gntrace, memlist) and simulators (test.native). 
 
 The tracer runs a binary and uses Intel's Pin instrumentation tool to record
 the values of various regisers and memory locations as the program runs and
-then outputs them in "mem0.txt", "mem1.txt", and "regs.txt". The tracer stops the
-program after a certain number of instructions have been executed or a pre-defined
-stop symbol is reached.
+then outputs them in "mem0.txt", "mem1.txt", and "regs.txt". The tracer stops
+the program after a certain number of instructions have been executed or a
+pre-defined stop symbol is reached.
 
-The memory values/addresses stored in "mem.txt" are addresses containing
-instructions that were decoded. These addresses/values also include some values
-off the top of the stack at the moment "main" is entered. It is very space
-inefficient, since an instruction's memory value is dumped every time it runs!
-See below for a trick to clean this up afterwards.
+The memory values/addresses stored in the mem.txt files  are addresses
+containing instructions that were decoded and any other memory addresses
+accessed while the program was being traced (ie: memory operands). 
 
 The simulator then reads in the memory dump and copies the initial set of
 register values. It then steps through instruction by instruction, comparing
@@ -32,38 +32,28 @@ The simulator part requires ocamlbuild. I've only tested it on Ocaml 3.10+.
 Usage:
 --------------
 
-First, you need to export $PIN_PATH in your bash environment, and it should point to
-the top level of the pin tool.
+First, you need to export $PIN_PATH in your bash environment, and it should
+point to the top level of the pin tool.
 
 To build, first go to the simulator/ directory and do "make extraction". This
-extracts the Coq code to Ocaml and sets everything up. 
+extracts the Coq code to Ocaml and sets everything up.  Then run "make" in the
+semantics_trace/ directory. This runs the make files in tracer/ and simulator/
+and then copies the resulting binaries to the toplevel. 
 
-Then run "make" in the semantics_trace/ directory. This runs the make files in tracer/ and
-simulator/ and then copies the resulting binaries to the toplevel. 
+To generate a trace of a C program called "test.c" do:
+> ./run.sh test.c <SYMBOL NAME TO STOP TRACING AT"
 
-To generate a trace of a file called "a.out" do:
-> $PIN_PATH/pin -t gntrace.so -e "<SYMBOL NAME TO STOP TRACING AT>" -- ./a.out
-
-If everything works, this will output "mem.txt" and "regs.txt". The former will
-probably be incredibly large with lots of redundant information. You can (and
-should) shrink mem.txt by doing the following:
-
-> sort mem.txt | uniq > tmpmem
-> mv tmpmem mem.txt
+If everything works, this will output "mem0.txt", "mem1.txt", and "regs0.txt".
+(If your program contained system calls there will be additional memX files
+warning - this feature of the tracer is not as well tested). There will also be
+a file called memaddrs.txt which is used by the tracer in an intermediary step.
 
 Now, to load the simulator run
 
-> ./test.byte "mem.txt" "regs.txt"
-
-Or alternatively, if you wish to test the X86Semantics2 or X86SemanticsSFI model:
-> ./test2.byte 	 "mem.txt" "regs.txt"
-> ./testSFI.byte "mem.txt" "regs.txt"
+> ./test.native "mem0.txt" "regs.txt" "mem1.txt"
 
 These will output the simulator's register values after each instruction (in a
 format similar to regs.txt). If at some point the register values do not match
 the corresponding values in regs.txt or the "Failed" state is reached in the
-simulator, it stops and tries to print out some information about the last
-instruction that was run. Note that this diagnostic print-out is not the best,
-since I haven't actually implemented the stuff to pretty-print all of the types
-and values we've defined. 
-
+simulator, it stops. If all of the register values match, it does a diff of 
+memory in the simulator against the memory values listed in mem1.txt.

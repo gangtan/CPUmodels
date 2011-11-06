@@ -2,6 +2,7 @@
    Greg Morrisett, Gang Tan, Joseph Tassarotti, Jean-Baptiste Tristan, Edward Gan.
    All rights reserved. *)
 
+
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 Require ExtrOcamlZBigInt.
@@ -589,8 +590,6 @@ Fixpoint parser2rexp {t} (p:parser t) : rexp :=
     else
       ret false.
   
-  Eval compute in altdepth (Alt_r (Alt_r (Char_r true) (Char_r true)) (Char_r true)).
-
   Fixpoint choosealt (r: rexp) (choice: nat) :=
     match r with
       | Alt_r r1 r2 => choice <- prob_k_of_nat (altdepth r1) (altdepth r);

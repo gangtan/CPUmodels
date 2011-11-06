@@ -8,13 +8,12 @@ For x86, go to x86model and type make.
 How to build the validation tools?
 
 First, build the x86 CPU model. Then, you will need OCaml 3.12, and pin
-(http://www.pintool.org/). Go to the x86model/semantics_trace and type make.
-To simulate a binary, you can use the run.sh script. First argument is the
-binary, second argument is the symbol that marks the end of the simulation.
+(http://www.pintool.org/). Please go to the x86model/semantics_trace directory
+and for further instructions. 
 
 How to build the RockSalt C driver?
 
-You will need to install the developer veriosn of native client first. Then,
+You will need to install the developer version of native client first. Then,
 replace the native_client/src/trustaed/validator_x86/ncval.c file with ours,
 make sure the include for tables.h and driver.h are properly set, and build
 native client as usual. The resulting ncval binary can run RockSalt by
