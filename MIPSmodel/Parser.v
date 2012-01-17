@@ -1,5 +1,15 @@
-(* Copyright (c) 2011, Greg Morrisett and Joe Tassarotti *)
+(* Copyright (c) 2011. Greg Morrisett, Gang Tan, Joseph Tassarotti, 
+   Jean-Baptiste Tristan, and Edward Gan.
 
+   This file is part of RockSalt.
+
+   This file is free software; you can redistribute it and/or
+   modify it under the terms of the GNU General Public License as
+   published by the Free Software Foundation; either version 2 of
+   the License, or (at your option) any later version.
+*)
+
+   
 (** * Regular expression matcher based on derivatives, inspired by the paper
       of Owens, Reppy, and Turon.
 *) 
