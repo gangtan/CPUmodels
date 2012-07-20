@@ -1,0 +1,70 @@
+FFcore_FIX
+R722:731 Fcore_Raux <> <> lib
+R749:758 Fcore_defs <> <> lib
+R776:784 Fcore_rnd <> <> lib
+R802:818 Fcore_generic_fmt <> <> lib
+R836:847 Fcore_rnd_ne <> <> lib
+sec 859:865 <> RND_FIX
+var 878:881 RND_FIX beta
+R885:889 Fcore_Zaux <> radix rec
+syndef 902:905 <> bpow
+R911:914 Fcore_Raux <> bpow def
+R916:919 Fcore_FIX <> RND_FIX.beta var
+var 933:936 RND_FIX emin
+R940:940 Coq.ZArith.BinInt <> Z ind
+def 999:1008 <> FIX_format
+R1015:1015 Coq.Reals.Rdefinitions <> R defax
+R1023:1029 Coq.Init.Logic <> :type_scope:'exists'_x_':'_x_','_x not
+R1031:1033 Coq.Init.Logic <> :type_scope:'exists'_x_':'_x_','_x not
+R1044:1047 Coq.Init.Logic <> :type_scope:'exists'_x_':'_x_','_x not
+R1057:1060 Coq.Init.Logic <> :type_scope:x_'/\'_x not
+R1049:1051 Coq.Init.Logic <> :type_scope:x_'='_x not
+R1052:1054 Fcore_defs <> F2R def
+R1068:1070 Coq.Init.Logic <> :type_scope:x_'='_x not
+R1062:1065 Fcore_defs <> Fexp proj
+R1071:1074 Fcore_FIX <> RND_FIX.emin var
+R1034:1038 Fcore_defs <> float rec
+R1040:1043 Fcore_FIX <> RND_FIX.beta var
+def 1092:1098 <> FIX_exp
+R1105:1105 Coq.ZArith.BinInt <> Z ind
+R1111:1114 Fcore_FIX <> RND_FIX.emin var
+inst 1171:1183 <> FIX_exp_valid
+R1187:1195 Fcore_generic_fmt <> Valid_exp class
+R1197:1203 Fcore_FIX <> FIX_exp def
+R1267:1277 Coq.ZArith.Zorder <> Zlt_le_weak thm
+R1267:1277 Coq.ZArith.Zorder <> Zlt_le_weak thm
+R1293:1300 Coq.ZArith.Zorder <> Zle_refl thm
+R1293:1300 Coq.ZArith.Zorder <> Zle_refl thm
+prf 1333:1350 <> generic_format_FIX
+R1382:1395 Fcore_generic_fmt <> generic_format def
+R1402:1408 Fcore_FIX <> FIX_exp def
+R1397:1400 Fcore_FIX <> RND_FIX.beta var
+R1366:1375 Fcore_FIX <> FIX_format def
+R1476:1497 Fcore_generic_fmt <> generic_format_canonic thm
+R1476:1497 Fcore_generic_fmt <> generic_format_canonic thm
+prf 1514:1531 <> FIX_format_generic
+R1580:1589 Fcore_FIX <> FIX_format def
+R1547:1560 Fcore_generic_fmt <> generic_format def
+R1567:1573 Fcore_FIX <> FIX_exp def
+R1562:1565 Fcore_FIX <> RND_FIX.beta var
+prf 1662:1685 <> FIX_format_satisfies_any
+R1691:1703 Fcore_rnd <> satisfies_any ind
+R1705:1714 Fcore_FIX <> FIX_format def
+R1732:1747 Fcore_rnd <> satisfies_any_eq thm
+R1756:1783 Fcore_generic_fmt <> generic_format_satisfies_any thm
+R1790:1796 Fcore_FIX <> FIX_exp def
+R1785:1788 Fcore_FIX <> RND_FIX.beta var
+R1732:1747 Fcore_rnd <> satisfies_any_eq thm
+R1756:1783 Fcore_generic_fmt <> generic_format_satisfies_any thm
+R1790:1796 Fcore_FIX <> FIX_exp def
+R1785:1788 Fcore_FIX <> RND_FIX.beta var
+R1824:1841 Fcore_FIX <> FIX_format_generic thm
+R1824:1841 Fcore_FIX <> FIX_format_generic thm
+R1850:1867 Fcore_FIX <> generic_format_FIX thm
+R1850:1867 Fcore_FIX <> generic_format_FIX thm
+inst 1892:1907 <> FIX_exp_monotone
+R1911:1922 Fcore_generic_fmt <> Monotone_exp class
+R1924:1930 Fcore_FIX <> FIX_exp def
+R1962:1969 Coq.ZArith.Zorder <> Zle_refl thm
+R1962:1969 Coq.ZArith.Zorder <> Zle_refl thm
+R1982:1988 Fcore_FIX RND_FIX <> sec
