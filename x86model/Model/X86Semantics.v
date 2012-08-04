@@ -1733,10 +1733,9 @@ Definition conv_SAHF: Conv unit :=
   (************************)
 
   Definition conv_POP (pre: prefix) (op: operand) :=
-    (*Segment cannot be overriden*)
-    let seg := SS in 
+    let seg := get_segment_op pre DS op in
     let set := set_op pre true seg in
-    let loadmem := load_mem pre true seg in 
+    let loadmem := load_mem pre true SS in 
     let espoffset := match (op_override pre) with
                        | true => 2%Z
                        | false => 4%Z
@@ -1767,9 +1766,9 @@ Definition conv_SAHF: Conv unit :=
     poprtl EAX.
 
   Definition conv_PUSH (pre: prefix) (w: bool) (op: operand) :=
-    let seg := SS in
+    let seg := get_segment_op pre DS op in
     let load := load_op pre true seg in
-    let setmem := set_mem pre true seg in
+    let setmem := set_mem pre true SS in
     let espoffset := match op_override pre,w return Z with 
                        | true,_ => 2%Z
                        | false,_ => 4%Z
