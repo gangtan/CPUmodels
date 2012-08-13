@@ -76,17 +76,101 @@ Definition debug_register_eq_dec :
   intros ; decide equality.
 Defined.
 
+(*Based on the floating-point instruction paper, page 25.
+http://www-wjp.cs.uni-saarland.de/publikationen/Ba08.pdf *)
+Inductive fp_debug_register : Set := eMF | eDB | eBP | eUD | eNM | eDF | eSS | eGP | ePF | eAC | eMC.
+Definition fp_debug_register_eq_dec : 
+  forall (x y: fp_debug_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
 Record address : Set := mkAddress {
   addrDisp : int32 ; 
   addrBase : option register ; 
   addrIndex : option (scale * register)
 }.
+(*
+Record address64 : Set := mkAddress64 {
+  addrDisp64 : int64 ;
+  addrBase64 : option register ;
+  addrIndex64 : option (scale * register)
+}.
 
+Record address80 : Set := mkAddress80 {
+  addrDisp80 : int80 ;
+  addrBase80 : option register ;
+  addrIndex80 : option (scale * register)
+}.
+*)
+(*
+Based on Section 4.2 of text 
+"Floating-Point operands may be x87 registers (fp stack elements), or data residing in
+memory." 
+*)
+
+Inductive fpu_register : Set := ST7 | ST6 | ST5 | ST4 | ST3 | ST2 | ST1 | ST0.
+Definition fpu_register_eq_dec : 
+  forall (x y:fpu_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_status_register : Set := Busy | C3 | Top | C2 | C1 | C0 |
+                                      Es | Sf | Pe | Ue | Oe | Ze | De | Ie.
+
+Definition fp_status_register_eq_dec : 
+  forall (x y:fp_status_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_control_register : Set := Res15 | Res14 | Res13 | Res7 | Res6 | IC | RC | PC 
+									| Pm | Um | Om | Zm | Dm | Im.
+Definition fp_control_register_eq_dec : 
+  forall (x y:fp_control_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_tagWord_register : Set := valid | zero | special | empty.
+Definition fp_tagWord_register_eq_dec : 
+  forall (x y:fp_tagWord_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Definition Z_to_fp_tagWord_register (n:Z) :=
+  match n with
+  | 0 => valid
+  | 1 => zero
+  | 2 => special
+  | _ => empty
+  end.
+
+Inductive fpu_tagWords : Set := Tag0 | Tag1 | Tag2 | Tag3 | Tag4 | Tag5 | Tag6 | Tag7.
+
+Definition fp_tagWords_eq_dec : 
+  forall (x y:fpu_tagWords), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_lastOperandPtr_register : Set := 
+| Valid
+| Undefined.
+
+Definition fp_lastOperandPtr_register_eq_dec : 
+  forall (x y:fp_lastOperandPtr_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+(*This includes operands for all types of instructions (int, floating-point, etc). *)
 Inductive operand : Set := 
 | Imm_op : int32 -> operand
 | Reg_op : register -> operand
 | Address_op : address -> operand
 | Offset_op : int32 -> operand.
+
+Inductive fp_operand : Set := 
+| FPS_op : int3 -> fp_operand 	    (*an index from 0 to 7 relative to stack top *)
+| FPM32_op : address -> fp_operand
+| FPM64_op : address -> fp_operand
+| FPM80_op : address -> fp_operand. 
 
 Inductive reg_or_immed : Set := 
 | Reg_ri : register -> reg_or_immed
@@ -171,6 +255,91 @@ Inductive instr : Set :=
 | DAS
 | DEC   : forall (w:bool)(op1:operand), instr
 | DIV   : forall (w:bool)(op1:operand), instr
+
+(*Floating-point syntax defined starting here. Table B-38 explains how to read instructions and B-39 has the
+actual instruction details. Instructions can be found here: 
+http://download.intel.com/products/processor/manual/325383.pdf*)
+| F2XM1 : instr
+| FABS : instr
+| FADD : forall (d: bool)(op1: fp_operand), instr
+| FADDP : forall (op1: option fp_operand), instr
+| FBLD : forall (op1: fp_operand), instr
+| FBSTP : forall (op1: fp_operand), instr
+| FCHS : instr
+| FCLEX : instr
+| FCOM : forall (op1: option fp_operand), instr
+| FCOMP : forall (op1: option fp_operand), instr
+| FCOMPP : instr
+| FCOMIP : forall (op1: fp_operand), instr
+| FCOS : instr
+| FDECSTP : instr
+(*In the stack case, this kind of instruction has a 2-bit R parameter, 
+which I have broken up into Rone and Rtwo. Details are shown in table B-38 of the manual *)
+| FDIV : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+| FDIVP : forall (op1: option fp_operand), instr
+| FDIVR : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+| FDIVRP : forall (op1: fp_operand), instr
+| FFREE : forall (op1: fp_operand), instr
+| FIADD : forall (op1: fp_operand), instr
+| FICOM : forall (op1: fp_operand), instr
+| FICOMP : forall (op1: fp_operand), instr
+| FIDIV : forall (op1: fp_operand), instr
+| FIDIVR : forall (op1: fp_operand), instr
+| FILD : forall (op1: fp_operand), instr
+| FIMUL : forall (op1: fp_operand), instr
+| FINCSTP : instr
+| FINIT : instr
+| FIST : forall (op1: fp_operand), instr
+| FISTP : forall (op1: fp_operand), instr
+| FISUB : forall (op1: fp_operand), instr
+| FISUBR : forall (op1: fp_operand), instr
+| FLD : forall (op1: fp_operand), instr
+| FLD1 : instr
+| FLDCW : forall (op1: fp_operand), instr
+| FLDENV : forall (op1: fp_operand), instr
+| FLDL2E : instr
+| FLDL2T : instr
+| FLDLG2 : instr
+| FLDLN2 : instr
+| FLDPI : instr
+| FLDZ : instr
+| FMUL : forall (d: bool) (op1: fp_operand), instr
+| FMULP : forall (op1: option fp_operand), instr
+| FNOP : instr
+| FPATAN : instr
+| FPREM : instr
+| FPREM1 : instr
+| FPTAN : instr
+| FRNDINT : instr
+| FRSTOR : forall (op1: fp_operand), instr
+| FSAVE : forall (op1: fp_operand), instr
+| FSCALE : instr
+| FSIN : instr
+| FSINCOS : instr
+| FSQRT : instr
+| FST : forall (op1: fp_operand), instr
+| FSTCW : forall (op1: fp_operand), instr
+| FSTENV : forall (op1: fp_operand), instr
+| FSTP : forall (op1: fp_operand), instr
+| FSTSW : forall(op1: option fp_operand), instr
+| FSUB : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+| FSUBP : forall (op1: option fp_operand), instr
+| FSUBR : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+| FSUBRP : forall (op1: fp_operand), instr
+| FTST : instr
+| FUCOM : forall (op1: fp_operand), instr
+| FUCOMP : forall (op1: fp_operand), instr
+| FUCOMPP : instr
+| FUCOMI : forall (op1: fp_operand), instr
+| FUCOMIP : forall (op1: fp_operand), instr
+| FXAM : instr
+| FXCH : forall (op1: fp_operand), instr
+| FXTRACT : instr
+| FYL2X : instr
+| FYL2XP1 : instr
+| FWAIT : instr
+(*Floating-Point syntax ends here for now*)
+
 | HLT  
 | IDIV  : forall (w:bool)(op1:operand), instr
 (* This one is kind of funny -- there are three cases:
@@ -274,6 +443,12 @@ Inductive instr : Set :=
 | XCHG  : forall (w:bool)(op1 op2:operand), instr
 | XLAT 
 | XOR   : forall (w:bool)(op1 op2:operand), instr.
+
+
+
+Definition fp_lastInstrPtr_register := instr.
+
+Definition fp_opcode_register := instr.
 
 Inductive lock_or_rep : Set := lock | rep | repn.
 

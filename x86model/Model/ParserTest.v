@@ -68,7 +68,7 @@ Definition nibble :=
 Definition byte := 
   nibble $ nibble @ (fun p => (snd p + (fst p)*256) %% int_t).
 
-(* is a parser deterministic for strings up to length n? *)
+(* is a parser deterministic for strings up to length n? 
 Definition is_deterministic t (p:parser t) n := 
   is_determ (snd (parser2regexp p)) 2 (fun n => (match n with 0 => false | _ => true end)::nil) n
   (fst (parser2regexp p)) (p2r_wf p _).
@@ -84,7 +84,7 @@ Lemma is_deterministic_ambiguous_p : is_deterministic ambiguous_p 4 = false.
 Proof.
   auto.
 Qed.
-
+*)
 Fixpoint explode(s:string) : list bool := 
   match s with 
     | ""%string => nil
@@ -98,7 +98,10 @@ Definition lex t (p:parser t) s := parse p (explode s).
 Opaque result_m.
 Opaque p2r_wf.
 Opaque wf_derivs.
-Eval compute in lex (nibble) "0101". *)
+*)
+Eval simpl in lex (nibble) "011". 
+Eval simpl in explode("1000111").
+Eval simpl in nibble 1.
 End TEST_PARSER.
 
   

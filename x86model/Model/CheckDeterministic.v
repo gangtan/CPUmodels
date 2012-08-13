@@ -27,13 +27,15 @@
     see if the derivatives are zero.  If all of the derivatives are zero,
     then the original expression is equivalent to zero.
 *)
+
+(*
 Require Import Coqlib.
 Require Import Parser.
 Require Import Ascii.
 Require Import String.
 Require Import List.
 Require Import Bits.
-Require Import Decode.
+Require Import DecodeWithFloat.
 Require Import Eqdep.
 Unset Automatic Introduction.
 Set Implicit Arguments.
@@ -1078,4 +1080,5 @@ Lemma parse_split :
 Proof.
   intros. apply (parse_split' 3 instruction_parser_list all_instructions_disjoint _ H H0). 
 Qed.
-
+*)
+Check 2+2.

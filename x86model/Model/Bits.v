@@ -123,6 +123,7 @@ Proof.
   right. red; intro. injection H. exact n.
 Qed.
 
+
 (** * Arithmetic and logical operations over machine integers *)
 
 Definition eq (x y: int) : bool := 
@@ -3728,7 +3729,20 @@ Add Ring WordRing: WordRing.
 End WORDSIZE.
 
 
+Require Import Coqlib.
+Require Import Ascii.
+Require Import String.
 
+Fixpoint string_to_Z_bool (s:string) : Z -> bool :=
+   match s with 
+     | EmptyString => (fun i: Z => false)
+     | String a s0 =>
+        let b := if ascii_dec a "0"%char then false else true in
+       (fun i: Z => if zeq i 0 then b else string_to_Z_bool s0 (i - 1))
+   end.
+Definition string_to_int n (s : string) := 
+  let zb := string_to_Z_bool s in 
+  repr n (Z_of_bits n zb).
 
 Implicit Arguments add [wordsize_minus_one].
 Implicit Arguments sub [wordsize_minus_one].
@@ -3762,8 +3776,8 @@ Implicit Arguments repr [wordsize_minus_one].
 Implicit Arguments unsigned [wordsize_minus_one].
 Implicit Arguments signed [wordsize_minus_one].
 Implicit Arguments unsigned_range [wordsize_minus_one].
-Implicit Arguments zero [wordsize_minus_one].
-Implicit Arguments one [wordsize_minus_one].
+Implicit Arguments Word.zero [wordsize_minus_one].
+Implicit Arguments Word.one [wordsize_minus_one].
 Implicit Arguments eq_dec [wordsize_minus_one].
 Implicit Arguments lequ [wordsize_minus_one].
 Implicit Arguments eq [wordsize_minus_one].
@@ -3781,12 +3795,15 @@ Implicit Arguments neg [wordsize_minus_one].
 End Word.
 
 Definition int1 := Word.int 0.
+Definition int2 := Word.int 1.
+Definition int3 := Word.int 2.
 Definition int4 := Word.int 3.
 Definition int8 := Word.int 7.  
+Definition int11 := Word.int 10.
 Definition int16 := Word.int 15.
 Definition int32 := Word.int 31. 
 Definition int64 := Word.int 63.
-
+Definition int80 := Word.int 79.
 
 (** * Tactics for int *)
 

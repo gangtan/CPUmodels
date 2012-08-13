@@ -22,10 +22,14 @@ Set Implicit Arguments.
 Unset Automatic Introduction.
 
 Definition size1 := 0.
+Definition size2 := 1.
+Definition size3 := 2.
 Definition size4 := 3.
 Definition size8 := 7.
 Definition size16 := 15.
 Definition size32 := 31.
+Definition size64 := 63.
+Definition size80 := 79.
 Definition int n := Word.int n.
 
 Module Type MACHINE_SIG.
@@ -61,6 +65,7 @@ Module RTL(M : MACHINE_SIG).
     Qed.
     Definition eq := @Word.eq_dec size_addr.
   End AddrIndexed.
+  Print IMap.
   Module AddrMap := IMap(AddrIndexed).
 
   (** RTL instructions form a RISC-like core language that operate over pseudo-registers.
@@ -163,6 +168,7 @@ Module RTL(M : MACHINE_SIG).
                            rtl_env := rtl_env rs ; 
                            rtl_mach_state := set_location l v (rtl_mach_state rs) ; 
                            rtl_memory := rtl_memory rs |}).
+  Print AddrIndexed.t.
   Definition set_byte (addr:int size_addr) (v:int size8) : RTL unit := 
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
                            rtl_env := rtl_env rs ; 

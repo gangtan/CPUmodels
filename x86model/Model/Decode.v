@@ -43,9 +43,21 @@ Module X86_PARSER_ARG.
   | Byte_t : type
   | Half_t : type
   | Word_t : type
+  | Double_Word_t : type
+  | Ten_Byte_t : type
   | Scale_t : type
   | Condition_t : type
   | Operand_t : type
+  | Fpu_Register_t : type
+  | Fp_Status_Register_t : type
+  | Fp_Control_Register_t : type 
+  | Fp_TagWord_Register_t : type
+  | Fp_LastOperPtr_Register_t : type
+  | Fp_LastInstrPtr_Register_t : type
+  | Fp_Opcode_Register_t : type
+  | Fpu_TagWords_t : type
+  | Fp_Debug_Register_t : type
+  | Fp_Operand_t : type 
   | Instruction_t : type
   | Control_Register_t : type
   | Debug_Register_t : type
@@ -69,9 +81,21 @@ Module X86_PARSER_ARG.
       | Byte_t => int8
       | Half_t => int16
       | Word_t => int32
+      | Double_Word_t => int64
+      | Ten_Byte_t => int80
       | Scale_t => scale
       | Condition_t => condition_type
       | Operand_t => operand
+      | Fpu_Register_t => int3
+      | Fp_Status_Register_t => fp_status_register
+      | Fp_Control_Register_t => fp_control_register
+      | Fp_TagWord_Register_t => fp_tagWord_register
+      | Fp_LastOperPtr_Register_t => fp_lastOperandPtr_register
+      | Fp_LastInstrPtr_Register_t => fp_lastInstrPtr_register
+      | Fp_Opcode_Register_t => fp_opcode_register
+      | Fpu_TagWords_t => fpu_tagWords
+      | Fp_Debug_Register_t => fp_debug_register
+      | Fp_Operand_t => fp_operand  
       | Instruction_t => instr
       | Control_Register_t => control_register
       | Debug_Register_t => debug_register
@@ -97,9 +121,21 @@ Module X86_PARSER.
   Definition byte_t := tipe_t Byte_t.
   Definition half_t := tipe_t Half_t.
   Definition word_t := tipe_t Word_t.
+  Definition double_word_t := tipe_t Double_Word_t.
+  Definition ten_byte_t := tipe_t Ten_Byte_t.
   Definition scale_t := tipe_t Scale_t.
   Definition condition_t := tipe_t Condition_t.
+  Definition fpu_register_t := tipe_t Fpu_Register_t.
+  Definition fp_status_register_t := tipe_t Fp_Status_Register_t.
+  Definition fp_control_register_t := tipe_t Fp_Control_Register_t. 
+  Definition fp_tagWord_register_t := tipe_t Fp_TagWord_Register_t.
+  Definition fp_lastOperPtr_register_t := tipe_t Fp_LastOperPtr_Register_t.
+  Definition fp_lastInstrPtr_register_t := tipe_t Fp_LastInstrPtr_Register_t.
+  Definition fp_opcode_register_t := tipe_t Fp_Opcode_Register_t.
+  Definition fpu_tagWords_t := tipe_t Fpu_TagWords_t.
+  Definition fp_debug_register_t := tipe_t Fp_Debug_Register_t.
   Definition operand_t := tipe_t Operand_t.
+  Definition fp_operand_t := tipe_t Fp_Operand_t.  
   Definition instruction_t := tipe_t Instruction_t.
   Definition control_register_t := tipe_t Control_Register_t.
   Definition debug_register_t := tipe_t Debug_Register_t.
@@ -122,6 +158,7 @@ Module X86_PARSER.
   Definition seqs t (ps:list (parser t)) : parser (list_t t) := 
     List.fold_right (fun p1 p2 => map (seq p1 p2) (@cons t)) 
       (@always (list_t t) (@nil (result_m t))) ps.
+
   Fixpoint string_to_bool_list (s:string) : list bool := 
     match s with
       | EmptyString => nil
@@ -163,7 +200,8 @@ Module X86_PARSER.
 
   Definition anybit : parser char_t := Any_p.
   Definition field(n:nat) := (field' n) @ (bits2int n).
-  Definition reg := (field 3) @ (Z_to_register : _ -> result_m register_t).
+  Definition reg := (field 3) @ (Z_to_register : _ -> result_m register_t). 
+  Definition fpu_reg := (field 3) @ (@Word.repr 2 :_ -> result_m fpu_register_t).
   Definition byte := (field 8) @ (@Word.repr 7 : _ -> result_m byte_t).
  (* Definition halfword := (field 16) @ (@Word.repr 15 : _ -> result_m half_t).
   Definition word := (field 32) @ (@Word.repr 31 : _ -> result_m word_t). *)
@@ -182,7 +220,41 @@ Module X86_PARSER.
          let w3 := Word.shl b3 (Word.repr 24) in
           Word.or w3 (Word.or w2 (Word.or w1 b0)))
     : _ -> result_m word_t).
+(*
+  Definition zero_extend8_80 : int8 -> int80 := 
+      fun w : int8 => Word.repr (Word.unsigned w).
 
+  Definition zero_extend64_80 : int64 -> int80 := 
+      fun w : int64 => Word.repr (Word.unsigned w).
+  
+  Definition zero_extend8_64 : int8 -> int64 :=
+      fun w : int8 => Word.repr (Word.unsigned w).
+
+  Definition sign_extend8_64 : int8 -> int64 := 
+      fun w : int8 => Word.repr (Word.signed w).
+
+  Definition sign_extend8_80 : int8 -> int80 := 
+      fun w : int8 => Word.repr (Word.signed w).
+
+
+  Definition double_word := (word $ word) @ 
+     ((fun p => 
+        let b0 := Word.repr (Word.unsigned (fst p)) in
+        let b1 := Word.repr (Word.unsigned (snd p)) in
+          Word.or (Word.shl b1 (Word.repr 32)) b0): _ -> result_m double_word_t).
+
+  Definition ten_byte := (double_word $ byte $ byte) @ 
+     ((fun p =>
+         let b0 := zero_extend64_80 (fst p) in
+         let b1 := zero_extend8_80 (fst (snd p)) in
+         let b2 := zero_extend8_80 (snd (snd p)) in
+         
+         let w1 := Word.shl b1 (Word.repr 64) in
+         let w2 := Word.shl b2 (Word.repr 72) in
+         
+         Word.or w2 (Word.or w1 b0))
+     : _ -> result_m ten_byte_t).
+*)
   Definition scale_p := (field 2) @ (Z_to_scale : _ -> result_m scale_t).
   Definition tttn := (field 4) @ (Z_to_condition_type : _ -> result_m condition_t).
 
@@ -213,6 +285,8 @@ Module X86_PARSER.
                                 end %% option_t (Pair_t Scale_t Register_t)).
 
   Definition sib := si $ reg.
+
+  (*Copy next four parsers for 64bit mem and 80bit mem *)
       
   (* These next 4 parsers are used in the definition of the mod/rm parser *)
   Definition rm00 : parser operand_t := 
@@ -319,6 +393,310 @@ Module X86_PARSER.
            (fun p => match p with 
                        | (_,(_,op)) => op
                      end %% operand_t).
+
+  
+   Definition rm00_32 : parser fp_operand_t := 
+    (     bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011" 
+      |+| bits "110"
+      |+| bits "111" ) @ 
+          (fun bs => FPM32_op (mkAddress (Word.repr 0) 
+            (Some (Z_to_register(bits2int 3 bs))) None) %% fp_operand_t)
+      |+| bits "100" $ si $ reg_no_ebp @ 
+          (fun p => match p with
+                      | (_,(si,base)) => 
+                        FPM32_op (mkAddress (Word.repr 0) 
+                          (Some base) si)
+                    end : result_m fp_operand_t)     
+      |+| bits "100" $ si $ bits "101" $ word @
+          (fun p => match p with
+                      | (_,(si,(_, disp))) => 
+                        FPM32_op (mkAddress disp
+                          (None) si)
+                    end : result_m fp_operand_t)
+      |+| bits "101" $ word @
+          (fun p => match p with 
+                      | (_, disp) => 
+                        FPM32_op (mkAddress disp None None)
+                    end %% fp_operand_t).  
+
+  Definition rm01_32 : parser fp_operand_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ byte) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                FPM32_op (mkAddress (sign_extend8_32 disp) 
+                  (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% fp_operand_t)
+      |+| bits "100" $ sib $ byte @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                FPM32_op (mkAddress (sign_extend8_32 disp) (Some base)
+                  (si))
+            end %% fp_operand_t).
+
+  Definition rm10_32 : parser fp_operand_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ word) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                FPM32_op (mkAddress disp (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% fp_operand_t)
+      |+|  bits "100" $ sib $ word @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                FPM32_op (mkAddress disp (Some base) si)
+            end %% fp_operand_t).
+  
+ (* Definition rm11 : parser operand_t := reg @ (fun x => Reg_op x : result_m operand_t).
+
+  Definition modrm : parser (pair_t operand_t operand_t) := 
+    (     (bits "00" $ reg $ rm00)
+      |+| (bits "01" $ reg $ rm01)
+      |+| (bits "10" $ reg $ rm10)
+      |+| (bits "11" $ reg $ rm11) ) @ 
+          (fun p => match p with 
+                      | (_, (r, op)) => (Reg_op r, op)
+                    end %% (pair_t operand_t operand_t)).
+*)
+  (* same as modrm but disallows the register case *)
+  Definition modrm_noreg_32 :=
+  (     ("00" $$ reg $ rm00_32)
+    |+| ("01" $$ reg $ rm01_32)
+    |+| ("10" $$ reg $ rm10_32)).
+
+  (* Similar to mod/rm parser except that the register field is fixed to a
+   * particular bit-pattern, and the pattern starting with "11" is excluded. *)
+  Definition ext_op_modrm_32(bs:string) : parser fp_operand_t := 
+    (      (bits "00" $ bits bs $ rm00_32)
+     |+|   (bits "01" $ bits bs $ rm01_32)
+     |+|   (bits "10" $ bits bs $ rm10_32)) @
+           (fun p => match p with 
+                       | (_,(_,op)) => op
+                     end %% fp_operand_t).
+(*
+  Definition ext_op_modrm2(bs:string) : parser operand_t :=
+    (      (bits "00" $ bits bs $ rm00)
+     |+|   (bits "01" $ bits bs $ rm01)
+     |+|   (bits "10" $ bits bs $ rm10)
+     |+|   (bits "11" $ bits bs $ rm11) ) @
+           (fun p => match p with 
+                       | (_,(_,op)) => op
+                     end %% operand_t).
+*)
+
+  (*64-bit fp mem *)
+  Definition rm00_64 : parser fp_operand_t := 
+    (     bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011" 
+      |+| bits "110"
+      |+| bits "111" ) @ 
+          (fun bs => FPM64_op (mkAddress (Word.repr 0) 
+            (Some (Z_to_register(bits2int 3 bs))) None) %% fp_operand_t)
+      |+| bits "100" $ si $ reg_no_ebp @ 
+          (fun p => match p with
+                      | (_,(si,base)) => 
+                        FPM64_op (mkAddress (Word.repr 0) 
+                          (Some base) si)
+                    end : result_m fp_operand_t)     
+      |+| bits "100" $ si $ bits "101" $ word @
+          (fun p => match p with
+                      | (_,(si,(_, disp))) => 
+                        FPM64_op (mkAddress disp
+                          (None) si)
+                    end : result_m fp_operand_t)
+      |+| bits "101" $ word @
+          (fun p => match p with 
+                      | (_, disp) => 
+                        FPM64_op (mkAddress disp None None)
+                    end %% fp_operand_t).  
+
+  Definition rm01_64 : parser fp_operand_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ byte) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                FPM64_op (mkAddress (sign_extend8_32 disp) 
+                  (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% fp_operand_t)
+      |+| bits "100" $ sib $ byte @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                FPM64_op (mkAddress (sign_extend8_32 disp) (Some base)
+                  (si))
+            end %% fp_operand_t).
+
+  Definition rm10_64 : parser fp_operand_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ word) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                FPM64_op (mkAddress disp (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% fp_operand_t)
+      |+|  bits "100" $ sib $ word @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                FPM64_op (mkAddress disp (Some base) si)
+            end %% fp_operand_t).
+  
+  (*No register case for floating-point memory *)
+ (* Definition rm11_64 : parser fp_operand_t := reg @ (fun x => Reg_op x : result_m fp_operand_t). 
+
+  Definition modrm_64 : parser (pair_t fp_operand_t fp_operand_t) := 
+    (     (bits "00" $ reg $ rm00)
+      |+| (bits "01" $ reg $ rm01)
+      |+| (bits "10" $ reg $ rm10)
+      |+| (bits "11" $ reg $ rm11) ) @ 
+          (fun p => match p with 
+                      | (_, (r, op)) => (Reg_op r, op)
+                    end %% (pair_t fp_operand_t fp_operand_t)).
+*)
+
+  (* same as modrm but disallows the register case *)
+  Definition modrm_noreg_64 :=
+  (     ("00" $$ reg $ rm00_64)
+    |+| ("01" $$ reg $ rm01_64)
+    |+| ("10" $$ reg $ rm10_64)).
+
+  (* Similar to mod/rm parser except that the register field is fixed to a
+   * particular bit-pattern, and the pattern starting with "11" is excluded. *)
+  Definition ext_op_modrm_64 (bs:string) : parser fp_operand_t := 
+    (      (bits "00" $ bits bs $ rm00_64)
+     |+|   (bits "01" $ bits bs $ rm01_64)
+     |+|   (bits "10" $ bits bs $ rm10_64)) @
+           (fun p => match p with 
+                       | (_,(_,op)) => op
+                     end %% fp_operand_t).
+
+(*
+  Definition ext_op_modrm2_64(bs:string) : parser fp_operand_t :=
+    (      (bits "00" $ bits bs $ rm00_64)
+     |+|   (bits "01" $ bits bs $ rm01_64)
+     |+|   (bits "10" $ bits bs $ rm10_64)
+     |+|   (bits "11" $ bits bs $ rm11_64)) @
+           (fun p => match p with 
+                       | (_,(_,op)) => op
+                     end %% fp_operand_t).
+*)
+
+(* 80-bit mem *)
+Definition rm00_80 : parser fp_operand_t := 
+    (     bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011" 
+      |+| bits "110"
+      |+| bits "111" ) @ 
+          (fun bs => FPM80_op (mkAddress (Word.repr 0) 
+            (Some (Z_to_register(bits2int 3 bs))) None) %% fp_operand_t)
+      |+| bits "100" $ si $ reg_no_ebp @ 
+          (fun p => match p with
+                      | (_,(si,base)) => 
+                        FPM80_op (mkAddress (Word.repr 0) 
+                          (Some base) si)
+                    end : result_m fp_operand_t)     
+      |+| bits "100" $ si $ bits "101" $ word @
+          (fun p => match p with
+                      | (_,(si,(_, disp))) => 
+                        FPM80_op (mkAddress disp
+                          (None) si)
+                    end : result_m fp_operand_t)
+      |+| bits "101" $ word @
+          (fun p => match p with 
+                      | (_, disp) => 
+                        FPM80_op (mkAddress disp None None)
+                    end %% fp_operand_t).  
+
+  Definition rm01_80 : parser fp_operand_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ byte) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                FPM80_op (mkAddress (sign_extend8_32 disp) 
+                  (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% fp_operand_t)
+      |+| bits "100" $ sib $ byte @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                FPM80_op (mkAddress (sign_extend8_32 disp) (Some base)
+                  (si))
+            end %% fp_operand_t).
+
+  Definition rm10_80 : parser fp_operand_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ word) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                FPM80_op (mkAddress disp (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% fp_operand_t)
+      |+|  bits "100" $ sib $ word @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                FPM80_op (mkAddress disp (Some base) si)
+            end %% fp_operand_t).
+
+    (* same as modrm but disallows the register case *)
+  Definition modrm_noreg_80 :=
+  (     ("00" $$ reg $ rm00_80)
+    |+| ("01" $$ reg $ rm01_80)
+    |+| ("10" $$ reg $ rm10_80)).
+
+  (* Similar to mod/rm parser except that the register field is fixed to a
+   * particular bit-pattern, and the pattern starting with "11" is excluded. *)
+  Definition ext_op_modrm_80 (bs:string) : parser fp_operand_t := 
+    (      (bits "00" $ bits bs $ rm00_80)
+     |+|   (bits "01" $ bits bs $ rm01_80)
+     |+|   (bits "10" $ bits bs $ rm10_80)) @
+           (fun p => match p with 
+                       | (_,(_,op)) => op
+                     end %% fp_operand_t).
+
 
   (* Parsers for the individual instructions *)
   Definition AAA_p := bits "00110111" @ (fun _ => AAA %% instruction_t).
@@ -914,8 +1292,8 @@ Module X86_PARSER.
   Definition STOS_p := "1010" $$ "101" $$ anybit @ 
     (fun x => STOS x %% instruction_t).
   Definition STR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001" @ 
-    (fun x => STR x  %% instruction_t).
- 
+    (fun x => STR x %% instruction_t).
+
   Definition TEST_p (opsize_override: bool) := 
     "1111" $$ "0111" $$ ext_op_modrm2 "000" $ imm_op opsize_override @ 
     (fun p => TEST true (fst p) (snd p) %% instruction_t)
@@ -938,7 +1316,7 @@ Module X86_PARSER.
     (fun x => VERR x %% instruction_t).
   Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "101" @ 
     (fun x => VERW x %% instruction_t).
-  Definition WAIT_p := "1001" $$ bits "1011 " @ (fun _ => WAIT %% instruction_t).
+  Definition WAIT_p := "1001" $$ bits "1011" @ (fun _ => WAIT %% instruction_t).
   Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1001" @ 
     (fun _ => WBINVD %% instruction_t).
   Definition WRMSR_p := "0000" $$ "1111" $$ "0011" $$ bits "0000" @ 
@@ -954,14 +1332,245 @@ Module X86_PARSER.
 
   Definition XLAT_p := "1101" $$ bits "0111" @ (fun _ => XLAT %% instruction_t).
 
+(*Floating-Point parsers, based on tables B.17 and B-39*)
+ Definition F2XM1_p := "11011" $$ "001111" $$ bits "10000" @ (fun _ => F2XM1 %% instruction_t).
+  Definition FABS_p :=  "11011" $$ "001111" $$ bits "00001" @ (fun _ => FABS %% instruction_t). 
+
+  Definition FADD_p := 
+    "11011" $$ "000" $$ ext_op_modrm_32 "000" @ (fun x => FADD false x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "000" @ (fun x => FADD true x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "0011000" $$ fpu_reg @ (fun p => let (d,s) := p in FADD d (FPS_op s) %% instruction_t).
+
+  Definition FADDP_p := "11011" $$ "110" $$ "11000" $$ fpu_reg @ (fun x => FADDP (Some (FPS_op x)) %% instruction_t).
+  Definition FBLD_p := "11011" $$ "111" $$ ext_op_modrm_64 "100" @ (fun x => FBLD x %% instruction_t).
+  Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_64 "110" @ (fun x => FBSTP x %% instruction_t).
+  Definition FCHS_p := "11011" $$ "001111" $$ bits "00000" @ (fun _ => FCHS %% instruction_t).
+  Definition FCLEX_p := "11011" $$ "011111" $$ bits "00010" @ (fun _ => FCLEX %% instruction_t).
+
+  Definition FCOM_p :=
+    "11011" $$ "000" $$ ext_op_modrm_32 "010" @ (fun x => FCOM (Some x) %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "010" @ (fun x => FCOM (Some x) %% instruction_t) 
+  |+|  
+    "11011" $$ "000" $$ "11010" $$ fpu_reg @ (fun x => FCOM (Some (FPS_op x)) %% instruction_t).
+
+  Definition FCOMP_p :=
+    "11011" $$ "000" $$ ext_op_modrm_32 "011" @ (fun x => FCOMP (Some x) %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "011" @ (fun x => FCOMP (Some x) %% instruction_t) 
+  |+|  
+    "11011" $$ "000" $$ "11011" $$ fpu_reg @ (fun x => FCOMP (Some (FPS_op x)) %% instruction_t).
+
+  Definition FCOMPP_p := "11011" $$ "110" $$ "11011" $$ bits "001" @ (fun _ => FCOMPP %% instruction_t).
+  Definition FCOMIP_p := "11011" $$ "111" $$ "11110" $$ fpu_reg @ (fun x => FCOMIP (FPS_op x) %% instruction_t).
+  Definition FCOS_p := "11011" $$ "001" $$ "111" $$ bits "11111" @ (fun _ => FCOS %% instruction_t).  
+  Definition FDECSTP_p := "11011" $$ "001" $$ "111" $$ bits "10110" @ (fun _=> FDECSTP %% instruction_t).
+
+  Definition FDIV_p :=
+    "11011" $$ "000" $$ ext_op_modrm_32 "110" @ (fun x => FDIV false None None x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "110" @ (fun x => FDIV true None None x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "00" $$ "111" $$ "1" $$ anybit $ fpu_reg @ 
+          fun p => match p with | (d,(op1,op2)) => FDIV d (Some true) (Some op1) (FPS_op op2) end %% instruction_t.
+
+  Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg @ (fun x => FDIVP (Some (FPS_op x)) %% instruction_t).
+
+  Definition FDIVR_p :=
+    "11011" $$ "000" $$ ext_op_modrm_32 "111" @ (fun x => FDIVR false None None x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "111" @ (fun x => FDIVR true None None x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "00" $$ "111" $$ "1" $$ anybit $ fpu_reg @   (*R must be 1 and second anybit so that it matches table B-38 description *)
+          fun p => match p with | (d,(op1,op2)) => FDIVR d (Some true) (Some op1) (FPS_op op2) end %% instruction_t.
+
+  Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg @ (fun x => FDIVRP (FPS_op x) %% instruction_t).
+  Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg @ (fun x => FFREE (FPS_op x) %% instruction_t).
+  Definition FIADD_p := 
+    "11011" $$ "110" $$ ext_op_modrm_32 "000" @ (fun x => FIADD x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_32 "000" @ (fun x => FIADD x %% instruction_t).
+  
+  Definition FICOM_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_32 "010" @ (fun x => FICOM x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_32 "010" @ (fun x => FICOM x %% instruction_t).
+
+  Definition FICOMP_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_32 "011" @ (fun x => FICOMP x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_32 "011" @ (fun x => FICOMP x %% instruction_t).
+
+  Definition FIDIV_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_32 "110" @ (fun x => FIDIV x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_32 "110" @ (fun x => FIDIV x %% instruction_t).
+
+  Definition FIDIVR_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_32 "111" @ (fun x => FIDIVR x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_32 "111" @ (fun x => FIDIVR x %% instruction_t).
+
+  Definition FILD_p  := 
+    "11011" $$ "111" $$ ext_op_modrm_32 "000" @ (fun x => FILD x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_32 "000" @ (fun x => FILD x %% instruction_t)
+  |+|
+    "11011" $$ "111" $$ ext_op_modrm_64 "101" @ (fun x => FILD x %% instruction_t).
+  Definition FIMUL_p := 
+    "11011" $$ "110" $$ ext_op_modrm_32 "001" @ (fun x => FIMUL x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_64 "001" @ (fun x => FIMUL x %% instruction_t).
+  Definition FINCSTP_p := "11011" $$ "001111" $$ bits "10111" @ (fun _ => FINCSTP %% instruction_t).
+  (*Definition FINIT := "".  Nothing provided in table B-39 *) 
+  Definition FIST_p :=
+    "11011" $$ "111" $$ ext_op_modrm_32 "010" @ (fun x => FIST x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_64 "010" @ (fun x => FIST x %% instruction_t).
+
+  Definition FISTP_p :=
+    "11011" $$ "111" $$ ext_op_modrm_32 "011" @ (fun x => FISTP x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_32 "011" @ (fun x => FISTP x %% instruction_t)
+  |+|
+    "11011" $$ "111" $$ ext_op_modrm_64 "111" @ (fun x => FISTP x %% instruction_t).
+
+  Definition FISUB_p :=
+    "11011" $$ "110" $$ ext_op_modrm_32 "100" @ (fun x => FISUB x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_32 "100" @ (fun x => FISUB x %% instruction_t).
+
+  Definition FISUBR_p :=
+    "11011" $$ "110" $$ ext_op_modrm_32 "101" @ (fun x => FISUBR x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_32 "101" @ (fun x => FISUBR x %% instruction_t).
+
+  Definition FLD_p :=
+    "11011" $$ "001" $$ ext_op_modrm_32 "000" @ (fun x => FLD x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_64 "000" @ (fun x => FLD x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_80 "101" @ (fun x => FLD x %% instruction_t)
+  |+|
+    "11011" $$ "001" $$ "11000" $$ fpu_reg @ (fun x => FLD (FPS_op x) %% instruction_t).
+
+  Definition FLD1_p := "11011" $$ "001111" $$ bits "01000" @ (fun _ => FLD1 %% instruction_t).
+  Definition FLDCW_p := "11011" $$ "001" $$ ext_op_modrm_32 "101" @ (fun x => FLDCW x %% instruction_t).
+  Definition FLDENV_p := "11011" $$ "001" $$ ext_op_modrm_32 "100" @ (fun x => FLDENV x %% instruction_t).
+  Definition FLDL2E_p := "11011" $$ "001111" $$ bits "01010" @ (fun _ => FLDL2E %% instruction_t). 
+  Definition FLDL2T_p := "11011" $$ "001111" $$ bits "01001" @ (fun _ => FLDL2T %% instruction_t). 
+  Definition FLDLG2_p := "11011" $$ "001111" $$ bits "01100" @ (fun _ => FLDLG2 %% instruction_t). 
+  Definition FLDLN2_p := "11011" $$ "001111" $$ bits "01101" @ (fun _ => FLDLN2 %% instruction_t). 
+  Definition FLDPI_p := "11011" $$ "001111" $$ bits "01011" @ (fun _ => FLDPI %% instruction_t).
+  Definition FLDZ_p := "11011" $$ "001111" $$ bits "01110" @ (fun _ => FLDZ %% instruction_t).
+
+  Definition FMUL_p := 
+    "11011" $$ "000" $$ ext_op_modrm_32 "001" @ (fun x => FMUL false x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "001" @ (fun x => FMUL true x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "00" $$ "11001" $$ fpu_reg @ (fun p => let (d,s) := p in FMUL d (FPS_op s) %% instruction_t).
+
+  Definition FMULP_p := "11011" $$ "110" $$ "11001" $$ fpu_reg @ (fun x => FMULP (Some (FPS_op x)) %% instruction_t).
+  Definition FNOP_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FNOP %% instruction_t).
+  Definition FPATAN_p := "11011" $$ "001111" $$ bits "10011" @ (fun _ => FPATAN %% instruction_t).
+  Definition FPREM_p := "11011" $$ "001111" $$ bits "11000" @ (fun _ => FPREM %% instruction_t).
+  Definition FPREM1_p := "11011" $$ "001111" $$ bits "10101" @ (fun _ => FPREM1 %% instruction_t).
+  Definition FPTAN_p := "11011" $$ "001111" $$ bits "10010" @ (fun _ => FPTAN %% instruction_t).
+  Definition FRNDINT_p := "11011" $$ "001111" $$ bits "11100" @ (fun _ => FRNDINT %% instruction_t).
+
+  Definition FRSTOR_p := "11011" $$ "101" $$ ext_op_modrm_32 "100" @ (fun x => FRSTOR x %% instruction_t).
+  Definition FSAVE_p := "11011" $$ "101" $$ ext_op_modrm_64 "110" @ (fun x => FSAVE x %% instruction_t).
+
+  Definition FSCALE_p := "11011" $$ "001111" $$ bits "11101" @ (fun _ => FSCALE %% instruction_t).
+  Definition FSIN_p := "11011" $$ "001111" $$ bits "11110" @ (fun _ => FSIN %% instruction_t).
+  Definition FSINCOS_p := "11011" $$ "001111" $$ bits "11011" @ (fun _ => FSINCOS %% instruction_t).
+  Definition FSQRT_p := "11011" $$ "001111" $$ bits "11010" @ (fun _ => FSQRT %% instruction_t).
+
+  Definition FST_p := 
+    "11011" $$ "001" $$ ext_op_modrm_32 "010" @ (fun x => FST x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_64 "010" @ (fun x => FST x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ "11010" $$ fpu_reg @ (fun x => FST (FPS_op x) %% instruction_t).
+
+  Definition FSTCW_p := "11011" $$ "001" $$ ext_op_modrm_32 "111" @ (fun x => FSTCW x %% instruction_t).
+  Definition FSTENV_p := "11011" $$ "001" $$ ext_op_modrm_32 "110" @ (fun x => FSTENV x %% instruction_t).
+  Definition FSTP_p := 
+    "11011" $$ "001" $$ ext_op_modrm_32 "011" @ (fun x => FSTP x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_64 "011" @ (fun x => FSTP x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_80 "111" @ (fun x => FSTP x %% instruction_t) 
+  |+|  
+    "11011" $$ "101" $$ "11011" $$ fpu_reg @ (fun x => FSTP (FPS_op x) %% instruction_t). 
+
+  Definition FSTSW_p := 
+    "11011" $$ "111" $$ "111" $$ bits "00000" @ (fun _ => FSTSW None %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_32 "111" @ (fun x => FSTSW (Some x) %% instruction_t).
+
+  Definition FSUB_p :=
+    "11011" $$ "000" $$ ext_op_modrm_32 "100" @ (fun x => FSUB false None None x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "100" @ (fun x => FSUB true None None x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "00" $$ "111" $$ "0" $$ anybit $ fpu_reg @ 
+          fun p => match p with | (d,(op1,op2)) => FSUB d (Some true) (Some op1) (FPS_op op2) end %% instruction_t.
+
+  Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg @ (fun x => FSUBP (Some (FPS_op x)) %% instruction_t).
+  Definition FSUBR_p := 
+    "11011" $$ "000" $$ ext_op_modrm_32 "101" @ (fun x => FSUBR false None None x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_64 "101" @ (fun x => FSUBR true None None x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "00" $$ "111" $$ "0" $$ anybit $ fpu_reg @ 
+          fun p => match p with | (d,(op1,op2)) => FSUBR d (Some true) (Some op1) (FPS_op op2) end %% instruction_t.
+
+  Definition FSUBRP_p := "11011" $$ "110" $$ "11100" $$ fpu_reg @ (fun x => FSUBRP (FPS_op x) %% instruction_t). 
+  Definition FTST_p := "11011" $$ "001111" $$ bits "00100" @ (fun _ => FTST %% instruction_t).
+  Definition FUCOM_p := "11011" $$ "101" $$ "11100" $$ fpu_reg @ (fun x => FUCOM (FPS_op x) %% instruction_t). 
+  Definition FUCOMP_p := "11011" $$ "101" $$ "11101" $$ fpu_reg @ (fun x => FUCOMP (FPS_op x) %% instruction_t). 
+  Definition FUCOMPP_p := "11011" $$ "010111" $$ bits "01001" @ (fun _ => FUCOMPP %% instruction_t).
+  Definition FUCOMI_p := "11011" $$ "011" $$ "11101" $$ fpu_reg @ (fun x => FUCOMI (FPS_op x) %% instruction_t).  
+  Definition FUCOMIP_p := "11011" $$ "111" $$ "11011" $$ fpu_reg @ (fun x => FUCOMIP (FPS_op x) %% instruction_t). 
+  Definition FXAM_p := "11011" $$ "001111" $$ bits "00101" @ (fun _ => FXAM %% instruction_t).
+  Definition FXCH_p := "11011" $$ "001" $$ "11001" $$ fpu_reg @ (fun x => FXCH (FPS_op x) %% instruction_t). 
+
+  Definition FXTRACT_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FXTRACT %% instruction_t).
+  Definition FYL2X_p := "11011" $$ "001111" $$ bits "10001" @ (fun _ => FYL2X %% instruction_t).
+  Definition FYL2XP1_p := "11011" $$ "001111" $$ bits "11001" @ (fun _ => FYL2XP1 %% instruction_t).
+  Definition FWAIT_p := bits "10011011" @ (fun _ => FWAIT %% instruction_t).
+(*End of Floating-Point parsers*)
+
   (* Now glue all of the individual instruction parsers together into 
-     one big parser. *)
+     one big parser.  *)
   
   Definition instr_parsers_opsize_pre : list (parser instruction_t) :=
-    ADC_p true :: ADD_p true :: AND_p true :: CMP_p true :: OR_p true :: SBB_p true :: SUB_p true :: SHL_p :: SHLD_p :: SHR_p :: SAR_p :: SHRD_p :: XOR_p true ::IMUL_p true :: MOV_p true :: MOVSX_p :: MOVZX_p :: NEG_p :: NOT_p :: DIV_p :: IDIV_p :: TEST_p true :: CDQ_p :: CWDE_p :: MUL_p :: XCHG_p :: nil.
+    ADC_p true :: ADD_p true :: AND_p true :: CMP_p true :: OR_p true :: SBB_p true :: SUB_p true :: SHL_p :: 
+    SHLD_p :: SHR_p :: SAR_p :: SHRD_p :: XOR_p true ::IMUL_p true :: MOV_p true :: MOVSX_p :: MOVZX_p :: NEG_p :: NOT_p :: DIV_p :: IDIV_p :: 
+    TEST_p true :: CDQ_p :: CWDE_p :: MUL_p :: XCHG_p :: nil.
 
   Definition instr_parsers_nosize_pre : list (parser instruction_t) := 
-    AAA_p :: AAD_p :: AAM_p :: AAS_p :: ADC_p false :: ADD_p false :: AND_p false :: CMP_p false :: OR_p false :: SBB_p false :: SUB_p false :: XOR_p false :: ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p :: BTC_p :: BTR_p :: BTS_p :: CALL_p :: CDQ_p :: CLC_p :: CLD_p :: CLI_p :: CMOVcc_p :: CMC_p :: CMPS_p :: CMPXCHG_p :: CPUID_p :: CWDE_p :: DAA_p :: DAS_p :: DEC_p :: DIV_p :: HLT_p :: IDIV_p :: IMUL_p false :: IN_p :: INC_p :: INS_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: (* LOCK_p :: -- see note above about LOCK_p *) LODS_p :: LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: MOVSR_p :: MOVBE_p :: MOVS_p :: MOVSX_p :: MOVZX_p :: MUL_p :: NEG_p :: (* NOP_p :: *) NOT_p :: OUT_p :: OUTS_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p :: PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: (* REPINS_p :: REPLODS_p :: REPMOVS_p :: REPOUTS_p :: REPSTOS_p :: REPECMPS_p :: REPESCAS_p :: REPNECMPS_p :: REPNESCAS_p :: *) RET_p :: ROL_p :: ROR_p :: RSM_p :: SAHF_p :: SAR_p :: SCAS_p :: SETcc_p :: SGDT_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: STOS_p :: STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WAIT_p :: WBINVD_p :: WRMSR_p :: XADD_p :: XCHG_p :: XLAT_p :: nil.
+    AAA_p :: AAD_p :: AAM_p :: AAS_p :: ADC_p false :: ADD_p false :: AND_p false :: CMP_p false :: OR_p false :: 
+    SBB_p false :: SUB_p false :: XOR_p false :: ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p :: BTC_p :: BTR_p :: BTS_p :: 
+    CALL_p :: CDQ_p :: CLC_p :: CLD_p :: CLI_p :: CMOVcc_p :: CMC_p :: CMPS_p :: CMPXCHG_p :: CPUID_p :: CWDE_p :: DAA_p :: DAS_p :: DEC_p :: DIV_p :: 
+    HLT_p :: IDIV_p :: IMUL_p false :: IN_p :: INC_p :: INS_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: 
+    LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: 
+    (* LOCK_p :: -- see note above about LOCK_p *) LODS_p :: LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
+    MOVSR_p :: MOVBE_p :: MOVS_p :: MOVSX_p :: MOVZX_p :: MUL_p :: NEG_p :: (* NOP_p :: *) NOT_p :: OUT_p :: OUTS_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
+    PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
+    (* REPINS_p :: REPLODS_p :: REPMOVS_p :: REPOUTS_p :: REPSTOS_p :: REPECMPS_p :: REPESCAS_p :: REPNECMPS_p :: REPNESCAS_p :: *) RET_p :: ROL_p :: ROR_p ::
+    RSM_p :: SAHF_p :: SAR_p :: SCAS_p :: SETcc_p :: SGDT_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
+    STOS_p :: STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WAIT_p :: WBINVD_p :: WRMSR_p :: XADD_p :: XCHG_p :: XLAT_p :: F2XM1_p ::
+    FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
+    FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
+    (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
+    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: FSAVE_p :: FSCALE_p :: 
+    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: FSTCW_p :: FSTENV_p :: FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
+    FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: nil.
 
   Fixpoint list2pair_t (l: list result) :=
     match l with
@@ -970,7 +1579,6 @@ Module X86_PARSER.
       | r::l' => pair_t r (list2pair_t l')
     end.
  
-
   Definition lock_or_rep_p : parser lock_or_rep_t :=
     ("1111" $$ ( bits "0000" @ (fun _ => lock %% lock_or_rep_t)
                  |+| bits "0010" @ (fun _ => repn %% lock_or_rep_t)
