@@ -2636,10 +2636,10 @@ Definition conv_POPF pre :=
 *)
 Section X86FloatSemantics.
 
-    Require Import Fappli_IEEE.
-    Require Import Fappli_IEEE_bits.
-    Require Import Fappli_Additions.
-    Require Import Fcore.
+    Require Import Flocq.Appli.Fappli_IEEE.
+    Require Import Flocq.Appli.Fappli_IEEE_bits.
+    Require Import Flocq.Core.Fcore.
+    Require Import FloatingAux.
 
 (*Floating-Point Constants. For pi, e, 0.0, +1.0, and -1.0 I found the double-extended precision bit-values but
   for other constants I only found double-precision using this site: 

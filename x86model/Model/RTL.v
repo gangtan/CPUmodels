@@ -65,7 +65,6 @@ Module RTL(M : MACHINE_SIG).
     Qed.
     Definition eq := @Word.eq_dec size_addr.
   End AddrIndexed.
-  Print IMap.
   Module AddrMap := IMap(AddrIndexed).
 
   (** RTL instructions form a RISC-like core language that operate over pseudo-registers.
