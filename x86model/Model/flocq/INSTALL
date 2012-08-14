@@ -1,0 +1,27 @@
+Prerequisites
+-------------
+
+You will need the Coq proof assistant (>= 8.2) with a Reals theory
+compiled in.
+
+The .tar.gz file is distributed with a working set of configure files.
+They are not in the SVN repository though. Consequently, if you are
+building from SVN, you will need autoconf (>= 2.59) and automake (>= 1.8).
+
+
+Configuring, compiling and installing
+-------------------------------------
+
+Ideally, you should just have to type:
+
+  $ ./configure && make && make install
+
+The environment variable "COQC" can be set to the Coq compiler command.
+The configure script defaults to "coqc".
+
+The option "--libdir=DIR" can be set to the directory where the compiled
+library files should be installed by "make install". By default, the
+target directory is "`$COQC -where`/user-contrib/Flocq".
+
+The files are compiled at a logical location starting with "Flocq". This
+default prefix can be removed with the "--disable-prefix" option.
