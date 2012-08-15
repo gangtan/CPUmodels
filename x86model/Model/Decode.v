@@ -1316,7 +1316,6 @@ Definition rm00_80 : parser fp_operand_t :=
     (fun x => VERR x %% instruction_t).
   Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "101" @ 
     (fun x => VERW x %% instruction_t).
-  Definition WAIT_p := "1001" $$ bits "1011" @ (fun _ => WAIT %% instruction_t).
   Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1001" @ 
     (fun _ => WBINVD %% instruction_t).
   Definition WRMSR_p := "0000" $$ "1111" $$ "0011" $$ bits "0000" @ 
@@ -1577,7 +1576,7 @@ Definition rm00_80 : parser fp_operand_t :=
     PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
     (* REPINS_p :: REPLODS_p :: REPMOVS_p :: REPOUTS_p :: REPSTOS_p :: REPECMPS_p :: REPESCAS_p :: REPNECMPS_p :: REPNESCAS_p :: *) RET_p :: ROL_p :: ROR_p ::
     RSM_p :: SAHF_p :: SAR_p :: SCAS_p :: SETcc_p :: SGDT_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
-    STOS_p :: STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WAIT_p :: WBINVD_p :: WRMSR_p :: XADD_p :: XCHG_p :: XLAT_p :: F2XM1_p ::
+    STOS_p :: STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XADD_p :: XCHG_p :: XLAT_p :: F2XM1_p ::
     FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
     FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
     (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p

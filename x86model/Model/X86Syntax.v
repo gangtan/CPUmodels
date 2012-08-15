@@ -438,7 +438,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | UD2
 | VERR  : forall (op1:operand), instr
 | VERW  : forall (op1:operand), instr
-| WAIT
+(* | WAIT  removed because it's the same as FWAIT*)
 | WBINVD
 | WRMSR
 | XADD  : forall (w:bool)(op1 op2:operand), instr
