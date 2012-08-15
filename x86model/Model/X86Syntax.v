@@ -322,9 +322,11 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FSTENV : forall (op1: fp_operand), instr
 | FSTP : forall (op1: fp_operand), instr
 | FSTSW : forall(op1: option fp_operand), instr
-| FSUB : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+  (* op1 <- op1 - op2 *)
+| FSUB : forall (op1 op2 : fp_operand), instr
 | FSUBP : forall (op1: option fp_operand), instr
-| FSUBR : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+  (* reverse subtraction op1 <- op2 - op1 *)
+| FSUBR : forall (op1 op2 : fp_operand), instr
 | FSUBRP : forall (op1: fp_operand), instr
 | FTST : instr
 | FUCOM : forall (op1: fp_operand), instr

@@ -3311,7 +3311,8 @@ End X86FloatSemantics.
          | FSTENV : conv_FSTENV pre op1
          | FSTP : conv_FSTP pre op1
          | FSTSW : conv_FSTSW pre op1     *)
-         | FSUB d r1 r2 op1 => conv_FSUB d r1 r2 op1
+           (* gtan: comment out FSUB case for now as I have changed its syntax *)
+         (* | FSUB d r1 r2 op1 => conv_FSUB d r1 r2 op1 *)
          | FSUBP op1 => conv_FSUBP op1
        (*  | FSUBR : conv_FSUBR pre d r1 r2 op1
          | FSUBRP : conv_FSUBRP pre op1

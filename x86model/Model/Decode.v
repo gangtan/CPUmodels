@@ -1519,21 +1519,28 @@ Definition rm00_80 : parser fp_operand_t :=
     "11011" $$ "101" $$ ext_op_modrm_32 "111" @ (fun x => FSTSW (Some x) %% instruction_t).
 
   Definition FSUB_p :=
-    "11011" $$ "000" $$ ext_op_modrm_32 "100" @ (fun x => FSUB false None None x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_32 "100" @ (fun x => FSUB (FPS_op Word.zero) x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_64 "100" @ (fun x => FSUB true None None x %% instruction_t) 
+    "11011" $$ "100" $$ ext_op_modrm_64 "100" @ (fun x => FSUB (FPS_op Word.zero) x %% instruction_t) 
   |+|  
-    "11011" $$ anybit $ "00" $$ "111" $$ "0" $$ anybit $ fpu_reg @ 
-          fun p => match p with | (d,(op1,op2)) => FSUB d (Some true) (Some op1) (FPS_op op2) end %% instruction_t.
+    "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
+    (fun i => FSUB (FPS_op Word.zero) (FPS_op i) %% instruction_t)
+  |+|  
+    "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
+    (fun i => FSUB (FPS_op i) (FPS_op Word.zero) %% instruction_t).
 
   Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg @ (fun x => FSUBP (Some (FPS_op x)) %% instruction_t).
+
   Definition FSUBR_p := 
-    "11011" $$ "000" $$ ext_op_modrm_32 "101" @ (fun x => FSUBR false None None x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_32 "101" @ (fun x => FSUBR (FPS_op Word.zero) x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_64 "101" @ (fun x => FSUBR true None None x %% instruction_t) 
+    "11011" $$ "100" $$ ext_op_modrm_64 "101" @ (fun x => FSUBR (FPS_op Word.zero) x %% instruction_t)
   |+|  
-    "11011" $$ anybit $ "00" $$ "111" $$ "0" $$ anybit $ fpu_reg @ 
-          fun p => match p with | (d,(op1,op2)) => FSUBR d (Some true) (Some op1) (FPS_op op2) end %% instruction_t.
+    "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
+    (fun i => FSUB (FPS_op Word.zero) (FPS_op i) %% instruction_t)
+  |+|  
+    "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
+    (fun i => FSUB (FPS_op i) (FPS_op Word.zero) %% instruction_t).
 
   Definition FSUBRP_p := "11011" $$ "110" $$ "11100" $$ fpu_reg @ (fun x => FSUBRP (FPS_op x) %% instruction_t). 
   Definition FTST_p := "11011" $$ "001111" $$ bits "00100" @ (fun _ => FTST %% instruction_t).
@@ -1545,7 +1552,7 @@ Definition rm00_80 : parser fp_operand_t :=
   Definition FXAM_p := "11011" $$ "001111" $$ bits "00101" @ (fun _ => FXAM %% instruction_t).
   Definition FXCH_p := "11011" $$ "001" $$ "11001" $$ fpu_reg @ (fun x => FXCH (FPS_op x) %% instruction_t). 
 
-  Definition FXTRACT_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FXTRACT %% instruction_t).
+  Definition FXTRACT_p := "11011" $$ "001" $$ "1111" $$ bits "0100" @ (fun _ => FXTRACT %% instruction_t).
   Definition FYL2X_p := "11011" $$ "001111" $$ bits "10001" @ (fun _ => FYL2X %% instruction_t).
   Definition FYL2XP1_p := "11011" $$ "001111" $$ bits "11001" @ (fun _ => FYL2XP1 %% instruction_t).
   Definition FWAIT_p := bits "10011011" @ (fun _ => FWAIT %% instruction_t).
@@ -1575,7 +1582,7 @@ Definition rm00_80 : parser fp_operand_t :=
     FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
     (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
     :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: FSAVE_p :: FSCALE_p :: 
-    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: FSTCW_p :: FSTENV_p :: FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
+    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: FSTCW_p :: FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
     FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: nil.
 
   Fixpoint list2pair_t (l: list result) :=
