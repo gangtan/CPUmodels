@@ -273,11 +273,11 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FCOMIP : forall (op1: fp_operand), instr
 | FCOS : instr
 | FDECSTP : instr
-(*In the stack case, this kind of instruction has a 2-bit R parameter, 
-which I have broken up into Rone and Rtwo. Details are shown in table B-38 of the manual *)
-| FDIV : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+(** op1 <- op1 / op2 *)
+| FDIV : forall (op1 op2:fp_operand), instr
 | FDIVP : forall (op1: option fp_operand), instr
-| FDIVR : forall (d: bool) (Rone: option bool) (Rtwo: option bool) (op1: fp_operand), instr
+(** reverse divide: op1 <- op2 / op1 *)
+| FDIVR : forall (op1 op2: fp_operand), instr
 | FDIVRP : forall (op1: fp_operand), instr
 | FFREE : forall (op1: fp_operand), instr
 | FIADD : forall (op1: fp_operand), instr

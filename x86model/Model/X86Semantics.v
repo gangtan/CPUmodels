@@ -3263,7 +3263,8 @@ End X86FloatSemantics.
    (*      | FCOMIP op1 => conv_FCOMIP pre op1
          | FCOS => conv_FCOS       *)
          | FDECSTP => conv_FDECSTP
-         | FDIV a b c d => conv_FDIV a b c d
+           (* gtan: comment out FDIV case for now as I have changed the syntax of FDIV *)
+         (* | FDIV a b c d => conv_FDIV a b c d *)
          | FDIVP op1 => conv_FDIVP op1
       (*   | FDIVR : conv_FDIVR pre d r1 r2 op1
          | FDIVRP : conv_FDIVRP pre op1
