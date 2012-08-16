@@ -2940,7 +2940,7 @@ Section X86FloatSemantics.
      let sum_val := ps_reg size80 (Word.intval size80 sum_int) in
      Return sum_val.  
 
-  Definition sub_from_stacktop80 (sec : pseudo_reg size80) := 
+  Definition sub_from_stacktop80 (sec : pseudo_reg size80) (order: bool) := 
     zero <- load_Z size3 0;
      topp <- get_stacktop;
      stacktop_val <- load_from_stack_i topp zero;
@@ -2951,10 +2951,19 @@ Section X86FloatSemantics.
      let (stIval) := sec in
      let sec_val := int_to_bin80 (Word.repr stIval) in
        
-     let sub := b80_minus mode_UP first_val sec_val in
-     let sub_int := bin80_to_int sub in 
-     let sub_val := ps_reg size80 (Word.intval size80 sub_int) in
-     Return sub_val.
+     match order with 
+     | true =>  
+     	let sub := b80_minus mode_UP first_val sec_val in
+     	let sub_int := bin80_to_int sub in 
+     	let sub_val := ps_reg size80 (Word.intval size80 sub_int) in
+     	Return sub_val
+
+     | false =>
+	let sub := b80_minus mode_UP sec_val first_val in
+     	let sub_int := bin80_to_int sub in 
+     	let sub_val := ps_reg size80 (Word.intval size80 sub_int) in
+     	Return sub_val
+     end.
 
   Definition mult_stacktop80 (sec : pseudo_reg size80) := 
      zero <- load_Z size3 0;
@@ -2972,7 +2981,7 @@ Section X86FloatSemantics.
      let mult_val := ps_reg size80 (Word.intval size80 mult_int) in
      Return mult_val. 
 
-  Definition div_stacktop80 (sec : pseudo_reg size80) :=
+  Definition div_stacktop80 (sec : pseudo_reg size80) (order : bool) :=
      zero <- load_Z size3 0;
      topp <- get_stacktop;
      stacktop_val <- load_from_stack_i topp zero;
@@ -2982,12 +2991,21 @@ Section X86FloatSemantics.
 
      let (stIval) := sec in
      let sec_val := int_to_bin80 (Word.repr stIval) in
-       
-     let div := b80_div mode_UP first_val sec_val in
-     let div_int := bin80_to_int div in 
-     let div_val := ps_reg size80 (Word.intval size80 div_int) in
-     Return div_val.
- 
+     
+     match order with 
+     | true =>  
+     	let div := b80_div mode_UP first_val sec_val in
+     	let div_int := bin80_to_int div in 
+     	let div_val := ps_reg size80 (Word.intval size80 div_int) in
+     	Return div_val
+
+     | false =>
+	let div := b80_div mode_UP sec_val first_val in
+     	let div_int := bin80_to_int div in 
+     	let div_val := ps_reg size80 (Word.intval size80 div_int) in
+     	Return div_val
+     end.
+
   Definition sqrt_stacktop80 := 
      zero <- load_Z size3 0;
      topp <- get_stacktop;
@@ -3000,10 +3018,15 @@ Section X86FloatSemantics.
      let rt_int := bin80_to_int rt in 
      let rt_val := ps_reg size80 (Word.intval size80 rt_int) in
      Return rt_val.
- 
+
+  Definition sub80_topfirst (sec : pseudo_reg size80):= sub_from_stacktop80 sec true.
+  Definition div80_topfirst (sec : pseudo_reg size80) := div_stacktop80 sec true. 
+  Definition sub80_toplast (sec : pseudo_reg size80) := sub_from_stacktop80 sec false.
+  Definition div80_toplast (sec : pseudo_reg size80) := div_stacktop80 sec false.  
+
   (*Performs a simple arithmetic operation on st(0) and st(i) and stores the result in one of those registers *)  
-  Definition conv_simple_arith (d : bool) (st_i : fp_operand) 
-                               (operation : pseudo_reg size80 -> Conv (pseudo_reg size80)) := 
+  Definition conv_simple_arith (d : bool) (st_i : fp_operand)
+                               (operation : pseudo_reg size80-> Conv (pseudo_reg size80)) := 
      topp <- get_stacktop;
      zero <- load_Z size3 0;
      match st_i with 
@@ -3046,7 +3069,8 @@ Section X86FloatSemantics.
        ST(0) register as empty and increments the stack pointer (TOP) by 1. 
        (The nooperand version of the floating-point add instructions always results in the register 
        stack being popped" (FADD description in manual) *)
-  Definition conv_simple_arith_and_pop (st_i : option fp_operand) (operation : pseudo_reg size80 -> Conv (pseudo_reg size80))
+  Definition conv_simple_arith_and_pop (st_i : option fp_operand)
+	(operation : pseudo_reg size80 -> Conv (pseudo_reg size80))
      : Conv unit := 
      toploc <- get_stacktop;
      empty <- load_Z size2 3;
@@ -3065,15 +3089,69 @@ Section X86FloatSemantics.
          conv_FINCSTP
      end.
 
+  Definition conv_FSUB_or_FDIV_aux (op1 op2 : fp_operand) (order : bool)
+	   (operation : pseudo_reg size80 -> bool -> Conv (pseudo_reg size80)) := 
+     topp <- get_stacktop;
+     zero <- load_Z size3 0;
+     match op1, op2 with 
+     | FPS_op zerr, FPM32_op a =>
+	addr <- compute_addr a; 
+        val <- load_mem32 DS addr;
+
+        let int_val := psreg_to_int val in
+        let b32_val := int_to_bin32 int_val in
+        let conv_val := b32_to_b80 b32_val in
+        let ps_reg_sti := int_to_psreg (bin80_to_int conv_val) in
+        
+        curr_val <- operation ps_reg_sti order;
+        set_stack_i curr_val topp zero 
+
+     | FPS_op zerr, FPM64_op a =>
+	addr <- compute_addr a; 
+        val <- load_mem64 DS addr;
+
+        let int_val := psreg_to_int val in
+        let b64_val := int_to_bin64 int_val in
+        let conv_val := b64_to_b80 b64_val in
+        let ps_reg_sti := int_to_psreg (bin80_to_int conv_val) in
+        
+        curr_val <- operation ps_reg_sti order;
+        set_stack_i curr_val topp zero
+
+     | FPS_op a, FPS_op b =>
+	let reg_Z := Word.intval size3 a in
+	match reg_Z with 
+	| 0%Z =>   (* Means st(0) <- st(0) - st(i) *) 
+	  sub_arg <- load_from_stack_i topp (int_to_psreg b);
+	  diff <- operation sub_arg order;
+	  set_stack_i diff topp zero 
+	| _ =>     (* st(i) <- st(0) - st(i)   Here a is stI*)
+          let ps_a := int_to_psreg a in
+          sub_arg <- load_from_stack_i topp ps_a;
+	  diff <- operation sub_arg order;
+	  set_stack_i diff topp ps_a
+        end 
+     | _, _ => emit error_rtl
+     end.
+
+
   Definition conv_FADD (d :bool) (st_i: fp_operand) : Conv unit := conv_simple_arith d st_i add_to_stacktop80.
-  Definition conv_FSUB (d : bool) (r1 r2: option bool) (st_i : fp_operand) : Conv unit := conv_simple_arith d st_i sub_from_stacktop80.
+  Definition conv_FSUB (op1 op2 : fp_operand) : Conv unit := conv_FSUB_or_FDIV_aux op1 op2 true sub_from_stacktop80.
   Definition conv_FMUL (d : bool) (st_i : fp_operand) : Conv unit := conv_simple_arith d st_i mult_stacktop80.
-  Definition conv_FDIV (d : bool) (r1 r2: option bool) (st_i : fp_operand) : Conv unit := conv_simple_arith d st_i div_stacktop80.
+  Definition conv_FDIV (op1 op2 : fp_operand) : Conv unit := conv_FSUB_or_FDIV_aux op1 op2 true div_stacktop80.
 
   Definition conv_FADDP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i add_to_stacktop80.
-  Definition conv_FSUBP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i sub_from_stacktop80.
+  Definition conv_FSUBP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i sub80_topfirst.
   Definition conv_FMULP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i mult_stacktop80.
-  Definition conv_FDIVP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i div_stacktop80.
+  Definition conv_FDIVP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i div80_topfirst.
+
+  Definition conv_FSUBR (op1 op2 : fp_operand) : Conv unit := conv_FSUB_or_FDIV_aux op1 op2 false sub_from_stacktop80.
+  Definition conv_FDIVR (op1 op2 : fp_operand) : Conv unit := conv_FSUB_or_FDIV_aux op1 op2 false div_stacktop80.
+
+
+  Definition conv_FSUBRP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i sub80_toplast.
+  Definition conv_FDIVRP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i div80_toplast.
+
 (*  
   Definition conv_simple_integer_arith (st_i : operand) 
         (operation : pseudo_reg size80 -> Conv (pseudo_reg size80)) : Conv unit := 
