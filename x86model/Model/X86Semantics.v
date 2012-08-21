@@ -3069,25 +3069,14 @@ Section X86FloatSemantics.
        ST(0) register as empty and increments the stack pointer (TOP) by 1. 
        (The nooperand version of the floating-point add instructions always results in the register 
        stack being popped" (FADD description in manual) *)
-  Definition conv_simple_arith_and_pop (st_i : option fp_operand)
+  Definition conv_simple_arith_and_pop (st_i : fp_operand)
 	(operation : pseudo_reg size80 -> Conv (pseudo_reg size80))
      : Conv unit := 
      toploc <- get_stacktop;
      empty <- load_Z size2 3;
      update_tag toploc empty;;
-     match st_i with 
-     | None => (* perform operation on st(0) and st(1) and store in st(0) *)
-         onee <- load_Z size3 1;
-         st1 <- load_from_stack_i toploc onee;
-         let (st1val) := st1 in
-         val <- operation st1;
-         zero <- load_Z size3 0;
-         set_stack_i val toploc zero;;
-         conv_FINCSTP
-     | Some op => 
-         conv_simple_arith false op operation;;
-         conv_FINCSTP
-     end.
+     conv_simple_arith false st_i operation;;
+     conv_FINCSTP.
 
   Definition conv_FSUB_or_FDIV_aux (op1 op2 : fp_operand) (order : bool)
 	   (operation : pseudo_reg size80 -> bool -> Conv (pseudo_reg size80)) := 
@@ -3140,17 +3129,17 @@ Section X86FloatSemantics.
   Definition conv_FMUL (d : bool) (st_i : fp_operand) : Conv unit := conv_simple_arith d st_i mult_stacktop80.
   Definition conv_FDIV (op1 op2 : fp_operand) : Conv unit := conv_FSUB_or_FDIV_aux op1 op2 true div_stacktop80.
 
-  Definition conv_FADDP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i add_to_stacktop80.
-  Definition conv_FSUBP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i sub80_topfirst.
-  Definition conv_FMULP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i mult_stacktop80.
-  Definition conv_FDIVP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i div80_topfirst.
+  Definition conv_FADDP (st_i : fp_operand) : Conv unit := conv_simple_arith_and_pop st_i add_to_stacktop80.
+  Definition conv_FSUBP (st_i : fp_operand) : Conv unit := conv_simple_arith_and_pop st_i sub80_topfirst.
+  Definition conv_FMULP (st_i : fp_operand) : Conv unit := conv_simple_arith_and_pop st_i mult_stacktop80.
+  Definition conv_FDIVP (st_i : fp_operand) : Conv unit := conv_simple_arith_and_pop st_i div80_topfirst.
 
   Definition conv_FSUBR (op1 op2 : fp_operand) : Conv unit := conv_FSUB_or_FDIV_aux op1 op2 false sub_from_stacktop80.
   Definition conv_FDIVR (op1 op2 : fp_operand) : Conv unit := conv_FSUB_or_FDIV_aux op1 op2 false div_stacktop80.
 
 
-  Definition conv_FSUBRP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i sub80_toplast.
-  Definition conv_FDIVRP (st_i : option fp_operand) : Conv unit := conv_simple_arith_and_pop st_i div80_toplast.
+  Definition conv_FSUBRP (st_i : fp_operand) : Conv unit := conv_simple_arith_and_pop st_i sub80_toplast.
+  Definition conv_FDIVRP (st_i : fp_operand) : Conv unit := conv_simple_arith_and_pop st_i div80_toplast.
 
 (*  
   Definition conv_simple_integer_arith (st_i : operand) 

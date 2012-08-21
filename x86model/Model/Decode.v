@@ -1342,7 +1342,7 @@ Definition rm00_80 : parser fp_operand_t :=
   |+|  
     "11011" $$ anybit $ "0011000" $$ fpu_reg @ (fun p => let (d,s) := p in FADD d (FPS_op s) %% instruction_t).
 
-  Definition FADDP_p := "11011" $$ "110" $$ "11000" $$ fpu_reg @ (fun x => FADDP (Some (FPS_op x)) %% instruction_t).
+  Definition FADDP_p := "11011" $$ "110" $$ "11000" $$ fpu_reg @ (fun x => FADDP (FPS_op x) %% instruction_t).
   Definition FBLD_p := "11011" $$ "111" $$ ext_op_modrm_64 "100" @ (fun x => FBLD x %% instruction_t).
   Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_64 "110" @ (fun x => FBSTP x %% instruction_t).
   Definition FCHS_p := "11011" $$ "001111" $$ bits "00000" @ (fun _ => FCHS %% instruction_t).
@@ -1378,7 +1378,7 @@ Definition rm00_80 : parser fp_operand_t :=
     "11011" $$ "1" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
     (fun i => FDIV (FPS_op i) (FPS_op Word.zero) %% instruction_t).
 
-  Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg @ (fun x => FDIVP (Some (FPS_op x)) %% instruction_t).
+  Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg @ (fun x => FDIVP (FPS_op x) %% instruction_t).
 
   Definition FDIVR_p :=
     "11011" $$ "000" $$ ext_op_modrm_32 "111" @ (fun x => FDIVR (FPS_op Word.zero) x %% instruction_t)
@@ -1478,7 +1478,7 @@ Definition rm00_80 : parser fp_operand_t :=
   |+|  
     "11011" $$ anybit $ "00" $$ "11001" $$ fpu_reg @ (fun p => let (d,s) := p in FMUL d (FPS_op s) %% instruction_t).
 
-  Definition FMULP_p := "11011" $$ "110" $$ "11001" $$ fpu_reg @ (fun x => FMULP (Some (FPS_op x)) %% instruction_t).
+  Definition FMULP_p := "11011" $$ "110" $$ "11001" $$ fpu_reg @ (fun x => FMULP (FPS_op x) %% instruction_t).
   Definition FNOP_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FNOP %% instruction_t).
   Definition FPATAN_p := "11011" $$ "001111" $$ bits "10011" @ (fun _ => FPATAN %% instruction_t).
   Definition FPREM_p := "11011" $$ "001111" $$ bits "11000" @ (fun _ => FPREM %% instruction_t).
@@ -1528,7 +1528,7 @@ Definition rm00_80 : parser fp_operand_t :=
     "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
     (fun i => FSUB (FPS_op i) (FPS_op Word.zero) %% instruction_t).
 
-  Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg @ (fun x => FSUBP (Some (FPS_op x)) %% instruction_t).
+  Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg @ (fun x => FSUBP (FPS_op x) %% instruction_t).
 
   Definition FSUBR_p := 
     "11011" $$ "000" $$ ext_op_modrm_32 "101" @ (fun x => FSUBR (FPS_op Word.zero) x %% instruction_t)
@@ -1547,7 +1547,7 @@ Definition rm00_80 : parser fp_operand_t :=
   Definition FUCOMP_p := "11011" $$ "101" $$ "11101" $$ fpu_reg @ (fun x => FUCOMP (FPS_op x) %% instruction_t). 
   Definition FUCOMPP_p := "11011" $$ "010111" $$ bits "01001" @ (fun _ => FUCOMPP %% instruction_t).
   Definition FUCOMI_p := "11011" $$ "011" $$ "11101" $$ fpu_reg @ (fun x => FUCOMI (FPS_op x) %% instruction_t).  
-  Definition FUCOMIP_p := "11011" $$ "111" $$ "11011" $$ fpu_reg @ (fun x => FUCOMIP (FPS_op x) %% instruction_t). 
+  Definition FUCOMIP_p := "11011" $$ "111" $$ "11101" $$ fpu_reg @ (fun x => FUCOMIP (FPS_op x) %% instruction_t). 
   Definition FXAM_p := "11011" $$ "001111" $$ bits "00101" @ (fun _ => FXAM %% instruction_t).
   Definition FXCH_p := "11011" $$ "001" $$ "11001" $$ fpu_reg @ (fun x => FXCH (FPS_op x) %% instruction_t). 
 

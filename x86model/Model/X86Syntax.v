@@ -262,7 +262,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | F2XM1 : instr
 | FABS : instr
 | FADD : forall (d: bool)(op1: fp_operand), instr
-| FADDP : forall (op1: option fp_operand), instr
+| FADDP : forall (op1: fp_operand), instr
 | FBLD : forall (op1: fp_operand), instr
 | FBSTP : forall (op1: fp_operand), instr
 | FCHS : instr
@@ -275,7 +275,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FDECSTP : instr
 (** op1 <- op1 / op2 *)
 | FDIV : forall (op1 op2:fp_operand), instr
-| FDIVP : forall (op1: option fp_operand), instr
+| FDIVP : forall (op1: fp_operand), instr
 (** reverse divide: op1 <- op2 / op1 *)
 | FDIVR : forall (op1 op2: fp_operand), instr
 | FDIVRP : forall (op1: fp_operand), instr
@@ -304,7 +304,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FLDPI : instr
 | FLDZ : instr
 | FMUL : forall (d: bool) (op1: fp_operand), instr
-| FMULP : forall (op1: option fp_operand), instr
+| FMULP : forall (op1: fp_operand), instr
 | FNOP : instr
 | FPATAN : instr
 | FPREM : instr
@@ -324,7 +324,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FSTSW : forall(op1: option fp_operand), instr
   (* op1 <- op1 - op2 *)
 | FSUB : forall (op1 op2 : fp_operand), instr
-| FSUBP : forall (op1: option fp_operand), instr
+| FSUBP : forall (op1: fp_operand), instr
   (* reverse subtraction op1 <- op2 - op1 *)
 | FSUBR : forall (op1 op2 : fp_operand), instr
 | FSUBRP : forall (op1: fp_operand), instr
