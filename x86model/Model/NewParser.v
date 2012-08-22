@@ -1594,6 +1594,7 @@ Section DFA.
           end
     end (eq_refl _).
 
+End DFA.
 (*
 
 
