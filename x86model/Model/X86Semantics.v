@@ -3362,6 +3362,7 @@ End X86FloatSemantics.
          | FMUL d op1 => conv_FMUL d op1
          | FMULP op1 => conv_FMULP op1
        (*  | FNOP : conv_FNOP
+         | FNSTCW => conv_FNSTCW
          | FPATAN : conv_FPATAN
          | FPREM : conv_FPREM
          | FPREM1 : conv_FPREM1

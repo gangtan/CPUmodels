@@ -261,6 +261,8 @@ actual instruction details. Instructions can be found here:
 http://download.intel.com/products/processor/manual/325383.pdf*)
 | F2XM1 : instr
 | FABS : instr
+(* dest <- ST(0) + op1;
+   when d is true, st(0) is the dest; otherwise, op1 is the dest *)
 | FADD : forall (d: bool)(op1: fp_operand), instr
 | FADDP : forall (op1: fp_operand), instr
 | FBLD : forall (op1: fp_operand), instr
@@ -303,9 +305,12 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FLDLN2 : instr
 | FLDPI : instr
 | FLDZ : instr
+(* dest <- ST(0) * op1;
+   when d is true, st(0) is the dest; otherwise, op1 is the dest *)
 | FMUL : forall (d: bool) (op1: fp_operand), instr
 | FMULP : forall (op1: fp_operand), instr
 | FNOP : instr
+| FNSTCW : forall (op1: fp_operand), instr
 | FPATAN : instr
 | FPREM : instr
 | FPREM1 : instr
@@ -318,7 +323,10 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FSINCOS : instr
 | FSQRT : instr
 | FST : forall (op1: fp_operand), instr
-| FSTCW : forall (op1: fp_operand), instr
+(* FSTCW's encoding is the same as FWAIT followed by FNSTCW; its
+   semantics seems the same as "FWAIT;FNSTCW" as well
+   | FSTCW : forall (op1: fp_operand), instr
+*)
 | FSTENV : forall (op1: fp_operand), instr
 | FSTP : forall (op1: fp_operand), instr
 | FSTSW : forall(op1: option fp_operand), instr

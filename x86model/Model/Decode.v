@@ -1336,7 +1336,7 @@ Definition rm00_80 : parser fp_operand_t :=
   Definition FABS_p :=  "11011" $$ "001111" $$ bits "00001" @ (fun _ => FABS %% instruction_t). 
 
   Definition FADD_p := 
-    "11011" $$ "000" $$ ext_op_modrm_32 "000" @ (fun x => FADD false x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_32 "000" @ (fun x => FADD true x %% instruction_t)
   |+|
     "11011" $$ "100" $$ ext_op_modrm_64 "000" @ (fun x => FADD true x %% instruction_t) 
   |+|  
@@ -1472,7 +1472,7 @@ Definition rm00_80 : parser fp_operand_t :=
   Definition FLDZ_p := "11011" $$ "001111" $$ bits "01110" @ (fun _ => FLDZ %% instruction_t).
 
   Definition FMUL_p := 
-    "11011" $$ "000" $$ ext_op_modrm_32 "001" @ (fun x => FMUL false x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_32 "001" @ (fun x => FMUL true x %% instruction_t)
   |+|
     "11011" $$ "100" $$ ext_op_modrm_64 "001" @ (fun x => FMUL true x %% instruction_t) 
   |+|  
@@ -1480,6 +1480,7 @@ Definition rm00_80 : parser fp_operand_t :=
 
   Definition FMULP_p := "11011" $$ "110" $$ "11001" $$ fpu_reg @ (fun x => FMULP (FPS_op x) %% instruction_t).
   Definition FNOP_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FNOP %% instruction_t).
+  Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_32 "111" @ (fun x => FNSTCW x %% instruction_t).
   Definition FPATAN_p := "11011" $$ "001111" $$ bits "10011" @ (fun _ => FPATAN %% instruction_t).
   Definition FPREM_p := "11011" $$ "001111" $$ bits "11000" @ (fun _ => FPREM %% instruction_t).
   Definition FPREM1_p := "11011" $$ "001111" $$ bits "10101" @ (fun _ => FPREM1 %% instruction_t).
@@ -1501,7 +1502,8 @@ Definition rm00_80 : parser fp_operand_t :=
   |+|
     "11011" $$ "101" $$ "11010" $$ fpu_reg @ (fun x => FST (FPS_op x) %% instruction_t).
 
-  Definition FSTCW_p := "11011" $$ "001" $$ ext_op_modrm_32 "111" @ (fun x => FSTCW x %% instruction_t).
+  (* FSTCW's encoding is the same as FWAIT followed by FNSTCW *)
+  (* Definition FSTCW_p := "10011011" $$ "11011" $$ "001" $$ ext_op_modrm_32 "111" @ (fun x => FSTCW x %% instruction_t). *)
   Definition FSTENV_p := "11011" $$ "001" $$ ext_op_modrm_32 "110" @ (fun x => FSTENV x %% instruction_t).
   Definition FSTP_p := 
     "11011" $$ "001" $$ ext_op_modrm_32 "011" @ (fun x => FSTP x %% instruction_t)
@@ -1536,10 +1538,10 @@ Definition rm00_80 : parser fp_operand_t :=
     "11011" $$ "100" $$ ext_op_modrm_64 "101" @ (fun x => FSUBR (FPS_op Word.zero) x %% instruction_t)
   |+|  
     "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
-    (fun i => FSUB (FPS_op Word.zero) (FPS_op i) %% instruction_t)
+    (fun i => FSUBR (FPS_op Word.zero) (FPS_op i) %% instruction_t)
   |+|  
     "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
-    (fun i => FSUB (FPS_op i) (FPS_op Word.zero) %% instruction_t).
+    (fun i => FSUBR (FPS_op i) (FPS_op Word.zero) %% instruction_t).
 
   Definition FSUBRP_p := "11011" $$ "110" $$ "11100" $$ fpu_reg @ (fun x => FSUBRP (FPS_op x) %% instruction_t). 
   Definition FTST_p := "11011" $$ "001111" $$ bits "00100" @ (fun _ => FTST %% instruction_t).
@@ -1580,8 +1582,8 @@ Definition rm00_80 : parser fp_operand_t :=
     FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
     FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
     (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
-    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: FSAVE_p :: FSCALE_p :: 
-    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: FSTCW_p :: FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
+    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSTCW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: FSAVE_p :: FSCALE_p :: 
+    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
     FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: nil.
 
   Fixpoint list2pair_t (l: list result) :=
