@@ -90,10 +90,7 @@ Inductive xform : type -> type -> Type :=
 .
 Notation "t1 ->> t2" := (xform t1 t2) (left associativity, at level 69, t2 at next level).
 
-(** Interpret an [xform] as a function [interp t1 -> interp t2] where [t1] 
-    and [t2] are the domain and co-domain of the [xform].  Notice the hack
-    in the interpretation of [Xcomp] needed to align with the [xtype] 
-    definition. *)
+(** Interpret an [t1 ->> t2] xform as a function [interp t1 -> interp t2]. *)
 Fixpoint xinterp t1 t2 (x: t1 ->> t2) : interp t1 -> interp t2 := 
   match x in t1 ->> t2 return interp t1 -> interp t2 with 
     | Xid t => fun (x:interp t) => x
@@ -117,6 +114,7 @@ Fixpoint xinterp t1 t2 (x: t1 ->> t2) : interp t1 -> interp t2 :=
     | Xmap t1 t2 f => fun (x:interp (List_t t1)) => List.map (xinterp f) x
   end.
 
+(** * Decidable equality for [xform]'s. *)
 Lemma existT_neq (A:Type) (P:A->Type) (x y:A) (vx:P x) (vy:P y) : 
   x <> y -> (existT P x vx) <> (existT P y vy).
 Proof.
@@ -187,6 +185,7 @@ Definition xform_dec t1 t2 (x1 x2:t1 ->> t2) : {x1 = x2} + {x1 <> x2}.
   intro. subst. apply n. auto.
 Defined.
 
+(** * Grammars *)
 (** Our user-facing [grammar]s, indexed by a [type], reflecting the type of the
     semantic value returned by the grammar when used in parsing. *)
 Inductive grammar : type -> Type := 
@@ -201,6 +200,8 @@ Inductive grammar : type -> Type :=
 | Xform : forall t1 t2, t1 ->> t2 -> grammar t1 -> grammar t2.
 
 (** * Denotation of Grammars *)
+(** I'm a little annoyed that I had to break out so many equalities, but
+    found this worked a little better for both inversion and proving. *)
 Inductive in_grammar : forall t, grammar t -> list char_p -> (interp t) -> Prop := 
 | InEps : forall s v, s = nil -> v = tt -> in_grammar Eps s v
 | InChar : forall c s v, s = c::nil -> v = c -> in_grammar (Char c) s v
@@ -223,7 +224,6 @@ Inductive in_grammar : forall t, grammar t -> list char_p -> (interp t) -> Prop 
 Hint Constructors in_grammar.
 
 (** * Optimize an [xform]. *)
-
 (** Need some explicit casting to get things to type-check. *)
 Definition xcoerce t1 t2 t3 t4 (x:xform t1 t2) : t1 = t3 -> t2 = t4 -> xform t3 t4.
   intros. subst. apply x.
@@ -270,7 +270,7 @@ Definition xpair_fst_xid ta tb (x2: ta ->> tb) : forall t1 t2, ta = Pair_t t1 t2
         Xpair (xcoerce (Xfst _ (Xid t1)) (eq_sym H) (eq_refl _)) x2'
   end.
 
-(* This function and the two above implement:  (fst id, snd id) = id *)
+(** This function and the two above implement:  (fst id, snd id) = id *)
 Definition xpair ta tb tc (x1:ta ->> tb) (x2:ta ->> tc) : ta ->> (Pair_t tb tc) := 
   match x1 in ta ->> tb return (ta ->> tc) -> ta ->> (Pair_t tb tc)  with 
     | Xfst t1 t2 tb x11 => 
@@ -282,6 +282,7 @@ Definition xpair ta tb tc (x1:ta ->> tb) (x2:ta ->> tc) : ta ->> (Pair_t tb tc) 
     | x1 => Xpair x1
   end x2.
 
+(** The [xpair] optimization preserves meaning. *)
 Lemma xpair_corr ta tb tc (x1:ta->>tb) (x2:ta->>tc) v : 
   xinterp (xpair x1 x2) v = xinterp (Xpair x1 x2) v.
 Proof.
@@ -290,6 +291,7 @@ Proof.
   destruct v. auto.
 Qed.
 
+(** Used below in the eta-reduction for sums. *)
 Definition xmatch_inl_id_inr tc te (x22:tc->>te) : 
   forall td ta tb, (Sum_t td te = Sum_t ta tb) -> Sum_t ta tc ->> Sum_t td te.
   intros tc te x22.
@@ -303,6 +305,7 @@ Definition xmatch_inl_id_inr tc te (x22:tc->>te) :
   ) ; injection H ; intros ; subst ; auto.
 Defined.
 
+(** Used below in the eta-reduction for sums. *)
 Definition xmatch_inl_id t1 t2 (x2:t1->>t2) : 
   forall ta tb, t2 = Sum_t ta tb -> Sum_t ta t1 ->> t2 := 
   match x2 in t1->>t2 return 
@@ -314,8 +317,8 @@ Definition xmatch_inl_id t1 t2 (x2:t1->>t2) :
         (eq_sym H)
   end.
 
-(** This function and the two implement 
-   (match x with inl a => inl a | inr b => inr b end) = id. *)
+(** This function and the two above implement the reduction
+    [match x with inl a => inl a | inr b => inr b end = id]. *)
 Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : Sum_t ta tb ->> tc :=
   match x1 in ta->>tc return tb->>tc -> Sum_t ta tb ->> tc with
     | Xinl t1 t2 t3 x11 => 
@@ -327,6 +330,7 @@ Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : Sum_t ta tb ->> tc :=
     | x1' => Xmatch x1'
   end x2.
 
+(** Correctness of eta-reduction for sums. *)
 Lemma xmatch_corr ta tb tc (x1:ta->>tc) (x2:tb->>tc) v : 
   xinterp (xmatch x1 x2) v = xinterp (Xmatch x1 x2) v.
 Proof.
@@ -335,7 +339,10 @@ Proof.
   dependent destruction x2 ; auto.
 Qed.
 
-(*  (f1, f2) o id = (f1, f2)
+(** These next few functions implement specific reductions for when a particular
+    combinator is composed with another.  Together, they implement the cut
+    elimination for the sequent language. *)
+(** (f1, f2) o id = (f1, f2)
     (f1, f2) o (char c) = char c
     (f1, f2) o unit = unit
     (f1, f2) o empty = empty
@@ -359,6 +366,7 @@ Definition xcomp_pair t21 t22 (x2:t21 ->> t22) :
           Xcomp (Xpair x11 x12) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
+(** [xcomp_pair] is correct. *)
 Lemma xcomp_pair_corr t21 t22 (x2:t21->>t22) ta tb tc (x11:ta->>tb) (x12:ta->>tc) H v: 
   xinterp (xcomp_pair x2 x11 x12 H) v = 
   xinterp (Xcomp (Xpair x11 x12) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
@@ -367,7 +375,7 @@ Proof.
     rewrite (proof_irrelevance _ H (eq_refl _)) ; auto.
 Qed.
 
-(*   (inr f) o id = inr f
+(**  (inr f) o id = inr f
      (inr f) o (char c) = char c
      (inr f) o unit = unit
      (inr f) o empty = empty
@@ -387,6 +395,7 @@ Definition xcomp_inl t21 t22 (x2:t21 ->> t22) :
         fun ta tb tc x11 H => Xcomp (Xinl _ x11) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
+(** [xcomp_inl] is correct *)
 Lemma xcomp_inl_corr t21 t22 (x2:t21->>t22) ta tb tc (x11:ta->>tb) (H:Sum_t tb tc = t21) v: 
   xinterp (xcomp_inl x2 x11 H) v = 
   xinterp (Xcomp (Xinl _ x11) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
@@ -395,7 +404,7 @@ Proof.
   rewrite (proof_irrelevance _ H (eq_refl _)). auto.
 Qed.
 
-(*   (inl f) o id = inl f
+(**  (inl f) o id = inl f
      (inl f) o (char c) = char c
      (inl f) o unit = unit
      (inl f) o empty = empty
@@ -415,6 +424,7 @@ Definition xcomp_inr t21 t22 (x2:t21 ->> t22) :
         fun ta tb tc x11 H => Xcomp (Xinr _ x11) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
+(** [xcomp_inr] is correct. *)
 Lemma xcomp_inr_corr t21 t22 (x2:t21->>t22) ta tb tc (x11:ta->>tc) (H:Sum_t tb tc = t21) v: 
   xinterp (xcomp_inr x2 x11 H) v = 
   xinterp (Xcomp (Xinr _ x11) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
@@ -423,7 +433,7 @@ Proof.
   rewrite (proof_irrelevance _ H (eq_refl _)). auto.
 Qed.
 
-(*   (map f) o id = map f
+(**  (map f) o id = map f
      (map f) o (char c) = char c
      (map f) o unit = unit
      (map f) o empty = empty
@@ -444,6 +454,7 @@ Definition xcomp_map t21 t22 (x2:t21 ->> t22) :
           fun ta tb x11 H => Xcomp (Xmap x11) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
+(** [xcomp_map] is correct. *)
 Lemma xcomp_map_corr t21 t22 (x2:t21->>t22) ta tb (x11:ta->>tb) (H:List_t tb = t21) v : 
   xinterp (xcomp_map x2 x11 H) v = 
   xinterp (Xcomp (Xmap x11) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
@@ -453,7 +464,7 @@ Proof.
   unfold xcoerce. unfold eq_rec_r. simpl. rewrite map_map. auto.
 Qed.
 
-(*  empty o id = id
+(** empty o id = id
     empty o (char c) = char c
     empty o unit = unit
     empty o empty = empty
@@ -470,6 +481,7 @@ Definition xcomp_empty t21 t22 (x2:t21 ->> t22) :
       | x2' => fun ta tb H => Xcomp (Xempty _ _) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
+(** [xcomp_empty] is correct. *)
 Lemma xcomp_empty_corr t21 t22 (x2:t21->>t22) ta tb (H:List_t tb = t21) v : 
   xinterp (xcomp_empty x2 ta H) v = 
   xinterp (Xcomp (Xempty _ _) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
@@ -478,7 +490,7 @@ Proof.
   rewrite (proof_irrelevance _ H (eq_refl _)). auto.
 Qed.
 
-(*  (cons f1 f2) o id = (cons f1 f2)
+(** (cons f1 f2) o id = (cons f1 f2)
     (cons f1 f2) o (char c) = char c
     (cons f1 f2) o unit = unit
     (cons f1 f2) o empty = empty
@@ -499,6 +511,7 @@ Definition xcomp_cons t21 t22 (x2:t21 ->> t22) :
         Xcomp (Xcons x11 x21) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
+(** [xcomp_cons] is correct. *)
 Lemma xcomp_cons_corr t21 t22 (x2:t21->>t22) ta tb (x11:ta->>tb) (x12:ta->>List_t tb) H v: 
   xinterp (xcomp_cons x2 x11 x12 H) v = xinterp (Xcomp (Xcons x11 x12) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
 Proof.
@@ -507,7 +520,7 @@ Proof.
   unfold xcoerce. unfold eq_rec_r. simpl. auto.
 Qed.
 
-(* Cut eliminations on the right here:
+(** Cut eliminations on the right here:
      f o id = f
      f o (char c) = char c
      f o unit = unit
@@ -522,17 +535,18 @@ Definition xcomp_r t21 t22 (x2:t21 ->> t22) : forall t11, t11 ->> t21 -> t11 ->>
     | x2' => fun t1 x1 => Xcomp x1 x2'
   end.
 
+(** [xcomp_r] is correct. *)
 Lemma xcomp_r_corr t21 t22 (x2:t21->>t22) t11 (x1:t11->>t21) v : 
   xinterp (xcomp_r x2 x1) v = xinterp (Xcomp x1 x2) v.
 Proof.
   induction x2 ; simpl ; intros ; auto.
 Qed.
 
-(* Cut eliminations on the left here:
+(** Cut elimination:
      id o f = f
      zero o f = zero
      (f1 o f2) o f3 = f1 o (f2 o f3)
-     plus the above
+     plus the reductions in the functions above
 *)
 Fixpoint xcomp t11 t12 (x1:t11 ->> t12) : forall t22, t12 ->> t22 -> t11 ->> t22 := 
     match x1 in t11 ->> t12 return forall t22, t12 ->> t22 -> t11 ->> t22 with
@@ -550,6 +564,7 @@ Fixpoint xcomp t11 t12 (x1:t11 ->> t12) : forall t22, t12 ->> t22 -> t11 ->> t22
       | x1' => fun t22 x2 => xcomp_r x2 x1'
     end.
 
+(** [xcomp] (cut elimination) is correct. *)
 Lemma xcomp_corr t1 t2 (x1:t1->>t2) t3 (x2:t2->>t3) v : 
   xinterp (xcomp x1 x2) v = xinterp (Xcomp x1 x2) v.
 Proof.
@@ -564,13 +579,11 @@ Proof.
   apply xcomp_inr_corr. apply xcomp_cons_corr. apply xcomp_map_corr.
 Qed.
 
+(** Optimize an [xform].  Most of the reductions are in the
+    [Xcomp] (composition) case, though there are a couple of
+    eta reductions for [Xpair] and [Xmatch] respectively. *)
 Fixpoint xopt t1 t2 (x:t1 ->> t2) : t1 ->> t2 := 
   match x with
-    (* We basically restrict attention to the pair case, where we can possibly
-       do an eta-reduction and the composition case, where we can do cut elimination. 
-       There are other reductions to do (e.g., eta on sums) but this is really hard
-       to code up.
-    *)
     | Xpair ta tb tc x1 x2 => xpair (xopt x1) (xopt x2)
     | Xmatch ta tb tc x1 x2 => xmatch (xopt x1) (xopt x2)
     | Xcomp ta tb tc x1 x2 => xcomp (xopt x1) (xopt x2)
@@ -583,6 +596,7 @@ Fixpoint xopt t1 t2 (x:t1 ->> t2) : t1 ->> t2 :=
     | x' => x'
   end.
 
+(** [xopt] is correct. *)
 Lemma xopt_corr t1 t2 (x:t1 ->> t2) : xinterp (xopt x) = xinterp x.
 Proof.
   induction x ; simpl ; intros ; auto ; try (rewrite <- IHx ; auto) ; 
@@ -662,6 +676,7 @@ Definition OptXform' t1 (g:grammar t1) : forall t2, t1->>t2 -> grammar t2 :=
 
 Definition OptXform t1 t2 (x:t1->>t2) (g:grammar t1) := @OptXform' t1 g t2 x.
 
+(** Generic simplification tactic. *)
 Ltac mysimp := 
   simpl in * ; intros ; 
     repeat 
@@ -682,6 +697,9 @@ Ltac mysimp :=
         | _ => idtac
       end ; auto.
 
+(** Explicit inversion principles for the grammars -- needed because
+    of typing dependencies, though a little awkward that we can't just
+    use [dependent inversion] to solve them. *)
 Lemma EpsInv : forall cs v, in_grammar Eps cs v -> cs = nil /\ v = tt.
   intros. inversion H ; mysimp.
 Qed.
@@ -728,6 +746,9 @@ Proof.
   intros ; inversion H ; mysimp. exists v1. auto.
 Qed.
 
+(** Tactic for invoking inversion principles on a proof that some string
+    and value are in the denotation of a grammar.  We don't unroll the 
+    [Star] case because that would loop. *)
 Ltac in_inv := 
   repeat 
     match goal with 
@@ -742,6 +763,7 @@ Ltac in_inv :=
       | _ => mysimp ; subst ; eauto
     end.
 
+(** Correctness proofs for the optimizing grammar constructors. *)
 Lemma opt_alt_corr : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s v, 
     in_grammar (Alt g1 g2) s v <-> in_grammar (OptAlt g1 g2) s v.
 Proof.
@@ -774,7 +796,9 @@ Proof.
   eapply InXform ; eauto ; rewrite xcomp_corr ;auto.
 Qed.
 
-(** Returns [Eps] if [g] accepts the empty string, and [Zero] otherwise. *)
+(** Conceptually, returns [Eps] if [g] accepts the empty string, and 
+    [Zero] otherwise.  In practice, we won't get exactly [Eps] since
+    we could have [Map]s, [Xform]s, etc. in there. *)
 Fixpoint null t (g:grammar t) : grammar t := 
   match g in grammar t' return grammar t' with
     | Zero t => Zero t
@@ -789,7 +813,7 @@ Fixpoint null t (g:grammar t) : grammar t :=
   end.
 
 (** Computes the derivative of [g] with respect to [c]. Denotationally,
-    this is { s | c::s in denote[g] }. *)
+    this is { (s,v) | (c::s,v) in_grammar[g] }. *)
 Fixpoint deriv t (g:grammar t) (c:char_p) : grammar t := 
   match g in grammar t' return grammar t' with
     | Zero t => Zero t
@@ -840,7 +864,7 @@ Fixpoint astgram_type (pg : astgram) : type :=
     | aStar pg => List_t (astgram_type pg)
   end.
 
-(** Semantics of [astgram]s. *)
+(** Semantics of [astgram]s -- same as for grammars. *)
 Inductive in_astgram : forall (a:astgram), list char_p -> interp (astgram_type a) -> Prop :=
 | InaEps : forall s v, s = nil -> v = tt -> in_astgram aEps s v
 | InaChar : forall c s v, s = c::nil -> v = c -> in_astgram (aChar c) s v
@@ -866,7 +890,7 @@ Implicit Arguments ag_and_fn [t].
 
 (** Split a [grammar] into a simplified [astgram] (with no maps) and a top-level fix-up
     function that can turn the results of the [astgram] back into the user-specified 
-    values.  Notice that the resulting astgram has no Map inside of it. *)
+    values.  Notice that the resulting astgram has no [Map] or [Xform] inside of it. *)
 Fixpoint split_astgram t (g:grammar t) : { ag : astgram & fixfn ag t} := 
   match g in grammar t' return { ag : astgram & fixfn ag t'} with
     | Eps => ag_and_fn aEps (fun x => x)
@@ -897,7 +921,7 @@ Fixpoint split_astgram t (g:grammar t) : { ag : astgram & fixfn ag t} :=
         ag_and_fn ag (fun x => (xinterp f) (f2 x))
   end.
 
-(** Correctness of [split_astgram] *)
+(** Inversion principles for [astgram]s. *)
 Lemma inv_aeps : forall s v, in_astgram aEps s v -> s = nil /\ v = tt.
   intros. inversion H. mysimp.
 Qed.
@@ -924,6 +948,7 @@ Lemma inv_azero : forall s v, in_astgram aZero s v -> False.
   intros. inversion H.
 Qed.
 
+(** Inversion tactic for [astgram]. *)
 Ltac ainv := 
   match goal with 
     | [ H: in_astgram aZero _ _ |- _ ] => contradiction (inv_azero H)
@@ -954,7 +979,7 @@ Ltac ainv :=
     | _ => subst ; eauto
   end.
 
-(** This direction is a little easier. *)
+(** Correctness of [split_astgram] part 1:  This direction is a little easier. *)
 Lemma split_astgram_corr1 t (g:grammar t) : 
   let (ag,f) := split_astgram g in 
     forall s v, in_astgram ag s v -> in_grammar g s (f v).
@@ -964,7 +989,8 @@ Proof.
    eapply InStar_cons. eapply IHg. eauto. eapply IHin_astgram2 ; eauto. auto. auto. auto.
 Qed.
 
-(** This direction requires a quantifier so is a little harder. *)
+(** Correctness of [split_astgram] part 2:  This direction requires a quantifier 
+    so is a little harder. *)
 Lemma split_astgram_corr2 t (g:grammar t) : 
   let (ag, f) := split_astgram g in 
     forall s v, in_grammar g s v -> exists v', in_astgram ag s v' /\ v = f v'.
@@ -983,6 +1009,11 @@ Proof.
 Qed.
 
 (** * Optimizing [astgram]'s coupled with an [xform]. *)
+(** Below, we often end up manipulating a pair of an [astgram] and an [xform].
+    that maps us from the type of [astgram] to some other type [t].  In particular,
+    various optimizations on [astgrams] require us to generate a "fix-up" function,
+    which we express as an [xform].  In turn, those [xform]s can be optimized using
+    the definitions above. *)
 
 Definition agxf' (t:type) (ag:astgram) (f:astgram_type ag ->> t) : 
   {ag : astgram & astgram_type ag ->> t} := existT _ ag f.
@@ -1049,7 +1080,7 @@ Definition agxf (t:type) (ag:astgram) (f:astgram_type ag ->> t) :=
 
 (** Compute the "null" of an [astgram].  Formally, if [null_and_split ag = (ag', f)], 
     then [in_astgram ag nil v] iff there is a [v'] such that [in_astgram ag' nil v'] and
-    [v = f v'].   So this is computing a grammar that maps the empty string to a
+    [v = f v'].   So this is computing a grammar that maps the empty string to 
     the same set of values as the original grammar, but rejects all other strings. *)
 Fixpoint null_and_split (ag1:astgram):{ag2:astgram & astgram_type ag2->>astgram_type ag1}:=
   match ag1 return {ag2:astgram & astgram_type ag2->>astgram_type ag1} with
@@ -1102,7 +1133,7 @@ Definition cross_prod t1 t2 (xs:list t1) (ys:list t2) : list (t1 * t2) :=
   flatten (List.map (fun x => List.map (fun y => (x,y)) ys) xs).
 
 (** This function computes the list of all values v, such that 
-    [in_astgram s v] holds. *)
+    [in_astgram nil v] holds. *)
 Fixpoint astgram_extract_nil (ag:astgram) : list (interp (astgram_type ag)) := 
   match ag return list (interp (astgram_type ag)) with
     | aEps => tt::nil
@@ -1137,7 +1168,8 @@ Definition parse t (g:grammar t) (cs : list char_p) : list (interp t) :=
     let (agfinal, xfinal) := derivs_and_split ag cs in 
     List.map (fun x => fuser (xinterp xfinal x)) (astgram_extract_nil agfinal).
 
-(** * Construction of a table for table-based parsing *)
+(** * Construction of a deterministic-finite-state automata (really transducer)
+      for table-based parsing *)
 Section DFA.
 
   Definition states_t := list astgram.
@@ -1160,13 +1192,15 @@ Section DFA.
      of states [n].  Each state corresponds to an astgrammar, and in particular
      dfa_states[0] corresponds to the original grammar, and each other state
      corresponds to the derivative of dfa_states[0] with respect to some string
-     of tokens t1,...,tn.  We transition from states usnig the transition table.
+     of tokens t1,...,tn.  We transition from states using the transition table.
      In particular, if we are in state i, given input token [t], we compute
-     our next state as fst(transition[i][t]).  The xform in snd(transition[i][t])
-     says how to transform AST values extracted from fst(transition[i][t]) to 
+     our next state as next_state of transition[i][t].  The next_xform in transition[i][t]
+     says how to transform AST values extracted from next_state(transition[i][t]) 
      to the type of AST values in states[i].  The accept and rejects rows 
      record whether there is any "null" value that can be extracted from the 
      current state.  
+     
+     The right thing to do is really convert this to finite maps...
      *)
   Record DFA := {
     dfa_num_states : nat ; 
@@ -1205,16 +1239,18 @@ Section DFA.
   Definition find_index (g:astgram) (states:states_t) : option nat := 
     find_index' g 0 states.
 
-  (** Find the index of an [astgram] in the list of [states], and if it's not
-     present, add it to the end of the list. *)
+  (** Find the index of an [astgram] in the list of [states].  We return
+     a delta to add to the states in case the [astgram] is not there and
+     we need to add it. *)
   Definition find_or_add (g:astgram) (states:states_t) : states_t * nat := 
     match find_index g states with 
       | None => ((g::nil), length states)
       | Some i => (nil, i)
     end.
 
-  Lemma nth_lt : forall xs ys n, 
-    n < length xs -> (xs ++ ys).[n] = xs.[n].
+  (** Various helper lemmas regarding [nth] and [nth_error] -- these
+      should probably be put in another file. *)
+  Lemma nth_lt : forall xs ys n, n < length xs -> (xs ++ ys).[n] = xs.[n].
   Proof.
     induction xs ; mysimp. assert False. omega. contradiction. 
     destruct n. auto. apply IHxs. omega.
@@ -1234,6 +1270,56 @@ Section DFA.
     rewrite H0. auto.
   Qed.
 
+  Lemma nth_error_some n s r : nth_error s n = Some r -> s.[n] = r.
+    induction n ; simpl ; intros ; destruct s. discriminate. injection H.
+    intros ; subst. auto. discriminate. simpl. apply IHn. auto.
+  Qed.
+
+  Lemma nth_error_some_lt A n s (r:A) : nth_error s n = Some r -> n < length s.
+    induction n; simpl ; destruct s ; simpl ; intros ; try discriminate ; 
+      injection H ; intros ; subst. auto with arith. specialize (IHn _ _ H).
+      auto with arith.
+  Qed.
+
+  Definition app_length_lt A n (s1 s2:list A) : n < length s1 -> n < length (s1 ++ s2).
+    intros. rewrite app_length. omega.
+  Qed.
+
+  Lemma nth_error_none A (s:list A) n : nth_error s n = None -> n >= length s.
+  Proof.
+    induction s ; destruct n ; simpl ; intros ; auto with arith. discriminate.
+    specialize (IHs _ H). omega.
+  Qed.
+
+  Lemma nth_error_lt A n (xs:list A) : n < length xs -> exists r, nth_error xs n = Some r.
+  Proof.
+    induction n ; simpl; intros. destruct xs. assert False. simpl in *. omega. 
+    contradiction. exists a. auto. destruct xs. simpl in H. assert False. omega.
+    contradiction. simpl in H. eapply IHn. omega.
+  Qed.
+
+  Lemma nth_error_gt A n (xs:list A) : n >= length xs -> nth_error xs n = None.
+    induction n ; simpl ; intros ; destruct xs ; simpl in * ; auto.
+    assert False. omega. contradiction. apply IHn. omega.
+  Qed.
+
+  Lemma nth_error_lt_app A n (xs ys:list A) : n < length xs -> 
+    nth_error (xs ++ ys) n = nth_error xs n.
+  Proof.
+    induction n ; destruct xs ; simpl ; intros ; 
+      try (assert False ; [ omega | contradiction ]). auto. apply IHn. omega.
+  Qed.
+
+  Lemma nth_error_app_gt A n (xs ys:list A) : n >= length xs -> 
+    nth_error (xs ++ ys) n = nth_error ys (n - (length xs)).
+  Proof.
+    induction n ; destruct xs ; simpl ; auto. intros. assert False. omega.
+    contradiction. intros. apply IHn. omega.
+  Qed.
+  (** End helper lemmas. *)
+
+
+  (** Simple facts about [find_index] and [find_or_add_index]. *)
   Lemma find_index'_mono g s j n : find_index' g j s = Some n -> n >= j.
     induction s ; simpl ; intros. discriminate. destruct (astgram_dec g a). 
     injection H ; intros ; subst ; auto. specialize (IHs _ _ H). omega.
@@ -1264,12 +1350,44 @@ Section DFA.
     apply (find_index_some g'). auto.
   Qed.
 
+  (** Returns [true] iff the [astgram] accepts the empty string. *)
+  Fixpoint accepts_null (g:astgram) : bool := 
+    match g with 
+      | aEps => true
+      | aChar _ => false
+      | aAny => false
+      | aZero => false
+      | aAlt g1 g2 => accepts_null g1 || accepts_null g2
+      | aCat g1 g2 => accepts_null g1 && accepts_null g2
+      | aStar _ => true
+    end.
+
+  (** Build a map saying which states are accepting states *)
+  Definition build_accept_table (s:states_t) : list bool := 
+    List.map accepts_null s.
+
+  (** Returns [false] iff the [astgram] rejects all strings. *)
+  Fixpoint always_rejects (g:astgram) : bool := 
+    match g with 
+      | aEps => false
+      | aChar _ => false
+      | aAny => false
+      | aZero => true
+      | aAlt g1 g2 => always_rejects g1 && always_rejects g2
+      | aCat g1 g2 => always_rejects g1 || always_rejects g2
+      | aStar _ => false
+    end.
+
+  (** Build a map saying which states are rejecting states *)
+  Definition build_reject_table (s:states_t) : list bool := 
+    List.map always_rejects s.
+
+  (** Generate the transition matrix row for the state corresponding to the
+      astgram [g].  In general, this will add new states. *)
   Section GENROW.
     Variable g : astgram.
     Variable gpos : nat.
 
-  (** Generate the transition matrix row for the state corresponding to the
-     astgram [g].  In general, this will add new states. *)
     Definition gen_row' 
       (n:nat) (s:states_t) (tid:token_id) (H:s.[gpos] = g) (H1:gpos < length s): 
       { s' : states_t & row_t gpos (s ++ s') }.
@@ -1302,21 +1420,9 @@ Section DFA.
       gen_row' num_tokens s 0 H H1.
   End GENROW.
 
-  Lemma nth_error_some n s r : nth_error s n = Some r -> s.[n] = r.
-    induction n ; simpl ; intros ; destruct s. discriminate. injection H.
-    intros ; subst. auto. discriminate. simpl. apply IHn. auto.
-  Qed.
-
-  Lemma nth_error_some_lt A n s (r:A) : nth_error s n = Some r -> n < length s.
-    induction n; simpl ; destruct s ; simpl ; intros ; try discriminate ; 
-      injection H ; intros ; subst. auto with arith. specialize (IHn _ _ H).
-      auto with arith.
-  Qed.
-
-  Definition app_length_lt A n (s1 s2:list A) : n < length s1 -> n < length (s1 ++ s2).
-    intros. rewrite app_length. omega.
-  Qed.
-
+  (** We build some entries in the transition matrix before we've discovered
+      all of the states.  So we have to coerce these entries to work with the
+      bigger set of states, which unfortunately, isn't just done at the top-level. *)
   Definition coerce_entry r s s1 (H:r < length s) (e:entry_t r s) : entry_t r (s ++ s1).
     intros.
     refine (
@@ -1340,7 +1446,9 @@ Section DFA.
      if so, we are done.  Otherwise, we generate the transition row for the
      derivative at the position [next_state], add it to the list of rows, and
      then move on to the next position in the list of states.  Note that when 
-     we generate the transition row, we may end up adding new states.  
+     we generate the transition row, we may end up adding new states.  So we 
+     have to go back and coerce the earlier transition entries to be compatible
+     with those additional states.  
 
      Technically, we should prove termination using ideas from Brzowski (sp?).
      I think the essence of this is that at each step, we are either reducing
@@ -1370,41 +1478,8 @@ Section DFA.
   (** We start with the initial [astgram] in state 0 and then try to close off the table. *)
   Definition build_transition_table n (r:astgram) := @build_table n (r::nil) nil 0.
 
-  (** Returns [true] iff the [astgram] accepts the empty string. *)
-  Fixpoint accepts_null (g:astgram) : bool := 
-    match g with 
-      | aEps => true
-      | aChar _ => false
-      | aAny => false
-      | aZero => false
-      | aAlt g1 g2 => accepts_null g1 || accepts_null g2
-      | aCat g1 g2 => accepts_null g1 && accepts_null g2
-      | aStar _ => true
-    end.
-
-  Definition build_accept_table (s:states_t) : list bool := 
-    List.map accepts_null s.
-
-  Fixpoint always_rejects (g:astgram) : bool := 
-    match g with 
-      | aEps => false
-      | aChar _ => false
-      | aAny => false
-      | aZero => true
-      | aAlt g1 g2 => always_rejects g1 && always_rejects g2
-      | aCat g1 g2 => always_rejects g1 || always_rejects g2
-      | aStar _ => false
-    end.
-
-  Definition build_reject_table (s:states_t) : list bool := 
-    List.map always_rejects s.
-
-  Lemma nth_error_none A (s:list A) n : nth_error s n = None -> n >= length s.
-  Proof.
-    induction s ; destruct n ; simpl ; intros ; auto with arith. discriminate.
-    specialize (IHs _ H). omega.
-  Qed.
-
+  (** When we're done building the table, the number of rows in the transition table
+      is equal to the number of states. *)
   Lemma build_trans_len' n s t i s' t' :
     @build_table n s t i = Some (existT _ s' t') -> 
     length t = i -> i <= length s -> length t' = length s'.
@@ -1426,32 +1501,8 @@ Section DFA.
     intros. eapply build_trans_len'. eapply H. eauto. auto with arith.
   Qed.
 
-  Lemma nth_error_lt A n (xs:list A) : n < length xs -> exists r, nth_error xs n = Some r.
-  Proof.
-    induction n ; simpl; intros. destruct xs. assert False. simpl in *. omega. 
-    contradiction. exists a. auto. destruct xs. simpl in H. assert False. omega.
-    contradiction. simpl in H. eapply IHn. omega.
-  Qed.
-
-  Lemma nth_error_gt A n (xs:list A) : n >= length xs -> nth_error xs n = None.
-    induction n ; simpl ; intros ; destruct xs ; simpl in * ; auto.
-    assert False. omega. contradiction. apply IHn. omega.
-  Qed.
-
-  Lemma nth_error_lt_app A n (xs ys:list A) : n < length xs -> 
-    nth_error (xs ++ ys) n = nth_error xs n.
-  Proof.
-    induction n ; destruct xs ; simpl ; intros ; 
-      try (assert False ; [ omega | contradiction ]). auto. apply IHn. omega.
-  Qed.
-
-  Lemma nth_error_app_gt A n (xs ys:list A) : n >= length xs -> 
-    nth_error (xs ++ ys) n = nth_error ys (n - (length xs)).
-  Proof.
-    induction n ; destruct xs ; simpl ; auto. intros. assert False. omega.
-    contradiction. intros. apply IHn. omega.
-  Qed.
-
+  (** When we build the table, then row number [i] is labelled as having 
+      [row_num] i. *)
   Lemma build_trans_r' n s t i s' t' : 
     @build_table n s t i = Some (existT _ s' t') -> 
     i = length t -> 
@@ -1494,6 +1545,10 @@ Section DFA.
     auto. simpl. auto with arith.
   Qed.
 
+  (** Now we can build the [DFA] using all of the helper functions.  I've
+      only included enough information here to make it possible to run the
+      parser and get something out that's type-correct, but not enough
+      info to prove that the parser is correct. *)
   Definition build_dfa (n:nat) (a:astgram) : option DFA := 
     match build_transition_table n a as p return 
       (build_transition_table n a = p) -> option DFA with
@@ -1518,47 +1573,17 @@ Section DFA.
     intros. generalize (dfa_transition_r d i). rewrite H. intro. rewrite H0. auto.
   Qed.
 
-  Section TABLE_PARSE.
-    Variable d : DFA.
-    Variable t : type.
-
-    Fixpoint table_parse' (i:nat) (ts:list token_id) 
-      (f:astgram_type ((dfa_states d).[i]) ->> t) : 
-      option { a : astgram & ((astgram_type a ->> t) * (list token_id))%type } := 
-        if nth i (dfa_accepts d) false then
-          Some (existT _ ((dfa_states d).[i])  (f, ts))
-        else 
-          match ts with 
-            | nil => None
-            | c::ts' => 
-              match nth_error (dfa_transition d) i as p return 
-                (nth_error (dfa_transition d) i = p) -> _
-                with 
-                | None => fun _ => None (* impossible *)
-                | Some row => 
-                  fun H => 
-                    match nth_error (row_entries row) c as q return 
-                      (nth_error (row_entries row) c = q) -> _
-                      with
-                      | None => fun _ => None (* impossible *)
-                      | Some e => 
-                        fun H' => table_parse' (next_state e) ts' 
-                          (xcomp (next_xform e) (xcoerce f (table_cast _ _ H) (eq_refl _)))
-                    end (eq_refl _)
-              end (eq_refl _)
-          end.
-  End TABLE_PARSE.
-
-   Lemma build_table_zero n s r i s' t' : 
-     @build_table n s r i = Some (existT _ s' t') -> s <> nil -> s.[0] = s'.[0].
-   Proof.
-     induction n ; simpl. intros. discriminate. intros s r i s' t'.
-     generalize (nth_error_some i s) (nth_error_some_lt i s). 
-     remember (nth_error s i). destruct e. Focus 2. intros. injection H ; intros ; subst.
-     mysimp. intros. remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0.
-     specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
-     apply IHn. congruence.
-   Qed.
+  (** If we build a [DFA] from [a], then [a] will be the 0th state in the [DFA]. *)
+  Lemma build_table_zero n s r i s' t' : 
+    @build_table n s r i = Some (existT _ s' t') -> s <> nil -> s.[0] = s'.[0].
+  Proof.
+    induction n ; simpl. intros. discriminate. intros s r i s' t'.
+    generalize (nth_error_some i s) (nth_error_some_lt i s). 
+    remember (nth_error s i). destruct e. Focus 2. intros. injection H ; intros ; subst.
+    mysimp. intros. remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0.
+    specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
+    apply IHn. congruence.
+  Qed.
 
   Lemma build_dfa_zero : 
     forall n ag d, build_dfa n ag = Some d -> (dfa_states d).[0] = ag.
@@ -1572,6 +1597,8 @@ Section DFA.
     intros. apply eq_sym. apply H. congruence.
   Qed.
 
+  (** And thus the type of [dfa_states d.[0]] will be the same as for the original
+      [astgram]. *)
   Lemma dfa_zero_coerce : 
     forall n ag d, build_dfa n ag = Some d -> 
       astgram_type (dfa_states d.[0]) = astgram_type ag.
@@ -1579,6 +1606,58 @@ Section DFA.
     intros. rewrite (build_dfa_zero _ _ H). auto.
   Qed.
 
+  (** Here's one table-based parser, which stops on the first match.
+     It returns the [astgram] corresponding to the final state, an
+     accumulated [xform] that can map us from the type of the [astgram]
+     to the original grammar type [t], and the unconsumed tokens from [ts]. 
+     This would be a whole lot faster if we were using a balanced finite
+     map instead of lists.  But this version models arrays pretty well. 
+  *)
+  Section TABLE_PARSE.
+    Variable d : DFA.
+    Variable t : type.
+
+    Fixpoint table_parse' (i:nat) (ts:list token_id) 
+      (f:astgram_type ((dfa_states d).[i]) ->> t) : 
+      option { a : astgram & ((astgram_type a ->> t) * (list token_id))%type } := 
+        if nth i (dfa_accepts d) false then
+          (* we are in an accepting state -- since this is shortest match, stop here *)
+          Some (existT _ ((dfa_states d).[i])  (f, ts))
+        else 
+          match ts with 
+            | nil => None  (* already determined this state doesn't accept empty string *)
+            | c::ts' => 
+              (* our input token is c -- find the new state by looking up the
+                 transition table row for the current state [i] *)
+              match nth_error (dfa_transition d) i as p return 
+                (nth_error (dfa_transition d) i = p) -> _
+                with 
+                | None => fun _ => None (* impossible *)
+                | Some row => 
+                  fun H => 
+                    (* then look up the entry in column [c] of our row *)
+                    match nth_error (row_entries row) c as q return 
+                      (nth_error (row_entries row) c = q) -> _
+                      with
+                      | None => fun _ => None (* impossible *)
+                      | Some e => 
+                        (* and continue parsing with ts -- note that we have to 
+                           compose the entry [e]'s [xform] with our accumulated
+                           [xform]. *)
+                        fun H' => table_parse' (next_state e) ts' 
+                          (xcomp (next_xform e) (xcoerce f (table_cast _ _ H) (eq_refl _)))
+                    end (eq_refl _)
+              end (eq_refl _)
+          end.
+  End TABLE_PARSE.
+
+  (** At the top-level, we take in a [grammar t], split it into an [astgram] [ag], and 
+      fix-up function [f] that maps ASTs from [ag] into [t] values.  Then we build the
+      [DFA], and then call [table_parse'].  Assuming that returns something, we 
+      then take the resulting state and call [astgram_extract_ni] to get a list of
+      AST values.  We then map the accumulated [xform] over those AST values to get
+      back values of the type specified by [ag].  Finally, we apply the fix-up
+      function [f] to the values to get back a list of [t] values.  *)
   Definition table_parse n t (g:grammar t) (ts:list token_id) : option (list(interp t)) := 
     let (ag, f) := split_astgram g in 
     match build_dfa n ag as d return (build_dfa n ag = d) -> _ with 
