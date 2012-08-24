@@ -76,8 +76,6 @@ Definition debug_register_eq_dec :
   intros ; decide equality.
 Defined.
 
-(*Based on the floating-point instruction paper, page 25.
-http://www-wjp.cs.uni-saarland.de/publikationen/Ba08.pdf *)
 Inductive fp_debug_register : Set := eMF | eDB | eBP | eUD | eNM | eDF | eSS | eGP | ePF | eAC | eMC.
 Definition fp_debug_register_eq_dec : 
   forall (x y: fp_debug_register), {x=y} + {x<>y}.
@@ -89,24 +87,6 @@ Record address : Set := mkAddress {
   addrBase : option register ; 
   addrIndex : option (scale * register)
 }.
-(*
-Record address64 : Set := mkAddress64 {
-  addrDisp64 : int64 ;
-  addrBase64 : option register ;
-  addrIndex64 : option (scale * register)
-}.
-
-Record address80 : Set := mkAddress80 {
-  addrDisp80 : int80 ;
-  addrBase80 : option register ;
-  addrIndex80 : option (scale * register)
-}.
-*)
-(*
-Based on Section 4.2 of text 
-"Floating-Point operands may be x87 registers (fp stack elements), or data residing in
-memory." 
-*)
 
 Inductive fpu_register : Set := ST7 | ST6 | ST5 | ST4 | ST3 | ST2 | ST1 | ST0.
 Definition fpu_register_eq_dec : 
@@ -474,6 +454,4 @@ Record prefix : Set := mkPrefix {
 
 B.3.  MMX instructions
 B.4.  Streaming SIMD instructions
-B.5.  Floating point instructions
-
 *)
