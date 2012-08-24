@@ -9,7 +9,6 @@
    the License, or (at your option) any later version.
 *)
 
-
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 Require ExtrOcamlZBigInt. 
@@ -2654,11 +2653,11 @@ Section X86FloatSemantics.
   Definition int_to_bin64 (i : Word.int size64) : binary64 := b64_of_bits (Word.intval size64 i).
   Definition bin64_to_int (b : binary64) : Word.int size64 := Word.repr (bits_of_b64 b).
 
-  Definition int_to_bin80 (i : Word.int size80) : binary80 := b80_of_bits (Word.intval size80 i).
-  Definition bin80_to_int (b : binary80) : Word.int size80 := Word.repr (bits_of_b80 b).
+  Definition int_to_de_float (i : Word.int size80) : de_float := de_float_of_bits (Word.intval size80 i).
+  Definition de_float_to_int (b : de_float) : Word.int size80 := Word.repr (bits_of_de_float b).
 
-  Definition string_to_bin80 (s : string) := let intval := Word.string_to_int size80 s in int_to_bin80 intval.
-  Definition s2bf (s : string) := string_to_bin80 s.
+  Definition string_to_de_float (s : string) := let intval := Word.string_to_int size80 s in int_to_de_float intval.
+  Definition s2bf (s : string) := string_to_de_float s.
 
   (*These values may not be correct - have to check against C's floating-point constants or something *)
   Definition pos1 :=      s2bf "00111111111111110000000000000000000000000000000000000000000000000000000000000000".
@@ -2671,20 +2670,21 @@ Section X86FloatSemantics.
   Definition ln_2  :=     s2bf "00111111111000000110001011100100001011111110111111111011101100111100000000000000".
   Definition log2_e :=    s2bf "00111111111110000111000101010100011101100101001100110010010001011110000000000000".
 
-  Definition pos1_fl := b80_of_bits 00111111111111110000000000000000000000000000000000000000000000000000000000000000.
-  Definition neg1_fl := b80_of_bits 10111111111111110000000000000000000000000000000000000000000000000000000000000000.
-  Definition pi_fl := b80_of_bits 00000000000000011001001000011111101101010100010001000010110100011000010001101010.
-  Definition e_fl := b80_of_bits 00000000000000010101101111110000101010001011000101000101011101101001010100110110.
-  Definition pos_zero_fl := b80_of_bits 00000000000000000000000000000000000000000000000000000000000000000000000000000000.
-  Definition log2_10_fl := b80_of_bits 01111111111111111010100100110100111100001001011111011000001000110111000000000000.
-  Definition log10_2_fl := b80_of_bits 00111111110100000011010001000001001101010000101010010110000010011000000000000000.
-  Definition ln_2_fl  := b80_of_bits 00111111111000000110001011100100001011111110111111111011101100111100000000000000.
-  Definition log2_e_fl := b80_of_bits 00111111111110000111000101010100011101100101001100110010010001011110000000000000.
+  (* Definition pos1_fl := de_float_of_bits  *)
+  (*   00111111111111110000000000000000000000000000000000000000000000000000000000000000. *)
+  (* Definition neg1_fl := b80_of_bits 10111111111111110000000000000000000000000000000000000000000000000000000000000000. *)
+  (* Definition pi_fl := b80_of_bits 00000000000000011001001000011111101101010100010001000010110100011000010001101010. *)
+  (* Definition e_fl := b80_of_bits 00000000000000010101101111110000101010001011000101000101011101101001010100110110. *)
+  (* Definition pos_zero_fl := b80_of_bits 00000000000000000000000000000000000000000000000000000000000000000000000000000000. *)
+  (* Definition log2_10_fl := b80_of_bits 01111111111111111010100100110100111100001001011111011000001000110111000000000000. *)
+  (* Definition log10_2_fl := b80_of_bits 00111111110100000011010001000001001101010000101010010110000010011000000000000000. *)
+  (* Definition ln_2_fl  := b80_of_bits 00111111111000000110001011100100001011111110111111111011101100111100000000000000. *)
+  (* Definition log2_e_fl := b80_of_bits 00111111111110000111000101010100011101100101001100110010010001011110000000000000. *)
 
-  (* Get normal bin80 representation to determine sign, then make mantissa the val of i and subtract
+  (* Get normal de_float representation to determine sign, then make mantissa the val of i and subtract
      most significant 1 to denormalize, then make exponent the number of significant bits of i. Then combine everything *)
-  Definition integer_to_bin80 (i : Word.int size80) : binary80 := 
-     let bin := int_to_bin80 i in
+  Definition integer_to_de_float (i : Word.int size80) : de_float := 
+     let bin := int_to_de_float i in
      match bin with 
      | B754_zero s => B754_zero _ _ s
      | B754_infinity s => B754_infinity _ _ s
@@ -2694,7 +2694,7 @@ Section X86FloatSemantics.
          let (rec, shifted_m) := shr (Build_shr_record mant_val false false) mant_val 1 in
          let exp_val := Z_of_nat size80 in  (*This probably needs to be replaced with the number of significant bits of i *)
          let joined := join_bits 64 16384 s (shifted_m - 1) exp_val in
-         b80_of_bits joined 
+         de_float_of_bits joined 
      end.
   
   Definition conv_FCLEX :=
@@ -2837,9 +2837,9 @@ Section X86FloatSemantics.
         conv_FDECSTP;;
         let int_val := psreg_to_int val in
         let b32_val := int_to_bin32 int_val in
-        let conv_val := b32_to_b80 b32_val in
+        let conv_val := de_float_of_b32 b32_val in
 
-        let ps_reg_val := int_to_psreg (bin80_to_int conv_val) in
+        let ps_reg_val := int_to_psreg (de_float_to_int conv_val) in
         set_stack_i ps_reg_val topp zero
      | FPM64_op a =>
         addr <- compute_addr a; 
@@ -2847,18 +2847,18 @@ Section X86FloatSemantics.
         conv_FDECSTP;;
         let int_val := psreg_to_int val in
         let b64_val := int_to_bin64 int_val in
-        let conv_val := b64_to_b80 b64_val in
+        let conv_val := de_float_of_b64 b64_val in
 
-        let ps_reg_val := int_to_psreg (bin80_to_int conv_val) in
+        let ps_reg_val := int_to_psreg (de_float_to_int conv_val) in
         set_stack_i ps_reg_val topp zero
      | FPM80_op a =>
         addr <- compute_addr a; 
         val <- load_mem80 DS addr;
         conv_FDECSTP;;
         let int_val := psreg_to_int val in
-        let b80_val := int_to_bin80 int_val in
+        let b80_val := int_to_de_float int_val in
 
-        let ps_reg_val := int_to_psreg (bin80_to_int b80_val) in
+        let ps_reg_val := int_to_psreg (de_float_to_int b80_val) in
         set_stack_i ps_reg_val topp zero
      end.
 
@@ -2875,24 +2875,24 @@ Section X86FloatSemantics.
     | FPM32_op a =>      (*Copy st(0) to memory *)
       addr <- compute_addr a;
       let int_val := psreg_to_int top_val in
-      let b80_val := int_to_bin80 int_val in
-      let conv_val := b80_to_b32 b80_val in
+      let b80_val := int_to_de_float int_val in
+      let conv_val := b32_of_de_float b80_val in
       let psreg_val := int_to_psreg (bin32_to_int conv_val) in
 
       set_mem32 DS psreg_val addr  (*Covers only 32-bit memory case *)
     | FPM64_op a =>
       addr <- compute_addr a;
       let int_val := psreg_to_int top_val in
-      let b64_val := int_to_bin80 int_val in
-      let conv_val := b80_to_b64 b64_val in
+      let f_val := int_to_de_float int_val in
+      let conv_val := b64_of_de_float f_val in
       let psreg_val := int_to_psreg (bin64_to_int conv_val) in
 
       set_mem64 DS psreg_val addr  (*Covers only 32-bit memory case *)
     | FPM80_op a =>
       addr <- compute_addr a;
       let int_val := psreg_to_int top_val in
-      let b80_val := int_to_bin80 int_val in
-      let psreg_val := int_to_psreg (bin80_to_int b80_val) in
+      let b80_val := int_to_de_float int_val in
+      let psreg_val := int_to_psreg (de_float_to_int b80_val) in
 
       set_mem80 DS psreg_val addr  (*Covers only 32-bit memory case *)
     end.
@@ -2904,8 +2904,8 @@ Section X86FloatSemantics.
     update_tag topp empty;;
     conv_FINCSTP.
 
-  Definition conv_load_fpconstant (b: binary80) : Conv unit := 
-     val <- load_int (bin80_to_int b);
+  Definition conv_load_fpconstant (b: de_float) : Conv unit := 
+     val <- load_int (de_float_to_int b);
      onee <- load_Z size3 1;
      top <- get_stacktop;
      decrval <- arith sub_op top onee;
@@ -2930,13 +2930,13 @@ Section X86FloatSemantics.
      stacktop_val <- load_from_stack_i topp zero;
 
      let(st0val) := stacktop_val in
-     let first_val := int_to_bin80 (Word.repr st0val) in
+     let first_val := int_to_de_float (Word.repr st0val) in
 
      let (stIval) := sec in
-     let sec_val := int_to_bin80 (Word.repr stIval) in
+     let sec_val := int_to_de_float (Word.repr stIval) in
        
-     let sum := b80_plus mode_UP first_val sec_val in
-     let sum_int := bin80_to_int sum in 
+     let sum := de_float_plus mode_UP first_val sec_val in
+     let sum_int := de_float_to_int sum in 
      let sum_val := ps_reg size80 (Word.intval size80 sum_int) in
      Return sum_val.  
 
@@ -2946,21 +2946,21 @@ Section X86FloatSemantics.
      stacktop_val <- load_from_stack_i topp zero;
 
      let(st0val) := stacktop_val in
-     let first_val := int_to_bin80 (Word.repr st0val) in
+     let first_val := int_to_de_float (Word.repr st0val) in
 
      let (stIval) := sec in
-     let sec_val := int_to_bin80 (Word.repr stIval) in
+     let sec_val := int_to_de_float (Word.repr stIval) in
        
      match order with 
      | true =>  
-     	let sub := b80_minus mode_UP first_val sec_val in
-     	let sub_int := bin80_to_int sub in 
+     	let sub := de_float_minus mode_UP first_val sec_val in
+     	let sub_int := de_float_to_int sub in 
      	let sub_val := ps_reg size80 (Word.intval size80 sub_int) in
      	Return sub_val
 
      | false =>
-	let sub := b80_minus mode_UP sec_val first_val in
-     	let sub_int := bin80_to_int sub in 
+	let sub := de_float_minus mode_UP sec_val first_val in
+     	let sub_int := de_float_to_int sub in 
      	let sub_val := ps_reg size80 (Word.intval size80 sub_int) in
      	Return sub_val
      end.
@@ -2971,13 +2971,13 @@ Section X86FloatSemantics.
      stacktop_val <- load_from_stack_i topp zero;
 
      let(st0val) := stacktop_val in
-     let first_val := int_to_bin80 (Word.repr st0val) in
+     let first_val := int_to_de_float (Word.repr st0val) in
 
      let (stIval) := sec in
-     let sec_val := int_to_bin80 (Word.repr stIval) in
+     let sec_val := int_to_de_float (Word.repr stIval) in
        
-     let mult := b80_mult mode_UP first_val sec_val in
-     let mult_int := bin80_to_int mult in 
+     let mult := de_float_mult mode_UP first_val sec_val in
+     let mult_int := de_float_to_int mult in 
      let mult_val := ps_reg size80 (Word.intval size80 mult_int) in
      Return mult_val. 
 
@@ -2987,21 +2987,21 @@ Section X86FloatSemantics.
      stacktop_val <- load_from_stack_i topp zero;
 
      let(st0val) := stacktop_val in
-     let first_val := int_to_bin80 (Word.repr st0val) in
+     let first_val := int_to_de_float (Word.repr st0val) in
 
      let (stIval) := sec in
-     let sec_val := int_to_bin80 (Word.repr stIval) in
+     let sec_val := int_to_de_float (Word.repr stIval) in
      
      match order with 
      | true =>  
-     	let div := b80_div mode_UP first_val sec_val in
-     	let div_int := bin80_to_int div in 
+     	let div := de_float_div mode_UP first_val sec_val in
+     	let div_int := de_float_to_int div in 
      	let div_val := ps_reg size80 (Word.intval size80 div_int) in
      	Return div_val
 
      | false =>
-	let div := b80_div mode_UP sec_val first_val in
-     	let div_int := bin80_to_int div in 
+	let div := de_float_div mode_UP sec_val first_val in
+     	let div_int := de_float_to_int div in 
      	let div_val := ps_reg size80 (Word.intval size80 div_int) in
      	Return div_val
      end.
@@ -3012,10 +3012,10 @@ Section X86FloatSemantics.
      stacktop_val <- load_from_stack_i topp zero;
 
      let(st0val) := stacktop_val in
-     let first_val := int_to_bin80 (Word.repr st0val) in
+     let first_val := int_to_de_float (Word.repr st0val) in
        
-     let rt := b80_sqrt mode_UP first_val in
-     let rt_int := bin80_to_int rt in 
+     let rt := de_float_sqrt mode_UP first_val in
+     let rt_int := de_float_to_int rt in 
      let rt_val := ps_reg size80 (Word.intval size80 rt_int) in
      Return rt_val.
 
@@ -3045,8 +3045,8 @@ Section X86FloatSemantics.
 
         let int_val := psreg_to_int val in
         let b32_val := int_to_bin32 int_val in
-        let conv_val := b32_to_b80 b32_val in
-        let ps_reg_sti := int_to_psreg (bin80_to_int conv_val) in
+        let conv_val := de_float_of_b32 b32_val in
+        let ps_reg_sti := int_to_psreg (de_float_to_int conv_val) in
         
         curr_val <- operation ps_reg_sti;
         set_stack_i curr_val topp zero (*add from memory to stacktop *)
@@ -3056,8 +3056,8 @@ Section X86FloatSemantics.
 
         let int_val := psreg_to_int val in
         let b64_val := int_to_bin64 int_val in
-        let conv_val := b64_to_b80 b64_val in
-        let ps_reg_sti := int_to_psreg (bin80_to_int conv_val) in
+        let conv_val := de_float_of_b64 b64_val in
+        let ps_reg_sti := int_to_psreg (de_float_to_int conv_val) in
         
         curr_val <- operation ps_reg_sti;
         set_stack_i curr_val topp zero (*add from memory to stacktop *)
@@ -3089,8 +3089,8 @@ Section X86FloatSemantics.
 
         let int_val := psreg_to_int val in
         let b32_val := int_to_bin32 int_val in
-        let conv_val := b32_to_b80 b32_val in
-        let ps_reg_sti := int_to_psreg (bin80_to_int conv_val) in
+        let conv_val := de_float_of_b32 b32_val in
+        let ps_reg_sti := int_to_psreg (de_float_to_int conv_val) in
         
         curr_val <- operation ps_reg_sti order;
         set_stack_i curr_val topp zero 
@@ -3101,8 +3101,8 @@ Section X86FloatSemantics.
 
         let int_val := psreg_to_int val in
         let b64_val := int_to_bin64 int_val in
-        let conv_val := b64_to_b80 b64_val in
-        let ps_reg_sti := int_to_psreg (bin80_to_int conv_val) in
+        let conv_val := de_float_of_b64 b64_val in
+        let ps_reg_sti := int_to_psreg (de_float_to_int conv_val) in
         
         curr_val <- operation ps_reg_sti order;
         set_stack_i curr_val topp zero
@@ -3157,10 +3157,12 @@ Section X86FloatSemantics.
 *)
 
 (* Floating-point Comparisons *)
-Definition float_compare (a b : binary80) := 
-   let aR := B2R 64 16384 a in
-   let bR := B2R 64 16384 b in
-   Rcompare aR bR.
+(* gtan: cannot use Rcompare here, no Ocaml code can be extracted *)
+
+(* Definition float_compare (a b : binary80) :=  *)
+(*    let aR := B2R 64 16384 a in *)
+(*    let bR := B2R 64 16384 b in *)
+(*    Rcompare aR bR. *)
 
 (* Set appropriate CC flags that indicate the result of the comparison *)
 Definition set_CC_flags (comp : comparison) : Conv unit := 
@@ -3172,68 +3174,68 @@ Definition set_CC_flags (comp : comparison) : Conv unit :=
     | Eq => set_fpu_status C3 onee;; set_fpu_status C2 zero;; set_fpu_status C0 zero
     end.
 
-Definition conv_FCOM (op1: option fp_operand) := 
-     topp <- get_stacktop;
-     zero <- load_Z size3 0;
-     onee <- load_Z size3 1;
-     st0 <- load_from_stack_i topp zero;
-     let (st0val) := st0 in
-     let binst0 := b80_of_bits st0val in
-     match op1 with 
-     | None => (* Compare st(0) to st(1) *)
-	 st1 <- load_from_stack_i topp onee;
-         let (st1val) := st1 in
-         let compval := float_compare binst0 (b80_of_bits st1val) in
-         set_CC_flags compval
+(* Definition conv_FCOM (op1: option fp_operand) :=  *)
+(*      topp <- get_stacktop; *)
+(*      zero <- load_Z size3 0; *)
+(*      onee <- load_Z size3 1; *)
+(*      st0 <- load_from_stack_i topp zero; *)
+(*      let (st0val) := st0 in *)
+(*      let binst0 := b80_of_bits st0val in *)
+(*      match op1 with  *)
+(*      | None => (* Compare st(0) to st(1) *) *)
+(* 	 st1 <- load_from_stack_i topp onee; *)
+(*          let (st1val) := st1 in *)
+(*          let compval := float_compare binst0 (b80_of_bits st1val) in *)
+(*          set_CC_flags compval *)
          	 
-     | Some op1 =>
-	match op1 with
-	| FPS_op r =>
-            stI <- load_fpu_reg (fpu_from_int r topp);
-            let (stIval) := stI in
-            let compval := float_compare binst0 (b80_of_bits stIval) in
-            set_CC_flags compval
+(*      | Some op1 => *)
+(* 	match op1 with *)
+(* 	| FPS_op r => *)
+(*             stI <- load_fpu_reg (fpu_from_int r topp); *)
+(*             let (stIval) := stI in *)
+(*             let compval := float_compare binst0 (b80_of_bits stIval) in *)
+(*             set_CC_flags compval *)
 
-	| FPM32_op adr => 
-            addr <- compute_addr adr; 
-            val <- load_mem32 DS addr;
+(* 	| FPM32_op adr =>  *)
+(*             addr <- compute_addr adr;  *)
+(*             val <- load_mem32 DS addr; *)
 
-            let int_val := psreg_to_int val in
-            let b32_val := int_to_bin32 int_val in
-            let conv_val := b32_to_b80 b32_val in
-            let psreg_stI := int_to_psreg (bin80_to_int conv_val) in
-            let (stIval) := psreg_stI in
-            let compval := float_compare binst0 (b80_of_bits stIval) in
-            set_CC_flags compval
-        | FPM64_op adr =>
-            addr <- compute_addr adr; 
-            val <- load_mem64 DS addr;
+(*             let int_val := psreg_to_int val in *)
+(*             let b32_val := int_to_bin32 int_val in *)
+(*             let conv_val := b32_to_b80 b32_val in *)
+(*             let psreg_stI := int_to_psreg (bin80_to_int conv_val) in *)
+(*             let (stIval) := psreg_stI in *)
+(*             let compval := float_compare binst0 (b80_of_bits stIval) in *)
+(*             set_CC_flags compval *)
+(*         | FPM64_op adr => *)
+(*             addr <- compute_addr adr;  *)
+(*             val <- load_mem64 DS addr; *)
 
-            let int_val := psreg_to_int val in
-            let b64_val := int_to_bin64 int_val in
-            let conv_val := b64_to_b80 b64_val in
-            let psreg_stI := int_to_psreg (bin80_to_int conv_val) in
-            let (stIval) := psreg_stI in
-            let compval := float_compare binst0 (b80_of_bits stIval) in
-            set_CC_flags compval
-	| _ => set_CC_unordered
-	end
-     end.
+(*             let int_val := psreg_to_int val in *)
+(*             let b64_val := int_to_bin64 int_val in *)
+(*             let conv_val := b64_to_b80 b64_val in *)
+(*             let psreg_stI := int_to_psreg (bin80_to_int conv_val) in *)
+(*             let (stIval) := psreg_stI in *)
+(*             let compval := float_compare binst0 (b80_of_bits stIval) in *)
+(*             set_CC_flags compval *)
+(* 	| _ => set_CC_unordered *)
+(* 	end *)
+(*      end. *)
 
-Definition conv_FCOMP (op1 : option fp_operand) := 
-    conv_FCOM op1;;
-    toploc <- get_stacktop;
-    empty <- load_Z size2 3;
-    update_tag toploc empty;;
-    conv_FINCSTP.
+(* Definition conv_FCOMP (op1 : option fp_operand) :=  *)
+(*     conv_FCOM op1;; *)
+(*     toploc <- get_stacktop; *)
+(*     empty <- load_Z size2 3; *)
+(*     update_tag toploc empty;; *)
+(*     conv_FINCSTP. *)
 
-Definition conv_FCOMPP := 
-    conv_FCOMP (None);;
+(* Definition conv_FCOMPP :=  *)
+(*     conv_FCOMP (None);; *)
    
-    toploc <- get_stacktop;
-    empty <- load_Z size2 3;
-    update_tag toploc empty;;
-    conv_FINCSTP.
+(*     toploc <- get_stacktop; *)
+(*     empty <- load_Z size2 3; *)
+(*     update_tag toploc empty;; *)
+(*     conv_FINCSTP. *)
 
 End X86FloatSemantics.
 
@@ -3324,9 +3326,9 @@ End X86FloatSemantics.
          | FBSTP op1 => conv_FBSTP pre op1
          | FCHS => conv_FCHS
          | FCLEX => conv_FCLEX      *)
-         | FCOM op1 => conv_FCOM op1
-         | FCOMP op1 => conv_FCOMP op1
-         | FCOMPP => conv_FCOMPP
+         (* | FCOM op1 => conv_FCOM op1 *)
+         (* | FCOMP op1 => conv_FCOMP op1 *)
+         (* | FCOMPP => conv_FCOMPP *)
    (*      | FCOMIP op1 => conv_FCOMIP pre op1
          | FCOS => conv_FCOS       *)
          | FDECSTP => conv_FDECSTP
@@ -3527,5 +3529,3 @@ Notation "m1 ==> m2" := (step_immed m1 m2).
 Require Import Relation_Operators.
 Definition steps := clos_refl_trans rtl_state step_immed.
 Notation "m1 '==>*' m2" := (steps m1 m2) (at level 55, m2 at next level).
-
-
