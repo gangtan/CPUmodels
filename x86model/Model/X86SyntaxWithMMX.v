@@ -76,8 +76,6 @@ Definition debug_register_eq_dec :
   intros ; decide equality.
 Defined.
 
-(*Based on the floating-point instruction paper, page 25.
-http://www-wjp.cs.uni-saarland.de/publikationen/Ba08.pdf *)
 Inductive fp_debug_register : Set := eMF | eDB | eBP | eUD | eNM | eDF | eSS | eGP | ePF | eAC | eMC.
 Definition fp_debug_register_eq_dec : 
   forall (x y: fp_debug_register), {x=y} + {x<>y}.
@@ -89,19 +87,6 @@ Record address : Set := mkAddress {
   addrBase : option register ; 
   addrIndex : option (scale * register)
 }.
-(*
-Record address64 : Set := mkAddress64 {
-  addrDisp64 : int64 ;
-  addrBase64 : option register ;
-  addrIndex64 : option (scale * register)
-}.
-
-Record address80 : Set := mkAddress80 {
-  addrDisp80 : int80 ;
-  addrBase80 : option register ;
-  addrIndex80 : option (scale * register)
-}.
-*)
 (*
 Based on Section 4.2 of manual 
 "Floating-Point operands may be x87 registers (fp stack elements), or data residing in
@@ -179,8 +164,8 @@ Definition Z_to_mmx_register (n:Z) :=
 Inductive mmx_operand : Set := 
 | GP_Reg_op : register -> mmx_operand
 | MMX_Addr_op : address -> mmx_operand
-| MMX_Reg_op : mmx_register -> mmx_operand. 
-| MMX_Imm_op : int32 -> mmx_operand
+| MMX_Reg_op : mmx_register -> mmx_operand
+| MMX_Imm_op : int32 -> mmx_operand.
 
 Inductive fp_operand : Set := 
 | FPS_op : int3 -> fp_operand 	    (*an index from 0 to 7 relative to stack top *)
@@ -284,7 +269,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | F2XM1 : instr
 | FABS : instr
 | FADD : forall (d: bool)(op1: fp_operand), instr
-| FADDP : forall (op1: option fp_operand), instr
+| FADDP : forall (op1: fp_operand), instr
 | FBLD : forall (op1: fp_operand), instr
 | FBSTP : forall (op1: fp_operand), instr
 | FCHS : instr
@@ -297,7 +282,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FDECSTP : instr
 (** op1 <- op1 / op2 *)
 | FDIV : forall (op1 op2:fp_operand), instr
-| FDIVP : forall (op1: option fp_operand), instr
+| FDIVP : forall (op1: fp_operand), instr
 (** reverse divide: op1 <- op2 / op1 *)
 | FDIVR : forall (op1 op2: fp_operand), instr
 | FDIVRP : forall (op1: fp_operand), instr
@@ -326,8 +311,9 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FLDPI : instr
 | FLDZ : instr
 | FMUL : forall (d: bool) (op1: fp_operand), instr
-| FMULP : forall (op1: option fp_operand), instr
+| FMULP : forall (op1: fp_operand), instr
 | FNOP : instr
+| FNSTCW : forall (op1 : fp_operand), instr
 | FPATAN : instr
 | FPREM : instr
 | FPREM1 : instr
@@ -346,7 +332,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FSTSW : forall(op1: option fp_operand), instr
   (* op1 <- op1 - op2 *)
 | FSUB : forall (op1 op2 : fp_operand), instr
-| FSUBP : forall (op1: option fp_operand), instr
+| FSUBP : forall (op1: fp_operand), instr
   (* reverse subtraction op1 <- op2 - op1 *)
 | FSUBR : forall (op1 op2 : fp_operand), instr
 | FSUBRP : forall (op1: fp_operand), instr
@@ -375,8 +361,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | PADDUS : forall (gg: bool) (op1 op2: mmx_operand), instr
 | PAND : forall  (op1 op2 : mmx_operand), instr
 | PANDN : forall  (op1 op2 : mmx_operand), instr
-| PCMPEQ : forall  (op1 op2 : mmx_operand), instr
-| PCMPGT : forall  (op1 op2 : mmx_operand), instr
+| PCMPEQ : forall  (gg: bool) (op1 op2 : mmx_operand), instr
+| PCMPGT : forall  (gg: bool) (op1 op2 : mmx_operand), instr
 | PMADDWD : forall  (op1 op2 : mmx_operand), instr
 | PMULHUW : forall  (op1 op2 : mmx_operand), instr
 | PMULHW : forall  (op1 op2 : mmx_operand), instr
@@ -517,6 +503,5 @@ Record prefix : Set := mkPrefix {
 
 B.3.  MMX instructions
 B.4.  Streaming SIMD instructions
-B.5.  Floating point instructions
 
 *)
