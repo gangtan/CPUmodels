@@ -27,6 +27,8 @@ The script ./fuzzer.sh glues everything together. Here's what it does
 - Runs gcc on test.c, linking it with this fuzz.obj file, to produce
   test.out
 
+NOTE: If you are using an x86-64 environment, use ./fuzzer64.sh instead.
+
 The behavior of filter.c is a little subtle and is documented in the source for
 it. test.c is a little C program that has a declared external function pointer
 _binary_fuzz_hex_start. All it does in main() is just call this function

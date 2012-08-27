@@ -3,7 +3,6 @@ open Datatypes
 open List0
 open Peano
 open Peano_dec
-open Specif
 
 type __ = Obj.t
 
@@ -339,13 +338,13 @@ module Parser =
   
   type fn_result_m = result_m -> result_m
   
-  type ctxt_t = (result * result, fn_result_m) sigT list
+  type ctxt_t = ((result * result)*fn_result_m) list
   
   (** val fn_result' : ctxt_t -> fn_name -> (result * result) option **)
   
   let fn_result' g n =
     match nth_error g n with
-    | Some s -> let Coq_existT (p, f) = s in Some p
+    | Some s -> let p,f = s in Some p
     | None -> None
   
   type void = unit (* empty inductive *)
@@ -369,7 +368,7 @@ module Parser =
       (fun _ ->
       match g with
       | [] -> assert false (* absurd case *)
-      | s :: l -> let Coq_existT (p, f) = s in Obj.magic f)
+      | s :: l -> let p,f = s in Obj.magic f)
       (fun m ->
       match g with
       | [] -> assert false (* absurd case *)
@@ -903,29 +902,25 @@ module Parser =
     | None -> None
   
   (** val dfa_loop :
-      coq_DFA -> Big.big_int -> (Big.big_int * token_id list) option ->
-      Big.big_int -> token_id list -> (Big.big_int * token_id list) option **)
+      Big.big_int -> coq_DFA -> Big.big_int -> Big.big_int -> token_id list
+      -> (Big.big_int * token_id list) option **)
   
-  let rec dfa_loop d state last_accept count ts =
-    let last_accept' =
-      if nth state (dfa_accepts d) true
-      then Some (count, ts)
-      else last_accept
-    in
-    (match ts with
-     | [] -> last_accept'
-     | t :: ts' ->
-       let row = nth state (dfa_transition d) [] in
-       let new_state = nth t row Big.zero in
-       if nth new_state (dfa_rejects d) true
-       then last_accept'
-       else dfa_loop d new_state last_accept' (Big.succ count) ts')
+  let rec dfa_loop num_tokens d state count ts =
+    if nth state (dfa_accepts d) false
+    then Some (count, ts)
+    else (match ts with
+          | [] -> None
+          | t :: ts' ->
+            let row = nth state (dfa_transition d) [] in
+            let new_state = nth t row num_tokens in
+            dfa_loop num_tokens d new_state (Big.succ count) ts')
   
   (** val dfa_recognize :
-      coq_DFA -> token_id list -> (Big.big_int * token_id list) option **)
+      Big.big_int -> coq_DFA -> token_id list -> (Big.big_int * token_id
+      list) option **)
   
-  let dfa_recognize d ts =
-    dfa_loop d Big.zero None Big.zero ts
+  let dfa_recognize num_tokens d ts =
+    dfa_loop num_tokens d Big.zero Big.zero ts
   
   (** val par2rec : result -> coq_parser -> regexp **)
   
@@ -990,163 +985,75 @@ module Parser =
   let forall_tokens num_tokens f =
     enum_tokens f num_tokens
   
-  (** val is_determ :
-      ctxt_t -> Big.big_int -> (token_id -> PA.char_p list) -> Big.big_int ->
-      result -> regexp -> bool **)
-  
-  let rec is_determ fn_ctxt num_tokens token_id_to_chars n t r =
-    Big.nat_case
-      (fun _ ->
-      accepts_at_most_one_null fn_ctxt t r)
-      (fun m ->
-      (&&) (accepts_at_most_one_null fn_ctxt t r)
-        (forall_tokens num_tokens (fun t0 ->
-          is_determ fn_ctxt num_tokens token_id_to_chars m t
-            (deriv_parse' t r (token_id_to_chars t0)))))
-      n
-  
-  (** val fold_token' :
-      (token_id -> 'a1 -> 'a1) -> 'a1 -> Big.big_int -> 'a1 **)
-  
-  let rec fold_token' f a n =
-    Big.nat_case
-      (fun _ ->
-      a)
-      (fun m ->
-      fold_token' f (f m a) m)
-      n
-  
-  (** val fold_token :
-      Big.big_int -> (token_id -> 'a1 -> 'a1) -> 'a1 -> 'a1 **)
-  
-  let fold_token num_tokens f a =
-    fold_token' f a num_tokens
-  
-  (** val first_set :
-      Big.big_int -> (token_id -> PA.char_p list) -> regexp ->
-      (token_id * regexp) list **)
-  
-  let first_set num_tokens token_id_to_chars r =
-    fold_token num_tokens (fun t a ->
-      let r' = unit_derivs r (token_id_to_chars t) in
-      (match r' with
-       | Zero t0 -> a
-       | _ -> (t, r') :: a)) []
-  
-  (** val lookup_deriv :
-      token_id -> (token_id * regexp) list -> regexp option **)
-  
-  let rec lookup_deriv t = function
-  | [] -> None
-  | p :: ts ->
-    if eq_nat_dec t (fst p) then Some (snd p) else lookup_deriv t ts
-  
-  (** val intersect :
-      (token_id * regexp) list -> (token_id * regexp) list ->
-      (regexp * regexp) list **)
-  
-  let rec intersect f1 f2 =
-    match f1 with
-    | [] -> []
-    | p :: ts ->
-      (match lookup_deriv (fst p) f2 with
-       | Some r2 -> ((snd p), r2) :: (intersect ts f2)
-       | None -> intersect ts f2)
-  
-  (** val conj_is_empty :
-      Big.big_int -> (token_id -> PA.char_p list) -> Big.big_int -> regexp ->
-      regexp -> bool **)
-  
-  let rec conj_is_empty num_tokens token_id_to_chars n r1 r2 =
-    match r1 with
-    | Zero t -> true
-    | _ ->
-      (match r2 with
-       | Zero t -> true
-       | _ ->
-         (Big.nat_case
-            (fun _ ->
-            false)
-            (fun m ->
-            let f =
-              intersect (first_set num_tokens token_id_to_chars r1)
-                (first_set num_tokens token_id_to_chars r2)
-            in
-            let rec loop = function
-            | [] -> true
-            | p :: derivs' ->
-              (&&)
-                (conj_is_empty num_tokens token_id_to_chars m (fst p)
-                  (snd p)) (loop derivs')
-            in loop f)
-            n))
-  
-  (** val conjunction_is_empty :
-      Big.big_int -> (token_id -> PA.char_p list) -> Big.big_int -> result ->
-      coq_parser -> coq_parser -> bool **)
-  
-  let conjunction_is_empty num_tokens token_id_to_chars n t p1 p2 =
-    conj_is_empty num_tokens token_id_to_chars n (par2rec t p1)
-      (par2rec t p2)
-  
   (** val extend_state :
       ctxt_t -> result -> result -> fn_result_m -> fn_name * ctxt_t **)
-  
-  (*let extend_state s t1 t2 f =
-    ((length s), (app s ((Coq_existT ((t1, t2), f)) :: []))) *)
 
+  (* ************************************************************************ *)
+  (* Beginning of changes to the parser: using a fast array for the context , 
+     instead of a list *)
+  (* 
+  let extend_state s t1 t2 f =
+    ((length s), (app s (((t1, t2),f) :: []))) *)
+  
   open Array
 
-  let extend_state s t1 t2 f =
-    (Big.zero, (append s (make 1 ((Coq_existT ((t1, t2), f))))))
+  let max_array_len = 100000
 
+  let initial_array = (0, make max_array_len ((Coq_unit_t, Coq_unit_t), (fun _ -> Obj.magic 1)))
 
-  let rec par2reg' t p s len =
+  exception Insufficient_Array_Len
+
+  let extend_state (last,arr) t1 t2 f =
+    if (last < max_array_len) then
+      let _ = set arr last ((t1,t2), f) in (last+1, arr)
+    else raise Insufficient_Array_Len
+
+  let rec par2reg' t p s =
     match p with
-    | Any_p -> (Any, s, len)
-    | Char_p b -> ((Char b), s, len)
-    | Eps_p -> (Eps, s, len)
+    | Any_p -> (Any, s)
+    | Char_p b -> ((Char b), s)
+    | Eps_p -> (Eps, s)
     | Cat_p (t1, t2, p1, p2) ->
-      let (r1, s1, len1) = par2reg' t1 p1 s len in
-      let (r2, s2, len2) = par2reg' t2 p2 s1 len1 in ((Cat (t1, t2, r1, r2)), s2, len2)
-    | Zero_p t0 -> ((Zero t0), s, len)
+      let (r1, s1) = par2reg' t1 p1 s in
+      let (r2, s2) = par2reg' t2 p2 s1 in ((Cat (t1, t2, r1, r2)), s2)
+    | Zero_p t0 -> ((Zero t0), s)
     | Alt_p (t0, p1, p2) ->
-      let (r1, s1, len1) = par2reg' t0 p1 s len in
-      let (r2, s2, len2) = par2reg' t0 p2 s1 len1 in ((Alt (t0, r1, r2)), s2, len2)
+      let (r1, s1) = par2reg' t0 p1 s in
+      let (r2, s2) = par2reg' t0 p2 s1 in ((Alt (t0, r1, r2)), s2)
     | Star_p (t0, p1) ->
-      let (r1, s1, len1) = par2reg' t0 p1 s len in ((Star (t0, r1)), s1, len1)
+      let (r1, s1) = par2reg' t0 p1 s in ((Star (t0, r1)), s1)
     | Map_p (t1, t2, f, p0) ->
-      let (r, s1, len1) = par2reg' t1 p0 s len in
-      let (n, s2) = extend_state s1 t1 t2 f in
-      ((Map (t1, t2, (Fn_name (len1, t1, t2)), r)), s2, Big.succ len1)
+      let (r, s1) = par2reg' t1 p0 s in
+      let s2 = extend_state s1 t1 t2 f in
+      let (len,arr) = s2 in
+      ((Map (t1, t2, (Fn_name (Big.of_int(len-1), t1, t2)), r)), s2)
   
   (** val par2reg : result -> coq_parser -> ctxt_t -> regexp * ctxt_t **)
   
-  let rec par2reg t p s = 
-    let (a, b, c) = par2reg' t p (of_list s) Big.zero in
-      (a, to_list b)
-
+  let rec par2reg t p lst = 
+    let build_array lst s =
+      match lst with
+      | [] -> s
+      | ((t1,t2),f)::tl -> extend_state s t1 t2 f
+    in
+    let (re, s) = par2reg' t p (build_array lst initial_array) in
+      (re, to_list (sub (snd s) 0 (fst s)))
+  
+  (* ************************************************************************ *)
+  
   (** val initial_ctxt : ctxt_t **)
-  
-  let initial_ctxt =
-    []
-  
+
+  let initial_ctxt = []
+
   (** val parser2regexp : result -> coq_parser -> regexp * ctxt_t **)
   
   let parser2regexp t p =
-    par2reg t p initial_ctxt
+    let (r, ctx) = par2reg t p initial_ctxt in
+      (r, ctx)
   
   (** val parse : result -> coq_parser -> PA.char_p list -> result_m list **)
   
   let parse t p =
     deriv_parse (snd (parser2regexp t p)) t (fst (parser2regexp t p))
-  
-  (** val is_deterministic :
-      Big.big_int -> (token_id -> PA.char_p list) -> result -> coq_parser ->
-      Big.big_int -> bool **)
-  
-  let is_deterministic num_tokens cvt t p n =
-    is_determ (snd (parser2regexp t p)) num_tokens cvt n t
-      (fst (parser2regexp t p))
  end
 

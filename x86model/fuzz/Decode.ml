@@ -2172,6 +2172,7 @@ open X86_BASE_PARSER
   (** val coq_WAIT_p :
       X86_BASE_PARSER.coq_parser **)
   
+(*
   let coq_WAIT_p =
     map
       (bits_n
@@ -2188,6 +2189,7 @@ open X86_BASE_PARSER
       (fun x ->
       Obj.magic
         WAIT)
+*)
   
   (** val coq_WBINVD_p :
       X86_BASE_PARSER.coq_parser **)
