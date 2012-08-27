@@ -997,7 +997,7 @@ module Parser =
   
   open Array
 
-  let max_array_len = 30000
+  let max_array_len = 100000
 
   let initial_array = (0, make max_array_len ((Coq_unit_t, Coq_unit_t), (fun _ -> Obj.magic 1)))
 

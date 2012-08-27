@@ -213,7 +213,15 @@ let init_machine =
     flags_reg = (fun f -> Word.zero (bii 0));
     control_regs = (fun c -> Word.zero (bii 31));
     debug_regs =  (fun d -> Word.zero (bii 31));
-    pc_reg = pc};;
+    pc_reg = pc;
+
+    fpu_regs = (fun fpr -> Word.zero (bii 79));
+    fpu_lastOperPtr = (fun x -> Word.zero (bii 63));
+    fpu_status = (fun x -> Word.zero (bii 2));
+    fpu_control = (fun x -> Word.zero (bii 2));
+    fpu_tags = (fun x -> Word.zero (bii 1));
+
+};;
 
 let init_rtl_state =
   { rtl_oracle = empty_oracle;

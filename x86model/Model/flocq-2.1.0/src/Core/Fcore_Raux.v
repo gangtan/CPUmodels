@@ -1899,7 +1899,6 @@ End Bool.
 
 Section cond_opp.
 
-Definition cond_Zopp (b : bool) m := if b then Zopp m else m.
 Definition cond_Ropp (b : bool) m := if b then Ropp m else m.
 
 Theorem Z2R_cond_Zopp :
@@ -1911,14 +1910,6 @@ apply Z2R_opp.
 apply refl_equal.
 Qed.
 
-Theorem abs_cond_Zopp :
-  forall b m,
-  Zabs (cond_Zopp b m) = Zabs m.
-Proof.
-intros [|] m.
-apply Zabs_Zopp.
-apply refl_equal.
-Qed.
 
 Theorem abs_cond_Ropp :
   forall b m,
@@ -1927,18 +1918,6 @@ Proof.
 intros [|] m.
 apply Rabs_Ropp.
 apply refl_equal.
-Qed.
-
-Theorem cond_Zopp_Zlt_bool :
-  forall m,
-  cond_Zopp (Zlt_bool m 0) m = Zabs m.
-Proof.
-intros m.
-apply sym_eq.
-case Zlt_bool_spec ; intros Hm.
-apply Zabs_non_eq.
-now apply Zlt_le_weak.
-now apply Zabs_eq.
 Qed.
 
 Theorem cond_Ropp_Rlt_bool :
