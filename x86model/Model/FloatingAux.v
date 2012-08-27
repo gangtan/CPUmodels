@@ -1,6 +1,5 @@
 (*
   Some Auxiliary definitions for Fappli_IEEE.
-  By : Mark Kogan
 *)
 
 Require Import Flocq.Appli.Fappli_IEEE_bits.
@@ -9,9 +8,11 @@ Require Import Flocq.Core.Fcore_digits.
 Require Import Flocq.Calc.Fcalc_digits.
 Require Import Flocq.Appli.Fappli_IEEE.
 
-Section B80_bits.
+Section DE_float.
 
-Definition binary80 := binary_float 64 16384.
+(* 79 bits binary floating point numbers;
+   1 bit sign; 15-bit exponent; 63-bit mantissa *)
+Definition binary79 := binary_float 64 16384.
 
 Let Hprec : (0 < 64)%Z.
 apply refl_equal.
@@ -21,76 +22,200 @@ Let Hprec_emax : (64 < 16384)%Z.
 apply refl_equal.
 Qed.
 
-Definition b80_opp := Bopp 64 16384.
-Definition b80_plus := Bplus _ _ Hprec Hprec_emax.
-Definition b80_minus := Bminus _ _ Hprec Hprec_emax.
-Definition b80_mult := Bmult _ _ Hprec Hprec_emax.
-Definition b80_div := Bdiv _ _ Hprec Hprec_emax.
-Definition b80_sqrt := Bsqrt _ _ Hprec Hprec_emax.
+Definition b79_of_bits : Z -> binary79 := binary_float_of_bits 63 15 (refl_equal _) (refl_equal _) (refl_equal _).
+Definition bits_of_b79 : binary79 -> Z := bits_of_binary_float 63 15.
 
-Definition b80_of_bits : Z -> binary80 := binary_float_of_bits 63 15 (refl_equal _) (refl_equal _) (refl_equal _).
-Definition bits_of_b80 : binary80 -> Z := bits_of_binary_float 63 15.
+Definition binary79_normalize := binary_normalize 64 16384 Hprec Hprec_emax.
 
-End B80_bits.
+(* 80-bit doubled extended floating point format: 
+   * 1 bit for the sign of the significand
+   * 15 bits for the exponent
+   * 64 bits for the significand
+   NOTE: in contrast to 32-bit single-precision and 64-bit double-precision
+   floating-point numbers, binary80 does not include an implicit bit.
+   Therefore, internally 80-bit extended precision numbers are represented as binary79
+*)
+Definition de_float := binary79.
 
-Section Bit_Conversions.
+Definition de_float_of_bits (x: Z) : de_float := 
+  let '(sx, mx, ex) := split_bits 64 15 x in
+    let mx' := Zmod mx (Zpower 2 63) in (* throw away the highest bit in mantissa *)
+      b79_of_bits (join_bits 63 15 sx mx' ex).
 
-(* Shift mantissa right 29 bits (52 - 23) and exponent 3 bits (11 - 8) to create b32 out of b64 *)
-Definition b64_to_b32 (b: binary64) : binary32 :=
+(* when converting a de_float to bits, add the highest bit *)
+Definition bits_of_de_float (f:de_float) : Z :=
+  let x := bits_of_b79 f in
+    let '(sx, mx, ex) := split_bits 63 15 x in
+      if Zeq_bool ex 0 then
+        (* exponent=0, representing pos/neg zero or a small number close to zero *)
+        join_bits 64 15 sx mx ex (* the highest bit is 0 *)
+      else if Zeq_bool ex (Zpower 2 15 - 1) then 
+        (* exponent=max; either pos/neg infinity or nan *)
+        join_bits 64 15 sx mx ex (* the highest bit is 0 *)
+      else
+        join_bits 64 15 sx (Zpower 2 63 + mx)%Z ex. (* the highest bit is 1 *)
+
+Definition de_float_opp := Bopp 64 16384.
+Definition de_float_plus := Bplus _ _ Hprec Hprec_emax.
+Definition de_float_minus := Bminus _ _ Hprec Hprec_emax.
+Definition de_float_mult := Bmult _ _ Hprec Hprec_emax.
+Definition de_float_div := Bdiv _ _ Hprec Hprec_emax.
+Definition de_float_sqrt := Bsqrt _ _ Hprec Hprec_emax.
+
+End DE_float.
+
+Section Float_conv.
+
+Let H32prec : (0 < 24)%Z.
+apply refl_equal.
+Qed.
+Let H32prec_emax : (24 < 128)%Z.
+apply refl_equal.
+Qed.
+Definition binary32_normalize := 
+  binary_normalize 24 128 H32prec H32prec_emax.
+
+Let H64prec : (0 < 53)%Z.
+apply refl_equal.
+Qed.
+Let H64prec_emax : (53 < 1024)%Z.
+apply refl_equal.
+Qed.
+Definition binary64_normalize := 
+  binary_normalize 53 1024 H64prec H64prec_emax.
+
+Definition b64_of_b32 (b:binary32) : binary64 := 
+  match b with
+    | B754_nan => B754_nan _ _
+    | B754_zero boole => B754_zero _ _ boole
+    | B754_infinity boole => B754_infinity _ _ boole
+    | B754_finite sign mant ep _  =>
+      binary64_normalize mode_NE (cond_Zopp sign (Zpos mant)) ep true
+  end.
+
+(* Definition b64_of_b32 (b:binary32) : binary64 := match b with *)
+(*    | B754_nan => B754_nan _ _ *)
+(*    | B754_zero boole => B754_zero _ _ boole *)
+(*    | B754_infinity boole => B754_infinity _ _ boole *)
+(*    | B754_finite sign mant exp _  => *)
+(*      let exp' := (exp * Zpower 2 29)%Z in *)
+(*      let mant' := (Zpos mant + 1920)%Z in (* 1920 is 2^11 - 2^8; here we need to adjust the bias *) *)
+(*      let joined := join_bits 52 11 sign mant' exp' in *)
+(*        b64_of_bits joined *)
+(* end. *)
+
+Definition b32_of_b64 (b: binary64) : binary32 :=
    match b with
    | B754_nan => B754_nan _ _
    | B754_zero boole => B754_zero _ _ boole
    | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant exp' _  =>
-        let (rec, shifted_m) := shr (Build_shr_record (Zpos mant) false false) (Zpos mant) 29 in
-        let (rec', shifted_e) := shr (Build_shr_record exp' false false) exp' 3 in
-        let joined := join_bits 24 128 sign shifted_m shifted_e in
-        b32_of_bits joined
+   | B754_finite sign mant ep _  =>
+      binary32_normalize mode_NE 
+      (cond_Zopp sign (Zpos mant)) ep true
    end.
 
-(*Shift mantissa left 29 bits and exponent 3 bits to create b64 out of b32 *)
-Definition b32_to_b64 (b: binary32) : binary64 :=
-        match b with
-   | B754_nan => B754_nan _ _
-   | B754_zero boole => B754_zero _ _ boole
-   | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant exp' _  =>
-        let (rec, shifted_m) := shl_align 23 exp' 29 in
-        let (recc, shifted_e) := shl_align 8 exp' 3 in
-        let joined := join_bits 53 1024 sign shifted_m shifted_e in
-        b64_of_bits joined
-   end.
-
-Definition b80_to_b64 (b: binary80) : binary64 :=
+Definition de_float_of_b32 (b:binary32) : de_float := 
    match b with
    | B754_nan => B754_nan _ _
    | B754_zero boole => B754_zero _ _ boole
    | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant exp' _  =>
-        let (rec, shifted_m) := shr (Build_shr_record (Zpos mant) false false) (Zpos mant) 11 in
-        let (rec', shifted_e) := shr (Build_shr_record exp' false false) exp' 5 in
-        let joined := join_bits 53 1024 sign shifted_m shifted_e in
-        b64_of_bits joined
+   | B754_finite sign mant ep _  =>
+      binary79_normalize mode_NE 
+      (cond_Zopp sign (Zpos mant)) ep true
    end.
 
-Definition b64_to_b80 (b: binary64) : binary80 :=
-        match b with
+Definition b32_of_de_float (b:de_float) : binary32 := 
+   match b with
    | B754_nan => B754_nan _ _
    | B754_zero boole => B754_zero _ _ boole
    | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant exp' _  =>
-        let (rec, shifted_m) := shl_align 52 exp' 11 in
-        let (recc, shifted_e) := shl_align 11 exp' 5 in
-        let joined := join_bits 64 16384 sign shifted_m shifted_e in
-        b80_of_bits joined
+   | B754_finite sign mant ep _  =>
+      binary32_normalize mode_NE 
+      (cond_Zopp sign (Zpos mant)) ep true
    end.
 
-Definition b32_to_b80 (b : binary32) : binary80 :=
-  let bsf := b32_to_b64 b in
-  b64_to_b80 bsf.
+Definition de_float_of_b64 (b:binary64) : de_float := 
+   match b with
+   | B754_nan => B754_nan _ _
+   | B754_zero boole => B754_zero _ _ boole
+   | B754_infinity boole => B754_infinity _ _ boole
+   | B754_finite sign mant ep _  =>
+      binary79_normalize mode_NE 
+      (cond_Zopp sign (Zpos mant)) ep true
+   end.
 
-Definition b80_to_b32 (b : binary80) : binary32 :=
-  let bsf := b80_to_b64 b in
-  b64_to_b32 bsf.
+Definition b64_of_de_float (b:de_float) : binary64 := 
+   match b with
+   | B754_nan => B754_nan _ _
+   | B754_zero boole => B754_zero _ _ boole
+   | B754_infinity boole => B754_infinity _ _ boole
+   | B754_finite sign mant ep _  =>
+      binary64_normalize mode_NE 
+      (cond_Zopp sign (Zpos mant)) ep true
+   end.
 
-End Bit_Conversions.
+End Float_conv.
+
+
+
+Section Comp_Tests.
+
+Local Open Scope positive_scope.
+
+(* number: 1.101 * 2^0 *)
+(* sign: 0; exponent: 01111111; fraction:10100000000000000000000 *)
+Definition f32_num1 := b32_of_bits
+  (Zpos 1~1~1~1~1~1~1
+        ~1~0~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0).
+
+(* number: -1.11 *)
+(* sign: 1; exponent: 01111111; fraction:11000000000000000000000 *)
+Definition f32_num2 := b32_of_bits
+  (Zpos 1~
+        0~1~1~1~1~1~1~1
+        ~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0).
+
+(* positive zero *)
+Definition f32_pos0 := b32_of_bits 0%Z.
+
+(* Testing simple operations on b32 *)
+
+(* result should be: 1.101 * 2^1 *)
+(* sign: 0 exponent: 1000 0000; fraction: 10100000000000000000000 *)
+Eval compute in (bits_of_b32 (b32_plus mode_NE f32_num1 f32_num1)).
+
+(* result should be - 1.000 * 2^(-3) *)
+(* sign: 1 exponent: 0111 1100; fraction: 00000000000000000000000 *)
+Eval compute in (bits_of_b32 (b32_plus mode_NE f32_num1 f32_num2)).
+
+Eval compute in (bits_of_b32 (b32_plus mode_NE f32_pos0 f32_pos0)).
+Eval compute in (bits_of_b32 (b32_plus mode_NE f32_pos0 f32_num1)).
+
+(* Testing conversions *)
+Eval compute in (bits_of_b64 (b64_of_b32 f32_num1)).
+Eval compute in (bits_of_b64 (b64_of_b32 f32_pos0)).
+Eval compute in (bits_of_b32 f32_num1).
+Eval compute in (bits_of_b32 (b32_of_b64 (b64_of_b32 f32_num1))).
+Eval compute in (bits_of_b64 (b64_of_b32 f32_num2)).
+Eval compute in (bits_of_b32 f32_num2).
+Eval compute in (bits_of_b32 (b32_of_b64 (b64_of_b32 f32_num2))).
+
+(* result is
+0
+011111111111111
+1101000000000000000000000000000000000000000000000000000000000000
+*)
+Eval compute in (bits_of_de_float (de_float_of_b32 f32_num1)).
+
+(* result is
+1
+011111111111111
+1110000000000000000000000000000000000000000000000000000000000000
+*)
+Eval compute in (bits_of_de_float (de_float_of_b32 f32_num2)).
+Eval compute in (bits_of_b32 f32_num1).
+Eval compute in (bits_of_b32 (b32_of_de_float (de_float_of_b32 f32_num1))).
+Eval compute in (bits_of_b32 f32_num2).
+Eval compute in (bits_of_b32 (b32_of_de_float (de_float_of_b32 f32_num2))).
+
+End Comp_Tests.
