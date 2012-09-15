@@ -1193,6 +1193,7 @@ Module X86_PARSER.
 
   Definition FMULP_p := "11011" $$ "110" $$ "11001" $$ fpu_reg @ (fun x => FMULP (FPS_op x) %% instruction_t).
   Definition FNOP_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FNOP %% instruction_t).
+  Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64 "110" @ (fun x => FNSAVE x %% instruction_t).
   Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "111" @ (fun x => FNSTCW x %% instruction_t).
   Definition FPATAN_p := "11011" $$ "001111" $$ bits "10011" @ (fun _ => FPATAN %% instruction_t).
   Definition FPREM_p := "11011" $$ "001111" $$ bits "11000" @ (fun _ => FPREM %% instruction_t).
@@ -1201,7 +1202,6 @@ Module X86_PARSER.
   Definition FRNDINT_p := "11011" $$ "001111" $$ bits "11100" @ (fun _ => FRNDINT %% instruction_t).
 
   Definition FRSTOR_p := "11011" $$ "101" $$ ext_op_modrm_FPM32 "100" @ (fun x => FRSTOR x %% instruction_t).
-  Definition FSAVE_p := "11011" $$ "101" $$ ext_op_modrm_FPM64 "110" @ (fun x => FSAVE x %% instruction_t).
 
   Definition FSCALE_p := "11011" $$ "001111" $$ bits "11101" @ (fun _ => FSCALE %% instruction_t).
   Definition FSIN_p := "11011" $$ "001111" $$ bits "11110" @ (fun _ => FSIN %% instruction_t).
@@ -1295,7 +1295,7 @@ Module X86_PARSER.
     FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
     FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
     (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
-    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSTCW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: FSAVE_p :: FSCALE_p :: 
+    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) FSCALE_p :: 
     FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
     FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: nil.
 

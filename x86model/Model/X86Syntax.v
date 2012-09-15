@@ -290,6 +290,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FMUL : forall (d: bool) (op1: fp_operand), instr
 | FMULP : forall (op1: fp_operand), instr
 | FNOP : instr
+| FNSAVE : forall (op1: fp_operand), instr
 | FNSTCW : forall (op1: fp_operand), instr
 | FPATAN : instr
 | FPREM : instr
@@ -297,7 +298,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FPTAN : instr
 | FRNDINT : instr
 | FRSTOR : forall (op1: fp_operand), instr
-| FSAVE : forall (op1: fp_operand), instr
+(* FSAVE's encoding the same as FWAIT followed FNSAVE
+   | FSAVE : forall (op1: fp_operand), instr *)
 | FSCALE : instr
 | FSIN : instr
 | FSINCOS : instr
