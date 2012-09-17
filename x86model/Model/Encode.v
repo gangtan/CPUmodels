@@ -157,8 +157,19 @@ Definition enc_scale (sc: scale) :=
   end.
 
 (* encoding an SIB byte *)
-Definition enc_SIB (sc:scale) (idx base: register) :=
-  enc_scale sc ++ enc_reg idx ++ enc_reg base.
+Definition enc_SIB (bs:register) (idxopt: option (scale * register)) :=
+  match bs, idxopt with
+    | ESP, None => ret (s2bl "00" ++ s2bl "100" ++ s2bl "100")
+    | _, Some (sc,idx) =>
+      match idx with
+        | ESP => invalid
+        | _ => ret (enc_scale sc ++ enc_reg idx ++ enc_reg bs)
+      end
+    | _, _ => invalid
+  end.
+
+(* Definition enc_SIB (sc:scale) (idx base: register) := *)
+(*   enc_scale sc ++ enc_reg idx ++ enc_reg base. *)
 
 (* converting a sz-bit integer to a list of bool of length n *)
 Definition int_explode (sz:nat) (i:Word.int sz) (n:nat) : list bool :=
@@ -171,27 +182,53 @@ Definition int_explode (sz:nat) (i:Word.int sz) (n:nat) : list bool :=
     in int_explode_aux n.
 Implicit Arguments int_explode [sz].
 
+Definition enc_byte (sz:nat) (i:Word.int sz) : list bool :=
+  int_explode i 8.
+Implicit Arguments enc_byte [sz].
+
+(* little endian encoding of half word *)
+Definition enc_halfword (sz:nat) (i:Word.int sz) : list bool :=
+  let b0 := Word.shru i (Word.repr 8) in
+  let b1 := Word.and i (Word.repr 255) in
+  let hw := Word.or (Word.shl b1 (Word.repr 8)) b0 in
+    int_explode i 16.
+Implicit Arguments enc_halfword [sz].
+
+Definition enc_word (sz:nat) (i:Word.int sz) : list bool :=
+  let b3 := Word.and i (Word.repr 255) in
+  let b2 := Word.and (Word.shru i (Word.repr 8)) (Word.repr 255) in
+  let b1 := Word.and (Word.shru i (Word.repr 16)) (Word.repr 255) in
+  let b0 := Word.shru i (Word.repr 24) in
+  let w1 := Word.shl b1 (Word.repr 8) in
+  let w2 := Word.shl b2 (Word.repr 16) in
+  let w3 := Word.shl b3 (Word.repr 24) in
+  let hw := Word.or w3 (Word.or w2 (Word.or w1 b0)) in
+    int_explode hw 32.
+Implicit Arguments enc_word [sz].
+
 (* encoding the modrm byte given the encoding of the reg field *)
 Definition enc_modrm_gen (reg: list bool) (op2 : operand): Enc (list bool) := 
   match op2 with
     | Reg_op r2 => ret (s2bl "11" ++ reg ++ enc_reg r2)
     | Address_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ reg ++ s2bl "101" ++ int_explode disp 32)
+      ret (s2bl "00" ++ reg ++ s2bl "101" ++ enc_word disp)
     | Address_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let r_or_m :=
-        match idxopt with
-          | None => (enc_reg bs)
-          | Some (sc,idx) => (s2bl "100" ++ enc_SIB sc idx bs) (* adding SIB byte *)
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
         end in
+        r_or_m <- enc_r_or_m;
         (* alternate encoding: even if disp can be in a byte, we can always
            use the encoding of disp32[reg] *)
         if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
           else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ reg ++ r_or_m ++ int_explode disp 8)
-            else ret (s2bl "10" ++ reg ++ r_or_m ++ int_explode disp 32)
+            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
     | _ => invalid
   end.
-  
 
 (* encoding two operands: op1, op2;
    op1 should always be a register operand; 
@@ -211,9 +248,9 @@ Definition enc_modrm_2 (bs:string) op2 : Enc (list bool) :=
  * representing the bits*)
 Definition enc_imm (op_override w: bool) (i1 : int32) : list bool :=
   match op_override, w with
-    | _, false => int_explode i1 8
-    | false, true => int_explode i1 32
-    | true, true => int_explode i1 16
+    | _, false => enc_byte i1
+    | false, true => enc_word i1
+    | true, true => enc_halfword i1
   end.
 
 (* Definition encodes the w/s operand as a list of booleans representing its bit. *)
@@ -252,21 +289,21 @@ match op1, op2 with
     match op_override, w with
       | _ , false => 
         l1 <- enc_modrm_2 lb2 op1;
-        ret (s2bl "10000000" ++ l1 ++ int_explode i1 8)
+        ret (s2bl "10000000" ++ l1 ++ enc_byte i1)
       | false, true => 
         (* alternate encoding: even if i1 can be in a byte, 
            we can encode it as imm32 *)
         l1 <- enc_modrm_2 lb2 op1;
         if (repr_in_signed_byte i1) then
-          ret (s2bl "10000011" ++ l1 ++ int_explode i1 8)
-          else ret (s2bl "10000001" ++ l1 ++ int_explode i1 32)
+          ret (s2bl "10000011" ++ l1 ++ enc_byte i1)
+          else ret (s2bl "10000001" ++ l1 ++ enc_word i1)
       | true, true => 
         (* alternate encoding: even if i1 can be in a byte, 
            we can encode it as imm32 *)
         l1 <- enc_modrm_2 lb2 op1;
         if (repr_in_signed_byte i1) then
-          ret (s2bl "10000011" ++ l1 ++ int_explode i1 8)
-          else ret (s2bl "10000001" ++ l1 ++ int_explode i1 16)
+          ret (s2bl "10000011" ++ l1 ++ enc_byte i1)
+          else ret (s2bl "10000001" ++ l1 ++ enc_halfword i1)
     end
   | _, _ => invalid
 end.
@@ -306,7 +343,9 @@ Definition enc_Rotate (w:bool)(op1:operand)(ri:reg_or_immed) (r:register) : Enc 
   match ri with
    (* | Imm_ri (Word.int 1) => s2bl "1101000" ++ enc_bit w ++ enc_modrm (Reg_op r) op1*)
     | Reg_ri ECX => l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "1101001" ++ enc_bit w ++ l1)
-    | Imm_ri i1 => l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "1100000" ++ enc_bit w ++ l1 ++ int_explode i1 8)
+    | Imm_ri i1 => 
+      l1 <- enc_modrm (Reg_op r) op1; 
+      ret (s2bl "1100000" ++ enc_bit w ++ l1 ++ enc_byte i1)
     |  _ => invalid
   end.
 
@@ -355,14 +394,14 @@ Definition enc_CALL (near absolute : bool) (op1 : operand) (sel : option selecto
         | true =>
          match op1 with 
            | Reg_op r1 => ret (s2bl "1111111111010" ++ enc_reg r1)
-           | Offset_op d1 => ret (s2bl "11101000" ++ int_explode d1 32)
+           | Imm_op i1 => ret (s2bl "11101000" ++ enc_word i1)
            | _ => invalid
          end
         | false => l1 <- enc_modrm (Reg_op EBX) op1; ret (s2bl "11111111" ++ l1)
       end
     | Some sel =>
       match op1 with
-        | Offset_op d1 => ret (s2bl "10011010" ++ int_explode d1 32 ++ int_explode sel 16)
+        | Imm_op i1 => ret (s2bl "10011010" ++ enc_word i1 ++ enc_halfword sel)
         | _ => invalid
       end
   end.
@@ -432,7 +471,7 @@ Definition enc_IMUL (op_override:bool)
 Definition enc_IN (w:bool)(p: option port_number) : Enc (list bool) :=
   match p with
     | None => ret (s2bl "1110110" ++ enc_bit w)
-    | Some imm8 => ret (s2bl "1110010" ++ enc_bit w ++ int_explode imm8 8)
+    | Some imm8 => ret (s2bl "1110010" ++ enc_bit w ++ enc_byte imm8)
   end.
 (*INC has alternate coding for a register operand that I ommited for now*)
 Definition enc_INC (w : bool) (op1 : operand) : Enc (list bool) :=
@@ -443,7 +482,7 @@ Definition enc_INC (w : bool) (op1 : operand) : Enc (list bool) :=
   end.
 Definition enc_INS (w : bool) := ret (s2bl "0110110" ++ enc_bit w).
 Definition enc_INT := ret (s2bl "11001100").
-Definition enc_INTn (it:interrupt_type) := ret (s2bl "11001101" ++ int_explode it 8).
+Definition enc_INTn (it:interrupt_type) := ret (s2bl "11001101" ++ enc_byte it).
 Definition enc_INTO := ret (s2bl "11001110").
 Definition enc_INVD := ret (s2bl "0000111100001000").
 Definition enc_INVLPG (op1:operand) : Enc (list bool) := 
@@ -452,9 +491,9 @@ Definition enc_IRET := ret (s2bl "11001111").
 
 
 Definition enc_Jcc (ct:condition_type) (disp:int32) :=
-  ret (s2bl "000011111000" ++ enc_condition_type ct ++ int_explode disp 32).
+  ret (s2bl "000011111000" ++ enc_condition_type ct ++ enc_word disp).
 Definition enc_JCXZ (b:int8) :=
-  ret (s2bl "11100011" ++ int_explode b 8).
+  ret (s2bl "11100011" ++ enc_byte b).
 Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
   : Enc (list bool) :=
   match sel with
@@ -463,7 +502,7 @@ Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
         | true =>
          match op1 with 
            | Reg_op r1 => ret (s2bl "1111111111000" ++ enc_reg r1)
-           | Offset_op d1 => ret (s2bl "11101000" ++ int_explode d1 32)
+           | Imm_op i1 => ret (s2bl "11101000" ++ enc_word i1)
 	   | Address_op a1 => l1 <- enc_modrm (Reg_op ESP) op1; ret (s2bl "11111111" ++ l1)
            | _ => invalid
          end
@@ -471,7 +510,7 @@ Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
       end
     | Some sel =>
       match op1 with
-        | Offset_op d1 => ret (s2bl "11101010" ++ int_explode d1 32 ++ int_explode sel 16)
+        | Imm_op i1 => ret (s2bl "11101010" ++ enc_word i1 ++ enc_halfword sel)
         | _ => invalid
       end
   end.
@@ -508,9 +547,9 @@ Definition enc_LMSW (op1 : operand) : Enc (list bool) :=
     | _ => invalid
   end.
 Definition enc_LODS (w : bool) := ret (s2bl "1010110" ++ enc_bit w).
-Definition enc_LOOP (disp:int8) := ret (s2bl "11100010" ++ int_explode disp 8).
-Definition enc_LOOPNZ (disp:int8) := ret (s2bl "11100000" ++ int_explode disp 8).
-Definition enc_LOOPZ (disp:int8) := ret (s2bl "11100001" ++ int_explode disp 8).
+Definition enc_LOOP (disp:int8) := ret (s2bl "11100010" ++ enc_byte disp).
+Definition enc_LOOPNZ (disp:int8) := ret (s2bl "11100000" ++ enc_byte disp).
+Definition enc_LOOPZ (disp:int8) := ret (s2bl "11100001" ++ enc_byte disp).
 Definition enc_LSL (op1 op2:operand) : Enc (list bool) :=
   l1 <- enc_modrm op1 op2; ret (s2bl "0000111100000011" ++ l1).
 Definition enc_LSS (op1 op2:operand) : Enc (list bool) :=
@@ -526,18 +565,18 @@ Definition enc_MOV (op_override w:bool) (op1 op2:operand) : Enc (list bool) :=
   match op1, op2 with
     | Reg_op _, Reg_op _ => 
       (* alternate encoding: set the d bit and reverse op1 and op2*)
-      l1 <- enc_modrm op1 op2; ret (s2bl "1000100" ++ enc_bit w ++ l1)
+      l1 <- enc_modrm op2 op1; ret (s2bl "1000100" ++ enc_bit w ++ l1)
     | Reg_op _, Address_op _ => 
       l1 <- enc_modrm op1 op2; ret (s2bl "1000101" ++ enc_bit w ++ l1)
     | Reg_op r1, Imm_op i1 => 
       (* alternate encoding: C6/C7 /0 *)
       ret (s2bl "1011" ++ enc_bit w ++ enc_reg r1 ++ enc_imm op_override w i1)
     | Reg_op EAX, Offset_op o1 => 
-      ret (s2bl "1010000" ++ enc_bit w ++ int_explode o1 32)
+      ret (s2bl "1010000" ++ enc_bit w ++ enc_word o1)
     | Address_op _, Reg_op _ => 
       l1 <- enc_modrm op2 op1; ret (s2bl "1000100" ++ enc_bit w ++ l1)
     | Offset_op o1, Reg_op EAX => 
-      ret (s2bl "1010001" ++ enc_bit w ++ int_explode o1 32)
+      ret (s2bl "1010001" ++ enc_bit w ++ enc_word o1)
     | Address_op a1, Imm_op i1 => 
       l1 <- enc_modrm_2 "000" op1; 
       ret (s2bl "1100011" ++ enc_bit w ++ l1 ++ enc_imm op_override w i1)
@@ -584,7 +623,7 @@ Definition enc_OR := enc_logic_or_arith "00001" "001".
 Definition enc_OUT (w:bool)(p:option port_number) : Enc (list bool) :=
   match p with
     | None => ret (s2bl "1110111" ++ enc_bit w)
-    | Some p => ret (s2bl "1110011" ++ enc_bit w ++ int_explode p 8)
+    | Some p => ret (s2bl "1110011" ++ enc_bit w ++ enc_byte p)
   end.
 Definition enc_OUTS (w : bool) := ret (s2bl "0110111" ++ enc_bit w).
 
@@ -646,7 +685,7 @@ Definition enc_RET (same_segment:bool)(disp:option int16) :=
   match disp with
     | None => ret (s2bl "1100" ++ enc_op_bool same_segment ++ s2bl "011")
     | Some disp => 
-      ret (s2bl "1100" ++ enc_op_bool same_segment ++ s2bl "010" ++ int_explode disp 16)
+      ret (s2bl "1100" ++ enc_op_bool same_segment ++ s2bl "010" ++ enc_halfword disp)
   end.
 Definition enc_ROL (w:bool)(op1:operand)(ri:reg_or_immed) : Enc (list bool) :=
   enc_Rotate w op1 ri EAX.
@@ -669,7 +708,7 @@ Definition enc_SHL (w:bool)(op1:operand)(ri:reg_or_immed) : Enc (list bool) :=
 Definition enc_SHLD (op1:operand)(r:register)(ri:reg_or_immed) : Enc (list bool) :=
   match ri with
     | Imm_ri i1 => 
-      l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "0000111110100100" ++ l1 ++ int_explode i1 8)
+      l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "0000111110100100" ++ l1 ++ enc_byte i1)
     | Reg_ri ECX => l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "0000111110100101" ++ l1)
     | _ => invalid
   end.
@@ -678,7 +717,7 @@ Definition enc_SHR (w:bool)(op1:operand)(ri:reg_or_immed) : Enc (list bool) :=
 Definition enc_SHRD (op1:operand)(r:register)(ri:reg_or_immed) : Enc (list bool) :=
   match ri with
     | Imm_ri i1 => 
-      l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "0000111110101100" ++ l1 ++ int_explode i1 8)
+      l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "0000111110101100" ++ l1 ++ enc_byte i1)
     | Reg_ri ECX => l1 <- enc_modrm (Reg_op r) op1; ret (s2bl "0000111110101101" ++ l1)
     | _ => invalid
   end.
@@ -762,20 +801,23 @@ Definition enc_fp_modrm (opb: list bool) (op2 : fp_operand) : Enc (list bool) :=
     | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
     | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
     | FPM80_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ opb ++ s2bl "101" ++ int_explode disp 32)
+      ret (s2bl "00" ++ opb ++ s2bl "101" ++ enc_word disp)
 
     | FPM32_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
     | FPM64_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
     | FPM80_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let r_or_m :=
-        match idxopt with
-          | None => (enc_reg bs)
-          | Some (sc,idx) => (s2bl "100" ++ enc_SIB sc idx bs) (* adding SIB byte *)
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
         end in
+        r_or_m <- enc_r_or_m;
         if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
         else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ opb ++ r_or_m ++ int_explode disp 8)
-        else ret (s2bl "10" ++ opb ++ r_or_m ++ int_explode disp 32)
+            ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
+        else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
 
     | _ => invalid
   end.
@@ -1019,6 +1061,28 @@ Definition enc_FXTRACT := ret (s2bl "1101100111110100").
 Definition enc_FYL2X := ret (s2bl "1101100111110001").
 Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
+Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
+  let lr := 
+    match (lock_rep pre) with
+      | Some lock => s2bl "11110000"
+      | Some rep  => s2bl "11110010"
+      | Some repn => s2bl "11110011"
+      | None => s2bl ""
+    end in
+  let so := 
+    match (seg_override pre) with
+      | Some CS => s2bl "00101110"
+      | Some SS => s2bl "00110110"
+      | Some DS => s2bl "00111110"
+      | Some ES => s2bl "00100110"
+      | Some FS => s2bl "01100100"
+      | Some GS => s2bl "01100101"
+      | None => s2bl ""
+    end in
+  let oo := if (op_override pre) then s2bl "01100110" else s2bl "" in
+  let ao := if (addr_override pre) then s2bl "01100111" else s2bl "" in
+    ret (lr ++ so ++ oo ++ ao).
+
 Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) := 
   match i with
     | AAA => enc_AAA
@@ -1231,9 +1295,13 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
   end.
 
+Definition enc_pre_instr pre ins : Enc (list bool) := 
+  l1 <- enc_prefix pre;
+  l2 <- enc_instr pre ins;
+  ret (l1 ++ l2).
 
-(* encoding instrs, but output a list of bytes *)
-Definition enc_instr_bytes pre ins : Enc (list Z) :=
+(* encode instrs and output a list of bytes *)
+Definition enc_pre_instr_bytes pre ins : Enc (list Z) :=
   let to_bytes := 
     (fix to_bytes lbits n (acc:Z) res :=
       match lbits with
@@ -1246,7 +1314,7 @@ Definition enc_instr_bytes pre ins : Enc (list Z) :=
               to_bytes lbits' (n-1) acc' res
       end)
   in
-  lbits <- enc_instr pre ins;
+  lbits <- enc_pre_instr pre ins;
   lbytes <- to_bytes lbits 7 0 nil;
   ret (List.rev lbytes).
 
@@ -1257,5 +1325,5 @@ Definition enc_instr_bytes pre ins : Enc (list Z) :=
 
 (* some simple testing *)
 (* Definition emptyPrefix := mkPrefix None None false false. *)
-(* Eval compute in (enc_instr_bytes emptyPrefix (PUSH true (Reg_op EBP))). *)
-(* Eval compute in (enc_instr_bytes emptyPrefix (MOV true (Reg_op ESP) (Reg_op EBP))). *)
+(* Eval compute in (enc_pre_instr_bytes emptyPrefix (PUSH true (Reg_op EBP))). *)
+(* Eval compute in (enc_pre_instr_bytes emptyPrefix (MOV true (Reg_op ESP) (Reg_op EBP))). *)
