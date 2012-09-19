@@ -594,7 +594,7 @@ Module X86_PARSER.
     (fun op => CALL true true op None %% instruction_t)
   |+| 
     "1001" $$ "1010" $$ halfword $ word @ 
-    (fun p => CALL false false (Imm_op (snd p)) (Some (fst p)) %% instruction_t)
+    (fun p => CALL false true (Imm_op (snd p)) (Some (fst p)) %% instruction_t)
   |+|
     "1111" $$ "1111" $$ ext_op_modrm2 "011" @ 
     (fun op => CALL false true op None %% instruction_t).
@@ -925,7 +925,7 @@ Module X86_PARSER.
   Definition OUTS_p := "0110" $$ "111" $$ anybit @ (fun x => OUTS x %% instruction_t).
 
   Definition POP_p := 
-  "1000" $$ "1111" $$ ext_op_modrm "000" @ (fun x => POP x %% instruction_t)
+  "1000" $$ "1111" $$ ext_op_modrm2 "000" @ (fun x => POP x %% instruction_t)
   |+|
     "0101" $$ "1" $$ reg @ (fun r => POP (Reg_op r) %% instruction_t).
 
