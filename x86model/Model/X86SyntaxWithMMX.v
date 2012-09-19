@@ -161,6 +161,24 @@ Definition Z_to_mmx_register (n:Z) :=
     | _ => ST7
   end.
 
+(*SSE syntax *)
+(* 8 128-bit registers (XMM0 - XMM7) introduced, along with MXCSR word for status and control of these registers *)
+Inductive sse_register : Set := XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7.
+Definition sse_register_eq_dec : forall (x y: sse_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive mxcsr : Set := FZ | Rpos | Rneg | RZ | RN | PM | UM | OM | ZM | DM | IM | DAZ | PE | UE |
+			 OE | ZE | DE | IE.
+
+Definition mxcsr_eq_dec : forall (x y: mxcsr), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive sse_operand : Set := 
+| SSE_Reg_op : sse_register -> sse_operand
+| (*What's mmreg vs xmmreg? *)
+
 Inductive mmx_operand : Set := 
 | GP_Reg_op : register -> mmx_operand
 | MMX_Addr_op : address -> mmx_operand
@@ -500,8 +518,5 @@ Record prefix : Set := mkPrefix {
 
 
 (* To add:
-
-B.3.  MMX instructions
 B.4.  Streaming SIMD instructions
-
 *)

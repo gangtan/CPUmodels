@@ -2669,17 +2669,25 @@ Section X86FloatSemantics.
   Definition log10_2 :=   s2bf "00111111110100000011010001000001001101010000101010010110000010011000000000000000".
   Definition ln_2  :=     s2bf "00111111111000000110001011100100001011111110111111111011101100111100000000000000".
   Definition log2_e :=    s2bf "00111111111110000111000101010100011101100101001100110010010001011110000000000000".
-
-  (* Definition pos1_fl := de_float_of_bits  *)
-  (*   00111111111111110000000000000000000000000000000000000000000000000000000000000000. *)
-  (* Definition neg1_fl := b80_of_bits 10111111111111110000000000000000000000000000000000000000000000000000000000000000. *)
-  (* Definition pi_fl := b80_of_bits 00000000000000011001001000011111101101010100010001000010110100011000010001101010. *)
-  (* Definition e_fl := b80_of_bits 00000000000000010101101111110000101010001011000101000101011101101001010100110110. *)
-  (* Definition pos_zero_fl := b80_of_bits 00000000000000000000000000000000000000000000000000000000000000000000000000000000. *)
-  (* Definition log2_10_fl := b80_of_bits 01111111111111111010100100110100111100001001011111011000001000110111000000000000. *)
-  (* Definition log10_2_fl := b80_of_bits 00111111110100000011010001000001001101010000101010010110000010011000000000000000. *)
-  (* Definition ln_2_fl  := b80_of_bits 00111111111000000110001011100100001011111110111111111011101100111100000000000000. *)
-  (* Definition log2_e_fl := b80_of_bits 00111111111110000111000101010100011101100101001100110010010001011110000000000000. *)
+ 
+   Definition pos1_fl := de_float_of_bits  
+     (Zpos 0~0~1~1~1~1~1~1~1~1~1~1~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0).
+   Definition neg1_fl := de_float_of_bits 
+     (Zpos 1~0~1~1~1~1~1~1~1~1~1~1~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0). 
+   Definition pi_fl := de_float__of_bits 
+     (Zpos 0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~1~1~0~0~1~0~0~1~0~0~0~0~1~1~1~1~1~1~0~1~1~0~1~0~1~0~1~0~0~0~1~0~0~0~1~0~0~0~0~1~0~1~1~0~1~0~0~0~1~1~0~0~0~0~1~0~0~0~1~1~0~1~0~1~0). 
+   Definition e_fl := de_float_of_bits 
+     (Zpos 0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~1~0~1~0~1~1~0~1~1~1~1~1~1~0~0~0~0~1~0~1~0~1~0~0~0~1~0~1~1~0~0~0~1~0~1~0~0~0~1~0~1~0~1~1~1~0~1~1~0~1~0~0~1~0~1~0~1~0~0~1~1~0~1~1~0). 
+   Definition pos_zero_fl := de_float_of_bits 
+     (Zpos 0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0). 
+   Definition log2_10_fl := de_float_of_bits 
+     (Zpos 0~1~1~1~1~1~1~1~1~1~1~1~1~1~1~1~1~0~1~0~1~0~0~1~0~0~1~1~0~1~0~0~1~1~1~1~0~0~0~0~1~0~0~1~0~1~1~1~1~1~0~1~1~0~0~0~0~0~1~0~0~0~1~1~0~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0). 
+   Definition log10_2_fl := de_float_of_bits 
+     (Zpos 0~0~1~1~1~1~1~1~1~1~0~1~0~0~0~0~0~0~1~1~0~1~0~0~0~1~0~0~0~0~0~1~0~0~1~1~0~1~0~1~0~0~0~0~1~0~1~0~1~0~0~1~0~1~1~0~0~0~0~0~1~0~0~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0). 
+   Definition ln_2_fl  := de_float_of_bits 
+     (Zpos 0~0~1~1~1~1~1~1~1~1~1~0~0~0~0~0~0~1~1~0~0~0~1~0~1~1~1~0~0~1~0~0~0~0~1~0~1~1~1~1~1~1~1~0~1~1~1~1~1~1~1~1~1~0~1~1~1~0~1~1~0~0~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0). 
+   Definition log2_e_fl := de_float_of_bits 
+     (Zpos 0~0~1~1~1~1~1~1~1~1~1~1~1~0~0~0~0~1~1~1~0~0~0~1~0~1~0~1~0~1~0~0~0~1~1~1~0~1~1~0~0~1~0~1~0~0~1~1~0~0~1~1~0~0~1~0~0~1~0~0~0~1~0~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0).
 
   (* Get normal de_float representation to determine sign, then make mantissa the val of i and subtract
      most significant 1 to denormalize, then make exponent the number of significant bits of i. Then combine everything *)
@@ -2879,7 +2887,7 @@ Section X86FloatSemantics.
       let conv_val := b32_of_de_float b80_val in
       let psreg_val := int_to_psreg (bin32_to_int conv_val) in
 
-      set_mem32 DS psreg_val addr  (*Covers only 32-bit memory case *)
+      set_mem32 DS psreg_val addr
     | FPM64_op a =>
       addr <- compute_addr a;
       let int_val := psreg_to_int top_val in
@@ -2887,14 +2895,14 @@ Section X86FloatSemantics.
       let conv_val := b64_of_de_float f_val in
       let psreg_val := int_to_psreg (bin64_to_int conv_val) in
 
-      set_mem64 DS psreg_val addr  (*Covers only 32-bit memory case *)
+      set_mem64 DS psreg_val addr
     | FPM80_op a =>
       addr <- compute_addr a;
       let int_val := psreg_to_int top_val in
       let b80_val := int_to_de_float int_val in
       let psreg_val := int_to_psreg (de_float_to_int b80_val) in
 
-      set_mem80 DS psreg_val addr  (*Covers only 32-bit memory case *)
+      set_mem80 DS psreg_val addr 
     end.
 
   Definition conv_FSTP (op: fp_operand) := 
@@ -3039,7 +3047,7 @@ Section X86FloatSemantics.
         | true => set_fpu_reg curr_val (fpu_from_int r topp)  (*load sum into st(i) *)
         end
 
-     | FPM32_op a =>    (*needs to be some mechanism to check fpm32, fpm64, fpm80. for now, fpm32 is handled *)
+     | FPM32_op a =>
         addr <- compute_addr a; 
         val <- load_mem32 DS addr;
 
@@ -3158,7 +3166,6 @@ Section X86FloatSemantics.
 
 (* Floating-point Comparisons *)
 (* gtan: cannot use Rcompare here, no Ocaml code can be extracted *)
-
 (* Definition float_compare (a b : binary80) :=  *)
 (*    let aR := B2R 64 16384 a in *)
 (*    let bR := B2R 64 16384 b in *)

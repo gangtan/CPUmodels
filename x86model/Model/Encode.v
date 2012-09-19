@@ -1083,6 +1083,9 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
   let ao := if (addr_override pre) then s2bl "01100111" else s2bl "" in
     ret (lr ++ so ++ oo ++ ao).
 
+Definition enc_undefined : Enc (list bool) := 
+   ret (s2bl "0000000000000000000000").
+
 Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) := 
   match i with
     | AAA => enc_AAA
@@ -1293,6 +1296,8 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | XCHG w op1 op2 => enc_XCHG w op1 op2
     | XLAT => enc_XLAT
     | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
+    (* Encoding for mmx and sse instructions not yet defined *)
+    | _ => enc_undefined
   end.
 
 Definition enc_pre_instr pre ins : Enc (list bool) := 

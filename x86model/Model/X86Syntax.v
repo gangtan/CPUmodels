@@ -87,6 +87,11 @@ Record address : Set := mkAddress {
   addrBase : option register ; 
   addrIndex : option (scale * register)
 }.
+(*
+Based on Section 4.2 of manual 
+"Floating-Point operands may be x87 registers (fp stack elements), or data residing in
+memory." 
+*)
 
 Inductive fpu_register : Set := ST7 | ST6 | ST5 | ST4 | ST3 | ST2 | ST1 | ST0.
 Definition fpu_register_eq_dec : 
@@ -139,18 +144,74 @@ Definition fp_lastOperandPtr_register_eq_dec :
   intros ; decide equality.
 Defined.
 
-(*This includes operands for all types of instructions (int, floating-point, etc). *)
-Inductive operand : Set := 
-| Imm_op : int32 -> operand
-| Reg_op : register -> operand
-| Address_op : address -> operand
-| Offset_op : int32 -> operand.
+(*MMX syntax *)
+
+(*Uses x87 fpu stack but elements can be directly addressed*)
+Definition mmx_register := fpu_register.
+
+Definition Z_to_mmx_register (n:Z) := 
+  match n with 
+    | 0 => ST0
+    | 1 => ST1
+    | 2 => ST2
+    | 3 => ST3
+    | 4 => ST4
+    | 5 => ST5
+    | 6 => ST6
+    | _ => ST7
+  end.
+
+(*SSE syntax *)
+(* 8 128-bit registers (XMM0 - XMM7) introduced, along with MXCSR word for status and control of these registers *)
+Inductive sse_register : Set := XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7.
+Definition sse_register_eq_dec : forall (x y: sse_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Definition Z_to_sse_register (n:Z) := 
+  match n with 
+    | 0 => XMM0
+    | 1 => XMM1
+    | 2 => XMM2
+    | 3 => XMM3
+    | 4 => XMM4
+    | 5 => XMM5
+    | 6 => XMM6
+    | _ => XMM7
+  end.
+
+(*mmreg means mmx register. *)
+Inductive mxcsr: Set := FZ | Rpos | Rneg | RZ | RN | PM | UM | OM | ZM | DM | IM | DAZ | PE | UE |
+			 OE | ZE | DE | IE.
+
+Definition mxcsr_eq_dec : forall (x y: mxcsr), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive sse_operand : Set := 
+| SSE_XMM_Reg_op : sse_register -> sse_operand
+| SSE_MM_Reg_op : mmx_register -> sse_operand 
+| SSE_Addr_op : address -> sse_operand
+| SSE_GP_Reg_op : register -> sse_operand (*r32 in manual, I think *)
+| SSE_Imm_op : int32 -> sse_operand.
+
+Inductive mmx_operand : Set := 
+| GP_Reg_op : register -> mmx_operand
+| MMX_Addr_op : address -> mmx_operand
+| MMX_Reg_op : mmx_register -> mmx_operand
+| MMX_Imm_op : int32 -> mmx_operand.
 
 Inductive fp_operand : Set := 
 | FPS_op : int3 -> fp_operand 	    (*an index from 0 to 7 relative to stack top *)
 | FPM32_op : address -> fp_operand
 | FPM64_op : address -> fp_operand
 | FPM80_op : address -> fp_operand. 
+
+Inductive operand : Set := 
+| Imm_op : int32 -> operand
+| Reg_op : register -> operand
+| Address_op : address -> operand
+| Offset_op : int32 -> operand.
 
 Inductive reg_or_immed : Set := 
 | Reg_ri : register -> reg_or_immed
@@ -241,8 +302,6 @@ actual instruction details. Instructions can be found here:
 http://download.intel.com/products/processor/manual/325383.pdf*)
 | F2XM1 : instr
 | FABS : instr
-(* dest <- ST(0) + op1;
-   when d is true, st(0) is the dest; otherwise, op1 is the dest *)
 | FADD : forall (d: bool)(op1: fp_operand), instr
 | FADDP : forall (op1: fp_operand), instr
 | FBLD : forall (op1: fp_operand), instr
@@ -285,21 +344,19 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FLDLN2 : instr
 | FLDPI : instr
 | FLDZ : instr
-(* dest <- ST(0) * op1;
-   when d is true, st(0) is the dest; otherwise, op1 is the dest *)
 | FMUL : forall (d: bool) (op1: fp_operand), instr
 | FMULP : forall (op1: fp_operand), instr
 | FNOP : instr
 | FNSAVE : forall (op1: fp_operand), instr
-| FNSTCW : forall (op1: fp_operand), instr
+| FNSTCW : forall (op1 : fp_operand), instr
 | FPATAN : instr
 | FPREM : instr
 | FPREM1 : instr
 | FPTAN : instr
 | FRNDINT : instr
 | FRSTOR : forall (op1: fp_operand), instr
-(* FSAVE's encoding the same as FWAIT followed FNSAVE
-   | FSAVE : forall (op1: fp_operand), instr *)
+(*  FSAVE's encoding the same as FWAIT followed FNSAVE
+     | FSAVE : forall (op1: fp_operand), instr *)
 | FSCALE : instr
 | FSIN : instr
 | FSINCOS : instr
@@ -311,8 +368,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 *)
 | FSTENV : forall (op1: fp_operand), instr
 | FSTP : forall (op1: fp_operand), instr
-| FSTSW : forall(op1: option fp_operand), instr
-  (* op1 <- op1 - op2 *)
+| FSTSW : forall (op1: option fp_operand), instr
+(* op1 <- op1 - op2 *)
 | FSUB : forall (op1 op2 : fp_operand), instr
 | FSUBP : forall (op1: fp_operand), instr
   (* reverse subtraction op1 <- op2 - op1 *)
@@ -331,7 +388,105 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FYL2XP1 : instr
 | FWAIT : instr
 (*Floating-Point syntax ends here for now*)
+(*MMX syntax starting here (from table B.5.3) *)
+| EMMS : instr
+| MOVD : forall (op1 op2: mmx_operand), instr
+| MOVQ : forall (op1 op2: mmx_operand), instr
+| PACKSSDW : forall (op1 op2: mmx_operand), instr
+| PACKSSWB : forall (op1 op2: mmx_operand), instr
+| PACKUSWB : forall (op1 op2: mmx_operand), instr
+| PADD : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PADDS : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PADDUS : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PAND : forall  (op1 op2 : mmx_operand), instr
+| PANDN : forall  (op1 op2 : mmx_operand), instr
+| PCMPEQ : forall  (gg: bool) (op1 op2 : mmx_operand), instr
+| PCMPGT : forall  (gg: bool) (op1 op2 : mmx_operand), instr
+| PMADDWD : forall  (op1 op2 : mmx_operand), instr
+| PMULHUW : forall  (op1 op2 : mmx_operand), instr
+| PMULHW : forall  (op1 op2 : mmx_operand), instr
+| PMULLW : forall  (op1 op2 : mmx_operand), instr
+| POR : forall  (op1 op2 : mmx_operand), instr
+| PSLL : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PSRA : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PSRL : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PSUB : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PSUBS : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PSUBUS : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PUNPCKH : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PUNPCKL : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PXOR : forall  (op1 op2 : mmx_operand), instr
+(*End of MMX syntax *)
 
+(*SSE Syntax (Table B.8 in manual) *)
+| ADDPS : forall (op1 op2: sse_operand), instr
+| ADDSS : forall (op1 op2: sse_operand), instr
+| ANDNPS : forall (op1 op2: sse_operand), instr
+| ANDPS : forall (op1 op2: sse_operand), instr
+| CMPPS : forall (op1 op2: sse_operand) (imm: int32), instr
+| CMPSS : forall (op1 op2: sse_operand) (imm: int32), instr
+| COMISS : forall (op1 op2: sse_operand), instr
+| CVTPI2PS : forall (op1 op2: sse_operand), instr
+| CVTPS2PI : forall (op1 op2: sse_operand), instr
+| CVTSI2SS : forall (op1 op2: sse_operand), instr
+| CVTSS2SI : forall (op1 op2: sse_operand), instr
+| CVTTPS2PI : forall (op1 op2: sse_operand), instr
+| CVTTSS2SI : forall (op1 op2: sse_operand), instr
+| DIVPS : forall (op1 op2: sse_operand), instr
+| DIVSS : forall (op1 op2: sse_operand), instr
+| LDMXCSR : forall (op1: sse_operand), instr
+| MAXPS : forall (op1 op2: sse_operand), instr 
+| MAXSS : forall (op1 op2: sse_operand), instr
+| MINPS : forall (op1 op2: sse_operand), instr
+| MINSS : forall (op1 op2: sse_operand), instr
+| MOVAPS : forall (op1 op2: sse_operand), instr
+| MOVHLPS : forall (op1 op2: sse_operand), instr
+| MOVHPS : forall (op1 op2: sse_operand), instr
+| MOVLHPS : forall (op1 op2: sse_operand), instr
+| MOVLPS : forall (op1 op2: sse_operand), instr
+| MOVMSKPS : forall (op1 op2: sse_operand), instr
+| MOVSS : forall (op1 op2: sse_operand), instr
+| MOVUPS : forall (op1 op2: sse_operand), instr
+| MULPS : forall (op1 op2: sse_operand), instr
+| MULSS : forall (op1 op2: sse_operand), instr
+| ORPS : forall (op1 op2: sse_operand), instr
+| RCPPS : forall (op1 op2: sse_operand), instr
+| RCPSS : forall (op1 op2: sse_operand), instr
+| RSQRTPS : forall (op1 op2: sse_operand), instr
+| RSQRTSS : forall (op1 op2: sse_operand), instr
+| SHUFPS : forall (op1 op2: sse_operand) (imm: int32), instr
+| SQRTPS : forall (op1 op2: sse_operand), instr
+| SQRTSS : forall (op1 op2: sse_operand), instr
+| STMXCSR : forall (op1 : sse_operand), instr
+| SUBPS : forall (op1 op2: sse_operand), instr
+| SUBSS : forall (op1 op2: sse_operand), instr
+| UCOMISS : forall (op1 op2: sse_operand), instr
+| UNPCKHPS : forall (op1 op2: sse_operand), instr
+| UNPCKLPS : forall (op1 op2: sse_operand), instr
+| XORPS : forall (op1 op2: sse_operand), instr
+| PAVGB_PAVGW : forall (op1 op2: sse_operand), instr
+| PEXTRW : forall (op1 op2: sse_operand) (imm : int32), instr
+| PINSRW : forall (op1 op2: sse_operand) (imm : int32), instr
+| PMAXSW : forall (op1 op2: sse_operand), instr
+| PMAXUB : forall (op1 op2: sse_operand), instr
+| PMINSW : forall (op1 op2: sse_operand), instr
+| PMINUB : forall (op1 op2: sse_operand), instr
+| PMOVMSKB : forall (op1 op2: sse_operand), instr
+(*| PMULHUW : forall (op1 op2: sse_operand), instr *)
+| PSADBW : forall (op1 op2: sse_operand), instr
+| PSHUFW : forall (op1 op2: sse_operand) (imm: int32), instr
+| MASKMOVQ : forall (op1 op2: sse_operand), instr
+| MOVNTPS : forall (op1 op2: sse_operand), instr
+| MOVNTQ : forall (op1 op2: sse_operand), instr
+| PREFETCHT0 : forall (op1: sse_operand), instr
+| PREFETCHT1 : forall (op1: sse_operand), instr
+| PREFETCHT2 : forall (op1: sse_operand), instr
+| PREFETCHNTA : forall (op1: sse_operand), instr
+| SFENCE: instr
+(*end SSE, start SSE2 *)
+
+
+(*End of SSE Syntax *)
 | HLT  
 | IDIV  : forall (w:bool)(op1:operand), instr
 (* This one is kind of funny -- there are three cases:
@@ -453,7 +608,5 @@ Record prefix : Set := mkPrefix {
 
 
 (* To add:
-
-B.3.  MMX instructions
 B.4.  Streaming SIMD instructions
 *)

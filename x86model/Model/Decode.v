@@ -59,6 +59,10 @@ Module X86_PARSER_ARG.
   | Fpu_TagWords_t : type
   | Fp_Debug_Register_t : type
   | Fp_Operand_t : type 
+  | MMX_Register_t : type
+  | MMX_Operand_t : type
+  | SSE_Register_t : type
+  | SSE_Operand_t : type
   | Instruction_t : type
   | Control_Register_t : type
   | Debug_Register_t : type
@@ -98,6 +102,10 @@ Module X86_PARSER_ARG.
       | Fpu_TagWords_t => fpu_tagWords
       | Fp_Debug_Register_t => fp_debug_register
       | Fp_Operand_t => fp_operand  
+      | MMX_Register_t => mmx_register
+      | MMX_Operand_t => mmx_operand
+      | SSE_Register_t => sse_register
+      | SSE_Operand_t => sse_operand
       | Instruction_t => instr
       | Control_Register_t => control_register
       | Debug_Register_t => debug_register
@@ -136,6 +144,10 @@ Module X86_PARSER.
   Definition fp_opcode_register_t := tipe_t Fp_Opcode_Register_t.
   Definition fpu_tagWords_t := tipe_t Fpu_TagWords_t.
   Definition fp_debug_register_t := tipe_t Fp_Debug_Register_t.
+  Definition mmx_operand_t := tipe_t MMX_Operand_t.
+  Definition mmx_register_t := tipe_t MMX_Register_t.
+  Definition sse_operand_t := tipe_t SSE_Operand_t.
+  Definition sse_register_t := tipe_t SSE_Register_t.
   Definition address_t := tipe_t Address_t.
   Definition operand_t := tipe_t Operand_t.
   Definition fp_operand_t := tipe_t Fp_Operand_t.  
@@ -205,6 +217,8 @@ Module X86_PARSER.
   Definition field(n:nat) := (field' n) @ (bits2int n).
   Definition reg := (field 3) @ (Z_to_register : _ -> result_m register_t). 
   Definition fpu_reg := (field 3) @ (@Word.repr 2 :_ -> result_m fpu_register_t).
+  Definition mmx_reg := (field 3) @ (Z_to_mmx_register : _ -> result_m mmx_register_t).
+  Definition sse_reg := (field 3) @ (Z_to_sse_register : _ -> result_m sse_register_t).
   Definition byte := (field 8) @ (@Word.repr 7 : _ -> result_m byte_t).
  (* Definition halfword := (field 16) @ (@Word.repr 15 : _ -> result_m half_t).
   Definition word := (field 32) @ (@Word.repr 31 : _ -> result_m word_t). *)
@@ -324,6 +338,9 @@ Module X86_PARSER.
 
   Definition rm11 : parser operand_t := reg @ (fun x => Reg_op x : result_m operand_t).
 
+  Definition rm11_mmx : parser mmx_operand_t := reg @ (fun x => GP_Reg_op x : result_m mmx_operand_t).
+  Definition rm11_sse : parser sse_operand_t := reg @ (fun x => SSE_GP_Reg_op x : result_m sse_operand_t).
+
   Definition modrm : parser (pair_t operand_t operand_t) := 
     (     ("00" $$ reg $ rm00) 
       |+| ("01" $$ reg $ rm01)
@@ -335,6 +352,56 @@ Module X86_PARSER.
           (fun p => match p with 
                       | (r, op) => (Reg_op r, op)
                     end %% (pair_t operand_t operand_t)).
+
+  Definition modrm_r32 : parser (pair_t sse_operand_t sse_operand_t) := 
+    (     ("00" $$ reg $ rm00) 
+      |+| ("01" $$ reg $ rm01)
+      |+| ("10" $$ reg $ rm10)) @
+            (fun p => match p with
+                      | (r,addr) => (SSE_GP_Reg_op r, SSE_Addr_op addr)
+                      end %% (pair_t sse_operand_t sse_operand_t))
+   |+| ("11" $$ reg $ rm11_sse) @ 
+          (fun p => match p with 
+                      | (r, op) => (SSE_GP_Reg_op r, op)
+                    end %% (pair_t sse_operand_t sse_operand_t)).
+
+  Definition modrm_mmx : parser (pair_t mmx_operand_t mmx_operand_t) := 
+    (     ("00" $$ mmx_reg $ rm00)
+      |+| ("01" $$ mmx_reg $ rm01)
+      |+| ("10" $$ mmx_reg $ rm10)) @ 
+            (fun p => match p with 
+                      | (r, addr) => (MMX_Reg_op r, MMX_Addr_op addr)
+                      end %% (pair_t mmx_operand_t mmx_operand_t))
+      |+| ("11" $$ mmx_reg $ rm11_mmx) @ 
+          (fun p => match p with 
+                      | (r, op) => (MMX_Reg_op r, op)
+                    end %% (pair_t mmx_operand_t mmx_operand_t)).
+
+   (*mod xmmreg r/m in manual*)
+   Definition modrm_xmm : parser (pair_t sse_operand_t sse_operand_t) := 
+    (     ("00" $$ sse_reg $ rm00)
+      |+| ("01" $$ sse_reg $ rm01)
+      |+| ("10" $$ sse_reg $ rm10)) @ 
+            (fun p => match p with 
+                      | (r, addr) => (SSE_XMM_Reg_op r, SSE_Addr_op addr)
+                      end %% (pair_t sse_operand_t sse_operand_t))
+      |+| ("11" $$ sse_reg $ rm11_sse) @ 
+          (fun p => match p with 
+                      | (r, op) => (SSE_XMM_Reg_op r, op)
+                    end %% (pair_t sse_operand_t sse_operand_t)).
+
+   (*mod mmreg r/m (no x) in manual *)
+   Definition modrm_mm : parser (pair_t sse_operand_t sse_operand_t) := 
+    (     ("00" $$ mmx_reg $ rm00)
+      |+| ("01" $$ mmx_reg $ rm01)
+      |+| ("10" $$ mmx_reg $ rm10)) @ 
+            (fun p => match p with 
+                      | (r, addr) => (SSE_MM_Reg_op r, SSE_Addr_op addr)
+                      end %% (pair_t sse_operand_t sse_operand_t))
+      |+| ("11" $$ mmx_reg $ rm11_sse) @ 
+          (fun p => match p with 
+                      | (r, op) => (SSE_MM_Reg_op r, op)
+                    end %% (pair_t sse_operand_t sse_operand_t)).
 
   (* same as modrm but disallows the register case *)
   Definition modrm_noreg :=
@@ -354,6 +421,15 @@ Module X86_PARSER.
            (fun p => match p with 
                        | (_,(_,addr)) => Address_op addr
                      end %% operand_t).
+  
+  (*mod^A "bbb" mem in manual for SSE instructions*)
+  Definition ext_op_modrm_sse(bs:string) : parser sse_operand_t := 
+    (      (bits "00" $ bits bs $ rm00)
+     |+|   (bits "01" $ bits bs $ rm01)
+     |+|   (bits "10" $ bits bs $ rm10) ) @
+           (fun p => match p with 
+                       | (_,(_,addr)) => SSE_Addr_op addr
+                     end %% sse_operand_t).
 
   Definition ext_op_modrm2(bs:string) : parser operand_t :=
     (     ("00" $$ bits bs $ rm00) 
@@ -1272,6 +1348,636 @@ Module X86_PARSER.
   Definition FWAIT_p := bits "10011011" @ (fun _ => FWAIT %% instruction_t).
 (*End of Floating-Point parsers*)
 
+(*MMX Parsers*)
+  Definition EMMS_p := "0000" $$ "1111" $$ "0111" $$ bits "0111" @ (fun _ => EMMS %% instruction_t).
+  Definition MOVD_p := 
+    "0000" $$ "1111" $$ "0110" $$ "1110" $$ "11" $$ mmx_reg $ reg @ 
+    (fun p => let (m, r) := p in MOVD (MMX_Reg_op m) (GP_Reg_op r) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0111" $$ "1110" $$ "11" $$ mmx_reg $ reg @ 
+    (fun p => let (m, r) := p in MOVD (MMX_Reg_op m) (GP_Reg_op r) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0110" $$ "1110" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in MOVD mem mmx %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0111" $$ "1110" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in MOVD mem mmx %% instruction_t).
+
+  Definition MOVQ_p :=
+    "0000" $$ "1111" $$ "0110" $$ "1111" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in MOVQ (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0111" $$ "1111" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in MOVQ (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0110" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in MOVQ mem mmx %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0111" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in MOVQ mem mmx %% instruction_t).
+
+  Definition PACKSSDW_p := 
+   "0000" $$ "1111" $$ "0110" $$ "1011" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PACKSSDW (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0110" $$ "1011" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PACKSSDW mem mmx %% instruction_t).
+
+  Definition PACKSSWB_p := 
+    "0000" $$ "1111" $$ "0110" $$ "0011" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PACKSSWB (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0110" $$ "0011" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PACKSSWB mem mmx %% instruction_t).
+
+  Definition PACKUSWB_p := 
+  "0000" $$ "1111" $$ "0110" $$ "0111" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PACKUSWB (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0110" $$ "0111" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PACKUSWB mem mmx %% instruction_t).
+
+  Definition PADD_p := 
+  "0000" $$ "1111" $$ "1111" $$ "11" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PADD gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1111" $$ "11" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PADD gg reg mmx end %% instruction_t).
+
+  Definition PADDS_p := 
+  "0000" $$ "1111" $$ "1110" $$ "11" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PADDS gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "11" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PADDS gg reg mmx end %% instruction_t).
+
+  Definition PADDUS_p := 
+  "0000" $$ "1111" $$ "1101" $$ "11" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PADDUS gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "11" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PADDUS gg reg mmx end %% instruction_t).
+
+  Definition PAND_p := 
+  "0000" $$ "1111" $$ "1101" $$ "1011" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PAND (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "1011" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PAND mem mmx %% instruction_t).
+
+  Definition PANDN_p := 
+  "0000" $$ "1111" $$ "1101" $$ "1111" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PANDN (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PANDN mem mmx %% instruction_t).
+
+  Definition PCMPEQ_p :=
+  "0000" $$ "1111" $$ "0111" $$ "01" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PCMPEQ gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "01" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PCMPEQ gg reg mmx end %% instruction_t).
+
+  Definition PCMPGT_p := 
+  "0000" $$ "1111" $$ "0110" $$ "01" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PCMPGT gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0110" $$ "01" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PCMPGT gg reg mmx end %% instruction_t).
+
+  Definition PMADDWD_p := 
+  "0000" $$ "1111" $$ "1111" $$ "0101" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PMADDWD (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1111" $$ "0101" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PMADDWD mem mmx %% instruction_t).
+
+  Definition PMULHUW_p := 
+  "0000" $$ "1111" $$ "1110" $$ "0100" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PMULHUW (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PMULHUW mem mmx %% instruction_t).
+
+  Definition PMULHW_p := 
+  "0000" $$ "1111" $$ "1110" $$ "0101" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PMULHW (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0101" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PMULHW mem mmx %% instruction_t).
+
+  Definition PMULLW_p := 
+  "0000" $$ "1111" $$ "1101" $$ "0101" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PMULLW (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "0101" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PMULLW mem mmx %% instruction_t).
+
+  Definition POR_p := 
+  "0000" $$ "1111" $$ "1110" $$ "0101" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in POR (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0101" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in POR mem mmx %% instruction_t).
+
+  Definition PSLL_p := 
+  "0000" $$ "1111" $$ "1111" $$ "00" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PSLL gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1111" $$ "00" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PSLL gg reg mmx end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "00" $$ anybit $ "11110" $$ mmx_reg $ byte @ 
+    (fun p => match p with (gg, (mmx, imm)) => PSLL gg (MMX_Reg_op mmx) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+  
+  Definition PSRA_p :=
+  "0000" $$ "1111" $$ "1110" $$ "00" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PSRA gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "00" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PSRA gg reg mmx end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "00" $$ anybit $ "11110" $$ mmx_reg $ byte @ 
+    (fun p => match p with (gg, (mmx, imm)) => PSRA gg (MMX_Reg_op mmx) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+
+  Definition PSRL_p := 
+  "0000" $$ "1111" $$ "1101" $$ "00" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PSRL gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "00" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PSRL gg reg mmx end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "00" $$ anybit $ "11110" $$ mmx_reg $ byte @ 
+    (fun p => match p with (gg, (mmx, imm)) => PSRL gg (MMX_Reg_op mmx) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+
+  Definition PSUB_p := 
+  "0000" $$ "1111" $$ "1111" $$ "10" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PSUB gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1111" $$ "10" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PSUB gg reg mmx end %% instruction_t).
+
+  Definition PSUBS_p := 
+  "0000" $$ "1111" $$ "1110" $$ "10" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PSUBS gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "10" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PSUBS gg reg mmx end %% instruction_t).
+
+  Definition PSUBUS_p := 
+  "0000" $$ "1111" $$ "1101" $$ "10" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PSUBUS gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "10" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PSUBUS gg reg mmx end %% instruction_t).
+
+  Definition PUNPCKH_p := 
+  "0000" $$ "1111" $$ "0110" $$ "10" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PUNPCKH gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0110" $$ "10" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PUNPCKH gg reg mmx end %% instruction_t).
+
+  Definition PUNPCKL_p := 
+  "0000" $$ "1111" $$ "0110" $$ "00" $$ anybit $ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => match p with (gg, (mmx1, mmx2)) => PUNPCKL gg (MMX_Reg_op mmx1) (MMX_Reg_op mmx2) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0110" $$ "00" $$ anybit $ modrm_mmx @ 
+    (fun p => match p with (gg, (reg, mmx)) => PUNPCKL gg reg mmx end %% instruction_t).
+
+  Definition PXOR_p := 
+  "0000" $$ "1111" $$ "1110" $$ "1111" $$ "11" $$ mmx_reg $ mmx_reg @ 
+    (fun p => let (m, r) := p in PXOR (MMX_Reg_op m) (MMX_Reg_op r) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (mem, mmx) := p in PXOR mem mmx %% instruction_t).
+(*End of MMX parsers *)
+
+(*SSE parsers start here *)
+Definition ADDPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1000" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in ADDPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in ADDPS mem xmm %% instruction_t).
+
+Definition ADDSS_p := 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1000" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in ADDSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in ADDSS mem xmm %% instruction_t).
+
+Definition ANDNPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "0101" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in ANDNPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "0101" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in ANDNPS mem xmm %% instruction_t).
+
+Definition ANDPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "0100" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in ANDPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "0100" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in ANDPS mem xmm %% instruction_t).
+
+Definition CMPPS_p := 
+  "0000" $$ "1111" $$ "1100" $$ "0010" $$ "11" $$ sse_reg $ sse_reg $ byte @
+    (fun p => match p with (sse1, (sse2, imm)) => CMPPS (SSE_XMM_Reg_op sse1) (SSE_XMM_Reg_op sse2) (zero_extend8_32 imm) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm $ byte @ 
+    (fun p => match p with ((mem, xmm), imm) => CMPPS mem xmm (zero_extend8_32 imm) end %% instruction_t).
+
+Definition CMPSS_p := 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "1100" $$ "0010" $$ "11" $$ sse_reg $ sse_reg $ byte@
+    (fun p => match p with (sse1,(sse2, imm)) => CMPSS (SSE_XMM_Reg_op sse1) (SSE_XMM_Reg_op sse2) (zero_extend8_32 imm) end %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm $ byte @ 
+    (fun p => match p with ((mem, xmm), imm) => CMPSS mem xmm (zero_extend8_32 imm) end %% instruction_t).
+
+Definition COMISS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1111" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in COMISS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1111" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in COMISS mem xmm %% instruction_t).
+
+Definition CVTPI2PS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1010" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in CVTPI2PS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in CVTPI2PS mem xmm %% instruction_t).
+
+Definition CVTPS2PI_p := 
+  "0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ mmx_reg $ sse_reg @
+    (fun p => let (a, b) := p in CVTPS2PI (SSE_MM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in CVTPS2PI mem mmx %% instruction_t).
+
+Definition CVTSI2SS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1010" $$ "11" $$ sse_reg $ reg @
+    (fun p => let (a, b) := p in CVTSI2SS (SSE_XMM_Reg_op a) (SSE_GP_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in CVTSI2SS mem xmm %% instruction_t).
+
+Definition CVTSS2SI_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ reg $ sse_reg @
+    (fun p => let (a, b) := p in CVTSS2SI (SSE_GP_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1111" $$ "0010" $$ "1101" $$ modrm_r32 @ 
+    (fun p => let (mem, r) := p in CVTSS2SI mem r %% instruction_t).
+
+Definition CVTTPS2PI_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1100" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in CVTTPS2PI (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in CVTTPS2PI mem mmx %% instruction_t).
+
+Definition CVTTSS2SI_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ "11" $$ reg $ sse_reg @
+    (fun p => let (a, b) := p in CVTTSS2SI (SSE_GP_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1111" $$ "0010" $$ "1100" $$ modrm_r32 @ 
+    (fun p => let (mem, r) := p in CVTTSS2SI mem r %% instruction_t).
+
+Definition DIVPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1110" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in DIVPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in DIVPS mem mmx %% instruction_t).
+
+Definition DIVSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1110" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in DIVSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in DIVSS mem mmx %% instruction_t).
+
+Definition LDMXCSR_p := 
+  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse "010" @ (fun x => LDMXCSR x %% instruction_t).
+
+Definition MAXPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1111" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MAXPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in MAXPS mem mmx %% instruction_t).
+
+Definition MAXSS_p := 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1111" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MAXSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in MAXSS mem mmx %% instruction_t).
+
+Definition MINPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1101" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MINPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in MINPS mem mmx %% instruction_t).
+
+Definition MINSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MINSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in MINSS mem mmx %% instruction_t).
+
+Definition MOVAPS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1000" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVAPS (SSE_XMM_Reg_op b) (SSE_XMM_Reg_op a) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1000" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVAPS mem xmm %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1001" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVAPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1001" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVAPS xmm mem %% instruction_t).
+
+Definition MOVHLPS_p :=
+"0000" $$ "1111" $$ "0001" $$ "0010" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVHLPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t).
+
+Definition MOVHPS_p := 
+  "0000" $$ "1111" $$ "0001" $$ "0110" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVHPS mem xmm %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0111" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVHPS xmm mem %% instruction_t).
+
+Definition MOVLHPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVLHPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t).
+
+Definition MOVLPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0010" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVLPS mem xmm %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0011" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVLPS xmm mem %% instruction_t).
+
+Definition MOVMSKPS_p := 
+  "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11" $$ reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVMSKPS (SSE_GP_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t).
+
+Definition MOVSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$ "0000" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVSS (SSE_XMM_Reg_op b) (SSE_XMM_Reg_op a) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$  modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVSS mem xmm %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$ "0001" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVSS xmm mem %% instruction_t).
+
+Definition MOVUPS_p := 
+  "0000" $$ "1111" $$ "0001" $$ "0000" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVUPS (SSE_XMM_Reg_op b) (SSE_XMM_Reg_op a) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0000" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVUPS mem xmm %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0001" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MOVUPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVUPS xmm mem %% instruction_t).
+
+Definition MULPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "1001" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MULPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MULPS mem xmm %% instruction_t).
+
+Definition MULSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1001" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in MULSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in MULSS mem mmx %% instruction_t).
+
+Definition ORPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0110" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in ORPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "0110" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in ORPS mem xmm %% instruction_t).
+
+Definition RCPPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0011" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in RCPPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in RCPPS mem xmm %% instruction_t).
+
+Definition RCPSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0011" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in RCPSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in RCPSS mem mmx %% instruction_t).
+
+Definition RSQRTPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0010" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in RSQRTPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in RSQRTPS mem xmm %% instruction_t).
+
+Definition RSQRTSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0010" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in RSQRTSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm @ 
+    (fun p => let (mem, mmx) := p in RSQRTSS mem mmx %% instruction_t).
+
+Definition SHUFPS_p :=
+  "0000" $$ "1111" $$ "1100" $$ "0110" $$ "11" $$ sse_reg $ sse_reg $ byte @
+    (fun p => match p with (sse1, (sse2, imm)) => SHUFPS (SSE_XMM_Reg_op sse1) (SSE_XMM_Reg_op sse2) (zero_extend8_32 imm) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1100" $$ "0110" $$ modrm_xmm $ byte @ 
+    (fun p => match p with ((mem, xmm), imm) => SHUFPS mem xmm (zero_extend8_32 imm) end %% instruction_t).
+
+Definition SQRTPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0001" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in SQRTPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in SQRTPS mem xmm %% instruction_t).
+
+Definition SQRTSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0001" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in SQRTSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in SQRTSS mem xmm %% instruction_t).
+
+Definition STMXCSR_p := 
+  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse "011" @ (fun x => STMXCSR x %% instruction_t).
+
+Definition SUBPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "1100" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in SUBPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in SUBPS mem xmm %% instruction_t).
+
+Definition SUBSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1100" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in SUBSS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in SUBSS mem xmm %% instruction_t).
+
+Definition UCOMISS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1110" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in UCOMISS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1110" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in UCOMISS mem xmm %% instruction_t).
+
+Definition UNPCKHPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0101" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in UNPCKHPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0101" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in UNPCKHPS mem xmm %% instruction_t).
+
+Definition UNPCKLPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0100" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in UNPCKLPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0100" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in UNPCKLPS mem xmm %% instruction_t).
+
+Definition XORPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0111" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in XORPS (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0101" $$ "0111" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in XORPS mem xmm %% instruction_t).
+
+Definition PAVGB_PAVGW_p :=
+  "0000" $$ "1111" $$ "1110" $$ "0000" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in PAVGB_PAVGW (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0011" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (a, b) := p in PAVGB_PAVGW (SSE_XMM_Reg_op a) (SSE_XMM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0000" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in PAVGB_PAVGW mem xmm %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0011" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in PAVGB_PAVGW mem xmm %% instruction_t).
+
+Definition PEXTRW_p :=
+  "0000" $$ "1111" $$ "1100" $$ "0101" $$ "11" $$ reg $ mmx_reg $ byte @
+    (fun p => match p with (r32, (mmx, imm)) => PEXTRW (SSE_GP_Reg_op r32) (SSE_MM_Reg_op mmx) (zero_extend8_32 imm) end %% instruction_t).
+
+Definition PINSRW_p :=
+  "0000" $$ "1111" $$ "1100" $$ "0100" $$ "11" $$ mmx_reg $ reg $ byte @
+    (fun p => match p with (mmx, (r32, imm)) => PINSRW (SSE_MM_Reg_op mmx) (SSE_GP_Reg_op r32) (zero_extend8_32 imm) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1100" $$ "0100" $$ modrm_mm $ byte @ 
+    (fun p => match p with ((mem, mmx), imm) => PINSRW mem mmx (zero_extend8_32 imm) end %% instruction_t).
+
+Definition PMAXSW_p :=
+  "0000" $$ "1111" $$ "1110" $$ "1110" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in PMAXSW (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "1110" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in PMAXSW mem mmx %% instruction_t).
+
+Definition PMAXUB_p :=
+  "0000" $$ "1111" $$ "1101" $$ "1110" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in PMAXUB (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "1110" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in PMAXUB mem mmx %% instruction_t).
+
+Definition PMINSW_p :=
+  "0000" $$ "1111" $$ "1110" $$ "1010" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in PMINSW (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "1010" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in PMINSW mem mmx %% instruction_t).
+
+Definition PMINUB_p :=
+  "0000" $$ "1111" $$ "1101" $$ "1010" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in PMINUB (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1101" $$ "1010" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in PMINUB mem mmx %% instruction_t).
+
+Definition PMOVMSKB_p :=
+  "0000" $$ "1111" $$ "1101" $$ "0111" $$ "11" $$ reg $ mmx_reg @
+    (fun p => let (a, b) := p in PMOVMSKB (SSE_GP_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t).
+
+(*
+  Already done in MMX parser section
+
+ Definition PMULHUW_p :=
+  "0000" $$ "1111" $$ "1110" $$ "0100" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in PMULHUW (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in PMULHUW mem mmx %% instruction_t).
+*)
+Definition PSADBW_p :=
+  "0000" $$ "1111" $$ "1111" $$ "0110" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in PSADBW (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1111" $$ "0110" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in PSADBW mem mmx %% instruction_t).
+
+Definition PSHUFW_p :=
+  "0000" $$ "1111" $$ "0111" $$ "0000" $$ "11" $$ mmx_reg $ mmx_reg $ byte @
+    (fun p => match p with (mmx1, (mmx2, imm)) => PSHUFW (SSE_MM_Reg_op mmx1) (SSE_MM_Reg_op mmx2) (zero_extend8_32 imm) end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "0000" $$ modrm_mm $ byte @ 
+    (fun p => match p with ((mem, mmx), imm) => PSHUFW mem mmx (zero_extend8_32 imm) end %% instruction_t).
+
+Definition MASKMOVQ_p :=
+  "0000" $$ "1111" $$ "1111" $$ "0111" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in MASKMOVQ (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t).
+
+Definition MOVNTPS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1011" $$ modrm_xmm @ 
+    (fun p => let (mem, xmm) := p in MOVNTPS mem xmm %% instruction_t).
+
+Definition MOVNTQ_p :=
+  "0000" $$ "1111" $$ "1110" $$ "0111" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in MOVNTQ mem mmx %% instruction_t).
+
+Definition PREFETCHT0_p :=
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "001" @ (fun x => PREFETCHT0 x %% instruction_t).
+
+Definition PREFETCHT1_p :=
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "010" @ (fun x => PREFETCHT1 x %% instruction_t).
+
+Definition PREFETCHT2_p := 
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "011" @ (fun x => PREFETCHT2 x %% instruction_t).
+
+Definition PREFETCHNTA_p :=
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "000" @ (fun x => PREFETCHNTA x %% instruction_t).
+
+Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$ 
+                                   bits "1000" @ (fun _ => SFENCE %% instruction_t).
+
   (* Now glue all of the individual instruction parsers together into 
      one big parser.  *)
   
@@ -1295,9 +2001,17 @@ Module X86_PARSER.
     FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
     FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
     (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
-    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) FSCALE_p :: 
+    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) 
+    FSCALE_p :: 
     FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
-    FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: nil.
+    FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: 
+    EMMS_p :: MOVD_p :: MOVQ_p :: PACKSSDW_p :: PACKSSWB_p :: PACKUSWB_p :: PADD_p :: PADDS_p :: PADDUS_p :: PAND_p :: PANDN_p :: PCMPEQ_p :: PCMPGT_p :: 
+    PMADDWD_p :: PMULHUW_p :: PMULHW_p :: PMULLW_p :: POR_p :: PSLL_p :: PSRA_p :: PSRL_p :: PSUB_p :: PSUBS_p :: PSUBUS_p :: PUNPCKH_p :: PUNPCKL_p :: PXOR_p :: 
+    ADDPS_p :: ADDSS_p :: ANDNPS_p :: ANDPS_p :: CMPPS_p :: CMPSS_p :: COMISS_p :: CVTPI2PS_p :: CVTPS2PI_p :: CVTSI2SS_p :: CVTSS2SI_p :: CVTTPS2PI_p :: CVTTSS2SI_p ::
+    DIVPS_p :: DIVSS_p :: LDMXCSR_p :: MAXPS_p :: MAXSS_p :: MINPS_p :: MINSS_p :: MOVAPS_p :: MOVHLPS_p :: MOVLPS_p :: MOVMSKPS_p :: MOVSS_p :: MOVUPS_p :: MULPS_p ::
+    MULSS_p :: ORPS_p :: RCPPS_p :: RCPSS_p :: RSQRTPS_p :: RSQRTSS_p :: SHUFPS_p :: SQRTPS_p :: SQRTSS_p :: STMXCSR_p :: SUBPS_p :: SUBSS_p :: UCOMISS_p :: UNPCKHPS_p ::
+    UNPCKLPS_p :: XORPS_p :: PAVGB_PAVGW_p :: PEXTRW_p :: PINSRW_p :: PMAXSW_p :: PMAXUB_p :: PMINSW_p :: PMINUB_p :: PMOVMSKB_p :: PSADBW_p :: PSHUFW_p :: MASKMOVQ_p ::
+    MOVNTPS_p :: MOVNTQ_p :: PREFETCHT0_p :: PREFETCHT1_p :: PREFETCHT2_p :: PREFETCHNTA_p :: SFENCE_p :: nil.
 
   Fixpoint list2pair_t (l: list result) :=
     match l with
