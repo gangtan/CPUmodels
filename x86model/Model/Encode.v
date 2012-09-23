@@ -191,7 +191,7 @@ Definition enc_halfword (sz:nat) (i:Word.int sz) : list bool :=
   let b0 := Word.shru i (Word.repr 8) in
   let b1 := Word.and i (Word.repr 255) in
   let hw := Word.or (Word.shl b1 (Word.repr 8)) b0 in
-    int_explode i 16.
+    int_explode hw 16.
 Implicit Arguments enc_halfword [sz].
 
 Definition enc_word (sz:nat) (i:Word.int sz) : list bool :=
@@ -221,12 +221,20 @@ Definition enc_modrm_gen (reg: list bool) (op2 : operand): Enc (list bool) :=
           | _, None => ret (enc_reg bs)
         end in
         r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
+        let enc_disp_idxopt := 
+          if (repr_in_signed_byte disp) then
             ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
             else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
+        in
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        match bs with
+          | EBP => (* when base is EBP, cannot use the 00 mod *)
+            enc_disp_idxopt
+          | _ => 
+            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
+              else enc_disp_idxopt
+        end
     | Address_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
       (* special case: disp32[index*scale] *)
       ret (s2bl "00" ++ reg ++ s2bl "100" ++
@@ -510,7 +518,7 @@ Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
           if (repr_in_signed_byte i1) then
             (* alternate encoding: can always use the word case to encode i1 *)
             ret (s2bl "11101011" ++ enc_byte i1)
-          else ret (s2bl "11101000" ++ enc_word i1)
+          else ret (s2bl "11101001" ++ enc_word i1)
         | _ => invalid
       end
     | true, true => 
@@ -754,13 +762,19 @@ Definition enc_SUB := enc_logic_or_arith "00101" "101".
 Definition enc_TEST (op_override w:bool)
   (op1 op2:operand) : Enc (list bool) :=
   match op1, op2 with
-    | Reg_op EAX, Imm_op i2 =>
-      ret (s2bl "1010100" ++ enc_bit w ++ enc_imm op_override w i2)
-    | Address_op a1, Imm_op i2 =>
-      l1 <- enc_modrm_2 "000" op1; 
-      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ enc_imm op_override w i2)
-    | _, Reg_op r2 =>
-      l1 <- enc_modrm op2 op1; ret (s2bl "1000010"  ++ enc_bit w ++ l1)
+    | Reg_op EAX, Imm_op i
+    | Imm_op i, Reg_op EAX =>
+      ret (s2bl "1010100" ++ enc_bit w ++ enc_imm op_override w i)
+
+    | op, Imm_op i
+    | Imm_op i, op =>
+      l1 <- enc_modrm_2 "000" op; 
+      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ enc_imm op_override w i)
+
+    | op, Reg_op r
+    | Reg_op r, op =>
+      l1 <- enc_modrm (Reg_op r) op; ret (s2bl "1000010"  ++ enc_bit w ++ l1)
+
     | _, _ => invalid
   end.
 
@@ -830,10 +844,20 @@ Definition enc_fp_modrm (opb: list bool) (op2 : fp_operand) : Enc (list bool) :=
           | _, None => ret (enc_reg bs)
         end in
         r_or_m <- enc_r_or_m;
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
-        else if (repr_in_signed_byte disp) then
+        let enc_disp_idxopt := 
+          if (repr_in_signed_byte disp) then
             ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
-        else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
+            else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
+        in
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        match bs with
+          | EBP => (* when base is EBP, cannot use the 00 mod *)
+            enc_disp_idxopt
+          | _ => 
+            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
+              else enc_disp_idxopt
+        end
 
     | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
     | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
@@ -865,17 +889,25 @@ Definition enc_fp_int3 (op1 : fp_operand) : Enc (list bool) :=
   end.
 
 (* Definition is a helper definition that encodes arithmetic instructions with two floating-point
-   operands and returns their bit patterns represented as list booleans. *)
-Definition enc_fp_arith (lb opb: list bool) (op1 op2 : fp_operand) : Enc (list bool) :=
+   operands and returns their bit patterns represented as list booleans.
+   In the case of "FPS_op i1, FPS_op i2", 
+     * when m is true, then the sixth bit of the first byte should be
+       the same as the fifth bit of the second byte.
+     * when m is false, the two bits should be different.
+ *)
+Definition enc_fp_arith (m:bool) (lb opb: list bool)
+  (op1 op2 : fp_operand) : Enc (list bool) :=
   match op1, op2 with 
     | FPS_op i1, FPS_op i2 => 
         if Word.eq i1 Word.zero then
           (* alternate encoding when i2 is also zero *)
-          l1 <- enc_fp_int3 op2; 
-          ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ s2bl "0" ++ l1)
+          l1 <- enc_fp_int3 op2;
+          let bm := if m then false else true in
+            ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ (bm :: l1))
         else if Word.eq i2 Word.zero then
           l1 <- enc_fp_int3 op1; 
-          ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ s2bl "1" ++ l1) 
+          let bm := if m then true else false in
+            ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ (bm :: l1))
         else invalid
     | FPS_op i1, FPM32_op fa1 => 
         if Word.eq i1 Word.zero
@@ -887,6 +919,29 @@ Definition enc_fp_arith (lb opb: list bool) (op1 op2 : fp_operand) : Enc (list b
           else invalid
     | _ , _ =>  invalid
   end.
+
+(* Definition enc_fp_arith (lb opb: list bool) (op1 op2 : fp_operand) : Enc (list bool) := *)
+(*   match op1, op2 with  *)
+(*     | FPS_op i1, FPS_op i2 =>  *)
+(*         if Word.eq i1 Word.zero then *)
+(*           (* alternate encoding when i2 is also zero *) *)
+(*           l1 <- enc_fp_int3 op2; *)
+(*           ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ s2bl "0" ++ l1) *)
+(*         else if Word.eq i2 Word.zero then *)
+(*           l1 <- enc_fp_int3 op1;  *)
+(*           ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ s2bl "1" ++ l1)  *)
+(*         else invalid *)
+(*     | FPS_op i1, FPM32_op fa1 =>  *)
+(*         if Word.eq i1 Word.zero *)
+(*           then l1 <- enc_fp_modrm opb op2; ret (s2bl "11011000" ++ l1) *)
+(*           else invalid *)
+(*     | FPS_op i1, FPM64_op fa1 =>  *)
+(*         if Word.eq i1 Word.zero  *)
+(*           then l1 <- enc_fp_modrm opb op2; ret (s2bl "11011100" ++ l1) *)
+(*           else invalid *)
+(*     | _ , _ =>  invalid *)
+(*   end. *)
+
 
 
 (******* Floating-point Instructions ordered in ABC order *********)
@@ -939,10 +994,10 @@ Definition enc_FCOMIP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111111110" ++ l1).
 Definition enc_FCOS := ret (s2bl "1101111011011001").
 Definition enc_FDECSTP := ret (s2bl "1101111011011001").
-Definition enc_FDIV := enc_fp_arith (s2bl "1") (s2bl "110").
+Definition enc_FDIV := enc_fp_arith true (s2bl "1") (s2bl "110").
 Definition enc_FDIVP (fp1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 fp1; ret (s2bl "1101111011111" ++ l1).
-Definition enc_FDIVR := enc_fp_arith (s2bl "1") (s2bl "111").
+Definition enc_FDIVR := enc_fp_arith false (s2bl "1") (s2bl "111").
 Definition enc_FDIVRP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111011110" ++  l1).
 Definition enc_FFREE (op1: fp_operand) : Enc (list bool) :=
@@ -1004,7 +1059,7 @@ Definition enc_FLDZ := ret (s2bl "1101100111101110").
 Definition enc_FMUL (d: bool) (op1: fp_operand) : Enc (list bool) :=
   match op1 with 
     | FPS_op i1 =>  
-      l1 <- enc_fp_int3 op1; ret (s2bl "11011" ++ enc_bit d ++ s2bl "0111000"  ++ l1)
+      l1 <- enc_fp_int3 op1; ret (s2bl "11011" ++ enc_bit d ++ s2bl "0011001"  ++ l1)
     | FPM32_op fa1 => 
       l1 <- enc_fp_modrm (s2bl "001") op1; ret (s2bl "11011000" ++ l1)
     | FPM64_op fa1 => 
@@ -1060,10 +1115,10 @@ Definition enc_FSTSW (op1: option fp_operand) : Enc (list bool) :=
     | None => ret (s2bl "1101111111100000")
     | Some op1 => l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011101" ++ l1)
   end.
-Definition enc_FSUB := enc_fp_arith (s2bl "0") (s2bl "100") .
+Definition enc_FSUB := enc_fp_arith true (s2bl "0") (s2bl "100") .
 Definition enc_FSUBP (op1 : fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111011101" ++ l1).
-Definition enc_FSUBR := enc_fp_arith (s2bl "0") (s2bl "101").
+Definition enc_FSUBR := enc_fp_arith false (s2bl "0") (s2bl "101").
 Definition enc_FSUBRP (op1: (*option*) fp_operand) : Enc (list bool):=
    l1 <- enc_fp_int3 op1; ret (s2bl "1101111011100" ++ l1).
 Definition enc_FTST := ret (s2bl "1101100111100100").
@@ -1088,8 +1143,8 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
   let lr := 
     match (lock_rep pre) with
       | Some lock => s2bl "11110000"
-      | Some rep  => s2bl "11110010"
-      | Some repn => s2bl "11110011"
+      | Some rep  => s2bl "11110011"
+      | Some repn => s2bl "11110010"
       | None => s2bl ""
     end in
   let so := 
