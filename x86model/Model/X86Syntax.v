@@ -195,6 +195,12 @@ Inductive sse_operand : Set :=
 | SSE_GP_Reg_op : register -> sse_operand (*r32 in manual, I think *)
 | SSE_Imm_op : int32 -> sse_operand.
 
+Inductive mmx_granularity : Set :=
+| MMX_8                         (* 8 bits *)
+| MMX_16                        (* 16 bits *)
+| MMX_32                        (* 32 bits *)
+| MMX_64.                       (* 64 bits *)
+
 Inductive mmx_operand : Set := 
 | GP_Reg_op : register -> mmx_operand
 | MMX_Addr_op : address -> mmx_operand
@@ -395,26 +401,26 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | PACKSSDW : forall (op1 op2: mmx_operand), instr
 | PACKSSWB : forall (op1 op2: mmx_operand), instr
 | PACKUSWB : forall (op1 op2: mmx_operand), instr
-| PADD : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PADDS : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PADDUS : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PADD : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PADDS : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PADDUS : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
 | PAND : forall  (op1 op2 : mmx_operand), instr
 | PANDN : forall  (op1 op2 : mmx_operand), instr
-| PCMPEQ : forall  (gg: bool) (op1 op2 : mmx_operand), instr
-| PCMPGT : forall  (gg: bool) (op1 op2 : mmx_operand), instr
+| PCMPEQ : forall  (gg:mmx_granularity) (op1 op2 : mmx_operand), instr
+| PCMPGT : forall  (gg:mmx_granularity) (op1 op2 : mmx_operand), instr
 | PMADDWD : forall  (op1 op2 : mmx_operand), instr
 | PMULHUW : forall  (op1 op2 : mmx_operand), instr
 | PMULHW : forall  (op1 op2 : mmx_operand), instr
 | PMULLW : forall  (op1 op2 : mmx_operand), instr
 | POR : forall  (op1 op2 : mmx_operand), instr
-| PSLL : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PSRA : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PSRL : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PSUB : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PSUBS : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PSUBUS : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PUNPCKH : forall (gg: bool) (op1 op2: mmx_operand), instr
-| PUNPCKL : forall (gg: bool) (op1 op2: mmx_operand), instr
+| PSLL : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PSRA : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PSRL : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PSUB : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PSUBS : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PSUBUS : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PUNPCKH : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
+| PUNPCKL : forall (gg:mmx_granularity) (op1 op2: mmx_operand), instr
 | PXOR : forall  (op1 op2 : mmx_operand), instr
 (*End of MMX syntax *)
 
@@ -464,7 +470,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | UNPCKHPS : forall (op1 op2: sse_operand), instr
 | UNPCKLPS : forall (op1 op2: sse_operand), instr
 | XORPS : forall (op1 op2: sse_operand), instr
-| PAVGB_PAVGW : forall (op1 op2: sse_operand), instr
+| PAVGB : forall (op1 op2: sse_operand), instr
 | PEXTRW : forall (op1 op2: sse_operand) (imm : int32), instr
 | PINSRW : forall (op1 op2: sse_operand) (imm : int32), instr
 | PMAXSW : forall (op1 op2: sse_operand), instr
