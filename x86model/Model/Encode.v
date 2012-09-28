@@ -1,3 +1,4 @@
+
 (* This file encodes Intel IA32 (x86) 32-bit instructions into 
  * their binary form. *)
 
@@ -191,7 +192,7 @@ Definition enc_halfword (sz:nat) (i:Word.int sz) : list bool :=
   let b0 := Word.shru i (Word.repr 8) in
   let b1 := Word.and i (Word.repr 255) in
   let hw := Word.or (Word.shl b1 (Word.repr 8)) b0 in
-    int_explode hw 16.
+    int_explode i 16.
 Implicit Arguments enc_halfword [sz].
 
 Definition enc_word (sz:nat) (i:Word.int sz) : list bool :=
@@ -221,20 +222,12 @@ Definition enc_modrm_gen (reg: list bool) (op2 : operand): Enc (list bool) :=
           | _, None => ret (enc_reg bs)
         end in
         r_or_m <- enc_r_or_m;
-        let enc_disp_idxopt := 
-          if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
-        in
         (* alternate encoding: even if disp can be in a byte, we can always
            use the encoding of disp32[reg] *)
-        match bs with
-          | EBP => (* when base is EBP, cannot use the 00 mod *)
-            enc_disp_idxopt
-          | _ => 
-            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
-              else enc_disp_idxopt
-        end
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
     | Address_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
       (* special case: disp32[index*scale] *)
       ret (s2bl "00" ++ reg ++ s2bl "100" ++
@@ -518,7 +511,7 @@ Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
           if (repr_in_signed_byte i1) then
             (* alternate encoding: can always use the word case to encode i1 *)
             ret (s2bl "11101011" ++ enc_byte i1)
-          else ret (s2bl "11101001" ++ enc_word i1)
+          else ret (s2bl "11101000" ++ enc_word i1)
         | _ => invalid
       end
     | true, true => 
@@ -762,19 +755,13 @@ Definition enc_SUB := enc_logic_or_arith "00101" "101".
 Definition enc_TEST (op_override w:bool)
   (op1 op2:operand) : Enc (list bool) :=
   match op1, op2 with
-    | Reg_op EAX, Imm_op i
-    | Imm_op i, Reg_op EAX =>
-      ret (s2bl "1010100" ++ enc_bit w ++ enc_imm op_override w i)
-
-    | op, Imm_op i
-    | Imm_op i, op =>
-      l1 <- enc_modrm_2 "000" op; 
-      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ enc_imm op_override w i)
-
-    | Reg_op r, op
-    | op, Reg_op r =>
-      l1 <- enc_modrm (Reg_op r) op; ret (s2bl "1000010"  ++ enc_bit w ++ l1)
-
+    | Reg_op EAX, Imm_op i2 =>
+      ret (s2bl "1010100" ++ enc_bit w ++ enc_imm op_override w i2)
+    | Address_op a1, Imm_op i2 =>
+      l1 <- enc_modrm_2 "000" op1; 
+      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ enc_imm op_override w i2)
+    | _, Reg_op r2 =>
+      l1 <- enc_modrm op2 op1; ret (s2bl "1000010"  ++ enc_bit w ++ l1)
     | _, _ => invalid
   end.
 
@@ -844,20 +831,10 @@ Definition enc_fp_modrm (opb: list bool) (op2 : fp_operand) : Enc (list bool) :=
           | _, None => ret (enc_reg bs)
         end in
         r_or_m <- enc_r_or_m;
-        let enc_disp_idxopt := 
-          if (repr_in_signed_byte disp) then
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
+        else if (repr_in_signed_byte disp) then
             ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
-        in
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        match bs with
-          | EBP => (* when base is EBP, cannot use the 00 mod *)
-            enc_disp_idxopt
-          | _ => 
-            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
-              else enc_disp_idxopt
-        end
+        else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
 
     | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
     | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
@@ -889,25 +866,17 @@ Definition enc_fp_int3 (op1 : fp_operand) : Enc (list bool) :=
   end.
 
 (* Definition is a helper definition that encodes arithmetic instructions with two floating-point
-   operands and returns their bit patterns represented as list booleans.
-   In the case of "FPS_op i1, FPS_op i2", 
-     * when m is true, then the sixth bit of the first byte should be
-       the same as the fifth bit of the second byte.
-     * when m is false, the two bits should be different.
- *)
-Definition enc_fp_arith (m:bool) (lb opb: list bool)
-  (op1 op2 : fp_operand) : Enc (list bool) :=
+   operands and returns their bit patterns represented as list booleans. *)
+Definition enc_fp_arith (lb opb: list bool) (op1 op2 : fp_operand) : Enc (list bool) :=
   match op1, op2 with 
     | FPS_op i1, FPS_op i2 => 
         if Word.eq i1 Word.zero then
           (* alternate encoding when i2 is also zero *)
-          l1 <- enc_fp_int3 op2;
-          let bm := if m then false else true in
-            ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ (bm :: l1))
+          l1 <- enc_fp_int3 op2; 
+          ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ s2bl "0" ++ l1)
         else if Word.eq i2 Word.zero then
           l1 <- enc_fp_int3 op1; 
-          let bm := if m then true else false in
-            ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ (bm :: l1))
+          ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ s2bl "1" ++ l1) 
         else invalid
     | FPS_op i1, FPM32_op fa1 => 
         if Word.eq i1 Word.zero
@@ -971,10 +940,10 @@ Definition enc_FCOMIP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111111110" ++ l1).
 Definition enc_FCOS := ret (s2bl "1101111011011001").
 Definition enc_FDECSTP := ret (s2bl "1101111011011001").
-Definition enc_FDIV := enc_fp_arith true (s2bl "1") (s2bl "110").
+Definition enc_FDIV := enc_fp_arith (s2bl "1") (s2bl "110").
 Definition enc_FDIVP (fp1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 fp1; ret (s2bl "1101111011111" ++ l1).
-Definition enc_FDIVR := enc_fp_arith false (s2bl "1") (s2bl "111").
+Definition enc_FDIVR := enc_fp_arith (s2bl "1") (s2bl "111").
 Definition enc_FDIVRP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111011110" ++  l1).
 Definition enc_FFREE (op1: fp_operand) : Enc (list bool) :=
@@ -1036,7 +1005,7 @@ Definition enc_FLDZ := ret (s2bl "1101100111101110").
 Definition enc_FMUL (d: bool) (op1: fp_operand) : Enc (list bool) :=
   match op1 with 
     | FPS_op i1 =>  
-      l1 <- enc_fp_int3 op1; ret (s2bl "11011" ++ enc_bit d ++ s2bl "0011001"  ++ l1)
+      l1 <- enc_fp_int3 op1; ret (s2bl "11011" ++ enc_bit d ++ s2bl "0111000"  ++ l1)
     | FPM32_op fa1 => 
       l1 <- enc_fp_modrm (s2bl "001") op1; ret (s2bl "11011000" ++ l1)
     | FPM64_op fa1 => 
@@ -1092,10 +1061,10 @@ Definition enc_FSTSW (op1: option fp_operand) : Enc (list bool) :=
     | None => ret (s2bl "1101111111100000")
     | Some op1 => l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011101" ++ l1)
   end.
-Definition enc_FSUB := enc_fp_arith true (s2bl "0") (s2bl "100") .
+Definition enc_FSUB := enc_fp_arith (s2bl "0") (s2bl "100") .
 Definition enc_FSUBP (op1 : fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111011101" ++ l1).
-Definition enc_FSUBR := enc_fp_arith false (s2bl "0") (s2bl "101").
+Definition enc_FSUBR := enc_fp_arith (s2bl "0") (s2bl "101").
 Definition enc_FSUBRP (op1: (*option*) fp_operand) : Enc (list bool):=
    l1 <- enc_fp_int3 op1; ret (s2bl "1101111011100" ++ l1).
 Definition enc_FTST := ret (s2bl "1101100111100100").
@@ -1116,12 +1085,299 @@ Definition enc_FXTRACT := ret (s2bl "1101100111110100").
 Definition enc_FYL2X := ret (s2bl "1101100111110001").
 Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
+(*MMX encodings *)
+
+  Definition enc_mmx_modrm_gen (mmx_reg: list bool) (op2: mmx_operand) : Enc (list bool) := 
+  match op2 with
+    | MMX_Reg_op r2 => ret (s2bl "11" ++ mmx_reg ++ enc_fpr r2)
+    | MMX_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ mmx_reg ++ s2bl "101" ++ enc_word disp)
+    | MMX_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l) 
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ mmx_reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ mmx_reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ mmx_reg ++ r_or_m ++ enc_word disp)
+    | MMX_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ mmx_reg ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid
+  end.
+
+  Definition enc_mmx_modrm (op1 op2: mmx_operand) := 
+  match op1 with 
+  | MMX_Reg_op r1 => enc_mmx_modrm_gen (enc_fpr r1) op2
+  | _ => invalid
+  end.
+
+  Definition enc_gg (gg: mmx_granularity) := 
+  match gg with 
+  | MMX_8  => s2bl "00"
+  | MMX_16 => s2bl "01"
+  | MMX_32 => s2bl "10"
+  | MMX_64 => s2bl "11"
+  end.
+
+  Definition enc_EMMS := ret (s2bl "0000111101110111").
+
+  Definition enc_MOVD (op1 op2: mmx_operand) := 
+    match op1, op2 with 
+    | GP_Reg_op r, MMX_Reg_op m =>
+        ret (s2bl "000011110110111011" ++ (enc_reg r) ++ (enc_fpr m))(*reg to mmxreg*)
+    | MMX_Reg_op m, GP_Reg_op r =>
+        ret (s2bl "000011110111111011" ++ (enc_fpr m) ++ (enc_reg r))(*reg from mmxreg*)
+    | MMX_Addr_op a, MMX_Reg_op m => 
+	l1 <- enc_mmx_modrm op2 op1; ret (s2bl "0000111101101110" ++ l1) (*mem to mmxreg *)
+    | MMX_Reg_op m, MMX_Addr_op a =>
+	l1 <- enc_mmx_modrm op1 op2; ret (s2bl "0000111101111110" ++ l1) (*mem from mmxreg *)
+    | _, _=> invalid
+    end.
+
+  Definition enc_MOVQ (op1 op2: mmx_operand) :=
+    match op1, op2 with 
+    | MMX_Addr_op a, MMX_Reg_op m => 
+	l1 <- enc_mmx_modrm op2 op1; ret (s2bl "0000111101101111" ++ l1)
+    | MMX_Reg_op m, MMX_Addr_op a =>
+	l1 <- enc_mmx_modrm op1 op2; ret (s2bl "0000111101111111" ++ l1)
+    | _, _ => invalid
+    end.
+
+  Definition enc_PACKSSDW (op1 op2: mmx_operand):= 
+    match op1, op2 with 
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "000011110110101111" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_PACKSSWB (op1 op2: mmx_operand) := 
+    match op1, op2 with 
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111101100011" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_PACKUSWB (op1 op2: mmx_operand):= 
+    match op1, op2 with 
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111101100111" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_PADD (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with 
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl "00001111111111" ++ (enc_gg b) ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PADDS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with 
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111011" ++ (enc_gg b) ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PADDUS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with 
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110111" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PAND (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111011011" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_PANDN (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111011111" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_PCMPEQ (gg: mmx_granularity) (op1 op2: mmx_operand):=
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011101" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PCMPGT (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011001" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PMADDWD (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111110101" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_PMULHUW (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111100100" ++ l1)
+    | _, _ => invalid
+    end.
+
+  Definition enc_PMULHW (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111100101" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_PMULLW (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111010101" ++ l1)
+    | _, _ => invalid
+    end. 
+
+  Definition enc_POR (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111100101" ++ l1)
+    | _, _ => invalid
+    end.
+
+  Definition enc_PSLL (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl     "00001111111100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
+    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PSRA (gg: mmx_granularity) (op1 op2: mmx_operand):=
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111000" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
+    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111000" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PSRL (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
+    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111110100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PSUB (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111110" ++ (enc_gg b) ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PSUBS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111010" ++ (enc_gg b) ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PSUBUS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110110" ++ (enc_gg b) ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PUNPCKH (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011010" ++ (enc_gg b) ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PUNPCKL (gg: mmx_granularity) (op1 op2: mmx_operand):= 
+    match gg, op1, op2 with
+    | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
+        l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011000" ++ (enc_gg b) ++ l1)
+    | _, _, _ => invalid
+    end.
+
+  Definition enc_PXOR (op1 op2: mmx_operand):= 
+    match op1, op2 with
+    | MMX_Addr_op mem, MMX_Reg_op mmx =>
+	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111101111" ++ l1)
+    | _, _ => invalid
+    end.
+(*SSE Encodings*)
+Definition enc_xmm_r r := 
+  match r with 
+  | XMM0 => s2bl "000"
+  | XMM1 => s2bl "001"
+  | XMM2 => s2bl "010"
+  | XMM3 => s2bl "011"
+  | XMM4 => s2bl "100" 
+  | XMM5 => s2bl "101"
+  | XMM6 => s2bl "110"
+  | _    => s2bl "111"
+  end.
+
+Print sse_operand.
+
+Definition enc_xmm_modrm_gen (xmm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+  match op2 with
+    | SSE_XMM_Reg_op r2 => ret (s2bl "11" ++ xmm_reg ++ enc_xmm_r r2)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ xmm_reg ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ xmm_reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ xmm_reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ xmm_reg ++ r_or_m ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ xmm_reg ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid
+  end.
+
+  Definition enc_xmm_modrm (op1 op2: sse_operand) := 
+  match op1 with 
+  | SSE_XMM_Reg_op r1 => enc_xmm_modrm_gen (enc_xmm_r r1) op2
+  | _ => invalid
+  end.
+
+(*Also needs to be enc_mm_modrm and enc_r32_modrm for SSE encodings *)
+
 Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
   let lr := 
     match (lock_rep pre) with
       | Some lock => s2bl "11110000"
-      | Some rep  => s2bl "11110011"
-      | Some repn => s2bl "11110010"
+      | Some rep  => s2bl "11110010"
+      | Some repn => s2bl "11110011"
       | None => s2bl ""
     end in
   let so := 
@@ -1348,6 +1604,38 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | XCHG w op1 op2 => enc_XCHG w op1 op2
     | XLAT => enc_XLAT
     | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
+
+    (*MMX encoding definitions *)
+    | EMMS => enc_EMMS
+    | MOVD op1 op2 => enc_MOVD op1 op2
+    | MOVQ op1 op2 => enc_MOVQ op1 op2
+    | PACKSSDW op1 op2 => enc_PACKSSDW op1 op2
+    | PACKSSWB op1 op2 => enc_PACKSSWB op1 op2
+    | PACKUSWB op1 op2 => enc_PACKUSWB op1 op2
+    | PADD gg op1 op2 => enc_PADD gg op1 op2
+    | PADDS gg op1 op2 => enc_PADDS gg op1 op2
+    | PADDUS gg op1 op2 => enc_PADDUS gg op1 op2
+    | PAND op1 op2 => enc_PAND op1 op2
+    | PANDN op1 op2 => enc_PANDN op1 op2
+    | PCMPEQ gg op1 op2 => enc_PCMPEQ gg op1 op2
+    | PCMPGT gg op1 op2 => enc_PCMPGT gg op1 op2
+    | PMADDWD op1 op2 => enc_PMADDWD op1 op2
+    | PMULHUW op1 op2 => enc_PMULHUW op1 op2
+    | PMULHW op1 op2 => enc_PMULHW op1 op2 
+    | PMULLW op1 op2 => enc_PMULLW op1 op2
+    | POR op1 op2 => enc_POR op1 op2
+    | PSLL gg op1 op2 => enc_PSLL gg op1 op2
+    | PSRA gg op1 op2 => enc_PSRA gg op1 op2
+    | PSRL gg op1 op2 => enc_PSRL gg op1 op2
+    | PSUB gg op1 op2 => enc_PSUB gg op1 op2
+    | PSUBS gg op1 op2 => enc_PSUBS gg op1 op2
+    | PSUBUS gg op1 op2 => enc_PSUBUS gg op1 op2
+    | PUNPCKH gg op1 op2 => enc_PUNPCKH gg op1 op2
+    | PUNPCKL gg op1 op2 => enc_PUNPCKL gg op1 op2
+    | PXOR op1 op2 => enc_PXOR op1 op2
+
+    (*SSE encoding definitions *)
+
     | _ => invalid
   end.
 

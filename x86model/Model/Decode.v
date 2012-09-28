@@ -1381,17 +1381,17 @@ Module X86_PARSER.
 
   Definition EMMS_p := "0000" $$ "1111" $$ "0111" $$ bits "0111" @ (fun _ => EMMS %% instruction_t).
   Definition MOVD_p := 
-    "0000" $$ "1111" $$ "0110" $$ "1110" $$ "11" $$ mmx_reg $ reg @ 
-    (fun p => let (m, r) := p in MOVD (MMX_Reg_op m) (GP_Reg_op r) %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "0111" $$ "1110" $$ "11" $$ mmx_reg $ reg @ 
+    "0000" $$ "1111" $$ "0110" $$ "1110" $$ "11" $$ mmx_reg $ reg @ (*reg to mmxreg*)
     (fun p => let (m, r) := p in MOVD (GP_Reg_op r) (MMX_Reg_op m) %% instruction_t)
   |+|
-    "0000" $$ "1111" $$ "0110" $$ "1110" $$ modrm_mmx @ 
+    "0000" $$ "1111" $$ "0111" $$ "1110" $$ "11" $$ mmx_reg $ reg @ (*reg from mmxreg*)
+    (fun p => let (m, r) := p in MOVD (GP_Reg_op r) (MMX_Reg_op m) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0110" $$ "1110" $$ modrm_mmx @ (*mem to mmxreg *)
     (fun p => let (op1, op2) := p in MOVD op1 op2 %% instruction_t)
   |+|
-    "0000" $$ "1111" $$ "0111" $$ "1110" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in MOVD op2 op1 %% instruction_t).
+    "0000" $$ "1111" $$ "0111" $$ "1110" $$ modrm_mmx @ (*mem from mmxreg *)
+    (fun p => let (mem, mmx) := p in MOVD mmx mem %% instruction_t).
 
   Definition MOVQ_p :=
     "0000" $$ "1111" $$ "0110" $$ "1111" $$ modrm_mmx @ 
@@ -1399,7 +1399,6 @@ Module X86_PARSER.
   |+|
     "0000" $$ "1111" $$ "0111" $$ "1111" $$ modrm_mmx @ 
     (fun p => let (op1, op2) := p in MOVQ op2 op1 %% instruction_t).
-
 
   Definition PACKSSDW_p := 
     "0000" $$ "1111" $$ "0110" $$ "1011" $$ modrm_mmx @ 
@@ -1510,7 +1509,7 @@ Module X86_PARSER.
     (fun p => let (op1, op2) := p in PXOR op1 op2 %% instruction_t).
 (*End of MMX parsers *)
 
-(*SSE parsers start here *)
+(*SSE parsers*)
 Definition ADDPS_p := 
   "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm @ 
     (fun p => let (op1, op2) := p in ADDPS op1 op2 %% instruction_t).
@@ -2127,4 +2126,3 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
       (mkPS (inst_ctxt ps) r' wf', apply_null (inst_ctxt ps) r' wf').
 
 End X86_PARSER.
-

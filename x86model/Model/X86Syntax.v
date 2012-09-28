@@ -192,7 +192,7 @@ Inductive sse_operand : Set :=
 | SSE_XMM_Reg_op : sse_register -> sse_operand
 | SSE_MM_Reg_op : mmx_register -> sse_operand 
 | SSE_Addr_op : address -> sse_operand
-| SSE_GP_Reg_op : register -> sse_operand (*r32 in manual, I think *)
+| SSE_GP_Reg_op : register -> sse_operand (*r32 in manual*)
 | SSE_Imm_op : int32 -> sse_operand.
 
 Inductive mmx_granularity : Set :=
@@ -490,7 +490,6 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | PREFETCHNTA : forall (op1: sse_operand), instr
 | SFENCE: instr
 (*end SSE, start SSE2 *)
-
 
 (*End of SSE Syntax *)
 | HLT  
