@@ -1367,16 +1367,16 @@ Module X86_PARSER.
   Definition mmx_gg_p (byte twob fourb eightb : bool) := 
     let byte_p := if byte then 
       bits "00" @ (fun _ => MMX_8 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     let twobytes_p := if twob then 
       bits "01" @ (fun _ => MMX_16 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     let fourbytes_p := if fourb then 
       bits "10" @ (fun _ => MMX_32 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     let eightbytes_p := if eightb then 
       bits "11" @ (fun _ => MMX_64 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     byte_p |+| twobytes_p |+| fourbytes_p |+| eightbytes_p.
 
   Definition EMMS_p := "0000" $$ "1111" $$ "0111" $$ bits "0111" @ (fun _ => EMMS %% instruction_t).
@@ -1817,8 +1817,10 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition lock_p : parser lock_or_rep_t :=
     "1111" $$ bits "0000" @ (fun _ => lock %% lock_or_rep_t).
 
-  Definition repn_p : parser lock_or_rep_t :=
-    "1111" $$ bits "0010" @ (fun _ => repn %% lock_or_rep_t).
+  Definition rep_or_repn_p : parser lock_or_rep_t :=
+    "1111" $$ bits "0010" @ (fun _ => repn %% lock_or_rep_t)
+  |+|
+    "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
 
   Definition rep_p : parser lock_or_rep_t :=
     "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
@@ -1981,18 +1983,21 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
                  mkPrefix l s (opt2b op false) false %% prefix_t end).
 
   (* this set of instructions can take prefixes in prefix_parser_rep;
-     that is, in lock_or_rep, only rep can be used *)
+     that is, in lock_or_rep, only rep can be used;
+     we put RET in this category because it turns out many binaries use
+     the "rep ret" sequence to avoid branch prediction panelty in AMD processors;
+     intel processor seems to just ignore the rep prefix *)
   Definition instr_parsers_rep :=
-    INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: nil.
+    INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: RET_p :: nil.
 
-  Definition prefix_parser_repn :=
-    option_perm3 repn_p segment_override_p op_override_p @
+  Definition prefix_parser_rep_or_repn :=
+    option_perm3 rep_or_repn_p segment_override_p op_override_p @
      (fun p => match p with (l, (s, op)) =>
                  mkPrefix l s (opt2b op false) false %% prefix_t end).
 
   (* this set of instructions can take prefixes in prefix_parser_repn;
      that is, in lock_or_rep, only repn can be used *)
-  Definition instr_parsers_repn := CMPS_p :: SCAS_p :: nil.
+  Definition instr_parsers_rep_or_repn := CMPS_p :: SCAS_p :: nil.
 
   Definition prefix_parser_lock_with_op_override :=
     option_perm3_variation lock_p segment_override_p op_override_p @
@@ -2061,7 +2066,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
     MOVSR_p :: MOVBE_p :: (* NOP_p :: *)  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
     PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
-    RET_p :: ROL_p :: ROR_p ::
+    ROL_p :: ROR_p ::
     RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
     STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: F2XM1_p ::
     FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
@@ -2083,8 +2088,8 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition instruction_parser_list := 
     (List.map (fun (p:parser instruction_t) => prefix_parser_rep $ p)
       instr_parsers_rep) ++
-    (List.map (fun (p:parser instruction_t) => prefix_parser_repn $ p)
-      instr_parsers_repn) ++
+    (List.map (fun (p:parser instruction_t) => prefix_parser_rep_or_repn $ p)
+      instr_parsers_rep_or_repn) ++
     (List.map (fun (p:parser instruction_t)
                 => prefix_parser_lock_with_op_override $ p)
       instr_parsers_lock_with_op_override) ++
