@@ -1206,6 +1206,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PADD (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with 
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl "00001111111111" ++ (enc_gg b) ++ l1)
     | _, _, _ => invalid
@@ -1213,6 +1214,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PADDS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with 
+    | MMX_32, _, _ => invalid
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111011" ++ (enc_gg b) ++ l1)
     | _, _, _ => invalid
@@ -1220,6 +1223,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PADDUS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with 
+    | MMX_32, _, _ => invalid
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110111" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
     | _, _, _ => invalid
@@ -1241,6 +1246,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PCMPEQ (gg: mmx_granularity) (op1 op2: mmx_operand):=
     match gg, op1, op2 with
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011101" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
     | _, _, _ => invalid
@@ -1248,6 +1254,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PCMPGT (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011001" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
     | _, _, _ => invalid
@@ -1258,7 +1265,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | MMX_Addr_op mem, MMX_Reg_op mmx =>
 	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111110101" ++ l1)
     | _, _ => invalid
-    end. 
+    end.  
 
   Definition enc_PMULHUW (op1 op2: mmx_operand):= 
     match op1, op2 with
@@ -1290,6 +1297,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PSLL (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_16, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl     "00001111111100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
     | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
@@ -1298,6 +1306,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PSRA (gg: mmx_granularity) (op1 op2: mmx_operand):=
     match gg, op1, op2 with
+    | MMX_16, _, _ => invalid
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111000" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
     | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111000" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
@@ -1306,6 +1316,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PSRL (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_64, _, _ => invalid
+    | MMX_16, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
     | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111110100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
@@ -1314,6 +1326,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PSUB (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111110" ++ (enc_gg b) ++ l1)
     | _, _, _ => invalid
@@ -1321,6 +1334,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PSUBS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_32, _, _ => invalid
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111010" ++ (enc_gg b) ++ l1)
     | _, _, _ => invalid
@@ -1328,6 +1343,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PSUBUS (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_32, _, _ => invalid
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110110" ++ (enc_gg b) ++ l1)
     | _, _, _ => invalid
@@ -1335,6 +1352,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PUNPCKH (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011010" ++ (enc_gg b) ++ l1)
     | _, _, _ => invalid
@@ -1342,6 +1360,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_PUNPCKL (gg: mmx_granularity) (op1 op2: mmx_operand):= 
     match gg, op1, op2 with
+    | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111011000" ++ (enc_gg b) ++ l1)
     | _, _, _ => invalid
@@ -1353,6 +1372,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 	l1<- enc_mmx_modrm op2 op1; ret (s2bl "0000111111101111" ++ l1)
     | _, _ => invalid
     end.
+
 (*SSE Encodings*)
 Definition enc_xmm_r r := 
   match r with 
@@ -1425,8 +1445,8 @@ Definition enc_xmm_r r :=
   | _ => invalid
   end.
 
-(*Also needs to be enc_mm_modrm and enc_r32_modrm for SSE encodings *)
-Definition enc_mm_modrm_gen (mm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+  (*Also needs to be enc_mm_modrm and enc_r32_modrm for SSE encodings *)
+  Definition enc_mm_modrm_gen (mm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
     | SSE_MM_Reg_op r2 => ret (s2bl "11" ++ mm_reg ++ enc_fpr r2)
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
@@ -1514,7 +1534,6 @@ Definition enc_mm_modrm_gen (mm_reg: list bool) (op2: sse_operand) : Enc (list b
 
   Definition enc_r32_modrm_noreg (reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
-    | SSE_GP_Reg_op r2 => ret (s2bl "11" ++ reg ++ enc_reg r2)
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
       ret (s2bl "00" ++ reg ++ s2bl "101" ++ enc_word disp)
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
@@ -1548,7 +1567,6 @@ Definition enc_mm_modrm_gen (mm_reg: list bool) (op2: sse_operand) : Enc (list b
   Definition enc_ext_op_modrm_sse (opb: list bool) (op2: sse_operand) : Enc (list bool) :=
   match op2 with
     | SSE_XMM_Reg_op r2 => ret (s2bl "11" ++ opb ++ enc_xmm_r r2)
-
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
       ret (s2bl "00" ++ opb ++ s2bl "101" ++ enc_word disp)
 
