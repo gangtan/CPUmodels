@@ -1,4 +1,4 @@
-(* This file encodes Intel IA32 (x86) 32-bit instructions into 
+  (* This file encodes Intel IA32 (x86) 32-bit instructions into 
  * their binary form. *)
 
 Require Import X86Syntax.
@@ -1366,9 +1366,35 @@ Definition enc_xmm_r r :=
   | _    => s2bl "111"
   end.
 
-Definition enc_xmm_modrm_gen (xmm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+  Definition enc_xmm_modrm_gen (xmm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
     | SSE_XMM_Reg_op r2 => ret (s2bl "11" ++ xmm_reg ++ enc_xmm_r r2)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ xmm_reg ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ xmm_reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ xmm_reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ xmm_reg ++ r_or_m ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ xmm_reg ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid
+  end.
+
+  Definition enc_xmm_modrm_noreg (xmm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+   match op2 with
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
       ret (s2bl "00" ++ xmm_reg ++ s2bl "101" ++ enc_word disp)
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
@@ -1400,6 +1426,624 @@ Definition enc_xmm_modrm_gen (xmm_reg: list bool) (op2: sse_operand) : Enc (list
   end.
 
 (*Also needs to be enc_mm_modrm and enc_r32_modrm for SSE encodings *)
+Definition enc_mm_modrm_gen (mm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+  match op2 with
+    | SSE_MM_Reg_op r2 => ret (s2bl "11" ++ mm_reg ++ enc_fpr r2)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ mm_reg ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ mm_reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ mm_reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ mm_reg ++ r_or_m ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ mm_reg ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid
+  end.
+
+  Definition enc_mm_modrm_noreg (mm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+  match op2 with
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ mm_reg ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ mm_reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ mm_reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ mm_reg ++ r_or_m ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ mm_reg ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid
+  end.
+
+  Definition enc_mm_modrm (op1 op2: sse_operand) := 
+  match op1 with 
+  | SSE_MM_Reg_op r1 => enc_mm_modrm_gen (enc_fpr r1) op2
+  | _ => invalid
+  end.
+
+  Definition enc_r32_modrm_gen (reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+  match op2 with
+    | SSE_GP_Reg_op r2 => ret (s2bl "11" ++ reg ++ enc_reg r2)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ reg ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ reg ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid
+  end.
+
+  Definition enc_r32_modrm_noreg (reg: list bool) (op2: sse_operand) : Enc (list bool) := 
+  match op2 with
+    | SSE_GP_Reg_op r2 => ret (s2bl "11" ++ reg ++ enc_reg r2)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ reg ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
+          else if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ reg ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid
+  end.
+
+  Definition enc_r32_modrm (op1 op2: sse_operand) := 
+  match op1 with 
+  | SSE_GP_Reg_op r1 => enc_r32_modrm_gen (enc_reg r1) op2
+  | _ => invalid
+  end.
+
+  Definition enc_ext_op_modrm_sse (opb: list bool) (op2: sse_operand) : Enc (list bool) :=
+  match op2 with
+    | SSE_XMM_Reg_op r2 => ret (s2bl "11" ++ opb ++ enc_xmm_r r2)
+
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ opb ++ s2bl "101" ++ enc_word disp)
+
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+      let enc_r_or_m :=
+        match bs, idxopt with
+          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
+          | _, Some _ =>
+            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
+          | _, None => ret (enc_reg bs)
+        end in
+        r_or_m <- enc_r_or_m;
+        let enc_disp_idxopt := 
+          if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
+        in
+        (* alternate encoding: even if disp can be in a byte, we can always
+           use the encoding of disp32[reg] *)
+        match bs with
+          | EBP => (* when base is EBP, cannot use the 00 mod *)
+            enc_disp_idxopt
+          | _ => 
+            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
+              else enc_disp_idxopt
+        end
+
+    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+      (* special case: disp32[index*scale] *)
+      ret (s2bl "00" ++ opb ++ s2bl "100" ++
+           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | _ => invalid 
+  end. 
+
+  Definition enc_ADDPS (op1 op2: sse_operand) := 
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101011000" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_ADDSS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101011000" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_ANDNPS (op1 op2: sse_operand) := 
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a => 
+    l1 <- enc_xmm_modrm op2 op1; ret s2bl "0000111101010101" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_ANDPS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a => 
+    l1 <- enc_xmm_modrm op2 op1; ret s2bl "0000111101010100" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_CMPPS (op1 op2 imm: sse_operand) := 
+  match op1, op2, imm with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
+    l1 <- enc_xmm_modrm op1 op2; ret (s2bl "0000111101010100" ++ l1 ++ enc_byte i) 
+  | _, _, _  => invalid
+  end.
+
+Definition enc_CMPSS (op1 op2 imm: sse_operand) := 
+  match op1, op2, imm with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
+    l1 <- enc_xmm_modrm op1 op2; ret (s2bl "111100110000111111000010" ++ l1 ++ enc_byte i) 
+  | _, _, _  => invalid
+  end.
+
+Definition enc_COMISS (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101111" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_CVTPI2PS (op1 op2: sse_operand) :=  
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101010" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_CVTPS2PI (op1 op2: sse_operand) := 
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_MM_Reg_op r => 
+    ret s2bl "000011110010110111" ++ (enc_xmm_r a) ++ (enc_fpr r)
+  | SSE_XMM_Reg_op r, SSE_Addr_op m =>
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101101" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_CVTSI2SS (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_GP_Reg_op r => 
+    ret s2bl "11110011000011110010101011" ++ (enc_xmm_r a) ++ (enc_reg r)
+  | SSE_XMM_Reg_op r, SSE_Addr_op m =>
+    l1 <- enc_xmm_modrm_noreg (enc_xmm_r r) op2; ret s2bl "111100110000111100101010" ++ l1 
+  | _, _  => invalid
+  end.
+
+Definition enc_CVTSS2SI (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_GP_Reg_op a, SSE_XMM_Reg_op r => 
+    ret s2bl "11110011000011110010110111" ++ (enc_reg a) ++ (enc_xmm_r r)
+  | SSE_GP_Reg_op r, SSE_Addr_op m =>
+    l1 <- enc_r32_modrm_noreg (enc_reg r) op2; ret s2bl "111100110000111100101101" ++ l1 
+  | _, _  => invalid
+  end.
+
+Definition enc_CVTTPS2PI (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101100" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_CVTTSS2SI (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_GP_Reg_op a, SSE_XMM_Reg_op r => 
+    ret s2bl "11110011000011110010110011" ++ (enc_reg a) ++ (enc_xmm_r r)
+  | SSE_GP_Reg_op r, SSE_Addr_op m =>
+    l1 <- enc_r32_modrm_noreg (enc_reg r) op2; ret s2bl "111100110000111100101100" ++ l1 
+  | _, _  => invalid
+  end.
+
+Definition enc_DIVPS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101011110" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_DIVSS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101011110" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_LDMXCSR (op1: sse_operand):= 
+  match op1 with
+  | SSE_Addr_op a => 
+    l1 <- enc_ext_op_modrm_sse (s2bl "010") op1; ret (s2bl "0000111110101110" ++ l1)
+  | _ => invalid
+  end.
+
+Definition enc_MAXPS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101011111" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MAXSS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101011111" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MINPS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101011101" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MINSS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101011101" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVAPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101000" ++ l1
+  | SSE_Addr_op r, SSE_XMM_Reg_op a =>
+    l1 <- enc_xmm_modrm op2 op1; ret s2bl "0000111100101000" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVHLPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_XMM_Reg_op r => 
+    ret s2bl "000011110001001011" ++ (enc_xmm_r a) ++ (enc_xmm_r r)
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVHPS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100010110" ++ l1
+  | SSE_Addr_op r, SSE_XMM_Reg_op a =>
+    l1 <- enc_xmm_modrm op2 op1; ret s2bl "0000111100010111" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVLHPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_XMM_Reg_op r => 
+    ret s2bl "000011110001011011" ++ (enc_xmm_r a) ++ (enc_xmm_r r)
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVLPS (op1 op2: sse_operand):=  
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100010010" ++ l1
+  | SSE_Addr_op r, SSE_XMM_Reg_op a =>
+    l1 <- enc_xmm_modrm op2 op1; ret s2bl "0000111100010011" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVMSKPS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_GP_Reg_op a, SSE_XMM_Reg_op r => 
+    ret s2bl "000011110001011011" ++ (enc_reg a) ++ (enc_xmm_r r)
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVSS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111100010000" ++ l1
+  | SSE_Addr_op r, SSE_XMM_Reg_op a =>
+    l1 <- enc_xmm_modrm op2 op1; ret s2bl "111100110000111100010001" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVUPS (op1 op2: sse_operand):= 
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100010000" ++ l1
+  | SSE_Addr_op r, SSE_XMM_Reg_op a =>
+    l1 <- enc_xmm_modrm op2 op1; ret s2bl "0000111100010000" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MULPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101011001" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MULSS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101011001" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_ORPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101010110" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_RCPPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101010011" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_RCPSS (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101010011" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_RSQRTPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101010010" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_RSQRTSS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101010010" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_SHUFPS (op1 op2 imm: sse_operand) :=
+  match op1, op2, imm with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
+    l1 <- enc_xmm_modrm op1 op2; ret (s2bl "0000111111000110" ++ l1 ++ enc_byte i) 
+  | _, _, _  => invalid
+  end.
+
+Definition enc_SQRTPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101010001" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_SQRTSS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101010001" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_STMXCSR (op1: sse_operand):= 
+  match op1 with 
+  | SSE_Addr_op a => 
+    l1 <- enc_ext_op_modrm_sse (s2bl "011") op1; ret s2bl "0000111110101110" ++ l1
+  | _ => invalid
+  end. 
+
+Definition enc_SUBPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101011100" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_SUBSS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "111100110000111101011100" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_UCOMISS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101110" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_UNPCKHPS(op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100010101" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_UNPCKLPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100010100" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_XORPS (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111101010111" ++ l1
+  | _, _  => invalid
+  end.
+
+(*todo: handling for operand prefix*)
+Definition enc_PAVGB (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_mm_modrm op1 op2; ret s2bl "0000111111100000" ++ l1
+  | SSE_Addr_op r, SSE_MM_Reg_op a =>
+    l1 <- enc_mm_modrm op2 op1; ret s2bl "0000111111100011" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_PEXTRW (op1 op2 imm: sse_operand):=
+  match op1, op2, imm with
+  | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
+    ret (s2bl "000011111100010111" ++ (enc_reg r) ++(enc_fpr mx) ++ enc_byte i) 
+  | _, _, _  => invalid
+  end.
+
+Definition enc_PINSRW (op1 op2 imm: sse_operand):=
+  match op1, op2, imm with
+  | SSE_MM_Reg_op xmm, SSE_GP_Reg_op r32, SSE_Imm_op i => 
+    ret (s2bl "000011111100010011" ++ (enc_fpr xmm) ++(enc_reg r32) ++ enc_byte i) 
+  | SSE_MM_Reg_op mm, SSE_Addr_op a, SSE_Imm_op i =>
+    l1 <- enc_mm_modrm_noreg (enc_fpr mm) op2; 
+    ret (s2bl "0000111111000100" ++ l1 ++ enc_byte i) 
+  | _, _, _  => invalid
+  end.
+
+Definition enc_PMAXSW (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_mm_modrm op1 op2; ret s2bl "0000111111101110" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_PMAXUB (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_mm_modrm op1 op2; ret s2bl "0000111111011110" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_PMINSW (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_mm_modrm op1 op2; ret s2bl "0000111111101010" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_PMINUB (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_mm_modrm op1 op2; ret s2bl "0000111111011010" ++ l1
+  | _, _  => invalid
+  end.
+ 
+Definition enc_PMOVMSKB (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_GP_Reg_op a, SSE_MM_Reg_op r => 
+    ret s2bl "000011111101011111" ++ (enc_reg a) ++ (enc_fpr r)
+  | _, _  => invalid
+  end.
+
+Definition enc_PSADBW (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_mm_modrm op1 op2; ret s2bl "0000111111110110" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_PSHUFW (op1 op2 imm: sse_operand) :=
+  match op1, op2, imm with
+  | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
+    ret (s2bl "0000111101110000" ++ (enc_reg r) ++(enc_fpr mx) ++ enc_byte i) 
+  | _, _, _  => invalid
+  end.
+
+Definition enc_MASKMOVQ (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_MM_Reg_op r => 
+    ret s2bl "000011111101011111" ++ (enc_fpr a) ++ (enc_fpr r)
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVNTPS (op1 op2: sse_operand) :=
+  match op1, op2 with
+  | SSE_XMM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101011" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_MOVNTQ (op1 op2: sse_operand):=
+  match op1, op2 with
+  | SSE_MM_Reg_op a, SSE_Addr_op r => 
+    l1 <- enc_mm_modrm op1 op2; ret s2bl "0000111111100111" ++ l1
+  | _, _  => invalid
+  end.
+
+Definition enc_PREFETCHT0 (op1: sse_operand) :=
+  match op1 with
+  | SSE_Addr_op a => 
+    l1 <- enc_ext_op_modrm_sse (s2bl "001") op1; ret s2bl "0000111100011000" ++ l1
+  | _ => invalid
+  end. 
+
+Definition enc_PREFETCHT1 (op1: sse_operand) :=
+  match op1 with
+  | SSE_Addr_op a => 
+    l1 <- enc_ext_op_modrm_sse (s2bl "010") op1; ret s2bl "0000111100011000" ++ l1
+  | _ => invalid
+  end. 
+
+Definition enc_PREFETCHT2 (op1: sse_operand) := 
+  match op1 with
+  | SSE_Addr_op a => 
+    l1 <- enc_ext_op_modrm_sse (s2bl "011") op1; ret s2bl "0000111100011000" ++ l1
+  | _ => invalid
+  end. 
+
+Definition enc_PREFETCHNTA (op1: sse_operand) :=
+  match op1 with
+  | SSE_Addr_op a => 
+    l1 <- enc_ext_op_modrm_sse (s2bl "000") op1; ret s2bl "0000111100011000" ++ l1
+  | _ => invalid
+  end. 
+
+Definition enc_SFENCE := ret s2bl "000011111010111011111000".
+
+(*End of SSE encodings*)
 
 Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
   let lr := 
@@ -1664,8 +2308,72 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | PXOR op1 op2 => enc_PXOR op1 op2
 
     (*SSE encoding definitions *)
-    | _ => invalid
-  end.
+    | ADDPS op1 op2  => enc_ADDPS op1 op2
+    | ADDSS op1 op2 => enc_ADDSS op1 op2
+    | ANDNPS op1 op2 => enc_ANDNPS op1 op2
+    | ANDPS op1 op2 => enc_ANDPS op1 op2
+    | CMPPS op1 op2 imm => enc_CMPPS op1 op2 imm
+    | CMPSS op1 op2 imm => enc_CMPSS op1 op2 imm
+    | COMISS op1 op2 => enc_COMISS op1 op2
+    | CVTPI2PS op1 op2 => enc_CVTPI2PS op1 op2
+    | CVTPS2PI op1 op2 => enc_CVTPS2PI op1 op2
+    | CVTSI2SS op1 op2 => enc_CVTSI2SS op1 op2
+    | CVTSS2SI op1 op2 => enc_CVTSS2SI op1 op2
+    | CVTTPS2PI op1 op2 => enc_CVTTPS2PI op1 op2
+    | CVTTSS2SI op1 op2 => enc_CVTTSS2SI op1 op2
+    | DIVPS op1 op2 => enc_DIVPS op1 op2
+    | DIVSS op1 op2 => enc_DIVSS op1 op2
+    | LDMXCSR op1 => enc_LDMXCSR op1
+    | MAXPS op1 op2 => enc_MAXPS op1 op2 
+    | MAXSS op1 op2 => enc_MAXSS op1 op2
+    | MINPS op1 op2 => enc_MINPS op1 op2
+    | MINSS op1 op2 => enc_MINSS op1 op2
+    | MOVAPS op1 op2 => enc_MOVAPS op1 op2
+    | MOVHLPS op1 op2 => enc_MOVHLPS op1 op2
+    | MOVHPS op1 op2 => enc_MOVHPS op1 op2
+    | MOVLHPS op1 op2 => enc_MOVLHPS op1 op2
+    | MOVLPS op1 op2 => enc_MOVLPS op1 op2
+    | MOVMSKPS op1 op2 => enc_MOVMSKPS op1 op2
+    | MOVSS op1 op2 => enc_MOVSS op1 op2
+    | MOVUPS op1 op2 => enc_MOVUPS op1 op2
+    | MULPS op1 op2 => enc_MULPS op1 op2
+    | MULSS op1 op2 => enc_MULSS op1 op2
+    | ORPS op1 op2 => enc_ORPS op1 op2
+    | RCPPS op1 op2 => enc_RCPPS op1 op2
+    | RCPSS op1 op2 => enc_RCPSS op1 op2
+    | RSQRTPS op1 op2 => enc_RSQRTPS op1 op2
+    | RSQRTSS op1 op2 => enc_RSQRTSS op1 op2
+    | SHUFPS op1 op2 imm => enc_SHUFPS op1 op2 imm
+    | SQRTPS op1 op2 => enc_SQRTPS op1 op2
+    | SQRTSS op1 op2 => enc_SQRTSS op1 op2
+    | STMXCSR op1 => enc_STMXCSR op1
+    | SUBPS op1 op2 => enc_SUBPS op1 op2
+    | SUBSS op1 op2 => enc_SUBSS op1 op2
+    | UCOMISS op1 op2 => enc_UCOMISS op1 op2
+    | UNPCKHPS op1 op2 => enc_UNPCKHPS op1 op2
+    | UNPCKLPS op1 op2 => enc_UNPCKLPS op1 op2
+    | XORPS op1 op2 => enc_XORPS op1 op2
+    | PAVGB op1 op2 => enc_PAVGB op1 op2
+    | PEXTRW op1 op2 imm => enc_PEXTRW op1 op2 imm
+    | PINSRW op1 op2 imm => enc_PINSRW op1 op2 imm
+    | PMAXSW op1 op2 => enc_PMAXSW op1 op2
+    | PMAXUB op1 op2 => enc_PMAXUB op1 op2
+    | PMINSW op1 op2 => enc_PMINSW op1 op2
+    | PMINUB op1 op2 => enc_PMINUB op1 op2
+    | PMOVMSKB op1 op2 => enc_PMOVMSKB op1 op2
+    (*| PMULHUW op1 op2 => enc_ op1 op2 *)
+    | PSADBW op1 op2 => enc_PSADBW op1 op2
+    | PSHUFW op1 op2 imm => enc_PSHUFW op1 op2 imm
+    | MASKMOVQ op1 op2 => enc_MASKMOVQ op1 op2
+    | MOVNTPS op1 op2 => enc_MOVNTPS op1 op2
+    | MOVNTQ op1 op2 => enc_MOVNTQ op1 op2
+    | PREFETCHT0 op1 => enc_PREFETCHT0 op1
+    | PREFETCHT1 op1 => enc_PREFETCHT1 op1
+    | PREFETCHT2 op1 => enc_PREFETCHT2 op1
+    | PREFETCHNTA op1 => enc_PREFETCHNTA op1
+    | SFENCE => enc_SFENCE
+    end.
+
 
 Definition enc_pre_instr pre ins : Enc (list bool) := 
   l1 <- enc_prefix pre;
