@@ -355,6 +355,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FNOP : instr
 | FNSAVE : forall (op1: fp_operand), instr
 | FNSTCW : forall (op1 : fp_operand), instr
+(* FNSTSW None means that storing the status word to AX *)
+| FNSTSW : forall (op1 : option fp_operand), instr
 | FPATAN : instr
 | FPREM : instr
 | FPREM1 : instr
@@ -368,13 +370,18 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FSINCOS : instr
 | FSQRT : instr
 | FST : forall (op1: fp_operand), instr
+
 (* FSTCW's encoding is the same as FWAIT followed by FNSTCW; its
    semantics seems the same as "FWAIT;FNSTCW" as well
    | FSTCW : forall (op1: fp_operand), instr
 *)
+
 | FSTENV : forall (op1: fp_operand), instr
 | FSTP : forall (op1: fp_operand), instr
-| FSTSW : forall (op1: option fp_operand), instr
+
+(* FSTSW is the same as FWAIT followed by FNSTSW *)
+(* | FSTSW : forall (op1: option fp_operand), instr *)
+
 (* op1 <- op1 - op2 *)
 | FSUB : forall (op1 op2 : fp_operand), instr
 | FSUBP : forall (op1: fp_operand), instr

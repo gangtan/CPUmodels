@@ -339,113 +339,107 @@ Module X86_PARSER.
                 (mkAddress disp (Some base) si)
             end %% address_t).
 
-  Definition rm11 : parser operand_t := reg @ (fun x => Reg_op x : result_m operand_t).
+  (* a general modrm parser for integer, floating-point, sse, mmx instructions *)
+  Definition modrm_gen (res_t: result) 
+    (reg_p : parser res_t)  (* the parser that parse a register *)
+    (addr_op : address -> result_m res_t) (* the constructor that consumes an address *)
+    : parser (pair_t res_t res_t) :=
+    (     ("00" $$ reg_p $ rm00) 
+      |+| ("01" $$ reg_p $ rm01)
+      |+| ("10" $$ reg_p $ rm10)) @
+            (fun p => match p with
+                      | (op1, addr) => (op1, addr_op addr)
+                      end %% (pair_t res_t res_t))
+    |+| ("11" $$ reg_p $ reg_p) @
+    (fun p => match p with 
+                | (op1, op2) => (op1, op2)
+              end %% (pair_t res_t res_t)).
+  Implicit Arguments modrm_gen [res_t].
 
-  Definition rm11_sse : parser sse_operand_t := reg @ (fun x => SSE_GP_Reg_op x : result_m sse_operand_t).
+  Definition reg_op : parser operand_t := reg @ (fun x => Reg_op x : result_m operand_t).
 
   Definition modrm : parser (pair_t operand_t operand_t) := 
-    (     ("00" $$ reg $ rm00) 
-      |+| ("01" $$ reg $ rm01)
-      |+| ("10" $$ reg $ rm10)) @
-            (fun p => match p with
-                      | (r,addr) => (Reg_op r, Address_op addr)
-                      end %% (pair_t operand_t operand_t))
-   |+| ("11" $$ reg $ rm11) @ 
-          (fun p => match p with 
-                      | (r, op) => (Reg_op r, op)
-                    end %% (pair_t operand_t operand_t)).
+    modrm_gen reg_op Address_op.
+
+  Definition mmx_reg_op := mmx_reg @ (fun r => MMX_Reg_op r : result_m mmx_operand_t).
 
   Definition modrm_mmx : parser (pair_t mmx_operand_t mmx_operand_t) := 
-    (     ("00" $$ mmx_reg $ rm00)
-      |+| ("01" $$ mmx_reg $ rm01)
-      |+| ("10" $$ mmx_reg $ rm10)) @ 
-            (fun p => match p with 
-                      | (r, addr) => (MMX_Reg_op r, MMX_Addr_op addr)
-                      end %% (pair_t mmx_operand_t mmx_operand_t))
-      |+| ("11" $$ mmx_reg $ mmx_reg) @ 
-          (fun p => match p with 
-                      | (r1, r2) => (MMX_Reg_op r1, MMX_Reg_op r2)
-                    end %% (pair_t mmx_operand_t mmx_operand_t)).
+    modrm_gen mmx_reg_op MMX_Addr_op.
 
-   (* mod xmmreg r/m in manual*)
-   Definition modrm_xmm : parser (pair_t sse_operand_t sse_operand_t) := 
-    (     ("00" $$ sse_reg $ rm00)
-      |+| ("01" $$ sse_reg $ rm01)
-      |+| ("10" $$ sse_reg $ rm10)) @ 
-            (fun p => match p with 
-                      | (r, addr) => (SSE_XMM_Reg_op r, SSE_Addr_op addr)
-                      end %% (pair_t sse_operand_t sse_operand_t))
-      |+| ("11" $$ sse_reg $ sse_reg) @ 
-          (fun p => match p with 
-                      | (r1, r2) => (SSE_XMM_Reg_op r1, SSE_XMM_Reg_op r2)
-                    end %% (pair_t sse_operand_t sse_operand_t)).
+  Definition sse_reg_op := sse_reg @ (fun r => SSE_XMM_Reg_op r : result_m sse_operand_t).
 
-   (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
-   Definition modrm_mm : parser (pair_t sse_operand_t sse_operand_t) := 
-    (     ("00" $$ mmx_reg $ rm00)
-      |+| ("01" $$ mmx_reg $ rm01)
-      |+| ("10" $$ mmx_reg $ rm10)) @ 
-            (fun p => match p with 
-                      | (r, addr) => (SSE_MM_Reg_op r, SSE_Addr_op addr)
-                      end %% (pair_t sse_operand_t sse_operand_t))
-      |+| ("11" $$ mmx_reg $ mmx_reg) @ 
-          (fun p => match p with 
-                      | (r1, r2) => (SSE_MM_Reg_op r1, SSE_MM_Reg_op r2)
-                    end %% (pair_t sse_operand_t sse_operand_t)).
+  (* mod xmmreg r/m in manual*)
+  Definition modrm_xmm : parser (pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen sse_reg_op SSE_Addr_op.
 
-  (* same as modrm but disallows the register case; 
-     that is, the second operand must be a mem operand*)
-  Definition modrm_noreg :=
-  (     ("00" $$ reg $ rm00)
-    |+| ("01" $$ reg $ rm01)
-    |+| ("10" $$ reg $ rm10)) @ 
-           (fun p => match p with
-                      | (r,addr) => (r, Address_op addr)
-                     end %% (pair_t register_t operand_t)).
+  (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
+  Definition modrm_mm : parser (pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen 
+      (mmx_reg @ (fun r => SSE_MM_Reg_op r : result_m sse_operand_t))
+      SSE_Addr_op.
 
-   (* modrm_xmm, but disallows the register case *)
-   Definition modrm_xmm_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
-    (    ("00" $$ sse_reg $ rm00)
-      |+| ("01" $$ sse_reg $ rm01)
-      |+| ("10" $$ sse_reg $ rm10)) @ 
-            (fun p => match p with 
-                      | (r, addr) => (SSE_XMM_Reg_op r, SSE_Addr_op addr)
-                      end %% (pair_t sse_operand_t sse_operand_t)).
-   
-   Definition modrm_xmm_r32_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
-    (    ("00" $$ reg $ rm00)
-      |+| ("01" $$ reg $ rm01)
-      |+| ("10" $$ reg $ rm10)) @ 
-            (fun p => match p with 
-                      | (r, addr) => (SSE_GP_Reg_op r, SSE_Addr_op addr)
-                      end %% (pair_t sse_operand_t sse_operand_t)).
 
-   Definition modrm_mm_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
-    (     ("00" $$ mmx_reg $ rm00)
-      |+| ("01" $$ mmx_reg $ rm01)
-      |+| ("10" $$ mmx_reg $ rm10)) @ 
-            (fun p => match p with 
-                      | (r, addr) => (SSE_MM_Reg_op r, SSE_Addr_op addr)
-                      end %% (pair_t sse_operand_t sse_operand_t)).
+  (* same as modrm_gen but no mod "11" case;
+     that is, the second operand must be a mem operand *)
+  Definition modrm_gen_noreg (reg_t res_t: result) 
+    (reg_p : parser reg_t) 
+    (addr_op : address -> result_m res_t)
+    : parser (pair_t reg_t res_t) :=
+    (     ("00" $$ reg_p $ rm00) 
+      |+| ("01" $$ reg_p $ rm01)
+      |+| ("10" $$ reg_p $ rm10)) @
+            (fun p => match p with
+                      | (op1, addr) => (op1, addr_op addr)
+                      end %% (pair_t reg_t res_t)).
+  Implicit Arguments modrm_gen_noreg [reg_t res_t].
+
+  Definition modrm_noreg : parser (pair_t register_t operand_t) := 
+    modrm_gen_noreg reg (Address_op: address -> result_m operand_t).
+
+  Definition modrm_xmm_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen_noreg sse_reg_op (SSE_Addr_op: address -> result_m sse_operand_t).
+
+  (* general-purpose regs used in SSE instructions *)
+  Definition modrm_xmm_gp_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen_noreg 
+      (reg @ (fun r => SSE_GP_Reg_op r : result_m sse_operand_t))
+      (SSE_Addr_op : address -> result_m sse_operand_t).
+
+  Definition modrm_mm_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen_noreg
+      (mmx_reg @ (fun r => SSE_MM_Reg_op r : result_m sse_operand_t))
+      (SSE_Addr_op : address -> result_m sse_operand_t).
+
 
   (* Similar to mod/rm parser except that the register field is fixed to a
    * particular bit-pattern, and the pattern starting with "11" is excluded. *)
-  Definition ext_op_modrm(bs:string) : parser operand_t := 
+  Definition ext_op_modrm_gen (res_t: result) 
+    (addr_op : address -> result_m res_t)
+    (bs:string) : parser res_t :=
     (      (bits "00" $ bits bs $ rm00)
      |+|   (bits "01" $ bits bs $ rm01)
      |+|   (bits "10" $ bits bs $ rm10) ) @
            (fun p => match p with 
-                       | (_,(_,addr)) => Address_op addr
-                     end %% operand_t).
+                       | (_,(_,addr)) => addr_op addr
+                     end %% res_t).
+  Implicit Arguments ext_op_modrm_gen [res_t].
+
+  Definition ext_op_modrm : string -> parser operand_t := 
+    ext_op_modrm_gen (Address_op: address -> result_m operand_t).
   
   (*mod^A "bbb" mem in manual for SSE instructions*)
-  Definition ext_op_modrm_sse(bs:string) : parser sse_operand_t := 
-    (      (bits "00" $ bits bs $ rm00)
-     |+|   (bits "01" $ bits bs $ rm01)
-     |+|   (bits "10" $ bits bs $ rm10) ) @
-           (fun p => match p with 
-                       | (_,(_,addr)) => SSE_Addr_op addr
-                     end %% sse_operand_t).
+  Definition ext_op_modrm_sse : string -> parser sse_operand_t := 
+    ext_op_modrm_gen (SSE_Addr_op: address -> result_m sse_operand_t).
+    
+  Definition ext_op_modrm_FPM32 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM32_op: address -> result_m fp_operand_t).
+
+  Definition ext_op_modrm_FPM64 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM64_op: address -> result_m fp_operand_t).
+
+  Definition ext_op_modrm_FPM80 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM80_op: address -> result_m fp_operand_t).
+    
 
   Definition ext_op_modrm2(bs:string) : parser operand_t :=
     (     ("00" $$ bits bs $ rm00) 
@@ -454,35 +448,10 @@ Module X86_PARSER.
             (fun p => match p with
                       | (_,addr) => Address_op addr
                       end %% operand_t)
-   |+| ("11" $$ bits bs $ rm11) @ 
+   |+| ("11" $$ bits bs $ reg_op) @ 
           (fun p => match p with 
                       | (_, op) => op
                     end %% operand_t).
-
-  (* address operands that hold 32-bit floats *)
-  Definition ext_op_modrm_FPM32(bs:string) : parser fp_operand_t := 
-    (      (bits "00" $ bits bs $ rm00)
-     |+|   (bits "01" $ bits bs $ rm01)
-     |+|   (bits "10" $ bits bs $ rm10) ) @
-           (fun p => match p with 
-                       | (_,(_,addr)) => FPM32_op addr
-                     end %% fp_operand_t).
-
-  Definition ext_op_modrm_FPM64 (bs:string) : parser fp_operand_t := 
-    (      (bits "00" $ bits bs $ rm00)
-     |+|   (bits "01" $ bits bs $ rm01)
-     |+|   (bits "10" $ bits bs $ rm10) ) @
-           (fun p => match p with 
-                       | (_,(_,addr)) => FPM64_op addr
-                     end %% fp_operand_t).
-
-  Definition ext_op_modrm_FPM80 (bs:string) : parser fp_operand_t := 
-    (      (bits "00" $ bits bs $ rm00)
-     |+|   (bits "01" $ bits bs $ rm01)
-     |+|   (bits "10" $ bits bs $ rm10) ) @
-           (fun p => match p with 
-                       | (_,(_,addr)) => FPM80_op addr
-                     end %% fp_operand_t).
 
   (* Parsers for the individual instructions *)
   Definition AAA_p := bits "00110111" @ (fun _ => AAA %% instruction_t).
@@ -884,7 +853,7 @@ Module X86_PARSER.
             (fun p => match p with
                       | (sr, addr) => (sr, Address_op addr)
                       end %% (pair_t segment_register_t operand_t))
-   |+| ("11" $$ segment_reg_p $ rm11).
+   |+| ("11" $$ segment_reg_p $ reg_op).
 
   Definition MOVSR_p := 
     "1000" $$ "1110" $$ seg_modrm @ 
@@ -1283,6 +1252,11 @@ Module X86_PARSER.
   Definition FNOP_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FNOP %% instruction_t).
   Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64 "110" @ (fun x => FNSAVE x %% instruction_t).
   Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "111" @ (fun x => FNSTCW x %% instruction_t).
+  Definition FNSTSW_p := 
+    "11011" $$ "111" $$ "111" $$ bits "00000" @ (fun _ => FNSTSW None %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_FPM32 "111" @ (fun x => FNSTSW (Some x) %% instruction_t).
+
   Definition FPATAN_p := "11011" $$ "001111" $$ bits "10011" @ (fun _ => FPATAN %% instruction_t).
   Definition FPREM_p := "11011" $$ "001111" $$ bits "11000" @ (fun _ => FPREM %% instruction_t).
   Definition FPREM1_p := "11011" $$ "001111" $$ bits "10101" @ (fun _ => FPREM1 %% instruction_t).
@@ -1314,11 +1288,6 @@ Module X86_PARSER.
     "11011" $$ "011" $$ ext_op_modrm_FPM80 "111" @ (fun x => FSTP x %% instruction_t) 
   |+|  
     "11011" $$ "101" $$ "11011" $$ fpu_reg @ (fun x => FSTP (FPS_op x) %% instruction_t). 
-
-  Definition FSTSW_p := 
-    "11011" $$ "111" $$ "111" $$ bits "00000" @ (fun _ => FSTSW None %% instruction_t)
-  |+|
-    "11011" $$ "101" $$ ext_op_modrm_FPM32 "111" @ (fun x => FSTSW (Some x) %% instruction_t).
 
   Definition FSUB_p :=
     "11011" $$ "000" $$ ext_op_modrm_FPM32 "100" @ (fun x => FSUB (FPS_op Word.zero) x %% instruction_t)
@@ -1367,16 +1336,16 @@ Module X86_PARSER.
   Definition mmx_gg_p (byte twob fourb eightb : bool) := 
     let byte_p := if byte then 
       bits "00" @ (fun _ => MMX_8 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     let twobytes_p := if twob then 
       bits "01" @ (fun _ => MMX_16 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     let fourbytes_p := if fourb then 
       bits "10" @ (fun _ => MMX_32 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     let eightbytes_p := if eightb then 
       bits "11" @ (fun _ => MMX_64 %% mmx_granularity_t)
-      else @never mmx_granularity_t in
+      else never mmx_granularity_t in
     byte_p |+| twobytes_p |+| fourbytes_p |+| eightbytes_p.
 
   Definition EMMS_p := "0000" $$ "1111" $$ "0111" $$ bits "0111" @ (fun _ => EMMS %% instruction_t).
@@ -1562,7 +1531,7 @@ Definition CVTSS2SI_p :=
   "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ reg $ sse_reg @
     (fun p => let (r, sr) := p in CVTSS2SI (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t)
   |+|
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_r32_noreg @ 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_gp_noreg @ 
     (fun p => let (op1, mem) := p in CVTSS2SI op1 mem %% instruction_t).
 
 Definition CVTTPS2PI_p :=
@@ -1573,7 +1542,7 @@ Definition CVTTSS2SI_p :=
   "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ "11" $$ reg $ sse_reg @
     (fun p => let (r, sr) := p in CVTTSS2SI (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t)
   |+|
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm_r32_noreg @ 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm_gp_noreg @ 
     (fun p => let (op1, mem) := p in CVTTSS2SI op1 mem %% instruction_t).
 
 Definition DIVPS_p := 
@@ -1817,8 +1786,10 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition lock_p : parser lock_or_rep_t :=
     "1111" $$ bits "0000" @ (fun _ => lock %% lock_or_rep_t).
 
-  Definition repn_p : parser lock_or_rep_t :=
-    "1111" $$ bits "0010" @ (fun _ => repn %% lock_or_rep_t).
+  Definition rep_or_repn_p : parser lock_or_rep_t :=
+    "1111" $$ bits "0010" @ (fun _ => repn %% lock_or_rep_t)
+  |+|
+    "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
 
   Definition rep_p : parser lock_or_rep_t :=
     "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
@@ -1980,19 +1951,22 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      (fun p => match p with (l, (s, op)) =>
                  mkPrefix l s (opt2b op false) false %% prefix_t end).
 
-  (* this set of instructions can take prefixes in prefix_parser_rep;
-     that is, in lock_or_rep, only rep can be used *)
+   (* this set of instructions can take prefixes in prefix_parser_rep;
+     that is, in lock_or_rep, only rep can be used;
+     we put RET in this category because it turns out many binaries use
+     the "rep ret" sequence to avoid branch prediction panelty in AMD processors;
+     intel processor seems to just ignore the rep prefix *)
   Definition instr_parsers_rep :=
-    INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: nil.
+    INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: RET_p :: nil.
 
-  Definition prefix_parser_repn :=
-    option_perm3 repn_p segment_override_p op_override_p @
-     (fun p => match p with (l, (s, op)) =>
-                 mkPrefix l s (opt2b op false) false %% prefix_t end).
+  Definition prefix_parser_rep_or_repn :=
+    option_perm3 rep_or_repn_p segment_override_p op_override_p @
+      (fun p => match p with (l, (s, op)) =>
+                  mkPrefix l s (opt2b op false) false %% prefix_t end).
 
-  (* this set of instructions can take prefixes in prefix_parser_repn;
-     that is, in lock_or_rep, only repn can be used *)
-  Definition instr_parsers_repn := CMPS_p :: SCAS_p :: nil.
+   (* this set of instructions can take prefixes in prefix_parser_repn;
+      that is, in lock_or_rep, only repn can be used *)
+  Definition instr_parsers_rep_or_repn := CMPS_p :: SCAS_p :: nil.
 
   Definition prefix_parser_lock_with_op_override :=
     option_perm3_variation lock_p segment_override_p op_override_p @
@@ -2061,15 +2035,15 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
     MOVSR_p :: MOVBE_p :: (* NOP_p :: *)  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
     PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
-    RET_p :: ROL_p :: ROR_p ::
+    ROL_p :: ROR_p ::
     RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
     STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: F2XM1_p ::
     FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
     FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
     (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
-    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) 
+    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FNSTSW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) 
     FSCALE_p :: 
-    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSTSW_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
+    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
     FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: 
     EMMS_p :: MOVD_p :: MOVQ_p :: PACKSSDW_p :: PACKSSWB_p :: PACKUSWB_p :: PADD_p :: PADDS_p :: PADDUS_p :: PAND_p :: PANDN_p :: PCMPEQ_p :: PCMPGT_p :: 
     PMADDWD_p :: PMULHUW_p :: PMULHW_p :: PMULLW_p :: POR_p :: PSLL_p :: PSRA_p :: PSRL_p :: PSUB_p :: PSUBS_p :: PSUBUS_p :: PUNPCKH_p :: PUNPCKL_p :: PXOR_p :: 
@@ -2083,8 +2057,8 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition instruction_parser_list := 
     (List.map (fun (p:parser instruction_t) => prefix_parser_rep $ p)
       instr_parsers_rep) ++
-    (List.map (fun (p:parser instruction_t) => prefix_parser_repn $ p)
-      instr_parsers_repn) ++
+    (List.map (fun (p:parser instruction_t) => prefix_parser_rep_or_repn $ p)
+      instr_parsers_rep_or_repn) ++
     (List.map (fun (p:parser instruction_t)
                 => prefix_parser_lock_with_op_override $ p)
       instr_parsers_lock_with_op_override) ++
@@ -2126,4 +2100,3 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
       (mkPS (inst_ctxt ps) r' wf', apply_null (inst_ctxt ps) r' wf').
 
 End X86_PARSER.
-

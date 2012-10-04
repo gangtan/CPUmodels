@@ -930,7 +930,6 @@ dealt with in the syntax yet.*)
 These few instructions commented here are not encoded due to the fact that they 
 require operands that are not yet dealt with in the floating-point syntax.
 | FSTENV : forall (op1: fp_operand), instr
-| FSTSW : forall(op1: option fp_operand), instr
 | FNSTCW : forall (op1: fp_operand), instr
  *)
 
@@ -1054,6 +1053,12 @@ Definition enc_FNSTCW (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_modrm (s2bl "111") op1;
   ret (s2bl "11011001" ++ l1).
 
+Definition enc_FNSTSW (op1: option fp_operand) : Enc (list bool) :=
+  match op1 with
+    | None => ret (s2bl "1101111111100000")
+    | Some op1 => l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011101" ++ l1)
+  end.
+
 Definition enc_FNOP := ret (s2bl "1101100111010000").
 Definition enc_FPATAN := ret (s2bl "1101100111110011").
 Definition enc_FPREM := ret (s2bl "1101100111111000").
@@ -1086,11 +1091,6 @@ Definition enc_FSTP (op1: fp_operand) : Enc (list bool) :=
     | FPM32_op fa1 => l1 <- enc_fp_modrm (s2bl "011") op1; ret (s2bl "11011001" ++ l1)
     | FPM64_op fa1 => l1 <- enc_fp_modrm (s2bl "011") op1; ret (s2bl "11011101" ++ l1)
     | FPM80_op fa1 => l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011011" ++ l1)
-  end.
-Definition enc_FSTSW (op1: option fp_operand) : Enc (list bool) :=
-  match op1 with
-    | None => ret (s2bl "1101111111100000")
-    | Some op1 => l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011101" ++ l1)
   end.
 Definition enc_FSUB := enc_fp_arith true (s2bl "0") (s2bl "100") .
 Definition enc_FSUBP (op1 : fp_operand) : Enc (list bool) :=
@@ -2168,6 +2168,7 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | FNOP => enc_FNOP
     | FNSAVE op1 => enc_FNSAVE op1
     | FNSTCW op1 => enc_FNSTCW op1
+    | FNSTSW op1 => enc_FNSTSW op1
     | FPATAN => enc_FPATAN
     | FPREM => enc_FPREM
     | FPREM1 => enc_FPREM1
@@ -2181,7 +2182,6 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | FST op1 => enc_FST op1
     | FSTENV op1 => enc_FSTENV op1
     | FSTP op1 => enc_FSTP op1 
-    | FSTSW op1 => enc_FSTSW op1
     | FSUB op1 op2 => enc_FSUB op1 op2
     | FSUBP op1 => enc_FSUBP op1
     | FSUBR op1 op2 => enc_FSUBR op1 op2
