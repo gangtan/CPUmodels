@@ -431,6 +431,9 @@ Module X86_PARSER.
   Definition ext_op_modrm_sse : string -> parser sse_operand_t := 
     ext_op_modrm_gen (SSE_Addr_op: address -> result_m sse_operand_t).
     
+  Definition ext_op_modrm_FPM16 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM16_op: address -> result_m fp_operand_t).
+
   Definition ext_op_modrm_FPM32 : string -> parser fp_operand_t := 
     ext_op_modrm_gen (FPM32_op: address -> result_m fp_operand_t).
 
@@ -759,7 +762,7 @@ Module X86_PARSER.
   Definition LTR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "011" @ 
     (fun x => LTR x %% instruction_t).
 
-  (* This is may not be right. Need to test this thoroughly. 
+  (* This may not be right. Need to test this thoroughly. 
      There is no 8bit mode for CMOVcc *)
 
   Definition CMOVcc_p :=
@@ -1110,6 +1113,15 @@ Module X86_PARSER.
   Definition FCHS_p := "11011" $$ "001111" $$ bits "00000" @ (fun _ => FCHS %% instruction_t).
   Definition FCLEX_p := "11011" $$ "011111" $$ bits "00010" @ (fun _ => FCLEX %% instruction_t).
 
+  Definition FCMOVcc_p :=
+    ("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg) @
+    (fun p =>
+      match p with 
+        (b2, (b1, (b0, s))) => 
+        let n := bits2int 3 (b2, (b1, (b0, tt))) in
+        FCMOVcc (Z_to_fp_condition_type n) (FPS_op s) %% instruction_t
+      end).
+
   Definition FCOM_p :=
     "11011" $$ "000" $$ ext_op_modrm_FPM32 "010" @
         (fun x => FCOM (Some x) %% instruction_t)
@@ -1164,61 +1176,61 @@ Module X86_PARSER.
   Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg @ (fun x => FDIVRP (FPS_op x) %% instruction_t).
   Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg @ (fun x => FFREE (FPS_op x) %% instruction_t).
   Definition FIADD_p := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "000" @ (fun x => FIADD x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "000" @ (fun x => FIADD x %% instruction_t)
   |+|
     "11011" $$ "010" $$ ext_op_modrm_FPM32 "000" @ (fun x => FIADD x %% instruction_t).
   
   Definition FICOM_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "010" @ (fun x => FICOM x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "010" @ (fun x => FICOM x %% instruction_t)
   |+|
     "11011" $$ "010" $$ ext_op_modrm_FPM32 "010" @ (fun x => FICOM x %% instruction_t).
 
   Definition FICOMP_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "011" @ (fun x => FICOMP x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "011" @ (fun x => FICOMP x %% instruction_t)
   |+|
     "11011" $$ "010" $$ ext_op_modrm_FPM32 "011" @ (fun x => FICOMP x %% instruction_t).
 
   Definition FIDIV_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "110" @ (fun x => FIDIV x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "110" @ (fun x => FIDIV x %% instruction_t)
   |+|
     "11011" $$ "010" $$ ext_op_modrm_FPM32 "110" @ (fun x => FIDIV x %% instruction_t).
 
   Definition FIDIVR_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "111" @ (fun x => FIDIVR x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "111" @ (fun x => FIDIVR x %% instruction_t)
   |+|
     "11011" $$ "010" $$ ext_op_modrm_FPM32 "111" @ (fun x => FIDIVR x %% instruction_t).
 
   Definition FILD_p  := 
-    "11011" $$ "111" $$ ext_op_modrm_FPM32 "000" @ (fun x => FILD x %% instruction_t)
+    "11011" $$ "111" $$ ext_op_modrm_FPM16 "000" @ (fun x => FILD x %% instruction_t)
   |+|
     "11011" $$ "011" $$ ext_op_modrm_FPM32 "000" @ (fun x => FILD x %% instruction_t)
   |+|
     "11011" $$ "111" $$ ext_op_modrm_FPM64 "101" @ (fun x => FILD x %% instruction_t).
   Definition FIMUL_p := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "001" @ (fun x => FIMUL x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "001" @ (fun x => FIMUL x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM64 "001" @ (fun x => FIMUL x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "001" @ (fun x => FIMUL x %% instruction_t).
   Definition FINCSTP_p := "11011" $$ "001111" $$ bits "10111" @ (fun _ => FINCSTP %% instruction_t).
   (*Definition FINIT := "".  Nothing provided in table B-39 *) 
   Definition FIST_p :=
-    "11011" $$ "111" $$ ext_op_modrm_FPM32 "010" @ (fun x => FIST x %% instruction_t)
+    "11011" $$ "111" $$ ext_op_modrm_FPM16 "010" @ (fun x => FIST x %% instruction_t)
   |+|
-    "11011" $$ "011" $$ ext_op_modrm_FPM64 "010" @ (fun x => FIST x %% instruction_t).
+    "11011" $$ "011" $$ ext_op_modrm_FPM32 "010" @ (fun x => FIST x %% instruction_t).
 
   Definition FISTP_p :=
-    "11011" $$ "111" $$ ext_op_modrm_FPM32 "011" @ (fun x => FISTP x %% instruction_t)
+    "11011" $$ "111" $$ ext_op_modrm_FPM16 "011" @ (fun x => FISTP x %% instruction_t)
   |+|
     "11011" $$ "011" $$ ext_op_modrm_FPM32 "011" @ (fun x => FISTP x %% instruction_t)
   |+|
     "11011" $$ "111" $$ ext_op_modrm_FPM64 "111" @ (fun x => FISTP x %% instruction_t).
 
   Definition FISUB_p :=
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "100" @ (fun x => FISUB x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "100" @ (fun x => FISUB x %% instruction_t)
   |+|
     "11011" $$ "010" $$ ext_op_modrm_FPM32 "100" @ (fun x => FISUB x %% instruction_t).
 
   Definition FISUBR_p :=
-    "11011" $$ "110" $$ ext_op_modrm_FPM32 "101" @ (fun x => FISUBR x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "101" @ (fun x => FISUBR x %% instruction_t)
   |+|
     "11011" $$ "010" $$ ext_op_modrm_FPM32 "101" @ (fun x => FISUBR x %% instruction_t).
 
@@ -2017,6 +2029,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      that is, it cannot take a lock_or_rep prefix, but can
      optionally take segment or op override prefix *)
   Definition instr_parsers_seg_op_override := 
+    CMOVcc_p :: ROL_p :: ROR_p ::
     SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: 
     MOVSX_p :: MOVZX_p :: DIV_p :: IDIV_p :: 
     CDQ_p :: CWDE_p :: MUL_p :: nil.
@@ -2029,16 +2042,15 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition instr_parsers_seg_override := 
     AAA_p :: AAD_p :: AAM_p :: AAS_p :: CMP_p false ::
     ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p :: 
-    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CMOVcc_p :: CMC_p :: CPUID_p :: DAA_p :: 
+    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CMC_p :: CPUID_p :: DAA_p :: 
     HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: 
     LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: 
     LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
     MOVSR_p :: MOVBE_p :: (* NOP_p :: *)  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
     PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
-    ROL_p :: ROR_p ::
     RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
     STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: F2XM1_p ::
-    FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
+    FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCLEX_p :: FCMOVcc_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
     FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
     (*:: FINIT_p *) :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
     :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FNSTSW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) 

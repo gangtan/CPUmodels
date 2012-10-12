@@ -1,4 +1,4 @@
-  (* This file encodes Intel IA32 (x86) 32-bit instructions into 
+(* This file encodes Intel IA32 (x86) 32-bit instructions into 
  * their binary form. *)
 
 Require Import X86Syntax.
@@ -828,11 +828,13 @@ Definition enc_fp_modrm (opb: list bool) (op2 : fp_operand) : Enc (list bool) :=
   match op2 with
     | FPS_op r2 => ret (s2bl "11" ++ opb ++ int_explode r2 3)
 
+    | FPM16_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
     | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
     | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
     | FPM80_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
       ret (s2bl "00" ++ opb ++ s2bl "101" ++ enc_word disp)
 
+    | FPM16_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
     | FPM32_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
     | FPM64_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
     | FPM80_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
@@ -859,6 +861,7 @@ Definition enc_fp_modrm (opb: list bool) (op2 : fp_operand) : Enc (list bool) :=
               else enc_disp_idxopt
         end
 
+    | FPM16_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
     | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
     | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
     | FPM80_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
@@ -955,6 +958,24 @@ Definition enc_FBSTP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_modrm (s2bl "110") op1; ret (s2bl "11011111" ++ l1).
 Definition enc_FCHS := ret (s2bl "1101100111100000"). 
 Definition enc_FCLEX := ret (s2bl "1101101111100010").
+
+Definition enc_FCMOVcc (fct: fp_condition_type) (op1: fp_operand) : Enc (list bool) :=
+  match op1 with
+    | FPS_op i1 => 
+      l1 <- enc_fp_int3 op1;
+      match fct with
+        | B_fct => ret (s2bl "11011010" ++ s2bl "11000" ++ l1)
+        | E_fct => ret (s2bl "11011010" ++ s2bl "11001" ++ l1)
+        | BE_fct => ret (s2bl "11011010" ++ s2bl "11010" ++ l1)
+        | U_fct => ret (s2bl "11011010" ++ s2bl "11011" ++ l1)
+        | NB_fct => ret (s2bl "11011011" ++ s2bl "11000" ++ l1)
+        | NE_fct => ret (s2bl "11011011" ++ s2bl "11001" ++ l1)
+        | NBE_fct => ret (s2bl "11011011" ++ s2bl "11010" ++ l1)
+        | NU_fct => ret (s2bl "11011011" ++ s2bl "11011" ++ l1)
+      end
+    | _ => invalid
+  end.
+
 Definition enc_FCOM (op1: option fp_operand) : Enc (list bool) :=
   match op1 with
     | Some fp1 => enc_comhelper (s2bl "010") fp1 (s2bl "0")
@@ -978,48 +999,65 @@ Definition enc_FDIVRP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111011110" ++  l1).
 Definition enc_FFREE (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101110111000" ++ l1).
-Definition enc_FIADD (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "000") op1; ret (s2bl "11011010" ++ l1).
-Definition enc_FICOM (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "010") op1; ret (s2bl "11011010" ++ l1).
-Definition enc_FICOMP (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "011") op1; ret (s2bl "11011010" ++ l1).
-Definition enc_FIDIV (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "110") op1; ret (s2bl "11011010" ++ l1).
-Definition enc_FIDIVR (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011010" ++ l1).
+
+
+(* a common def for FI*** instructions *)
+Definition enc_FI_instrs (s:string) (op1:fp_operand) : Enc (list bool) := 
+  l1 <- enc_fp_modrm (s2bl s) op1; 
+  match op1 with
+    | FPM16_op _ => ret (s2bl "11011110" ++ l1)
+    | FPM32_op _ => ret (s2bl "11011010" ++ l1)
+    | _ => invalid
+  end.
+  
+Definition enc_FIADD := enc_FI_instrs "000".
+Definition enc_FICOM := enc_FI_instrs "010".
+Definition enc_FICOMP := enc_FI_instrs "011".
+Definition enc_FIDIV := enc_FI_instrs "110".
+Definition enc_FIDIVR := enc_FI_instrs "111".
+
 Definition enc_FILD (op1: fp_operand) : Enc (list bool) :=
   match op1 with
+    | FPM16_op fp1 => 
+      l1 <- enc_fp_modrm (s2bl "000") op1; ret (s2bl "11011111" ++ l1)
     | FPM32_op fp1 => 
       l1 <- enc_fp_modrm (s2bl "000") op1; ret (s2bl "11011011" ++ l1)
     | FPM64_op fp1 => 
       l1 <- enc_fp_modrm (s2bl "101") op1; ret (s2bl "11011111" ++ l1)
     | _ => invalid
   end.
-Definition enc_FIMUL (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "001") op1; ret (s2bl "11011010" ++ l1).
+Definition enc_FIMUL := enc_FI_instrs "001".
+
 Definition enc_FINCSTP := ret (s2bl "1101100111110111").
 Definition enc_FINIT :=  ret (s2bl "100110111101101111100011").
 Definition enc_FIST (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "010") op1; ret (s2bl "11011011" ++ l1).
+  l1 <- enc_fp_modrm (s2bl "010") op1; 
+  match op1 with
+    | FPM16_op _ => ret (s2bl "11011111" ++ l1)
+    | FPM32_op _ => ret (s2bl "11011011" ++ l1)
+    | _ => invalid
+  end.
+
 Definition enc_FISTP (op1: fp_operand) : Enc (list bool) :=
   match op1 with
+    | FPM16_op fp1 => 
+      l1 <- enc_fp_modrm (s2bl "011") op1; ret (s2bl "11011111" ++ l1)
     | FPM32_op fp1 => 
       l1 <- enc_fp_modrm (s2bl "011") op1; ret (s2bl "11011011" ++ l1)
     | FPM64_op fp1 => 
       l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011111" ++ l1)
     | _ => invalid
   end.
-Definition enc_FISUB (op1: fp_operand) : Enc (list bool) := 
-  l1 <- enc_fp_modrm (s2bl "100") op1; ret (s2bl "11011010" ++ l1).
-Definition enc_FISUBR (op1: fp_operand) : Enc (list bool) :=
-  l1 <- enc_fp_modrm (s2bl "101") op1; ret (s2bl "11011010" ++ l1).
+Definition enc_FISUB := enc_FI_instrs "100".
+Definition enc_FISUBR := enc_FI_instrs "101".
+
 Definition enc_FLD (op1: fp_operand) : Enc (list bool) := 
   match op1 with 
     | FPS_op i1 =>  l1 <- enc_fp_int3 op1; ret (s2bl "1101100111000"  ++ l1)
     | FPM32_op fa1 => l1 <- enc_fp_modrm (s2bl "000") op1; ret (s2bl "11011001" ++ l1)
     | FPM64_op fa1 => l1 <- enc_fp_modrm (s2bl "000") op1; ret (s2bl "11011101" ++ l1)
     | FPM80_op fa1 => l1 <- enc_fp_modrm (s2bl "101") op1; ret (s2bl "11011011" ++ l1)
+    | _ => invalid
   end.
 Definition enc_FLD1 := ret (s2bl "1101100111101000").
 Definition enc_FLDCW (op1: fp_operand) : Enc (list bool) :=
@@ -1091,6 +1129,7 @@ Definition enc_FSTP (op1: fp_operand) : Enc (list bool) :=
     | FPM32_op fa1 => l1 <- enc_fp_modrm (s2bl "011") op1; ret (s2bl "11011001" ++ l1)
     | FPM64_op fa1 => l1 <- enc_fp_modrm (s2bl "011") op1; ret (s2bl "11011101" ++ l1)
     | FPM80_op fa1 => l1 <- enc_fp_modrm (s2bl "111") op1; ret (s2bl "11011011" ++ l1)
+    | _ => invalid
   end.
 Definition enc_FSUB := enc_fp_arith true (s2bl "0") (s2bl "100") .
 Definition enc_FSUBP (op1 : fp_operand) : Enc (list bool) :=
@@ -2129,6 +2168,7 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | FBSTP op1 => enc_FADDP op1
     | FCHS => enc_FCHS
     | FCLEX => enc_FCLEX
+    | FCMOVcc fct op1 => enc_FCMOVcc fct op1
     | FCOM op1 => enc_FCOM op1
     | FCOMP op1 => enc_FCOMP op1
     | FCOMPP => enc_FCOMPP

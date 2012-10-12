@@ -2831,6 +2831,7 @@ Section X86FloatSemantics.
      let val := Word.intval n i in
      ps_reg n val.
 
+
   Definition conv_FLD (op: fp_operand) := 
      topp <- get_stacktop;
      zero <- load_Z size3 0;
@@ -2839,6 +2840,7 @@ Section X86FloatSemantics.
        val <- load_fpu_reg (fpu_from_int reg topp);
        conv_FDECSTP;; 
        set_stack_i val topp zero
+     | FPM16_op _ => emit error_rtl (* todo: fix this *)
      | FPM32_op a =>  
         addr <- compute_addr a; 
         val <- load_mem32 DS addr;
@@ -2880,6 +2882,7 @@ Section X86FloatSemantics.
     match op with 
     | FPS_op reg =>    (*Copy st(0) to st(i) *)
       set_fpu_reg top_val (fpu_from_int reg topp)
+    | FPM16_op a =>  emit error_rtl
     | FPM32_op a =>      (*Copy st(0) to memory *)
       addr <- compute_addr a;
       let int_val := psreg_to_int top_val in

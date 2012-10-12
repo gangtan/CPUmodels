@@ -76,142 +76,11 @@ Definition debug_register_eq_dec :
   intros ; decide equality.
 Defined.
 
-Inductive fp_debug_register : Set := eMF | eDB | eBP | eUD | eNM | eDF | eSS | eGP | ePF | eAC | eMC.
-Definition fp_debug_register_eq_dec : 
-  forall (x y: fp_debug_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
 Record address : Set := mkAddress {
   addrDisp : int32 ; 
   addrBase : option register ; 
   addrIndex : option (scale * register)
 }.
-(*
-Based on Section 4.2 of manual 
-"Floating-Point operands may be x87 registers (fp stack elements), or data residing in
-memory." 
-*)
-
-Inductive fpu_register : Set := ST7 | ST6 | ST5 | ST4 | ST3 | ST2 | ST1 | ST0.
-Definition fpu_register_eq_dec : 
-  forall (x y:fpu_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_status_register : Set := Busy | C3 | Top | C2 | C1 | C0 |
-                                      Es | Sf | Pe | Ue | Oe | Ze | De | Ie.
-
-Definition fp_status_register_eq_dec : 
-  forall (x y:fp_status_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_control_register : Set := Res15 | Res14 | Res13 | Res7 | Res6 | IC | RC | PC 
-									| Pm | Um | Om | Zm | Dm | Im.
-Definition fp_control_register_eq_dec : 
-  forall (x y:fp_control_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_tagWord_register : Set := valid | zero | special | empty.
-Definition fp_tagWord_register_eq_dec : 
-  forall (x y:fp_tagWord_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Definition Z_to_fp_tagWord_register (n:Z) :=
-  match n with
-  | 0 => valid
-  | 1 => zero
-  | 2 => special
-  | _ => empty
-  end.
-
-Inductive fpu_tagWords : Set := Tag0 | Tag1 | Tag2 | Tag3 | Tag4 | Tag5 | Tag6 | Tag7.
-
-Definition fp_tagWords_eq_dec : 
-  forall (x y:fpu_tagWords), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_lastOperandPtr_register : Set := 
-| Valid
-| Undefined.
-
-Definition fp_lastOperandPtr_register_eq_dec : 
-  forall (x y:fp_lastOperandPtr_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-(*MMX syntax *)
-
-(*Uses x87 fpu stack but elements can be directly addressed*)
-Definition mmx_register := fpu_register.
-
-Definition Z_to_mmx_register (n:Z) := 
-  match n with 
-    | 0 => ST0
-    | 1 => ST1
-    | 2 => ST2
-    | 3 => ST3
-    | 4 => ST4
-    | 5 => ST5
-    | 6 => ST6
-    | _ => ST7
-  end.
-
-(*SSE syntax *)
-(* 8 128-bit registers (XMM0 - XMM7) introduced, along with MXCSR word for status and control of these registers *)
-Inductive sse_register : Set := XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7.
-Definition sse_register_eq_dec : forall (x y: sse_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Definition Z_to_sse_register (n:Z) := 
-  match n with 
-    | 0 => XMM0
-    | 1 => XMM1
-    | 2 => XMM2
-    | 3 => XMM3
-    | 4 => XMM4
-    | 5 => XMM5
-    | 6 => XMM6
-    | _ => XMM7
-  end.
-
-(*mmreg means mmx register. *)
-Inductive mxcsr: Set := FZ | Rpos | Rneg | RZ | RN | PM | UM | OM | ZM | DM | IM | DAZ | PE | UE |
-			 OE | ZE | DE | IE.
-
-Definition mxcsr_eq_dec : forall (x y: mxcsr), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive sse_operand : Set := 
-| SSE_XMM_Reg_op : sse_register -> sse_operand
-| SSE_MM_Reg_op : mmx_register -> sse_operand 
-| SSE_Addr_op : address -> sse_operand
-| SSE_GP_Reg_op : register -> sse_operand (*r32 in manual*)
-| SSE_Imm_op : int32 -> sse_operand.
-
-Inductive mmx_granularity : Set :=
-| MMX_8                         (* 8 bits *)
-| MMX_16                        (* 16 bits *)
-| MMX_32                        (* 32 bits *)
-| MMX_64.                       (* 64 bits *)
-
-Inductive mmx_operand : Set := 
-| GP_Reg_op : register -> mmx_operand
-| MMX_Addr_op : address -> mmx_operand
-| MMX_Reg_op : mmx_register -> mmx_operand
-| MMX_Imm_op : int32 -> mmx_operand.
-
-Inductive fp_operand : Set := 
-| FPS_op : int3 -> fp_operand 	    (*an index from 0 to 7 relative to stack top *)
-| FPM32_op : address -> fp_operand
-| FPM64_op : address -> fp_operand
-| FPM80_op : address -> fp_operand. 
 
 Inductive operand : Set := 
 | Imm_op : int32 -> operand
@@ -266,6 +135,164 @@ Definition Z_to_condition_type(n:Z) : condition_type :=
     | _ => NLE_ct
   end.
 
+(* Floating point instruction syntax *)
+
+Inductive fpu_register : Set := ST7 | ST6 | ST5 | ST4 | ST3 | ST2 | ST1 | ST0.
+Definition fpu_register_eq_dec : 
+  forall (x y:fpu_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_debug_register : Set := eMF | eDB | eBP | eUD | eNM | eDF | eSS | eGP | ePF | eAC | eMC.
+Definition fp_debug_register_eq_dec : 
+  forall (x y: fp_debug_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_status_register : Set := Busy | C3 | Top | C2 | C1 | C0 |
+                                      Es | Sf | Pe | Ue | Oe | Ze | De | Ie.
+
+Definition fp_status_register_eq_dec : 
+  forall (x y:fp_status_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_control_register : Set := Res15 | Res14 | Res13 | Res7 | Res6 | IC | RC | PC 
+				     | Pm | Um | Om | Zm | Dm | Im.
+Definition fp_control_register_eq_dec : 
+  forall (x y:fp_control_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_tagWord_register : Set := valid | zero | special | empty.
+Definition fp_tagWord_register_eq_dec : 
+  forall (x y:fp_tagWord_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Definition Z_to_fp_tagWord_register (n:Z) :=
+  match n with
+  | 0 => valid
+  | 1 => zero
+  | 2 => special
+  | _ => empty
+  end.
+
+Inductive fpu_tagWords : Set := Tag0 | Tag1 | Tag2 | Tag3 | Tag4 | Tag5 | Tag6 | Tag7.
+
+Definition fp_tagWords_eq_dec : 
+  forall (x y:fpu_tagWords), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_lastOperandPtr_register : Set := 
+| Valid
+| Undefined.
+
+Definition fp_lastOperandPtr_register_eq_dec : 
+  forall (x y:fp_lastOperandPtr_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive fp_operand : Set := 
+| FPS_op : int3 -> fp_operand 	    (*an index from 0 to 7 relative to stack top *)
+| FPM16_op : address -> fp_operand
+| FPM32_op : address -> fp_operand
+| FPM64_op : address -> fp_operand
+| FPM80_op : address -> fp_operand. 
+
+(* floating-point condition tpe *)
+Inductive fp_condition_type : Set :=
+| B_fct (* below *)
+| E_fct (* equal *)
+| BE_fct (* below or equal *)
+| U_fct (* unordered *)
+| NB_fct (* not below *)
+| NE_fct (* not equal *)
+| NBE_fct (* not below or equal *)
+| NU_fct (* not unordered *).
+
+Definition Z_to_fp_condition_type(n:Z) : fp_condition_type := 
+  match n with 
+    | 0 => B_fct
+    | 1 => E_fct
+    | 2 => BE_fct
+    | 3 => U_fct
+    | 4 => NB_fct
+    | 5 => NE_fct
+    | 6 => NBE_fct
+    | _ => NU_fct 
+  end.
+
+
+(*MMX syntax *)
+
+(*Uses x87 fpu stack but elements can be directly addressed*)
+Definition mmx_register := fpu_register.
+
+Definition Z_to_mmx_register (n:Z) := 
+  match n with 
+    | 0 => ST0
+    | 1 => ST1
+    | 2 => ST2
+    | 3 => ST3
+    | 4 => ST4
+    | 5 => ST5
+    | 6 => ST6
+    | _ => ST7
+  end.
+
+Inductive mmx_granularity : Set :=
+| MMX_8                         (* 8 bits *)
+| MMX_16                        (* 16 bits *)
+| MMX_32                        (* 32 bits *)
+| MMX_64.                       (* 64 bits *)
+
+Inductive mmx_operand : Set := 
+| GP_Reg_op : register -> mmx_operand
+| MMX_Addr_op : address -> mmx_operand
+| MMX_Reg_op : mmx_register -> mmx_operand
+| MMX_Imm_op : int32 -> mmx_operand.
+
+
+(*SSE syntax *)
+(* 8 128-bit registers (XMM0 - XMM7) introduced, along with MXCSR word for status and control of these registers *)
+Inductive sse_register : Set := XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7.
+Definition sse_register_eq_dec : forall (x y: sse_register), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Definition Z_to_sse_register (n:Z) := 
+  match n with 
+    | 0 => XMM0
+    | 1 => XMM1
+    | 2 => XMM2
+    | 3 => XMM3
+    | 4 => XMM4
+    | 5 => XMM5
+    | 6 => XMM6
+    | _ => XMM7
+  end.
+
+(*mmreg means mmx register. *)
+Inductive mxcsr: Set := FZ | Rpos | Rneg | RZ | RN | PM | UM | OM | ZM | DM | IM | DAZ | PE | UE |
+			 OE | ZE | DE | IE.
+
+Definition mxcsr_eq_dec : forall (x y: mxcsr), {x=y} + {x<>y}.
+  intros ; decide equality.
+Defined.
+
+Inductive sse_operand : Set := 
+| SSE_XMM_Reg_op : sse_register -> sse_operand
+| SSE_MM_Reg_op : mmx_register -> sse_operand 
+| SSE_Addr_op : address -> sse_operand
+| SSE_GP_Reg_op : register -> sse_operand (*r32 in manual*)
+| SSE_Imm_op : int32 -> sse_operand.
+
+
+
+(* The list of all instructions *)
+
 Inductive instr : Set :=
 (* two parts:  1-byte opcode instructions, followed by 2-byte in alphabetical order,
    following Table B-13 and Table ??? *) 
@@ -308,12 +335,13 @@ actual instruction details. Instructions can be found here:
 http://download.intel.com/products/processor/manual/325383.pdf*)
 | F2XM1 : instr
 | FABS : instr
-| FADD : forall (d: bool)(op1: fp_operand), instr
+| FADD : forall (d: bool) (op1: fp_operand), instr
 | FADDP : forall (op1: fp_operand), instr
 | FBLD : forall (op1: fp_operand), instr
 | FBSTP : forall (op1: fp_operand), instr
 | FCHS : instr
 | FCLEX : instr
+| FCMOVcc : forall (ct:fp_condition_type)(op1: fp_operand), instr
 | FCOM : forall (op1: option fp_operand), instr
 | FCOMP : forall (op1: option fp_operand), instr
 | FCOMPP : instr
