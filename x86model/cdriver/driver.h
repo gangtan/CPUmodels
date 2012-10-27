@@ -48,7 +48,7 @@ int compute_rel(uint8_t *code, uint nbytes) {
   return acc;
 }
 
-Bool extract(uint8_t *code, uint start_pos, uint new_pos) {
+Bool extract(uint8_t *code, uint start_pos, uint new_pos, uint size) {
   
   uint8_t b1, b2;
   Bool ok = FALSE;
@@ -56,8 +56,13 @@ Bool extract(uint8_t *code, uint start_pos, uint new_pos) {
   b1 = code[start_pos];
   if (b1 != 0x0F) {
     if (((0x70 <= b1) && (b1 <= 0x7F)) || (b1 == 0xE3) || (b1 == 0xEB)) {
-      target[new_pos+ (int8_t) compute_rel(&code[start_pos+1],1)] = 1;
-      ok = TRUE;
+      if(new_pos + compute_rel(&code[start_pos+1], 1) < size) {
+        target[new_pos+ (int8_t) compute_rel(&code[start_pos+1],1)] = 1;
+        ok = TRUE;
+      }
+      else {
+        ok = FALSE;
+      }
     }
     if ((b1 == 0xE9) || (b1 == 0xE8)) {
       if (compute_rel(&code[start_pos+1],4) < 0) {
@@ -66,8 +71,13 @@ Bool extract(uint8_t *code, uint start_pos, uint new_pos) {
 	}
       }
       else{
+        if ((new_pos + compute_rel(&code[start_pos+1],4) < size)) {
 	target[new_pos+ compute_rel(&code[start_pos+1],4)] = 1;
 	ok = TRUE;
+        }
+        else {
+          ok = FALSE;
+        }
       }
     }  
   }
@@ -103,8 +113,9 @@ Bool verifier(DFA *NonControlFlow,
     if (match(NonControlFlow,code,&pos,size)) continue;
    
     if (match(DirectJump,code,&pos,size)) 
-      if (extract(code,saved_pos,pos)) continue; 
+      if (extract(code,saved_pos,pos,size)) continue; 
     
+    free(target); free(valid);
     return FALSE;
   }
 
