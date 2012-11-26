@@ -3535,7 +3535,7 @@ Definition step : RTL unit :=
   else SafeFail _.
 
 Definition step_immed (m1 m2: rtl_state) : Prop := step m1 = (Okay_ans tt, m2).
-Notation "m1 ==> m2" := (step_immed m1 m2).
+Notation "m1 ==> m2" := (step_immed m1 m2) (at level 55, m2 at next level).
 Require Import Relation_Operators.
 Definition steps := clos_refl_trans rtl_state step_immed.
 Notation "m1 '==>*' m2" := (steps m1 m2) (at level 55, m2 at next level).
