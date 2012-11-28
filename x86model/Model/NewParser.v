@@ -1043,6 +1043,24 @@ Fixpoint append_alt (ag1:astgram) (ag2:astgram) :
       end
   end.
 
+Definition in_agxf t (e: {ag : astgram & astgram_type ag ->> t}) cs v := 
+  match e with 
+    | existT ag x => exists v', in_astgram ag cs v' /\ xinterp x v' = v
+  end.
+
+Lemma append_alt_corr1 (ag1 ag2:astgram) cs v : 
+  in_astgram (aAlt ag1 ag2) cs v -> in_agxf (append_alt ag1 ag2) cs v.
+Proof.
+  destruct ag1 ; unfold agxf ; intros ; 
+    try (destruct ag2 ; simpl in *; repeat (ainv ; subst) ; fail). 
+Qed.
+
+Lemma append_alt_corr2 (ag1 ag2:astgram) cs v : 
+  in_agxf (append_alt ag1 ag2) cs v -> in_astgram (aAlt ag1 ag2) cs v.
+Proof.
+  destruct ag1 ; try (destruct ag2 ; mysimp ; simpl ; unfold agxf ; repeat (ainv ; auto)).
+Qed.
+
 Definition assoc_left_pair t1 t2 t3 : 
   Pair_t t1 (Pair_t t2 t3) ->> Pair_t (Pair_t t1 t2) t3 := 
   Xpair (Xpair (Xfst _ (Xid _)) (Xsnd _ (Xfst _ (Xid _)))) (Xsnd _ (Xsnd _ (Xid _))).
@@ -1067,6 +1085,26 @@ Fixpoint append_cat (ag1:astgram) (ag2:astgram) :
         | ag2' => agxf (aCat ag1' ag2') (Xid _)
       end
   end.
+
+Lemma append_cat_corr1 (ag1 ag2:astgram) cs v : 
+  in_astgram (aCat ag1 ag2) cs v -> in_agxf (append_cat ag1 ag2) cs v.
+Proof.
+  destruct ag1 ; destruct ag2 ; simpl ; intros ; repeat ainv.
+  rewrite <- app_nil_end. eauto.
+Qed.
+
+Lemma append_cat_corr2 (ag1 ag2:astgram) cs v : 
+  in_agxf (append_cat ag1 ag2) cs v -> in_astgram (aCat ag1 ag2) cs v.
+Proof.
+  destruct ag1 ; destruct ag2 ; mysimp ; repeat ainv.
+  econstructor. econstructor. eauto. eauto. eauto. simpl. eauto. eauto.
+  econstructor. eauto. eauto. rewrite <- app_nil_end. eauto. eauto.
+  rewrite (app_nil_end (x0 ++ x1)). econstructor. econstructor. eauto. eauto. 
+  eauto. eauto. econstructor. eauto. eauto. eauto. eauto.
+  rewrite (app_nil_end cs). econstructor. eauto. eauto. auto. auto.
+  rewrite (app_nil_end cs). econstructor. eauto. eauto. auto. auto.
+  rewrite (app_nil_end cs). econstructor. eauto. eauto. auto. auto.
+Qed.
   
 (** Optimize an [astgram] -- returns a pair of a new [astgram] and an [xform] that
     maps us from the new AST to the old one. *)
@@ -1075,13 +1113,76 @@ Definition opt_ag (ag:astgram) : {ag2:astgram & astgram_type ag2 ->> astgram_typ
     | aAlt ag1 ag2 => append_alt ag1 ag2
     | aCat ag1 ag2 => append_cat ag1 ag2
     | aStar aZero => agxf aEps (Xempty Unit_t Void_t)
-    | aStar (aStar ag') => agxf (aStar ag') (Xcons (Xid _) (Xempty _ _))
+(* This optimization is not valid! *)
+(*    | aStar (aStar ag') => agxf (aStar ag') (Xcons (Xid _) (Xempty _ _)) *)
     | ag' => agxf ag' (Xid _)
   end.
+
+Definition cast_interp t1 (v:interp (astgram_type t1)) t2 (H:t1 = t2) : interp (astgram_type t2).
+  intros. rewrite <- H. apply v.
+Defined.
+
+Lemma astar_azero : forall ag cs v (H1:in_astgram ag cs v) (H2:ag = aStar aZero),
+  cs = nil /\ @cast_interp ag v _ H2 = nil.
+Proof.
+  induction 1 ; intros ; try congruence. subst. injection H2. intros. subst.
+  rewrite (@proof_irrelevance _ H2 (eq_refl _)). auto. injection H2. intros.
+  subst. inversion H1_.
+Qed.
+
+Lemma inv_astar : forall ag s v, 
+  in_astgram (aStar ag) s v -> 
+  (s = nil /\ v = nil) \/ 
+  (exists v1, exists v2, exists s1, exists s2, 
+    s1 <> nil /\ s = s1 ++ s2 /\ v = v1::v2 /\
+    in_astgram ag s1 v1 /\ in_astgram (aStar ag) s2 v2).
+Proof.
+  intros ag s v H ; inversion H ; fold interp in * ; fold astgram_type in *.
+  subst. mysimp. right. subst. repeat mysimp. exists v1. exists v2. 
+  exists s1. exists s2. eauto.
+Qed.
+
+Lemma opt_ag_corr1 (ag:astgram) cs v : 
+  in_astgram ag cs v -> in_agxf (opt_ag ag) cs v.
+Proof.
+  destruct ag ; try (simpl ; eauto ; fail || apply append_cat_corr1 || 
+  apply append_alt_corr1). intros. generalize (inv_astar H). clear H.
+  fold interp. fold astgram_type. intros. 
+  destruct H ; mysimp ; subst ; destruct ag ; simpl ; eauto.
+  generalize (astar_azero H3 (eq_refl _)). inversion H2.
+Qed.
+
+Lemma opt_ag_corr2 (ag:astgram) cs v : 
+  in_agxf (opt_ag ag) cs v -> in_astgram ag cs v.
+Proof.
+  destruct ag ; try (mysimp ; subst ; eauto).
+  apply append_cat_corr2 ; auto. apply append_alt_corr2 ; auto.
+  destruct ag ; mysimp ; subst ; eauto. ainv.
+Qed.
 
 (** Optimize the [astgram] and optimize the resulting [xform]. *)
 Definition opt_agxf (t:type) (ag:astgram) (f:astgram_type ag ->> t) := 
   let (ag', f') := opt_ag ag in agxf ag' (xcomp f' f).
+
+Lemma opt_agxf_corr1 t ag (f:astgram_type ag ->> t) cs v : 
+  in_agxf (existT _ ag f) cs v -> in_agxf (opt_agxf ag f) cs v.
+Proof.
+  unfold in_agxf. mysimp. unfold opt_agxf. 
+  generalize (opt_ag_corr1 H). remember (opt_ag ag) as agxf. destruct agxf.
+  generalize (xcomp_corr x1 f). intros. unfold agxf. unfold in_agxf in H2. mysimp.
+  subst. econstructor ; split. eauto. rewrite H1. auto.
+Qed.
+
+Lemma opt_agxf_corr2 t ag (f:astgram_type ag ->> t) cs v : 
+  in_agxf (opt_agxf ag f) cs v -> in_agxf (existT _ ag f) cs v.
+Proof.
+  unfold opt_agxf. simpl. unfold in_agxf. intros.
+  remember (opt_ag ag) as e1. destruct e1. unfold agxf in H. mysimp.
+  rewrite (xcomp_corr x0 f) in H0. 
+  generalize (@opt_ag_corr2 ag cs). rewrite <- Heqe1. simpl. intros.
+  simpl in H0. exists (xinterp x0 x1). specialize (H1 (xinterp x0 x1)).
+  split ; auto. apply H1. eauto.
+Qed.
 
 (** Compute the "null" of an [astgram].  Formally, if [null_and_split ag = (ag', f)], 
     then [in_astgram ag nil v] iff there is a [v'] such that [in_astgram ag' nil v'] and
@@ -1107,6 +1208,57 @@ Fixpoint null_and_split (ag1:astgram):{ag2:astgram & astgram_type ag2->>astgram_
         end
     | aStar ag11 => agxf aEps (Xempty Unit_t (astgram_type ag11))
   end.
+
+Lemma null_and_split_corr1 (ag:astgram) cs v : 
+  in_astgram ag cs v -> cs = nil -> in_agxf (null_and_split ag) cs v.
+Proof.
+  induction 1 ; mysimp ; subst ; eauto ; try discriminate. 
+  generalize (app_eq_nil _ _ H3). mysimp. specialize (IHin_astgram1 H1).
+  specialize (IHin_astgram2 H2). subst. clear H3. 
+  remember (null_and_split a1) as e1 ; destruct e1.
+  assert (match x with | aZero => agxf aZero (Xzero _) | 
+            ag11' => let (ag12',f2) := null_and_split a2 in 
+              opt_agxf (aCat ag11' ag12') (Xpair (Xfst _ x0) (Xsnd _ f2))
+          end = let (ag12',f2) := null_and_split a2 in 
+              opt_agxf (aCat x ag12') (Xpair (Xfst _ x0) (Xsnd _ f2))).
+  destruct x ; auto. remember (null_and_split a2) as e2. destruct e2.
+  simpl. unfold opt_agxf. simpl. auto. rewrite H1. clear H1.
+  remember (null_and_split a2) as e2. destruct e2. eapply opt_agxf_corr1.
+  simpl. unfold in_agxf in *. mysimp. subst. exists (x3,x4). split.
+  rewrite (app_nil_end []). eauto. eauto. 
+  specialize (IHin_astgram (eq_refl _)). remember (null_and_split a1) as e1 ; 
+  destruct e1. remember (null_and_split a2) as e2 ; destruct e2. simpl in *.
+  mysimp. eapply opt_agxf_corr1. simpl. exists (inl (interp (astgram_type x1)) x3).
+  rewrite H1. split ; eauto. 
+  specialize (IHin_astgram (eq_refl _)). remember (null_and_split a1) as e1 ;
+  destruct e1. remember (null_and_split a2) as e2 ; destruct e2. simpl in *.
+  mysimp. eapply opt_agxf_corr1. simpl. exists (inr (interp (astgram_type x)) x3).
+  rewrite H1. split ; eauto. 
+  generalize (app_eq_nil _ _ H4). mysimp. congruence.
+Qed.  
+
+Lemma null_and_split_corr2 (ag:astgram) v : 
+  in_agxf (null_and_split ag) nil v -> in_astgram ag nil v.
+Proof.
+  induction ag ; mysimp ; subst ; auto ; ainv.
+  remember (null_and_split ag1) as e1 ; remember (null_and_split ag2) as e2.
+  destruct e1 as [ag11' f1] ; destruct e2 as [ag12' f2].
+  assert (
+    match ag11' with | aZero => agxf aZero (Xzero _) |
+      ag11' => opt_agxf (aCat ag11' ag12') (Xpair (Xfst _ f1) (Xsnd _ f2)) end = 
+        opt_agxf (aCat ag11' ag12') (Xpair (Xfst _ f1) (Xsnd _ f2))).
+  destruct ag11' ; auto. rewrite H0 in H. clear H0.
+  generalize (opt_agxf_corr2 _ _ _ _ H). simpl. mysimp. subst. 
+  rewrite (app_nil_end []). specialize (IHag1 (xinterp f1 (fst x))).
+  specialize (IHag2 (xinterp f2 (snd x))). destruct x. rewrite (app_nil_end []) in H0.
+  ainv. generalize (app_eq_nil _ _ (eq_sym H2)). mysimp. subst.
+  injection H3 ; intros ; subst. rewrite (app_nil_end []). econstructor ; eauto.
+  remember (null_and_split ag1) as e1 ; destruct e1 as [ag11' f1].
+  remember (null_and_split ag2) as e2 ; destruct e2 as [ag12' f2].
+  simpl in *. generalize (opt_agxf_corr2 _ _ _ _ H). clear H. simpl.
+  mysimp. ainv ; subst. specialize (IHag1 (xinterp f1 x0)).
+  econstructor ; eauto. specialize (IHag2 (xinterp f2 x0)). eauto.
+Qed.
 
 (** Compute the derivative of an [astgram] with respect to a character.  Formally,
     when [deriv_and_split ag1 c = (ag2,f)] then [in_astgram ag2 s v] holds when
@@ -1143,6 +1295,197 @@ Fixpoint deriv_and_split (ag1:astgram) (c:char_p) :
       let (ag0', f) := deriv_and_split ag0 c in 
         opt_agxf (aCat ag0' (aStar ag0)) (Xcons (Xfst _ f) (Xsnd _ (Xid _)))
   end.
+
+Lemma deriv_and_split_corr1 ag1 cs v : 
+  in_astgram ag1 cs v -> 
+  forall c cs', cs = c::cs' -> in_agxf (deriv_and_split ag1 c) cs' v.
+Proof.
+  induction 1 ; intros ; subst ; try discriminate ; simpl. injection H1. intros ; subst. 
+  destruct (char_dec c0 c0) ; try congruence. simpl. eauto.
+  injection H1 ; intros ; subst. eauto. fold astgram_type.
+  destruct s1.
+  specialize (IHin_astgram2 c cs' H3) ; clear IHin_astgram1.
+  remember (deriv_and_split a1 c) as e1 ; destruct e1.
+  remember (append_cat x a2) as e2 ; destruct e2.
+  generalize (@null_and_split_corr1 a1 nil) ; remember (null_and_split a1) as e3 ;
+  destruct e3 ; simpl ; mysimp. specialize (H1 v1 H (eq_refl _)).
+  destruct x3 ; try (remember (deriv_and_split a2 c) as e4 ; destruct e4 ; 
+    try (mysimp ; ainv ; congruence)) ; 
+  match goal with 
+    | [ |- context[append_cat ?e1 ?e2] ] => 
+      generalize (@append_cat_corr1 e1 e2) ; 
+      remember (append_cat e1 e2) as e5 ; destruct e5 ; clear Heqe5 ; 
+        mysimp ; eapply opt_agxf_corr1 ; simpl ; try (
+          assert (exists v', in_astgram x6 cs' v' /\ xinterp x7 v' = (x8,x9)) ; 
+            [ apply H2 ; eauto | idtac] ; mysimp ; econstructor ; split ; 
+              [ eapply InaAlt_r | idtac ] ; eauto ; simpl ; rewrite H8 ; simpl ; 
+                congruence)
+    | _ => idtac
+  end.
+  assert (exists v', in_astgram x7 cs' v' /\ xinterp x8 v' = (x9,x10)) ; 
+    [ apply H2 ; eauto | idtac] ; mysimp ; econstructor ; split ; 
+      [ eapply InaAlt_r | idtac ] ; eauto ; simpl ; rewrite H8 ; simpl ; 
+                congruence.
+  simpl in H3. injection H3 ; intros ; subst. clear H3.
+  specialize (IHin_astgram1 c s1 (eq_refl _)). remember (deriv_and_split a1 c) as e1 ; 
+  destruct e1. 
+  generalize (@append_cat_corr1 x a2).
+  remember (append_cat x a2) as e2 ; destruct e2. 
+  remember (null_and_split a1) as e3 ; destruct e3. intros.
+  destruct x3 ; 
+  remember (deriv_and_split a2 c) as e4 ; destruct e4 ; 
+  match goal with 
+    | [ |- context[append_cat ?e1 ?e2] ] => 
+      remember (append_cat e1 e2) as e5 ; destruct e5 ; mysimp ; 
+        eapply opt_agxf_corr1 ; simpl ; subst ;
+          assert (exists v', in_astgram x1 (s1 ++ s2) v' /\ xinterp x2 v' = (x8,v2)) ; 
+            [ apply H1 ; eauto | mysimp ; econstructor ; split ; [eapply InaAlt_l ; eauto | 
+              simpl ; rewrite H4 ; simpl ; auto]]
+    | _ => idtac
+  end. 
+  simpl in *. mysimp. subst. 
+  specialize (H1 (s1++s2) (x6,v2) (InaCat H2 H0 (eq_refl _) (eq_refl _))). mysimp. 
+  exists x7. rewrite H3. simpl. auto.
+  remember (append_cat (aStar x3) x5) as e5 ; destruct e5 ; mysimp.
+  eapply opt_agxf_corr1 ; simpl ; subst. clear Heqe5.  
+  specialize (H1 (s1 ++ s2) (x9,v2) (InaCat H2 H0 (eq_refl _) (eq_refl _))).
+  mysimp. econstructor ; split. eapply InaAlt_l ; eauto. simpl. rewrite H3. simpl. auto.
+  specialize (IHin_astgram c cs' (eq_refl _)). 
+  remember (deriv_and_split a1 c) as e1 ; destruct e1. 
+  remember (deriv_and_split a2 c) as e2 ; destruct e2.
+  eapply opt_agxf_corr1 ; simpl in *. mysimp. subst. eauto.
+  specialize (IHin_astgram c cs' (eq_refl _)).
+  remember (deriv_and_split a1 c) as e1 ; destruct e1. 
+  remember (deriv_and_split a2 c) as e2 ; destruct e2.
+  eapply opt_agxf_corr1 ; simpl in *. mysimp. subst. eauto.
+  destruct s1 ; try congruence. simpl in H4.
+  specialize (IHin_astgram1 c0 s1 (eq_refl _)). injection H4 ; intros ; subst.
+  remember (deriv_and_split a c) as e1 ; destruct e1. eapply opt_agxf_corr1. 
+  simpl in *. mysimp. subst. eauto.
+Qed.
+
+
+Fixpoint null_and_split_form (ag:astgram) : Prop :=
+  match ag with 
+    | aEps => True
+    | aZero => True
+    | aAlt ag1 ag2 => null_and_split_form ag1 /\ null_and_split_form ag2
+    | aCat ag1 ag2 => null_and_split_form ag1 /\ null_and_split_form ag2
+    | _ => False
+  end.
+
+Lemma has_null_and_split_form ag : 
+  match null_and_split ag with 
+    | existT ag' _ => null_and_split_form ag'
+  end.
+Proof.
+  induction ag ; simpl ; auto ;
+  destruct (null_and_split ag1) as [n1 x1]; destruct n1 ; try contradiction ; 
+    destruct (null_and_split ag2) as [n2 x2] ; try contradiction ; simpl ; auto ;
+  destruct n2 ; simpl ; auto. 
+Qed.
+
+Lemma null_and_split_imp_nil ag cs v: 
+  in_astgram ag cs v -> null_and_split_form ag -> cs = [].
+Proof.
+  induction 1 ; simpl ; intros ; try contradiction ; subst ; mysimp ; auto.
+  rewrite IHin_astgram1 ; auto ; rewrite IHin_astgram2 ; auto.
+Qed.
+
+Lemma deriv_and_split_corr2' ag c agd x : 
+  existT _ agd x = deriv_and_split ag c ->
+  forall cs v, in_astgram agd cs v -> in_astgram ag (c::cs) (xinterp x v).
+Proof.
+  Ltac ex_simp := 
+  match goal with 
+    | [ H : existT _ _ _ = existT _ _ _ |- _] => 
+      generalize (eq_sigT_fst H) ; intros ; subst ; mysimp
+  end.
+
+  induction ag ; mysimp ; unfold agxf in * ; repeat ex_simp ; ainv ; subst ; eauto ; 
+    fold astgram_type in *.
+  destruct (char_dec c0 c) ; subst ; ex_simp ; ainv ; subst ; eauto.
+  remember (deriv_and_split ag1 c) as agxf1. destruct agxf1 as [ag1d x1].
+  specialize (IHag1 _ _ _ Heqagxf1).
+  generalize (@append_cat_corr2 ag1d ag2). intro.
+  remember (append_cat ag1d ag2) as agxf_left. destruct agxf_left as [ag_left x_left]. 
+  generalize (@null_and_split_corr2 ag1). intro.
+  remember (null_and_split ag1) as agxf_null. destruct agxf_null as [ag_null x_null].
+  remember (deriv_and_split ag2 c) as agxf2. destruct agxf2 as [ag2d x2].
+  specialize (IHag2 _ _ _ Heqagxf2).
+  generalize (@append_cat_corr2 ag_null ag2d). intro.
+  remember (append_cat ag_null ag2d) as agxf_right. destruct agxf_right as [ag_right x_right].
+  destruct ag_null ; 
+  match goal with 
+    | [ H0 : in_astgram ?agd ?cs ?v, 
+        H : existT _ _ ?z = opt_agxf ?f ?x |- _] => 
+      generalize (@opt_agxf_corr2 _ f x) ; 
+        let H4 := fresh "H" in intro H4 ; rewrite <- H in H4 ; 
+          specialize (H4 cs (xinterp z v)) ; 
+            let H5 := fresh "H" in 
+            assert (H5:in_agxf (existT _ agd z) cs (xinterp z v)) ; 
+              [ unfold in_agxf ; simpl ; eauto | specialize (H4 H5) ; clear H5] ; 
+              mysimp ; ainv ; subst ; 
+                [ specialize (H1 cs (xinterp x_left x3)) ; 
+                  let H6 := fresh "H" in 
+                    assert (H6: in_astgram (aCat ag1d ag2) cs (xinterp x_left x3)) ; 
+                      [ apply H1 ; eauto | idtac] ; ainv ; subst ; econstructor ; eauto ; 
+                        rewrite <- H5 ; rewrite H9 ; auto
+                | specialize (H3 cs (xinterp x_right x3)) ; 
+                  specialize (H3 (ex_intro (fun v' : interp (astgram_type ag_right) => 
+                    in_astgram ag_right cs v' /\ xinterp x_right v' = xinterp x_right x3) 
+                  x3 (conj H4 (eq_refl _)))) ; ainv ; subst ; 
+                  try (ainv ; subst) ; simpl in * ; 
+                    try (econstructor ; eauto ; try (rewrite <- H5) ; try (rewrite H9) ; 
+                    try (rewrite H8) ; auto ; fail) ; 
+                    try (generalize (has_null_and_split_form ag1) ; 
+                      rewrite <- Heqagxf_null ; mysimp ; try contradiction ; 
+                        repeat 
+                          match goal with
+                            | [ H1 : null_and_split_form ?ag, 
+                                H2 : in_astgram ?ag ?cs ?v |- _] => 
+                            generalize (null_and_split_imp_nil H2 H1) ; 
+                              intros ; subst ; clear H1 ; simpl in * 
+                          end ; try (econstructor ; eauto ; rewrite <- H5 ; rewrite H8 ; auto)
+
+)
+                ]
+    | [ H : existT _ _ _ = existT _ _ _ |- _ ] => 
+      generalize (eq_sigT_fst H) ; intros ; subst ; mysimp ; 
+        assert (in_astgram (aCat ag1d ag2) cs (xinterp x_left v)) ; 
+          [apply H1 ; eauto | idtac] ; ainv ; subst ; mysimp ;
+            econstructor ; eauto ; rewrite H6 ; auto
+    | _ => idtac
+  end.
+  specialize (IHag1 c).  specialize (IHag2 c).
+  remember (deriv_and_split ag1 c) as agxf1 ; destruct agxf1 as [ag1d x1].
+  remember (deriv_and_split ag2 c) as agxf2 ; destruct agxf2 as [ag2d x2].
+  match goal with 
+    | [ H : existT _ ?agd ?x = opt_agxf ?f ?y |- _] => 
+      generalize (@opt_agxf_corr2 _ f y) ; rewrite <- H ; simpl ; intros ;
+        specialize (H1 cs (xinterp x v)) 
+  end.
+  assert (exists v', in_astgram agd cs v' /\ xinterp x v' = xinterp x v) ; eauto. 
+  specialize (H1 H2) ; mysimp. ainv ; subst ; eauto.
+  specialize (IHag c).
+  remember (deriv_and_split ag c) as agxf ; destruct agxf as [ag1d x1].
+  match goal with 
+    | [ H : existT _ ?agd ?x = opt_agxf ?f ?y |- _] => 
+      generalize (@opt_agxf_corr2 _ f y) ; rewrite <- H ; simpl ; intros ;
+        specialize (H1 cs (xinterp x v)) 
+  end.
+  assert (exists v', in_astgram agd cs v' /\ xinterp x v' = xinterp x v) ; eauto.
+  specialize (H1 H2) ; mysimp. ainv. subst. 
+  eapply InaStar_cons ; eauto. congruence.
+Qed.
+  
+Lemma deriv_and_split_corr2 ag1 c cs v : 
+  in_agxf (deriv_and_split ag1 c) cs v -> in_astgram ag1 (c::cs) v.
+Proof.
+  intros. unfold in_agxf in H. 
+  generalize (deriv_and_split_corr2' ag1 c). destruct (deriv_and_split ag1 c).
+  mysimp. subst. apply H0 ; auto.
+Qed.
 
 Definition flatten t (xs: list (list t)) : list t := 
   List.fold_right (fun x xs => x ++ xs) nil xs.
@@ -2335,7 +2678,9 @@ Definition uopt_ag (ag:astgram) : astgram * uform :=
     | aAlt ag1 ag2 => uappend_alt ag1 ag2
     | aCat ag1 ag2 => uappend_cat ag1 ag2
     | aStar aZero => (aEps, Uempty (Val Void_t))
+      (*
     | aStar (aStar ag') => (aStar ag', Ucons Uid (Uempty (thunk astgram_type (aStar ag'))))
+    *)
     | ag' => (ag', Uid)
   end.
 
@@ -2350,9 +2695,6 @@ Lemma uopt_ag_corr (ag:astgram) :
 Proof.
   destruct ag ; try (simpl ; auto). apply (uappend_cat_corr ag1 ag2).
   apply (uappend_alt_corr ag1 ag2). destruct ag ; simpl ; auto.
-  assert (type_dec (astgram_type ag) (astgram_type ag) = left (eq_refl _)).
-  destruct (type_dec (astgram_type ag) (astgram_type ag)) ; try congruence. 
-  rewrite (proof_irrelevance _ e (eq_refl _)). auto. rewrite H. simpl. auto.
 Qed.
 
 Definition opt_aguf (ag:astgram) (f:uform) := 
