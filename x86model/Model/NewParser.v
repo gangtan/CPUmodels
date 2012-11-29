@@ -1487,11 +1487,8 @@ Proof.
   mysimp. subst. apply H0 ; auto.
 Qed.
 
-Definition flatten t (xs: list (list t)) : list t := 
-  List.fold_right (fun x xs => x ++ xs) nil xs.
-
 Definition cross_prod t1 t2 (xs:list t1) (ys:list t2) : list (t1 * t2) := 
-  flatten (List.map (fun x => List.map (fun y => (x,y)) ys) xs).
+  (fold_right (fun v a => (map (fun w => (v,w)) ys) ++ a) nil xs).
 
 (** This function computes the list of all values v, such that 
     [in_astgram nil v] holds. *)
@@ -1508,6 +1505,70 @@ Fixpoint astgram_extract_nil (ag:astgram) : list (interp (astgram_type ag)) :=
     | aStar ag => nil::nil
   end.
 
+Lemma in_cross_prod A B (x:A) (y:B) : 
+  forall xs, In x xs -> 
+    forall ys, In y ys -> 
+      In (x,y) (fold_right (fun v a => (map (fun w => (v,w)) ys) ++ a) nil xs).
+Proof.
+  induction xs ; intro H ; [ contradiction H | destruct H ] ; mysimp ; subst ; 
+    apply in_or_app ; [ idtac | firstorder ].
+  left ; clear IHxs ; induction ys ; 
+    [ contradiction H0 | destruct H0 ; mysimp ; subst ; auto].
+Qed.
+
+Lemma astgram_extract_nil_corr1 ag cs v : 
+  in_astgram ag cs v -> cs = [] -> In v (astgram_extract_nil ag).
+Proof.
+  induction 1 ; simpl ; intros ; subst ; try congruence ; eauto.
+  generalize (app_eq_nil _ _ H3). mysimp ; subst.
+  eapply in_cross_prod ; eauto. eapply in_or_app.  left.
+  apply in_map ; auto. eapply in_or_app. right. apply in_map ; auto.
+  generalize (app_eq_nil _ _ H4) ; mysimp ; subst.
+Qed.
+
+Lemma InConcatMap1 A B (x:A) (y:B) xs ys : 
+  In (x,y) (fold_right (fun v a => (map (fun w => (v,w)) ys) ++ a) nil xs) -> 
+  In x xs.
+Proof.
+  induction xs ; mysimp ; repeat
+    match goal with 
+      | [ H : In _ _ |- _ ] => destruct (in_app_or _ _ _ H) ; [left | right ; eauto]
+      | [ H : In (?x, _) (map _ ?ys) |- _ ] => 
+        let l := fresh "l" in generalize H ; generalize ys as l; 
+          induction l ; mysimp ; firstorder ; congruence
+    end.
+Qed.
+
+Lemma InConcatMap2 A B (x:A) (y:B) xs ys : 
+  In (x,y) (fold_right (fun v a => (map (fun w => (v,w)) ys) ++ a) nil xs) -> 
+  In y ys.
+Proof.
+  induction xs ; mysimp ; firstorder ;
+    match goal with 
+      | [ H : In _ (map _ ?ys ++ _) |- _ ] => 
+        let H0 := fresh "H" in let l := fresh "l" in 
+          generalize (in_app_or _ _ _ H) ; intro H0 ; destruct H0 ; auto ; 
+            generalize H0 ; generalize ys as l ; induction l ; mysimp ; left ; congruence
+    end.
+Qed.
+
+Lemma astgram_extract_nil_corr2 ag v : 
+  In v (astgram_extract_nil ag) -> in_astgram ag [] v.
+Proof.
+  induction ag ; mysimp ; try contradiction. destruct v.
+  generalize (InConcatMap1 _ _ _ _ H) (InConcatMap2 _ _ _ _ H). eauto. 
+  generalize (in_app_or _ _ _ H). intro. destruct v.
+  eapply InaAlt_l ; eauto. eapply IHag1. 
+  destruct H0. generalize (astgram_extract_nil ag1) H0. induction l ; mysimp.
+  injection H1 ; mysimp. assert False. generalize (astgram_extract_nil ag2) H0.
+  induction l ; mysimp ; congruence. contradiction.
+  eapply InaAlt_r ; eauto. eapply IHag2.
+  destruct H0. assert False. generalize (astgram_extract_nil ag1) H0.
+  induction l ; mysimp ; congruence. contradiction.
+  generalize (astgram_extract_nil ag2) H0. induction l ; mysimp. 
+  injection H1 ; eauto.
+Qed.
+
 (** Lift the derivative from a character to a string. *)
 Fixpoint derivs_and_split (ag:astgram) (cs:list char_p) : 
   {ag2:astgram & astgram_type ag2 ->> astgram_type ag} := 
@@ -1518,6 +1579,31 @@ Fixpoint derivs_and_split (ag:astgram) (cs:list char_p) :
                   agxf ag2 (xcomp x2 x1)
   end.
 
+Lemma derivs_and_split_corr1 cs ag v : 
+  in_astgram ag cs v -> in_agxf (derivs_and_split ag cs) nil v.
+Proof.
+  induction cs ; simpl ; eauto. intros.
+  generalize (deriv_and_split_corr1 H). intros. specialize (H0 _ _ (eq_refl _)).
+  unfold in_agxf in *. destruct (deriv_and_split ag a). mysimp. 
+  remember (derivs_and_split x cs) as e. destruct e. 
+  unfold agxf. specialize (IHcs _ _ H0). rewrite <- Heqe in IHcs. mysimp. 
+  subst. generalize (xcomp_corr x3 x0 x4).  intros. exists x4. split ; auto.
+Qed.
+
+Lemma derivs_and_split_corr2 cs ag v : 
+  in_agxf (derivs_and_split ag cs) nil v -> in_astgram ag cs v.
+Proof.
+  induction cs ; simpl. intros ; mysimp. subst. auto.
+  intros. generalize (deriv_and_split_corr2 ag a). intros.
+  remember (deriv_and_split ag a) as e ; destruct e.  
+  remember (derivs_and_split x cs) as e2 ; destruct e2. 
+  unfold in_agxf in H. unfold agxf in H. mysimp. eapply H0.
+  generalize (xcomp_corr x2 x0 x3). intros. rewrite H2 in H1. simpl in H1.
+  unfold in_agxf in IHcs. specialize (IHcs x). 
+  rewrite <- Heqe2 in IHcs. subst. exists (xinterp x2 x3). split ; auto.
+  eapply IHcs. eauto.
+Qed.
+  
 (** Naive parser: split out the user-defined functions using [split_astgram], 
     then calculate the derivative with respect to the string, then call
     [astgram_extract_nil] to get a list of ASTs, then apply the the final
@@ -1528,6 +1614,33 @@ Definition parse t (g:grammar t) (cs : list char_p) : list (interp t) :=
   let (ag, fuser) := split_astgram g in 
     let (agfinal, xfinal) := derivs_and_split ag cs in 
     List.map (fun x => fuser (xinterp xfinal x)) (astgram_extract_nil agfinal).
+
+Lemma parse_corr1 : forall t (g:grammar t) cs v, in_grammar g cs v -> In v (parse g cs).
+Proof.
+  intros. unfold parse. 
+  generalize (split_astgram_corr2 g). intros.
+  remember (split_astgram g). destruct s. specialize (H0 _ _ H). mysimp. subst.
+  generalize (@derivs_and_split_corr1 cs x). unfold in_agxf. 
+  intros. specialize (H1 _ H0). remember (derivs_and_split x cs) as e. destruct e ;
+  mysimp. subst. generalize (astgram_extract_nil_corr1 H1 (eq_refl _)). intro.
+  apply (in_map (fun x => f (xinterp x2 x)) (astgram_extract_nil x1) _ H2).
+Qed.
+
+Lemma parse_corr2 : forall t (g:grammar t) cs v, In v (parse g cs) -> in_grammar g cs v.
+Proof.
+  unfold parse. intros. remember (split_astgram g) as s. destruct s.
+  remember (derivs_and_split x cs) as e ; destruct e. 
+  generalize (astgram_extract_nil_corr2 x0).
+  assert (exists z, v = f (xinterp x1 z) /\ In z (astgram_extract_nil x0)). 
+  generalize (astgram_extract_nil x0) v H. 
+  induction l ; simpl ; intros ; try contradiction. destruct H0. subst.
+  exists a. split ; auto. specialize (IHl _ H0). mysimp. subst.
+  exists x2. split ; auto. mysimp. subst. clear H. specialize (H1 _ H2).
+  clear H2. generalize (derivs_and_split_corr2 cs x). unfold in_agxf.
+  intros. rewrite <- Heqe in H. assert (in_astgram x cs (xinterp x1 x2)).
+  eapply H. eauto. generalize (split_astgram_corr1 g). rewrite <- Heqs.
+  intros. eauto.
+Qed.
 
 (** * Construction of a deterministic-finite-state automata (really transducer)
       for table-based parsing *)
