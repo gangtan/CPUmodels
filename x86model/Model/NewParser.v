@@ -368,11 +368,26 @@ Qed.
     (f1, f2) o empty = empty
     (f1, f2) o (fst f) = f1 o f
     (f1, f2) o (snd f) = f2 o f
+
+    (f1, f2) o (fst o g1, snd o g2) = (f1 o g1, f2 o g2) ?
 *)
+
+(*
+Definition xcomp_pair_pair_fst_snd 
+  t t1 (f1:t ->> t1) t2 (f2:t ->> t2)
+  t3 (g1 : t1 ->> t3) t4 (g2: t2 ->> t4) : t ->> (Pair_t t3 t4) := 
+  (Xcomp (Xpair f1 f2) (Xpair (Xcomp (Xfst _ (Xid _)) g1) (Xcomp (Xsnd _ (Xid _)) g2))).
+
+Definition opt_xcomp_pair_pair_fst_snd 
+  t t1 (f1:t ->> t1) t2 (f2:t ->> t2)
+  t3 (g1 : t1 ->> t3) t4 (g2: t2 ->> t4) : t ->> (Pair_t t3 t4) := 
+  (Xpair (Xcomp f1 g1) (Xcomp f2 g2)).
+*)
+
 Definition xcomp_pair t21 t22 (x2:t21 ->> t22) : 
-  forall ta tb tc (x11:ta->>tb) (x21:ta->>tc), (Pair_t tb tc = t21) -> ta ->> t22 := 
-    match x2 in t21->>t22 return 
-      forall ta tb tc (x11:ta->>tb) (x21:ta->>tc), (Pair_t tb tc = t21) -> ta ->> t22 with
+  forall ta tb tc (x11:ta->>tb) (x12:ta->>tc), (Pair_t tb tc = t21) -> ta ->> t22 := 
+    match x2 in t21 ->> t22 return
+      forall ta tb tc (x11:ta->>tb) (x12:ta->>tc), (Pair_t tb tc = t21) -> ta ->> t22 with
       | Xid t => fun ta tb tc x11 x12 H => xcoerce (Xpair x11 x12) (eq_refl _) H
       | Xchar t c => fun ta tb tc x11 x12 H => Xchar _ c
       | Xunit t => fun ta tb tc x11 x12 H => Xunit _
@@ -395,11 +410,11 @@ Proof.
     rewrite (proof_irrelevance _ H (eq_refl _)) ; auto.
 Qed.
 
-(**  (inr f) o id = inr f
-     (inr f) o (char c) = char c
-     (inr f) o unit = unit
-     (inr f) o empty = empty
-     (inr f) o (match f1 f2) = f o f2 
+(**  (inl f) o id = inl f
+     (inl f) o (char c) = char c
+     (inl f) o unit = unit
+     (inl f) o empty = empty
+     (inl f) o (match f1 f2) = f o f1 
 *)
 Definition xcomp_inl t21 t22 (x2:t21 ->> t22) : 
   forall ta tb tc (x11:ta->>tb), (Sum_t tb tc = t21) -> ta ->> t22 :=
@@ -424,11 +439,11 @@ Proof.
   rewrite (proof_irrelevance _ H (eq_refl _)). auto.
 Qed.
 
-(**  (inl f) o id = inl f
-     (inl f) o (char c) = char c
-     (inl f) o unit = unit
-     (inl f) o empty = empty
-     (inl f) o (match f1 f2) = f o f1
+(**  (inr f) o id = inr f
+     (inr f) o (char c) = char c
+     (inr f) o unit = unit
+     (inr f) o empty = empty
+     (inr f) o (match f1 f2) = f o f2
 *)
 Definition xcomp_inr t21 t22 (x2:t21 ->> t22) : 
   forall ta tb tc (x11:ta->>tc), (Sum_t tb tc = t21) -> ta ->> t22 :=
@@ -2092,6 +2107,53 @@ Section DFA.
   Proof.
     intros. rewrite (build_dfa_zero _ _ H). auto.
   Qed.
+
+  Lemma dfa_is_deriv_cast : 
+    forall (d:DFA) (x y:nat), x = y -> 
+    astgram_type (dfa_states d .[x]) = astgram_type (dfa_states d .[y]).
+  Proof.
+    intros. rewrite H. auto.
+  Qed.
+
+  Definition lookup_trans (d:DFA) (row : nat) (col : nat) : 
+    option { ag : astgram & astgram_type ag ->> astgram_type (dfa_states d .[row]) } := 
+    match nth_error (dfa_transition d) row as x return 
+      match x with | Some r => row_num r = row | None => True end ->
+      option { ag : astgram & astgram_type ag ->> astgram_type (dfa_states d .[row])}
+      with
+      | None => fun _ => None
+      | Some r => fun H => 
+        match nth_error (row_entries r) col with
+          | None => None
+          | Some e => Some (existT _ ((dfa_states d).[next_state e])
+            (xcoerce (next_xform e) (eq_refl _) (dfa_is_deriv_cast d H)))
+        end
+    end (dfa_transition_r d row).
+    
+(*
+  Lemma gen_row_is_deriv g gpos n s tid H H1 : 
+    match gen_row' n s tid H H1 with 
+      | existT s' r => 
+        forall j, 
+          match nth_error r j with
+            | None => True
+            | Some e => deriv_and_split g j = 
+              Some (existT _ (s'.[next_state e]) (
+                (xcoerce (next_xform e) (eq_refl _) 
+
+  Lemma dfa_is_deriv : 
+    forall n ag0 d, build_dfa n ag0 = Some d -> 
+      forall i, i < dfa_num_states d -> 
+        forall j, j < num_tokens ->
+          lookup_trans d i j = 
+          Some (derivs_and_split ((dfa_states d).[i]) (token_id_to_chars j)).
+  Proof.
+    intros n ag0 d H. induction i.
+    destruct n ; unfold build_dfa in H ; simpl in H. discriminate. 
+    unfold build_transition_table in H. simpl in H. 
+*)
+    
+          
 
   (** Here's one table-based parser, which stops on the first match.
      It returns the [astgram] corresponding to the final state, an
