@@ -382,7 +382,8 @@ Lemma Zmin_spec:
   forall x y, Zmin x y = if zlt x y then x else y.
 Proof.
   intros. case (zlt x y); unfold Zlt, Zge; intros.
-  unfold Zmin. rewrite z. auto.
+  unfold Zmin. match goal with | [ H : _ = Lt |- _] => rewrite H end.
+  auto.
   unfold Zmin. caseEq (x ?= y); intro. 
   apply Zcompare_Eq_eq. auto.
   contradiction.
@@ -394,7 +395,8 @@ Lemma Zmax_spec:
 Proof.
   intros. case (zlt y x); unfold Zlt, Zge; intros.
   unfold Zmax. rewrite <- (Zcompare_antisym y x).
-  rewrite z. simpl. auto.
+  match goal with | [ H : _ = Lt |- _ ] => rewrite H end.
+  simpl. auto.
   unfold Zmax. rewrite <- (Zcompare_antisym y x).
   caseEq (y ?= x); intro; simpl.
   symmetry. apply Zcompare_Eq_eq. auto.
@@ -524,7 +526,10 @@ Qed.
 Lemma Zdivides_trans:
   forall x y z, (x | y) -> (y | z) -> (x | z).
 Proof.
-  intros. inv H. inv H0. exists (q0 * q). ring.
+  intros. inv H. inv H0. 
+  match goal with 
+    | [ x1 : Z, x2 : Z |- _ ] => exists (x1 * x2) ; ring
+  end.
 Qed.
 
 Definition Zdivide_dec:

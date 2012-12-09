@@ -9,7 +9,6 @@
    the License, or (at your option) any later version.
 *)
 
-   
 (** * Regular expression matcher based on derivatives, inspired by the paper
       of Owens, Reppy, and Turon.
 *) 
@@ -1854,8 +1853,17 @@ Module Parser(PA : PARSER_ARG).
      [[Star (MapUnit r)]] cs vs -> wf_regexp r -> exists vs', [[Star r]] cs vs'.
    Proof.
      intros t r cs vs H. dependent induction H ; s. exists nil. econstructor ; eauto.
-     generalize (map_unit2 _ H3 H4). intros. in_inv. clear H3.
-     generalize (IHin_regexp1 t r v2 (eq_refl _) (JMeq_refl _) (JMeq_refl _) H4).
+     match goal with 
+       | [ H1 : [[MapUnit ?r]] _ _, H2 : wf_regexp ?r |- _ ] => 
+         generalize (map_unit2 _ H1 H2)
+     end.
+     intros. in_inv. 
+     match goal with 
+       | [ IH : wf_regexp ?r -> _, H : wf_regexp ?r |- _ ] => 
+         generalize (IH H)
+       | _ => 
+         generalize (IHin_regexp1 t r v2 (eq_refl _) (JMeq_refl _) (JMeq_refl _) H4)
+     end.
      mysimp. exists (x0::x1). in_inv.
    Qed.
 
@@ -1927,64 +1935,61 @@ Module Parser(PA : PARSER_ARG).
    (** This lemma proves the other half of the correctness of [unit_deriv]:  If
        [r] matches [c::cs] and [v], then [unit_deriv r c] matchs [cs] and [tt]. 
        This proof needs to be abstracted and cleaned up a lot... *)
+   Lemma unit_deriv_corr2' t (r:regexp t) s v : 
+     in_regexp r s v -> 
+     wf_regexp r -> 
+     match s with 
+       | c::cs => in_regexp (unit_deriv r c) cs tt
+       | nil => accepts_null r = true
+     end.
+   Proof.
+    Ltac ud_simp := 
+      repeat 
+        match goal with 
+        | [ IH : wf_regexp ?r -> _, H : wf_regexp ?r |- _ ] => specialize (IH H)
+        | [|- in_regexp (MapUnit _) _ _ ] => apply map_unit1 ; auto
+        | [ Heqr : ?r = unit_deriv ?r1 ?c |- wf_regexp (OptCat_r ?ra ?rb) ] => 
+          apply (wf_cat_opt rb ra) ; auto ; rewrite Heqr ; apply wf_unit_deriv 
+        | [ |- in_regexp (OptCat _ _) (_ ++ _) (_,_) ] => pv_opt ; eapply Cat_i ; eauto
+        | [ H : in_regexp ?rb ?cs2 ?v2
+          |- in_regexp (Map (Fn_unit (pair_t _ _)) (OptCat_r ?rb ?ra)) (?cs1 ++ ?cs2) tt ] => 
+          apply (@Map_i _ _ (Fn_unit (pair_t _ _)) (OptCat ra rb) (cs1 ++ cs2) (tt,v2) tt I) ;
+            eauto
+        | _ => eauto with dfa
+      end.
+    induction 1 ; s ; auto with dfa ; try congruence ; ud_simp.
+    destruct cs. rewrite IHin_regexp ; auto. pv_opt. apply Alt_left_i. auto.
+    destruct cs. rewrite IHin_regexp ; destruct (accepts_null r1) ; auto. pv_opt.
+    apply Alt_right_i. auto. destruct cs1 ; simpl in *. rewrite IHin_regexp1. simpl.
+    destruct cs2. auto. remember (unit_deriv r1 c) as r. dependent destruction r ; 
+    pv_opt ; try (apply Alt_right_i ; auto ; fail).  remember (unit_deriv r1 c).
+    dependent destruction r ; destruct (accepts_null r1) ; pv_opt ; in_inv ; 
+      try (apply Alt_left_i ; ud_simp) ; ud_simp.
+    fold result_m in v1. destruct cs1 ; try congruence. simpl.
+    generalize IHin_regexp2 ; clear IHin_regexp2. clear H2.
+    assert (forall cs, cs2 = c::cs -> [[unit_deriv (Star r) c]] cs tt).
+   intros. rewrite H0 in IHin_regexp1. apply IHin_regexp1. auto. clear IHin_regexp1. 
+   remember (unit_deriv r c) as rb. generalize Heqrb. clear Heqrb.
+   dependent destruction rb ; intros. generalize (EpsInv IHin_regexp2). intros. destruct H1.
+   subst. generalize (StarMapUnit H H4). fold result_m. intros.
+   apply (@Map_i _ _ (Fn_unit _) (Star (MapUnit r)) cs2 (map (fun _ => tt) v2) tt I) ; 
+       auto.
+     assert ([[MapUnit (OptCat (Alt rb1 rb2) (Star r))]] (cs1 ++ cs2) tt) ; auto.
+   ud_simp. eapply (@Map_i _ _ (Fn_unit _) (OptCat (Alt rb1 rb2) (Star r))
+     (cs1 ++ cs2) (tt,v2) tt I) ; auto. pv_opt ; auto. eapply Cat_i ; auto. auto. auto.
+   apply wf_cat_opt. rewrite Heqrb. apply wf_unit_deriv. auto. 
+   in_inv. assert ([[MapUnit (Cat (Map f rb) (Star r))]] (cs1++cs2) tt) ; auto.
+   eapply map_unit1.  
+   apply (@Map_i _ _ (Fn_unit _) (Cat (Map f rb) (Star r)) (cs1++cs2) (tt,v2) tt I) ; 
+       auto.
+   eapply Cat_i ; eauto. rewrite Heqrb. split. apply wf_unit_deriv. auto.
+   Grab Existential Variables. apply I. apply I.
+  Qed.
+
    Lemma unit_deriv_corr2 t (r:regexp t) c cs v : 
      in_regexp r (c::cs) v -> wf_regexp r -> in_regexp (unit_deriv r c) cs tt.
    Proof.
-     intros t r c cs v H. dependent induction H ; s ; auto with dfa ; try congruence ; 
-     pv_opt. apply Alt_left_i. eapply IHin_regexp ; eauto. apply Alt_right_i.
-     eapply IHin_regexp ; eauto. destruct cs1. s.
-     rewrite (accepts_null_corr2' H H3). generalize (IHin_regexp2 c cs (eq_refl _) H4).
-     clear IHin_regexp2 IHin_regexp1. intros. generalize (unit_deriv r1 c) as r.
-     dependent destruction r ; pv_opt ; try (apply Alt_right_i ; auto).
-     simpl in H1. injection H1. s. clear H1 H2. generalize (IHin_regexp1 c0 cs1
-     (eq_refl _) H3). clear IHin_regexp1. remember (unit_deriv r1 c0) as r.
-     generalize Heqr ; clear Heqr. destruct (accepts_null r1). 
-     dependent destruction r ; s ; in_inv ; pv_opt. 
-     apply Alt_left_i. eapply map_unit1 ; auto with dfa.
-     apply (@Map_i _ _ (Fn_unit t2) r2 cs2 v2 tt I H0 (eq_refl _)).
-     apply Alt_left_i. eapply map_unit1 ; auto.
-     apply (@Map_i _ _ (Fn_unit _) (OptCat (Alt r3 r4) r2) (cs1++cs2) (tt,v2) tt I).
-     pv_opt. eapply Cat_i. eapply Alt_left_i. eauto. eauto. auto. auto. auto.
-     apply (wf_cat_opt (Alt r3 r4) r2). rewrite Heqr. apply wf_unit_deriv. auto.
-     apply Alt_left_i. eapply map_unit1 ; auto.
-     apply (@Map_i _ _ (Fn_unit _) (OptCat (Alt r3 r4) r2) (cs1++cs2) (tt,v2) tt I) ; auto.
-     pv_opt. eapply Cat_i. eapply Alt_right_i. eauto. eauto. auto. auto.
-     apply (wf_cat_opt (Alt r3 r4) r2). rewrite Heqr. apply wf_unit_deriv. auto.
-     apply Alt_left_i. eapply map_unit1 ; auto. 
-     apply (@Map_i _ _ (Fn_unit _) (OptCat (Map f r) r2) (cs1++cs2) (tt,v2) tt I).
-     pv_opt. eapply Cat_i ; eauto. apply (@Map_i _ _ f r cs1 x0 tt x H1 H2). auto.
-     apply (wf_cat_opt (Map f r) r2). rewrite Heqr. apply wf_unit_deriv. auto.
-     dependent destruction r ; s ; in_inv ; apply map_unit1 ; auto.
-     apply (@Map_i _ _ (Fn_unit _) r2 cs2 v2 tt I H0 (eq_refl _)).
-     apply (@Map_i _ _ (Fn_unit _) (OptCat (Alt r3 r4) r2) (cs1++cs2) (tt,v2) tt I).
-     pv_opt. eapply Cat_i. eapply Alt_left_i ; eauto. eauto. auto. auto. auto.
-     apply (wf_cat_opt (Alt r3 r4) r2). rewrite Heqr. apply wf_unit_deriv. auto.
-     apply (@Map_i _ _ (Fn_unit _) (OptCat (Alt r3 r4) r2) (cs1++cs2) (tt,v2) tt I).
-     pv_opt. eapply Cat_i. eapply Alt_right_i ; eauto. eauto. auto. auto. auto.
-     apply (wf_cat_opt (Alt r3 r4) r2). rewrite Heqr. apply wf_unit_deriv. auto.
-     apply (@Map_i _ _ (Fn_unit _) (OptCat (Map f r) r2) (cs1++cs2) (tt,v2) tt I).
-     pv_opt. eapply Cat_i ; eauto. eapply (@Map_i _ _ f r cs1 x0 tt x H1 H2). auto.
-     apply (wf_cat_opt (Map f r) r2) ; auto. rewrite Heqr. apply wf_unit_deriv.
-     destruct cs1 ; try congruence. simpl in x ; injection x ; s.
-     generalize (IHin_regexp2 c cs1 (eq_refl _) H4). clear IHin_regexp2. 
-     clear H0 H1 H2. assert (forall cs, cs2 = c::cs -> [[unit_deriv (Star r) c]] cs tt).
-     intros. apply IHin_regexp1. auto. auto. clear IHin_regexp1. 
-     remember (unit_deriv r c) as rb. generalize Heqrb. clear Heqrb.
-     dependent destruction rb ; intros. generalize (EpsInv H1). intros. destruct H2.
-     subst. clear H5. clear H1.
-     generalize (StarMapUnit H H4). intros.
-     apply (@Map_i _ _ (Fn_unit _) (Star (MapUnit r)) cs2 (map (fun _ => tt) v2) tt I) ; 
-       auto.
-     assert ([[MapUnit (OptCat (Alt rb1 rb2) (Star r))]] (cs1 ++ cs2) tt) ; auto.
-     eapply map_unit1. eapply (@Map_i _ _ (Fn_unit _) (OptCat (Alt rb1 rb2) (Star r))
-     (cs1 ++ cs2) (tt,v2) tt I) ; auto. pv_opt ; auto. eapply Cat_i ; auto. auto. auto.
-     apply wf_cat_opt. rewrite Heqrb. apply wf_unit_deriv. auto. 
-     in_inv.
-     assert ([[MapUnit (Cat (Map f rb) (Star r))]] (cs1++cs2) tt) ; auto.
-     eapply map_unit1. 
-     apply (@Map_i _ _ (Fn_unit _) (Cat (Map f rb) (Star r)) (cs1++cs2) (tt,v2) tt I) ; 
-       auto.
-     eapply Cat_i ; eauto. rewrite Heqrb. split. apply wf_unit_deriv. auto.
+     intros. apply (unit_deriv_corr2' H H0).
    Qed.
 
    (** Lifts [unit_deriv_corr2] to strings. *)
@@ -2390,16 +2395,17 @@ Module Parser(PA : PARSER_ARG).
         ~ run_dfa num_tokens d state ts1' = true.
   Proof.
     induction ts ; mysimp ; remember (nth state (dfa_accepts d) false) ; 
-    destruct b ; try congruence ; try (injection H ; mysimp ; clear H ; subst). 
-    exists nil. rewrite Heqb. repeat split ; auto. intros. simpl in H0.
+    destruct y ; try congruence ; try (injection H ; mysimp ; clear H ; subst). 
+    exists nil. rewrite Heqy. repeat split ; auto. intros. simpl in H0.
     assert False. omega. contradiction.
-    exists nil. simpl. rewrite Heqb. repeat split ; auto.
+    exists nil. simpl. rewrite Heqy. repeat split ; auto.
     intros. assert False. omega. contradiction.
-    specialize (IHts d _ _ _ _ H0). mysimp. subst. exists (a::x). simpl.
-    repeat split ; auto. intros. destruct ts1'. injection H ; intros ; clear H ; subst.
-    simpl. congruence. simpl in H. injection H ; intros ; clear H ; subst.
+    specialize (IHts d _ _ _ _ H). mysimp. exists (a::x). simpl.
+    split. subst ; auto. split ; subst ; auto. split ; auto. intros.
+    destruct ts1'. simpl in *. rewrite <- Heqy. auto. simpl in H0.
+    injection H0 ; intros ; subst; clear H0. 
     specialize (H3 _ _ H4). assert (length ts1' < length x). simpl in *.
-    omega. specialize (H3 H). simpl. congruence.
+    omega. specialize (H3 H0). simpl. congruence.
   Qed.
 
   Lemma list_all_app : forall A (f:A->Prop) (xs ys:list A), 
