@@ -888,13 +888,12 @@ Module X86_PARSER.
   "1111" $$ "011" $$ anybit $ ext_op_modrm2 "011" @ 
     (fun p => NEG (fst p) (snd p) %% instruction_t).
 
-  (*
   Definition NOP_p := 
+  (* The following is the same as the encoding of "XCHG EAX, EAX"
     "1001" $$ bits "0000" @ (fun _ => NOP None %% instruction_t)
-  |+|
+  |+| *)
     "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm "000" @ 
-    (fun op => NOP (Some op) %% instruction_t).
-  *)
+    (fun op => NOP op %% instruction_t).
 
   Definition NOT_p := 
     "1111" $$ "011" $$ anybit $ ext_op_modrm2 "010" @ 
@@ -2029,10 +2028,9 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      that is, it cannot take a lock_or_rep prefix, but can
      optionally take segment or op override prefix *)
   Definition instr_parsers_seg_op_override := 
-    CMOVcc_p :: ROL_p :: ROR_p ::
-    SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: 
-    MOVSX_p :: MOVZX_p :: DIV_p :: IDIV_p :: 
-    CDQ_p :: CWDE_p :: MUL_p :: nil.
+    CDQ_p :: CMOVcc_p :: CWDE_p :: DIV_p :: IDIV_p :: 
+    MOVSX_p :: MOVZX_p :: MUL_p :: NOP_p :: 
+    ROL_p :: ROR_p :: SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: nil.
 
   Definition prefix_parser_seg_override :=
     option_perm segment_override_p @
@@ -2046,7 +2044,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: 
     LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: 
     LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
-    MOVSR_p :: MOVBE_p :: (* NOP_p :: *)  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
+    MOVSR_p :: MOVBE_p ::  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
     PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
     RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
     STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: F2XM1_p ::

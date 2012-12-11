@@ -627,11 +627,10 @@ Definition enc_MUL (w : bool) (op1 : operand) : Enc (list bool) :=
 Definition enc_NEG (w:bool)(op:operand) : Enc (list bool) := 
   l1 <- enc_modrm (Reg_op EBX) op;
   ret (s2bl "1111011" ++ enc_bit w ++ l1).
-Definition enc_NOP (op_opt: option operand) : Enc (list bool) :=
-  match op_opt with
-    | None => ret (s2bl "10010000")
-    | Some op_opt => l1 <- enc_modrm (Reg_op EAX) op_opt; ret (s2bl "0000111100011111" ++ l1)
-  end.
+
+Definition enc_NOP (op: operand) : Enc (list bool) :=
+  l1 <- enc_modrm (Reg_op EAX) op; ret (s2bl "0000111100011111" ++ l1).
+
 Definition enc_NOT (w:bool)(op:operand) : Enc (list bool) := 
   l1 <- enc_modrm (Reg_op EDX) op; ret (s2bl "1111011" ++ enc_bit w ++ l1).
 

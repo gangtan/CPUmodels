@@ -1705,7 +1705,7 @@ Section DFA.
      says how to transform AST values extracted from next_state(transition[i][t]) 
      to the type of AST values in states[i].  The accept and rejects rows 
      record whether there is any "null" value that can be extracted from the 
-     current state.  
+    a current state.  
      
      The right thing to do is really convert this to finite maps...
      *)
@@ -1868,7 +1868,7 @@ Section DFA.
   Definition build_accept_table (s:states_t) : list bool := 
     List.map accepts_null s.
 
-  (** Returns [false] iff the [astgram] rejects all strings. *)
+  (** Returns [true] iff the [astgram] rejects all strings. *)
   Fixpoint always_rejects (g:astgram) : bool := 
     match g with 
       | aEps => false

@@ -577,7 +577,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | MOVZX : forall (w:bool)(op1 op2:operand), instr
 | MUL   : forall (w:bool)(op1:operand), instr
 | NEG   : forall (w:bool)(op:operand), instr
-| NOP   : forall (op_opt: option operand), instr
+| NOP   : forall (op:operand), instr
 | NOT   : forall (w:bool)(op:operand), instr
 | OR    : forall (w:bool)(op1 op2:operand), instr
 | OUT   : forall (w:bool)(p:option port_number), instr
