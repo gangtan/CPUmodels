@@ -3221,5 +3221,60 @@ Section UDFA.
                       | Some (ts', vs) => Some (ts', List.map f vs)
                     end)
         end.
+
+
+  Record instParserState (t:type) := mkPS {
+    udfa : UDFA;  (* the untyped parser table *)
+    agram: astgram; (* the original astgram after spliting *)
+    fixup: fixfn agram t;  (* the fix-up function *)
+
+    row : nat;  (* the current astgram *)
+    uf : uform (* the untyped transform *)
+  }.
+
+  Definition opt_initial_parser_state n t (g:grammar t)
+    : option (instParserState t) := 
+    let (ag, f) := split_astgram g in
+        match ubuild_dfa n ag with 
+          | None => None
+          | Some d => Some (mkPS d f 0 Uid)
+        end.
+
+  Definition parse_token t (ps:instParserState t) (tk:token_id) : 
+    option (instParserState t * list (interp t)) := 
+    let d := udfa ps in
+    let i := row ps in
+    let ag := agram ps in
+      match nth_error (udfa_transition d) i with
+        | None => None
+        | Some row => 
+          match nth_error row tk with 
+            | None => None
+            | Some e => 
+              let next_i := unext_state e in
+                if nth next_i (udfa_accepts d) false then
+                  (* get to an acceptance state *)
+                  let ag' := nth next_i (udfa_states d) aZero in
+                    let vs := astgram_extract_nil ag' in 
+                      match decorate (astgram_type ag') 
+                        (ucomp (unext_uform e) (uf ps)) with
+                        | None => None
+                        | Some (existT t' x) => 
+                          match type_dec t' (astgram_type ag) with
+                            | right _ => None
+                            | left H => 
+                              let xf' : xform (astgram_type ag') (astgram_type ag) := 
+                                xcoerce x (eq_refl _) H in
+                                Some (ps, 
+                                  List.map (fun z => (fixup ps) (xinterp xf' z)) vs)
+                          end
+                      end
+                else
+                  Some (mkPS d (fixup ps) next_i (ucomp (unext_uform e) (uf ps)),
+                        nil)
+          end
+      end.
+
   End UDFA.
+
 End NewParser.

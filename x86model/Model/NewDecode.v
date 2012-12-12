@@ -2106,79 +2106,16 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
 
   Definition instruction_parser := alts instruction_parser_list.
 
-(*
-  Definition instruction_regexp_pair := parser2regexp instruction_parser.
-  Record instParserState := mkPS { 
-    inst_ctxt : ctxt_t ; 
-    inst_regexp : regexp (Pair_t prefix_t instruction_t) ; 
-    inst_regexp_wf : wf_regexp inst_ctxt inst_regexp 
-  }.
-
-  Definition initial_parser_state : instParserState := 
-    mkPS (snd instruction_regexp_pair) (fst instruction_regexp_pair) 
-    (p2r_wf instruction_parser _).
-*)
-
-(*
-  Definition parse_byte (ps:instParserState) (b:int8) : 
-    instParserState * list (prefix * instr) := 
-    let cs := byte_explode b in
-    let r' := deriv_parse' (inst_regexp ps) cs in
-    let wf' := wf_derivs (inst_ctxt ps) cs (inst_regexp ps) (inst_regexp_wf ps) in
-      (mkPS (inst_ctxt ps) r' wf', apply_null (inst_ctxt ps) r' wf').
-*)
   Definition build_parser (fuel:nat) := gen_uparser fuel instruction_parser.
 
+  Definition opt_initial_decoder_state n := 
+    opt_initial_parser_state n instruction_parser.
 
-  
-  Record instParserState := mkPS {
-    udfa : UDFA;  (* the untyped parser table *)
-    agram: astgram; (* the original astgram after spliting *)
-    fixup: fixfn agram (Pair_t prefix_t instruction_t);
+  Definition instParserState := 
+    @X86_BASE_PARSER.instParserState (Pair_t prefix_t instruction_t).
 
-    row : nat;  (* the current astgram *)
-    uf : uform (* the untyped transform *)
-  }.
-
-  Definition opt_initial_parser_state n : option instParserState := 
-    let (ag, f) := split_astgram instruction_parser in
-        match ubuild_dfa n ag with 
-          | None => None
-          | Some d => Some (mkPS d f 0 Uid)
-        end.
-
-  
-  Definition parse_token (ps:instParserState) (t:token_id) : 
-    option (instParserState * list (prefix * instr)) := 
-    let d := udfa ps in
-    let i := row ps in
-    let ag := agram ps in
-        if nth i (udfa_accepts d) false then
-        (* the current state is in an acceptance state *)
-          let ag' := nth i (udfa_states d) aZero in
-            let vs := astgram_extract_nil ag' in 
-              match decorate (astgram_type ag') (uf ps) with
-                | None => None
-                | Some (existT t' x) => 
-                  match type_dec t' (astgram_type ag) with
-                    | right _ => None
-                    | left H => 
-                      let xf' : xform (astgram_type ag') (astgram_type ag) := 
-                      xcoerce x (eq_refl _) H in
-                      Some (ps, List.map (fun z => (fixup ps) ( xinterp xf' z)) vs)
-                  end
-              end
-        else 
-          match nth_error (udfa_transition d) i with
-            | None => None
-            | Some row => 
-              match nth_error row t with 
-                | None => None
-                | Some e => 
-                  Some (mkPS d (fixup ps) (unext_state e)
-                         (ucomp (unext_uform e) (uf ps)),
-                         nil)
-              end
-          end.
+  Definition parse_token ps tk :
+    option (X86_BASE_PARSER.instParserState _ * list (prefix * instr)) := 
+    @X86_BASE_PARSER.parse_token (Pair_t prefix_t instruction_t) ps tk.
 
 End X86_PARSER.
