@@ -1,4 +1,0 @@
-To make the syntax fuzzer, just do:
-
-make syntaxfuzzer.native
-Then you can run it (i.e ./syntaxfuzzer.native)
