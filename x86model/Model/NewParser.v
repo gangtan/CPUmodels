@@ -98,10 +98,10 @@ Inductive xform : type -> type -> Type :=
 | Xunit : forall t, xform t Unit_t            
 | Xempty : forall t1 t2, xform t1 (List_t t2) 
 | Xpair : forall t t1 t2, xform t t1 -> xform t t2 -> xform t (Pair_t t1 t2) 
-| Xfst : forall t1 t2 t, xform t1 t -> xform (Pair_t t1 t2) t   
-| Xsnd : forall t1 t2 t, xform t2 t -> xform (Pair_t t1 t2) t   
-| Xinl : forall t t1 t2, xform t t1 -> xform t (Sum_t t1 t2)    
-| Xinr : forall t t1 t2, xform t t2 -> xform t (Sum_t t1 t2)    
+| Xfst : forall t1 t2, xform (Pair_t t1 t2) t1
+| Xsnd : forall t1 t2, xform (Pair_t t1 t2) t2
+| Xinl : forall t1 t2, xform t1 (Sum_t t1 t2)    
+| Xinr : forall t1 t2, xform t2 (Sum_t t1 t2)    
 | Xmatch : forall t1 t2 t, xform t1 t -> xform t2 t -> xform (Sum_t t1 t2) t  
 | Xcons : forall t1 t2, xform t1 t2 -> xform t1 (List_t t2) -> xform t1 (List_t t2) 
 | Xmap : forall t1 t2, xform t1 t2 -> xform (List_t t1) (List_t t2)  
@@ -118,10 +118,10 @@ Fixpoint xinterp t1 t2 (x: t1 ->> t2) : interp t1 -> interp t2 :=
     | Xunit t => fun (x:interp t) => tt
     | Xempty t1 t2 => fun (x:interp t1) => @nil (interp t2)
     | Xpair t t1 t2 f1 f2 => fun (x:interp t) => (xinterp f1 x, xinterp f2 x)
-    | Xfst t1 t2 t f => fun (x:interp (Pair_t t1 t2)) => xinterp f (fst x)
-    | Xsnd t1 t2 t f => fun (x:interp (Pair_t t1 t2)) => xinterp f (snd x)
-    | Xinl t t1 t2 f => fun (x:interp t) => inl (interp t2) (xinterp f x)
-    | Xinr t t1 t2 f => fun (x:interp t) => inr (interp t1) (xinterp f x)
+    | Xfst t1 t2 => fun (x:interp (Pair_t t1 t2)) => fst x
+    | Xsnd t1 t2 => fun (x:interp (Pair_t t1 t2)) => snd x
+    | Xinl t1 t2 => fun (x:interp t1) => inl (interp t2) x
+    | Xinr t1 t2 => fun (x:interp t2) => inr (interp t1) x
     | Xmatch t1 t2 t f1 f2 => 
       fun (x:interp (Sum_t t1 t2)) => 
         match x with 
@@ -177,20 +177,12 @@ Proof.
    destruct IHx1 ; [ destruct IHx2 ; [ left | right ] | right] ; repeat xdec ; auto.
    intro ; xdec. injection H ; intros ; repeat xdec. apply n ; auto.
    intro ; xdec. injection H ; intros ; repeat xdec. apply n ; auto.
-   specialize (IHx _ _ y (eq_refl _) (eq_refl _)). destruct IHx ; [ left | right ] ; 
-   repeat xdec ; auto. intro. xdec. injection H ; intros ; subst. repeat xdec. apply n.
-   auto. specialize (IHx _ _ y (eq_refl _) (eq_refl _)). destruct IHx ; [left | right ] ; 
-   repeat xdec ; auto. intro ; xdec ; injection H ; intros ; subst. repeat xdec.
-   apply n ; auto. specialize (IHx _ _ y (eq_refl _) (eq_refl _)). destruct IHx ; 
-   [left | right ] ; repeat xdec ; auto ; intro ; xdec ; injection H ; intros ; subst.
-   repeat xdec. apply n ; auto. specialize (IHx _ _ y (eq_refl _) (eq_refl _)).
-   destruct IHx ; [left | right ] ; xdec ; auto. intro ; xdec ; injection H ; intros ; 
-   subst ; repeat xdec. apply n ; auto. specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)).
+   specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)). 
    specialize (IHx2 _ _ y2 (eq_refl _) (eq_refl _)). 
-   destruct IHx1 ; [ destruct IHx2 ; [left | right ] | right ] ; repeat xdec ; auto ; 
-     intro H ; repeat xdec ; injection H ; intros ; subst ; repeat xdec ; apply n ; auto.
-   specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)).
-   specialize (IHx2 _ _ y2 (eq_refl _) (eq_refl _)).  
+   destruct IHx1 ; destruct IHx2 ; try (left ; repeat xdec ; auto ; fail) ; 
+     right ; xdec ; intro ; xdec ; injection H ; intros ; subst ; repeat xdec ; 
+   apply n ; auto. specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)).
+   specialize (IHx2 _ _ y2 (eq_refl _) (eq_refl _)). 
    destruct IHx1 ; [ destruct IHx2 ; [left | right ] | right ] ; repeat xdec ; auto ; 
      intro H ; repeat xdec ; injection H ; intros ; subst ; repeat xdec ; apply n ; auto.
    specialize (IHx _ _ y (eq_refl _) (eq_refl _)). destruct IHx ; [left | right ] ; 
@@ -261,92 +253,61 @@ Defined.
 Definition list_t_eq : forall t1 t2, (List_t t1 = List_t t2) -> t2 = t1.
   intros. injection H. intro. apply (eq_sym H0).
 Defined.
-
-(** These next three functions help reduce [Xpair (Xfst Xid) (Xsnd Xid)] to [Xid].
-    It's incredibly tedious to propagate the right types and equations around, 
-    so I had to break it into three functions. *)
-Definition xpair_fst_xid_snd td te (x21 : td ->> te) : forall tc t1 t2, 
-  (Pair_t tc td = Pair_t t1 t2) -> (Pair_t tc td) ->> Pair_t t1 te.
-  intros td te x21.
-  refine (
-    match x21 in td ->> te return forall tc t1 t2, (Pair_t tc td = Pair_t t1 t2) -> (Pair_t tc td) ->> Pair_t t1 te with
-      | Xid t => fun tc t1 t2 H => xcoerce (Xid (Pair_t tc t)) (eq_refl _) _
-      | x21' => fun tc t1 t2 H => 
-        Xpair (xcoerce (Xfst _ (Xid _)) (eq_sym H) (eq_refl _)) 
-        (xcoerce (xcoerce (Xsnd _ x21') H (eq_refl _)) (eq_sym H) (eq_refl _))
-    end
-  ). injection H. intros. subst. auto.
+Definition pair_eq_snd t1 t2 t3 t4 : Pair_t t3 t4 = Pair_t t1 t2 -> 
+  Pair_t t1 t2 = Pair_t t1 t4.
+Proof. intros. injection H. intros ; subst. auto.
 Defined.
 
-Definition xpair_fst_xid ta tb (x2: ta ->> tb) : forall t1 t2, ta = Pair_t t1 t2 -> 
-  ta ->> Pair_t t1 tb :=
-  match x2 in ta ->> tb return forall t1 t2, ta = Pair_t t1 t2 -> ta ->> Pair_t t1 tb with
-    | Xsnd tc td te x21 => (* x21 : td ->> te, tb = te *)
-      fun t1 t2 (H:Pair_t tc td = Pair_t t1 t2) => xpair_fst_xid_snd x21 H 
-    | x2' => 
-      fun t1 t2 H => 
-        Xpair (xcoerce (Xfst _ (Xid t1)) (eq_sym H) (eq_refl _)) x2'
+(** These next two functions reduce [Xpair Xfst Xsnd] to [Xid].  
+    It's incredibly tedious to propagate the right types and equations around, 
+    so I had to break it into two functions. *)
+Definition xpair_fst ta tc (x2:ta->>tc):forall t1 t2, 
+  (ta = Pair_t t1 t2) -> ta ->>(Pair_t t1 tc) := 
+  match x2 in ta->>tc return forall t1 t2,ta=Pair_t t1 t2 -> ta->>(Pair_t t1 tc) with
+    | Xsnd t3 t4 => fun t1 t2 H => xcoerce (Xid _) (eq_sym H) (pair_eq_snd H)
+    | x2 => fun t1 t2 H => Xpair (xcoerce (Xfst t1 t2) (eq_sym H) (eq_refl _)) x2
   end.
 
-(** This function and the two above implement:  (fst id, snd id) = id *)
 Definition xpair ta tb tc (x1:ta ->> tb) (x2:ta ->> tc) : ta ->> (Pair_t tb tc) := 
-  match x1 in ta ->> tb return (ta ->> tc) -> ta ->> (Pair_t tb tc)  with 
-    | Xfst t1 t2 tb x11 => 
-      match x11 in t1 ->> tb return 
-        ((Pair_t t1 t2) ->> tc) -> (Pair_t t1 t2) ->> (Pair_t tb tc) with
-        | Xid t1 => fun x2 => xpair_fst_xid x2 (eq_refl _)
-        | x11 => Xpair (Xfst _ x11)
-      end
-    | x1 => Xpair x1
+ match x1 in ta ->> tb return ta->>tc -> ta->>(Pair_t tb tc) with
+   | Xfst t1 t2 => fun x2 => xpair_fst x2 (eq_refl _)
+   | x1 => Xpair x1
   end x2.
 
 (** The [xpair] optimization preserves meaning. *)
 Lemma xpair_corr ta tb tc (x1:ta->>tb) (x2:ta->>tc) v : 
   xinterp (xpair x1 x2) v = xinterp (Xpair x1 x2) v.
 Proof.
-  destruct x1 ; simpl ; auto. intros. dependent destruction x1 ; simpl ; auto.
-  dependent destruction x2 ; simpl ; auto. dependent destruction x2 ; simpl ; auto.
+  destruct x1 ; simpl ; auto. intros. dependent destruction x2 ; simpl ; auto.   
   destruct v. auto.
 Qed.
 
-(** Used below in the eta-reduction for sums. *)
-Definition xmatch_inl_id_inr tc te (x22:tc->>te) : 
-  forall td ta tb, (Sum_t td te = Sum_t ta tb) -> Sum_t ta tc ->> Sum_t td te.
-  intros tc te x22.
-  refine (
-  match x22 in tc->>te return 
-    forall td ta tb, (Sum_t td te = Sum_t ta tb) -> Sum_t ta tc ->> Sum_t td te with
-    | Xid t => fun td ta tb H => xcoerce (Xid (Sum_t _ _)) (eq_refl _) _
-    | x22' => fun td ta tb H => 
-      xcoerce (Xmatch (Xinl _ (Xid _)) (Xinr _ x22')) (eq_refl _) _
+(*
+Definition xmatch_inl tb tc (x2:tb->>tc) : forall t1 t2, tc = Sum_t t1 t2 -> 
+  Sum_t t1 tb ->> tc.
+refine (fun tb tc x2 => 
+  match x2 in tb->>tc return forall t1 t2, tc=Sum_t t1 t2 -> Sum_t t1 tb ->> tc with
+    | Xinr t3 t4 => fun t1 t2 H => _
+    | x2 => fun t1 t2 H => _
   end
-  ) ; injection H ; intros ; subst ; auto. Grab Existential Variables. auto. auto.
- auto. auto. auto. auto. auto. auto. auto. auto. auto. auto. auto. auto. auto.
- auto. auto. auto. auto. auto. auto. auto. auto. auto. auto. auto. 
-Defined.
+).*)
 
-(** Used below in the eta-reduction for sums. *)
-Definition xmatch_inl_id t1 t2 (x2:t1->>t2) : 
-  forall ta tb, t2 = Sum_t ta tb -> Sum_t ta t1 ->> t2 := 
-  match x2 in t1->>t2 return 
-    forall ta tb, t2 = Sum_t ta tb -> Sum_t ta t1 ->> t2 with
-    | Xinr tc td te x22 => fun ta tb H => xmatch_inl_id_inr x22 H
-    | x2' => 
-      fun ta tb H => 
-        xcoerce (Xmatch (Xinl _ (Xid _)) (xcoerce x2' (eq_refl _) H)) (eq_refl _) 
-        (eq_sym H)
-  end.
+
+Definition xmatch_inl t1 t2 tb tc (x2:tb->>tc) : 
+  (tc=Sum_t t1 t2) -> Sum_t t1 tb ->> Sum_t t1 t2.
+refine (fun t1 t2 tb tc x2 => 
+  match x2 in tb->>tc return (tc=Sum_t t1 t2) -> Sum_t t1 tb ->> Sum_t t1 t2 with
+    | Xinr t1' t2' => fun H => xcoerce (Xid (Sum_t t1' t2')) _ H
+    | x2' => fun H => Xmatch (Xinl t1 t2) (xcoerce x2' (eq_refl _) H)
+  end
+). injection H ; intros ; subst. auto.
+Defined.
 
 (** This function and the two above implement the reduction
     [match x with inl a => inl a | inr b => inr b end = id]. *)
-Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : Sum_t ta tb ->> tc :=
+Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : Sum_t ta tb ->> tc := 
   match x1 in ta->>tc return tb->>tc -> Sum_t ta tb ->> tc with
-    | Xinl t1 t2 t3 x11 => 
-      (* tc = Sum_t t2 t3, ta=t1 *)
-      match x11 in t1->>t2 return (tb->>Sum_t t2 t3) -> Sum_t t1 tb ->> Sum_t t2 t3 with
-        | Xid t => fun x2 => xmatch_inl_id x2 (eq_refl _)
-        | x11' => Xmatch (Xinl _ x11')
-      end
+    | Xinl t1 t2 => fun x2' => xmatch_inl x2' (eq_refl _)
     | x1' => Xmatch x1'
   end x2.
 
@@ -354,9 +315,8 @@ Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : Sum_t ta tb ->> tc :=
 Lemma xmatch_corr ta tb tc (x1:ta->>tc) (x2:tb->>tc) v : 
   xinterp (xmatch x1 x2) v = xinterp (Xmatch x1 x2) v.
 Proof.
-  destruct x1 ; simpl ; auto ; intros. dependent destruction x1 ; simpl ; destruct v ; 
-  auto ; dependent destruction x2 ; simpl ; auto. dependent destruction x2 ; auto.
-  dependent destruction x2 ; auto.
+  destruct x1 ; simpl ; auto ; intros. dependent destruction x2 ; simpl ; destruct v ; 
+  auto.
 Qed.
 
 (** These next few functions implement specific reductions for when a particular
@@ -392,10 +352,10 @@ Definition xcomp_pair t21 t22 (x2:t21 ->> t22) :
       | Xchar t c => fun ta tb tc x11 x12 H => Xchar _ c
       | Xunit t => fun ta tb tc x11 x12 H => Xunit _
       | Xempty t1 t2 => fun ta tb tc x11 x12 H => Xempty _ _
-      | Xfst te tf tg x22 =>
-        fun ta tb tc x11 x12 H => Xcomp x11 (xcoerce x22 (eq_pair_fst H) (eq_refl _))
-      | Xsnd te tf tg x22 => 
-        fun ta tb tc x11 x12 H => Xcomp x12 (xcoerce x22 (eq_pair_snd H) (eq_refl _))
+      | Xfst te tf =>
+        fun ta tb tc x11 x12 H => xcoerce x11 (eq_refl _) (eq_pair_fst (eq_sym H))
+      | Xsnd te tf => 
+        fun ta tb tc x11 x12 H => xcoerce x12 (eq_refl _) (eq_pair_snd (eq_sym H))
       | x2' => 
         fun ta tb tc x11 x12 H => 
           Xcomp (Xpair x11 x12) (xcoerce x2' (eq_sym H) (eq_refl _))
@@ -410,30 +370,30 @@ Proof.
     rewrite (proof_irrelevance _ H (eq_refl _)) ; auto.
 Qed.
 
-(**  (inl f) o id = inl f
-     (inl f) o (char c) = char c
-     (inl f) o unit = unit
-     (inl f) o empty = empty
-     (inl f) o (match f1 f2) = f o f1 
+(**  inl o id = inl
+     inl o (char c) = char c
+     inl o unit = unit
+     inl o empty = empty
+     inl o (match f1 f2) = f o f1 
 *)
 Definition xcomp_inl t21 t22 (x2:t21 ->> t22) : 
-  forall ta tb tc (x11:ta->>tb), (Sum_t tb tc = t21) -> ta ->> t22 :=
+  forall ta tb, (Sum_t ta tb = t21) -> ta ->> t22 :=
     match x2 in t21->>t22 return 
-      forall ta tb tc (x11:ta->>tb), (Sum_t tb tc = t21) -> ta ->> t22 with
-      | Xid t => fun ta tb tc x11 H => xcoerce (Xinl _ x11) (eq_refl _) H 
-      | Xchar t c => fun ta tb tc _ H => Xchar _ c
-      | Xunit t => fun ta tb tc _ H => Xunit _
-      | Xempty t1 t2 => fun ta tb tc _ H => Xempty _ _ 
+      forall ta tb, (Sum_t ta tb = t21) -> ta ->> t22 with
+      | Xid t => fun ta tb H => xcoerce (Xinl _ _) (eq_refl _) H 
+      | Xchar t c => fun ta tb H => Xchar _ c
+      | Xunit t => fun ta tb H => Xunit _
+      | Xempty t1 t2 => fun ta tb H => Xempty _ _ 
       | Xmatch td te tf x21 x22 => 
-        fun ta tb tc x11 H => Xcomp x11 (xcoerce x21 (eq_sum_fst H) (eq_refl _))
+        fun ta tb H => xcoerce x21 (eq_sum_fst H) (eq_refl _)
       | x2' => 
-        fun ta tb tc x11 H => Xcomp (Xinl _ x11) (xcoerce x2' (eq_sym H) (eq_refl _))
+        fun ta tb H => Xcomp (Xinl _ _) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
 (** [xcomp_inl] is correct *)
-Lemma xcomp_inl_corr t21 t22 (x2:t21->>t22) ta tb tc (x11:ta->>tb) (H:Sum_t tb tc = t21) v: 
-  xinterp (xcomp_inl x2 x11 H) v = 
-  xinterp (Xcomp (Xinl _ x11) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
+Lemma xcomp_inl_corr t21 t22 (x2:t21->>t22) ta tb (H:Sum_t ta tb = t21) v: 
+  xinterp (xcomp_inl x2 H) v = 
+  xinterp (Xcomp (Xinl _ _) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
 Proof.
   destruct x2 ; simpl ; intros ; subst ; simpl ; auto. injection H ; intros ; subst.
   rewrite (proof_irrelevance _ H (eq_refl _)). auto.
@@ -446,23 +406,23 @@ Qed.
      (inr f) o (match f1 f2) = f o f2
 *)
 Definition xcomp_inr t21 t22 (x2:t21 ->> t22) : 
-  forall ta tb tc (x11:ta->>tc), (Sum_t tb tc = t21) -> ta ->> t22 :=
+  forall ta tb, (Sum_t ta tb = t21) -> tb ->> t22 :=
     match x2 in t21->>t22 return 
-      forall ta tb tc (x11:ta->>tc), (Sum_t tb tc = t21) -> ta ->> t22 with
-      | Xid t => fun ta tb tc x11 H => xcoerce (Xinr _ x11) (eq_refl _) H 
-      | Xchar t c => fun ta tb tc _ H => Xchar _ c
-      | Xunit t => fun ta tb tc _ H => Xunit _
-      | Xempty t1 t2 => fun ta tb tc _ H => Xempty _ _ 
+      forall ta tb, (Sum_t ta tb = t21) -> tb ->> t22 with
+      | Xid t => fun ta tb H => xcoerce (Xinr _ _) (eq_refl _) H 
+      | Xchar t c => fun ta tb H => Xchar _ c
+      | Xunit t => fun ta tb H => Xunit _
+      | Xempty t1 t2 => fun ta tb H => Xempty _ _ 
       | Xmatch td te tf x21 x22 => 
-        fun ta tb tc x11 H => Xcomp x11 (xcoerce x22 (eq_sum_snd H) (eq_refl _))
+        fun ta tb H => xcoerce x22 (eq_sum_snd H) (eq_refl _)
       | x2' => 
-        fun ta tb tc x11 H => Xcomp (Xinr _ x11) (xcoerce x2' (eq_sym H) (eq_refl _))
+        fun ta tb H => Xcomp (Xinr _ _) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 
 (** [xcomp_inr] is correct. *)
-Lemma xcomp_inr_corr t21 t22 (x2:t21->>t22) ta tb tc (x11:ta->>tc) (H:Sum_t tb tc = t21) v: 
-  xinterp (xcomp_inr x2 x11 H) v = 
-  xinterp (Xcomp (Xinr _ x11) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
+Lemma xcomp_inr_corr t21 t22 (x2:t21->>t22) ta tb (H:Sum_t ta tb = t21) v: 
+  xinterp (xcomp_inr x2 H) v = 
+  xinterp (Xcomp (Xinr _ _) (xcoerce x2 (eq_sym H) (eq_refl _))) v.
 Proof.
   destruct x2 ; simpl ; intros ; subst ; simpl ; auto. injection H ; intros ; subst.
   rewrite (proof_irrelevance _ H (eq_refl _)). auto.
@@ -567,6 +527,7 @@ Definition xcomp_r t21 t22 (x2:t21 ->> t22) : forall t11, t11 ->> t21 -> t11 ->>
     | Xchar t c => fun t1 x1 => Xchar _ c
     | Xunit t => fun t1 x1 => Xunit _
     | Xempty t1 t2 => fun t1 x1 => Xempty _ _
+    | Xpair t t21 t22 x21 x22 => fun t1 x1 => Xpair (Xcomp x1 x21) (Xcomp x1 x22)
     | x2' => fun t1 x1 => Xcomp x1 x2'
   end.
 
@@ -591,8 +552,8 @@ Fixpoint xcomp t11 t12 (x1:t11 ->> t12) : forall t22, t12 ->> t22 -> t11 ->> t22
         fun t22 x2 => xcomp x11 (xcomp x12 x2)
       | Xpair ta tb tc x11 x12 => 
         fun t22 x2 => xcomp_pair x2 x11 x12 (eq_refl _)
-      | Xinl ta tb tc x11 => fun t22 x2 => xcomp_inl x2 x11 (eq_refl _)
-      | Xinr ta tb tc x11 => fun t22 x2 => xcomp_inr x2 x11 (eq_refl _)
+      | Xinl ta tb => fun t22 x2 => xcomp_inl x2 (eq_refl _)
+      | Xinr ta tb => fun t22 x2 => xcomp_inr x2 (eq_refl _)
       | Xmap ta tb x11 => fun t22 x2 => xcomp_map x2 x11 (eq_refl _)
       | Xempty ta tb => fun t22 x2 => xcomp_empty x2 _ (eq_refl _)
       | Xcons ta tb x11 x12 => fun t22 x2 => xcomp_cons x2 x11 x12 (eq_refl _)
@@ -609,9 +570,24 @@ Proof.
     | [ |- xinterp (xcomp_r ?x2 ?x1) ?v = _ ] => apply (xcomp_r_corr x2 x1 v)
     | _ => idtac
   end.
-  simpl in *. rewrite <- IHx1_2. rewrite <- IHx1_1. auto. 
-  apply xcomp_empty_corr. apply xcomp_pair_corr. apply xcomp_inl_corr.
+  simpl in *. rewrite <- IHx1_2. rewrite <- IHx1_1. auto.
+  apply xcomp_empty_corr. apply xcomp_pair_corr.  apply xcomp_inl_corr.
   apply xcomp_inr_corr. apply xcomp_cons_corr. apply xcomp_map_corr.
+Qed.
+
+Fixpoint xcomp' tb tc (x2:tb->>tc) : forall ta, ta->>tb -> ta->>tc := 
+  match x2 in tb->>tc return forall ta, ta->>tb -> ta->>tc with 
+    | Xcomp td te tf x21 x22 => fun ta x1 => xcomp' x22 (xcomp' x21 x1)
+    | Xpair td te tf x21 x22 => fun ta x1 => Xpair (xcomp' x21 x1) (xcomp' x22 x1)
+    | x2' => fun ta x1 => xcomp x1 x2'
+  end.
+
+Lemma xcomp'_corr tb tc (x2:tb->>tc) ta (x1:ta->>tb) v : 
+  xinterp (xcomp' x2 x1) v = xinterp (Xcomp x1 x2) v.
+Proof.
+  induction x2 ; simpl ; intros ; auto ; try (rewrite xcomp_corr ; auto).
+  rewrite IHx2_2. simpl. rewrite IHx2_1. auto. 
+  rewrite IHx2_1. rewrite IHx2_2. auto.
 Qed.
 
 (** Optimize an [xform].  Most of the reductions are in the
@@ -621,12 +597,8 @@ Fixpoint xopt t1 t2 (x:t1 ->> t2) : t1 ->> t2 :=
   match x with
     | Xpair ta tb tc x1 x2 => xpair (xopt x1) (xopt x2)
     | Xmatch ta tb tc x1 x2 => xmatch (xopt x1) (xopt x2)
-    | Xcomp ta tb tc x1 x2 => xcomp (xopt x1) (xopt x2)
-    | Xinl ta tb tc x1 => Xinl _ (xopt x1)
-    | Xinr ta tb tc x1 => Xinr _ (xopt x1)
+    | Xcomp ta tb tc x1 x2 => xcomp' (xopt x2) (xopt x1) 
     | Xcons ta tb x1 x2 => Xcons (xopt x1) (xopt x2)
-    | Xfst ta tb tc x1 => Xfst _ (xopt x1)
-    | Xsnd ta tb tc x1 => Xsnd _ (xopt x1)
     | Xmap ta tb x1 => Xmap (xopt x1)
     | x' => x'
   end.
@@ -636,7 +608,7 @@ Lemma xopt_corr t1 t2 (x:t1 ->> t2) : xinterp (xopt x) = xinterp x.
 Proof.
   induction x ; simpl ; intros ; auto ; try (rewrite <- IHx ; auto) ; 
     try (rewrite <- IHx1 ; rewrite <- IHx2 ; auto) ; apply extensionality ; intros.
-  apply xcomp_corr. apply xpair_corr. apply xmatch_corr.
+  apply xcomp'_corr. apply xpair_corr. apply xmatch_corr.
 Qed.
 
 (** * Optimizing constructors for grammars *)
@@ -644,14 +616,14 @@ Qed.
 (** g ++ 0 ==> g @ inl *)
 Definition OptAlt_r t2 (g2:grammar t2) : forall t1, grammar t1 -> grammar (Sum_t t1 t2) :=
   match g2 in grammar t2' return forall t1, grammar t1 -> grammar (Sum_t t1 t2') with
-    | Zero t2 => fun t1 g1 => Xform (Xinl _ (Xid _)) g1
+    | Zero t2 => fun t1 g1 => Xform (Xinl _ _) g1
     | g2' => fun t1 g1 => Alt g1 g2'
   end.
 
 (** 0 ++ g ==> g @ inr *)
 Definition OptAlt_l t1 (g1:grammar t1) : forall t2, grammar t2 -> grammar (Sum_t t1 t2) :=
   match g1 in grammar t1' return forall t2, grammar t2 -> grammar (Sum_t t1' t2) with
-    | Zero t1 => fun t2 g2 => Xform (Xinr _ (Xid _)) g2
+    | Zero t1 => fun t2 g2 => Xform (Xinr _ _) g2
     | g1' => fun t2 g2 => OptAlt_r g2 g1'
   end.
 
@@ -862,7 +834,7 @@ Fixpoint deriv t (g:grammar t) (c:char_p) : grammar t :=
         OptXform (Xmatch (Xid _) (Xid _))
           (OptAlt (OptCat (deriv g1 c) g2) (OptCat (null g1) (deriv g2 c)))
     | Star t g => 
-        OptXform (Xcons (Xfst _ (Xid _)) (Xsnd _ (Xid _))) (OptCat (deriv g c) (Star g))
+        OptXform (Xcons (Xfst _ _) (Xsnd _ _)) (OptCat (deriv g c) (Star g))
   end.
 
 (** * AST Grammars *)
@@ -1052,26 +1024,14 @@ Qed.
 Definition agxf (t:type) (ag:astgram) (f:astgram_type ag ->> t) : 
   {ag : astgram & astgram_type ag ->> t} := existT _ ag f.
 
-Definition assoc_left_sum t1 t2 t3 : Sum_t t1 (Sum_t t2 t3) ->> Sum_t (Sum_t t1 t2) t3 := 
-  Xmatch (Xinl _ (Xinl _ (Xid _)))
-         (Xmatch (Xinl _ (Xinr _ (Xid _)))
-                         (Xinr _ (Xid _))).
-
 (** Flatten out and right-associate a list of [aAlt]s. *)
 Fixpoint append_alt (ag1:astgram) (ag2:astgram) : 
   {ag:astgram & astgram_type ag ->> astgram_type (aAlt ag1 ag2)} := 
   match ag1 return {ag:astgram & astgram_type ag ->> astgram_type (aAlt ag1 ag2)} with
-    | aZero => agxf ag2 (Xinr _ (Xid _))
-(*
-    | aAlt aga agb => 
-      let (agd, xd) := append_alt agb ag2 in 
-        let (agc, xc) := append_alt aga agd in 
-          agxf agc (Xcomp xc (Xcomp (Xmatch (Xinl _ (Xid _)) (Xinr _ xd))
-                                     (assoc_left_sum _ _ _)))
-*)
+    | aZero => agxf ag2 (Xinr _ _)
     | ag1' => 
       match ag2 return {ag:astgram & astgram_type ag ->> astgram_type (aAlt ag1' ag2)} with
-        | aZero => agxf ag1' (Xinl _ (Xid _))
+        | aZero => agxf ag1' (Xinl _ _)
         | ag2' => agxf (aAlt ag1' ag2') (Xid _)
       end
   end.
@@ -1094,23 +1054,12 @@ Proof.
   destruct ag1 ; try (destruct ag2 ; mysimp ; simpl ; unfold agxf ; repeat (ainv ; auto)).
 Qed.
 
-Definition assoc_left_pair t1 t2 t3 : 
-  Pair_t t1 (Pair_t t2 t3) ->> Pair_t (Pair_t t1 t2) t3 := 
-  Xpair (Xpair (Xfst _ (Xid _)) (Xsnd _ (Xfst _ (Xid _)))) (Xsnd _ (Xsnd _ (Xid _))).
-
 (** Flatten out and right-associate a list of [aCat]s. *)        
 Fixpoint append_cat (ag1:astgram) (ag2:astgram) : 
   {ag:astgram & astgram_type ag ->> astgram_type (aCat ag1 ag2)} := 
   match ag1 return {ag:astgram & astgram_type ag ->> astgram_type (aCat ag1 ag2)} with
     | aZero => agxf aZero (Xzero _)
     | aEps => agxf ag2 (Xpair (Xunit _) (Xid _))
-(*
-    | aCat aga agb => 
-      let (agd, xd) := append_cat agb ag2 in 
-        let (agc, xc) := append_cat aga agd in 
-          agxf agc (Xcomp xc (Xcomp (Xpair (Xfst _ (Xid _)) (Xsnd _ xd)) 
-                                     (assoc_left_pair _ _ _)))
-*)
     | ag1' => 
       match ag2 return {ag:astgram & astgram_type ag ->> astgram_type (aCat ag1' ag2)} with
         | aZero => agxf aZero (Xzero _)
@@ -1230,14 +1179,14 @@ Fixpoint null_and_split (ag1:astgram):{ag2:astgram & astgram_type ag2->>astgram_
     | aAlt ag11 ag12 => 
       let (ag11', f1) := null_and_split ag11 in 
         let (ag12', f2) := null_and_split ag12 in 
-          opt_agxf (aAlt ag11' ag12') (Xmatch (Xinl _ f1) (Xinr _ f2))
+          opt_agxf (aAlt ag11' ag12') (Xmatch (Xcomp f1 (Xinl _ _)) (Xcomp f2 (Xinr _ _)))
     | aCat ag11 ag12 => 
       let (ag11', f1) := null_and_split ag11 in 
         match ag11' with 
           | aZero => agxf aZero (Xzero _)
           | ag11'' => 
             let (ag12', f2) := null_and_split ag12 in 
-              opt_agxf (aCat ag11'' ag12') (Xpair (Xfst _ f1) (Xsnd _ f2))
+              opt_agxf (aCat ag11'' ag12') (Xpair (Xcomp (Xfst _ _) f1) (Xcomp (Xsnd _ _) f2))
         end
     | aStar ag11 => agxf aEps (Xempty Unit_t (astgram_type ag11))
   end.
@@ -1251,9 +1200,9 @@ Proof.
   remember (null_and_split a1) as e1 ; destruct e1.
   assert (match x with | aZero => agxf aZero (Xzero _) | 
             ag11' => let (ag12',f2) := null_and_split a2 in 
-              opt_agxf (aCat ag11' ag12') (Xpair (Xfst _ x0) (Xsnd _ f2))
+              opt_agxf (aCat ag11' ag12') (Xpair (Xcomp (Xfst _ _) x0) (Xcomp (Xsnd _ _) f2))
           end = let (ag12',f2) := null_and_split a2 in 
-              opt_agxf (aCat x ag12') (Xpair (Xfst _ x0) (Xsnd _ f2))).
+              opt_agxf (aCat x ag12') (Xpair (Xcomp (Xfst _ _) x0) (Xcomp (Xsnd _ _) f2))).
   destruct x ; auto. remember (null_and_split a2) as e2. destruct e2.
   simpl. unfold opt_agxf. simpl. auto. rewrite H1. clear H1.
   remember (null_and_split a2) as e2. destruct e2. eapply opt_agxf_corr1.
@@ -1278,8 +1227,8 @@ Proof.
   destruct e1 as [ag11' f1] ; destruct e2 as [ag12' f2].
   assert (
     match ag11' with | aZero => agxf aZero (Xzero _) |
-      ag11' => opt_agxf (aCat ag11' ag12') (Xpair (Xfst _ f1) (Xsnd _ f2)) end = 
-        opt_agxf (aCat ag11' ag12') (Xpair (Xfst _ f1) (Xsnd _ f2))).
+      ag11' => opt_agxf (aCat ag11' ag12') (Xpair (Xcomp (Xfst _ _) f1) (Xcomp (Xsnd _ _) f2)) end = 
+        opt_agxf (aCat ag11' ag12') (Xpair (Xcomp (Xfst _ _) f1) (Xcomp (Xsnd _ _) f2))).
   destruct ag11' ; auto. rewrite H0 in H. clear H0.
   generalize (opt_agxf_corr2 _ _ _ _ H). simpl. mysimp. subst. 
   rewrite (app_nil_end []). specialize (IHag1 (xinterp f1 (fst x))).
@@ -1307,7 +1256,7 @@ Fixpoint deriv_and_split (ag1:astgram) (c:char_p) :
     | aAlt ag11 ag12 => 
       let (ag11', f1) := deriv_and_split ag11 c in 
         let (ag12', f2) := deriv_and_split ag12 c in 
-          opt_agxf (aAlt ag11' ag12') (Xmatch (Xinl _ f1) (Xinr _ f2))
+          opt_agxf (aAlt ag11' ag12') (Xmatch (Xcomp f1 (Xinl _ _)) (Xcomp f2 (Xinr _ _)))
     | aCat ag11 ag12 => 
       let (ag11', f1) := deriv_and_split ag11 c in 
         let (ag_left, f_left) := opt_ag (aCat ag11' ag12) in
@@ -1315,18 +1264,18 @@ Fixpoint deriv_and_split (ag1:astgram) (c:char_p) :
             match ag11null' with 
               | aZero => 
                 agxf ag_left (Xcomp f_left
-                  (Xpair (Xfst (astgram_type ag12) f1)
-                         (Xsnd (astgram_type ag11') (Xid (astgram_type ag12)))))
+                  (Xpair (Xcomp (Xfst _ (astgram_type ag12)) f1)
+                         (Xsnd (astgram_type ag11') _)))
               | ag11null => 
                 let (ag12', f2) := deriv_and_split ag12 c in 
                   let (ag_right, f_right) := opt_ag (aCat ag11null ag12') in
                     opt_agxf (aAlt ag_left ag_right) 
-                    (Xmatch (Xcomp f_left (Xpair (Xfst _ f1) (Xsnd _ (Xid _))))
-                      (Xcomp f_right (Xpair (Xfst _ fnull) (Xsnd _ f2))))
+                    (Xmatch (Xcomp f_left (Xpair (Xcomp (Xfst _ _) f1) (Xsnd _ _)))
+                      (Xcomp f_right (Xpair (Xcomp (Xfst _ _) fnull) (Xcomp (Xsnd _ _) f2))))
             end
     | aStar ag0 => 
       let (ag0', f) := deriv_and_split ag0 c in 
-        opt_agxf (aCat ag0' (aStar ag0)) (Xcons (Xfst _ f) (Xsnd _ (Xid _)))
+        opt_agxf (aCat ag0' (aStar ag0)) (Xcons (Xcomp (Xfst _ _) f) (Xsnd _ _))
   end.
 
 Lemma deriv_and_split_corr1 ag1 cs v : 
@@ -1396,7 +1345,6 @@ Proof.
   remember (deriv_and_split a c) as e1 ; destruct e1. eapply opt_agxf_corr1. 
   simpl in *. mysimp. subst. eauto.
 Qed.
-
 
 Fixpoint null_and_split_form (ag:astgram) : Prop :=
   match ag with 
@@ -1609,7 +1557,7 @@ Fixpoint derivs_and_split (ag:astgram) (cs:list char_p) :
     | nil => agxf ag (Xid _)
     | c::cs' => let (ag1, x1) := deriv_and_split ag c in 
                 let (ag2, x2) := derivs_and_split ag1 cs' in 
-                  agxf ag2 (xcomp x2 x1)
+                  agxf ag2 (xcomp' x1 x2)
   end.
 
 Lemma derivs_and_split_corr1 cs ag v : 
@@ -1620,7 +1568,8 @@ Proof.
   unfold in_agxf in *. destruct (deriv_and_split ag a). mysimp. 
   remember (derivs_and_split x cs) as e. destruct e. 
   unfold agxf. specialize (IHcs _ _ H0). rewrite <- Heqe in IHcs. mysimp. 
-  subst. generalize (xcomp_corr x3 x0 x4).  intros. exists x4. split ; auto.
+  subst. generalize (xcomp'_corr x0 x3 x4). intros.
+  exists x4. split ; auto.
 Qed.
 
 Lemma derivs_and_split_corr2 cs ag v : 
@@ -1631,7 +1580,7 @@ Proof.
   remember (deriv_and_split ag a) as e ; destruct e.  
   remember (derivs_and_split x cs) as e2 ; destruct e2. 
   unfold in_agxf in H. unfold agxf in H. mysimp. eapply H0.
-  generalize (xcomp_corr x2 x0 x3). intros. rewrite H2 in H1. simpl in H1.
+  generalize (xcomp'_corr x0 x2 x3). intros. rewrite H2 in H1. simpl in H1.
   unfold in_agxf in IHcs. specialize (IHcs x). 
   rewrite <- Heqe2 in IHcs. subst. exists (xinterp x2 x3). split ; auto.
   eapply IHcs. eauto.
@@ -2274,10 +2223,10 @@ Inductive uform : Type :=
 | Uunit : uform 
 | Uempty : memo type -> uform 
 | Upair : uform -> uform -> uform 
-| Ufst : uform -> uform
-| Usnd : uform -> uform
-| Uinl : memo type -> uform -> uform
-| Uinr : memo type -> uform -> uform
+| Ufst : uform
+| Usnd : uform
+| Uinl : memo type -> uform
+| Uinr : memo type -> uform
 | Umatch : uform -> uform -> uform
 | Ucons : uform -> uform -> uform
 | Umap : uform -> uform.
@@ -2295,20 +2244,20 @@ Fixpoint synth (t1:memo type) (u:uform) : memo type :=
     | Uunit => Val Unit_t
     | Uempty t => Thunk (fun _ => List_t (force t))
     | Upair u1 u2 => Thunk (fun _ => (Pair_t (force (synth t1 u1)) (force (synth t1 u2))))
-    | Ufst u => 
+    | Ufst => 
       Thunk (fun _ => 
         match force t1 with 
-          | Pair_t ta tb => force (synth (Val ta) u)
+          | Pair_t ta tb => ta
           | _ => Unit_t
         end)
-    | Usnd u =>
+    | Usnd =>
       Thunk (fun _ => 
         match force t1 with 
-          | Pair_t ta tb => force (synth (Val tb) u)
+          | Pair_t ta tb => tb
           | _ => Unit_t
         end)
-    | Uinl tb u => Thunk (fun _ => (Sum_t (force (synth t1 u)) (force tb)))
-    | Uinr ta u => Thunk (fun _ => (Sum_t (force ta) (force (synth t1 u))))
+    | Uinl tb => Thunk (fun _ => (Sum_t (force t1) (force tb)))
+    | Uinr ta => Thunk (fun _ => (Sum_t (force ta) (force t1)))
     | Umatch u1 u2 => 
       Thunk (fun _ => 
         match force t1 with 
@@ -2334,10 +2283,10 @@ Fixpoint erase t1 t2 (x : t1 ->> t2) : uform :=
     | Xunit t => Uunit 
     | Xempty t1 t2 => Uempty (Val t2)
     | Xpair _ _ _ x1 x2 => Upair (erase x1) (erase x2)
-    | Xfst _ _ _ x1 => Ufst (erase x1)
-    | Xsnd _ _ _ x1 => Usnd (erase x1)
-    | Xinl _ t1 t2 x1 => Uinl (Val t2) (erase x1)
-    | Xinr _ t1 t2 x1 => Uinr (Val t1) (erase x1)
+    | Xfst _ _ => Ufst 
+    | Xsnd _ _ => Usnd 
+    | Xinl t1 t2 => Uinl (Val t2) 
+    | Xinr t1 t2 => Uinr (Val t1) 
     | Xmatch _ _ _ x1 x2 => Umatch (erase x1) (erase x2)
     | Xcons _ _ x1 x2 => Ucons (erase x1) (erase x2)
     | Xmap _ _ x1 => Umap (erase x1)
@@ -2348,11 +2297,9 @@ Fixpoint erase t1 t2 (x : t1 ->> t2) : uform :=
 Lemma erase_synth : forall t1 t2 (x:t1 ->> t2), 
   forall m, force m = t1 -> force (synth m (erase x)) = t2.
 Proof.
-  induction x ; simpl ; auto ; intros. rewrite (IHx1 _ H). rewrite (IHx2 _ H). auto.
-  rewrite H. rewrite (IHx (Val t1) (eq_refl _)). auto. rewrite H. 
-  rewrite (IHx (Val t2) (eq_refl _)) ; auto. rewrite (IHx _ H). auto.
-  rewrite (IHx _ H) ; auto. rewrite H. rewrite (IHx1 (Val t1) (eq_refl _)). auto.
-  rewrite (IHx1 _ H). auto. rewrite H. rewrite (IHx (Val t1) (eq_refl _)). auto.
+  induction x ; simpl ; auto ; intros ; try (rewrite H ; auto). 
+  rewrite (IHx1 _ H). rewrite (IHx2 _ H). auto.
+  rewrite (IHx1 _ H). auto. rewrite (IHx (Val t1) (eq_refl _)). auto.
 Qed.
 
 Lemma erase_synth_val : forall t1 t2 (x:t1 ->> t2), 
@@ -2391,36 +2338,22 @@ Fixpoint decorate t1 (u:uform) : option { t2 : type & xform t1 t2 } :=
           Some (existT _ (Pair_t ta tb) (Xpair xa xb))
         | _, _ => None
       end
-    | Ufst u1 => 
+    | Ufst => 
       match t1 with 
-        | Pair_t ta tb => 
-          match decorate ta u1 with 
-            | Some (existT t2 x1) => Some (existT _ t2 (Xfst tb x1))
-            | None => None
-          end
+        | Pair_t ta tb => Some (existT _ ta (Xfst ta tb))
         | _ => None
       end
-    | Usnd u1 => 
+    | Usnd => 
       match t1 with 
-        | Pair_t ta tb => 
-          match decorate tb u1 with 
-            | Some (existT t2 x1) => Some (existT _ t2 (Xsnd ta x1))
-            | None => None
-          end
+        | Pair_t ta tb => Some (existT _ tb (Xsnd ta tb))
         | _ => None
       end
-    | Uinl m u1 => 
-      match decorate t1 u1 with 
-        | Some (existT ta x1) => 
-          let tb := force m in Some (existT _ (Sum_t ta tb) (Xinl tb x1))
-        | _ => None
-      end
-    | Uinr m u1 => 
-      match decorate t1 u1 with 
-        | Some (existT tb x1) => 
-          let ta := force m in Some (existT _ (Sum_t ta tb) (Xinr ta x1))
-        | _ => None
-      end
+    | Uinl m => 
+      let ta := t1 in
+      let tb := force m in Some (existT _ (Sum_t ta tb) (Xinl ta tb))
+    | Uinr m => 
+      let ta := force m in
+      let tb := t1 in Some (existT _ (Sum_t ta tb) (Xinr ta tb))
     | Umatch u1 u2 => 
       match t1 with 
         | Sum_t ta tb => 
@@ -2468,45 +2401,114 @@ Defined.
 (** Now replicate the optimizations on [xform]s at the [uform] level. *)
 Definition upair (u1 u2:uform) : uform := 
   match u1, u2 with 
-    | Ufst Uid, Usnd Uid => Uid
+    | Ufst , Usnd => Uid
     | u1', u2' => Upair u1' u2'
   end.
 
 Definition umatch (u1 u2:uform) : uform := 
   match u1, u2 with 
-    | Uinl _ Uid, Uinr _ Uid => Uid
-    | u1', u2' => Umatch u1 u2
+    | Uinl _ , Uinr _ => Uid
+    | u1', u2' => Umatch u1' u2'
   end.
 
-Fixpoint ucomp u1 u2 := 
-  match u1, u2 with 
-    | Uid, u2' => u2'
-    | Uzero t, u2' => Uzero (synth t u2')
-    | Ucomp u11 u12, u2' => ucomp u11 (ucomp u12 u2')
-    | u1', Uid => u1'
-    | _, Uchar c => Uchar c
-    | _, Uunit => Uunit
-    | _, Uempty t => Uempty t
-    | Upair u11 u12, Ufst u2' => Ucomp u11 u2'
-    | Upair u11 u12, Usnd u2' => Ucomp u12 u2'
-    | Uinl _ u11, Umatch u21 u22 => Ucomp u11 u21
-    | Uinr _ u12, Umatch u21 u22 => Ucomp u12 u22
-    | Umap u11, Umap u12 => Umap (Ucomp u11 u12)
-    | Uempty t, Umap u => Uempty (synth t u)
-    | Ucons u11 u12, Umap u => Ucons (Ucomp u11 u) (Ucomp u12 (Umap u))
-    | u1', u2' => Ucomp u1' u2'
+Definition ucomp_pair u2 u11 u12 := 
+  match u2 with 
+    | Uid => Upair u11 u12
+    | Uchar c => Uchar c
+    | Uunit => Uunit
+    | Uempty m => Uempty m
+    | Ufst => u11
+    | Usnd => u12
+    | u2' => Ucomp (Upair u11 u12) u2'
+  end.
+
+Definition ucomp_inl u2 m1 := 
+  match u2 with
+    | Uid => Uinl m1
+    | Uchar c => Uchar c
+    | Uunit => Uunit
+    | Uempty m => Uempty m
+    | Umatch u21 u22 => u21
+    | u2' => Ucomp (Uinl m1) u2'
+  end.
+
+Definition ucomp_inr u2 m1 := 
+  match u2 with
+    | Uid => Uinr m1
+    | Uchar c => Uchar c
+    | Uunit => Uunit
+    | Uempty m => Uempty m
+    | Umatch u21 u22 => u22
+    | u2' => Ucomp (Uinr m1) u2'
+  end.
+
+Definition ucomp_map u2 u1 := 
+  match u2 with 
+    | Uid => Umap u1
+    | Uchar c => Uchar c
+    | Uunit => Uunit
+    | Uempty m => Uempty m
+    | Umap u2' => Umap (Ucomp u1 u2')
+    | u2' => Ucomp (Umap u1) u2'
+  end.
+
+Definition ucomp_empty u2 m1 := 
+  match u2 with 
+    | Uid => Uempty m1
+    | Uchar c => Uchar c
+    | Uunit => Uunit
+    | Uempty m => Uempty m
+    | Umap u => Uempty (synth m1 u)
+    | u2' => Ucomp (Uempty m1) u2'
+  end.
+
+Definition ucomp_cons u2 u11 u12 := 
+  match u2 with 
+    | Uid => Ucons u11 u12
+    | Uchar c => Uchar c
+    | Uunit => Uunit
+    | Uempty m => Uempty m
+    | Umap u => Ucons (Ucomp u11 u) (Ucomp u12 (Umap u))
+    | u2' => Ucomp (Ucons u11 u12) u2'
+  end.
+
+Definition ucomp_r u2 u1 := 
+  match u2 with 
+    | Uid => u1
+    | Uchar c => Uchar c
+    | Uunit => Uunit
+    | Uempty m => Uempty m
+    | Upair u21 u22 => Upair (Ucomp u1 u21) (Ucomp u1 u22)
+    | u2' => Ucomp u1 u2
+  end.
+
+Fixpoint ucomp u1 := 
+    match u1 with 
+      | Uid => fun u2 => u2
+      | Uzero t => fun u2 => Uzero (synth t u2)
+      | Ucomp u11 u12 => fun u2 => ucomp u11 (ucomp u12 u2)
+      | Upair u11 u12 => fun u2 => ucomp_pair u2 u11 u12
+      | Uinl m1 => fun u2 => ucomp_inl u2 m1
+      | Uinr m1 => fun u2 => ucomp_inr u2 m1
+      | Umap u1 => fun u2 => ucomp_map u2 u1
+      | Uempty m1 => fun u2 => ucomp_empty u2 m1
+      | Ucons u11 u12 => fun u2 => ucomp_cons u2 u11 u12
+      | u1' => fun u2 => ucomp_r u2 u1'
+    end.
+
+Fixpoint ucomp' u2 u1 := 
+  match u2 with 
+    | Ucomp u21 u22 => ucomp' u22 (ucomp' u21 u1) 
+    | Upair u21 u22 => Upair (ucomp' u21 u1) (ucomp' u22 u1)
+    | u2' => ucomp u1 u2'
   end.
 
 Fixpoint uopt (u:uform) : uform := 
   match u with 
     | Upair u1 u2 => upair (uopt u1) (uopt u2)
     | Umatch u1 u2 => umatch (uopt u1) (uopt u2)
-    | Ucomp u1 u2 => ucomp (uopt u1) (uopt u2)
-    | Uinl t u1 => Uinl t (uopt u1)
-    | Uinr t u2 => Uinr t (uopt u2)
+    | Ucomp u1 u2 => ucomp' (uopt u2) (uopt u1)
     | Ucons u1 u2 => Ucons (uopt u1) (uopt u2)
-    | Ufst u1 => Ufst (uopt u1)
-    | Usnd u1 => Usnd (uopt u1)
     | Umap u1 => Umap (uopt u1)
     | u' => u'
   end.
@@ -2527,18 +2529,8 @@ Proof.
   remember (decorate (force m) u2) as e2. destruct e2 ; try congruence.
   destruct s. specialize (IHu2 _ _ _ (eq_sym Heqe2)). injection H. mysimp. subst. auto.
   remember (force m) as e. destruct e ; try congruence.
-  remember (decorate e1 u) as e. destruct e ; try congruence. destruct s.
-  injection H. mysimp. subst. mysimp. clear H. 
-  specialize (IHu (Val e1) _ _ (eq_sym Heqe0)). auto.
   remember (force m) as e. destruct e ; try congruence. 
-  remember (decorate e2 u) as e. destruct e ; try congruence. destruct s.
-  injection H. mysimp. subst. mysimp. clear H.
-  specialize (IHu (Val e2) _ _ (eq_sym Heqe0)). auto.
-  remember (decorate (force m0) u) as e1. destruct e1 ; try congruence. destruct s.
-  injection H. mysimp. subst. specialize (IHu _ _ _ (eq_sym Heqe1)). rewrite IHu. auto.
-  remember (decorate (force m0) u) as e1. destruct e1 ; try congruence. destruct s.
-  injection H. mysimp. subst. mysimp. clear H.
-  rewrite (IHu _ _ _ (eq_sym Heqe1)). auto. 
+  injection H. mysimp. injection H. mysimp.
   remember (force m) as t0. destruct t0 ; try congruence.
   remember (decorate t0_1 u1) as e1. destruct e1 ; try congruence. destruct s.
   specialize (IHu1 (Val t0_1) _ _ (eq_sym Heqe1)). 
@@ -2572,87 +2564,87 @@ Lemma ucomp_corr : forall u1 t1 t2 (x1:t1 ->> t2),
     decorate t2 u2 = Some (existT _ t3 x2) -> 
     decorate t1 (ucomp u1 u2) = Some (existT _ t3 (xcomp x1 x2)).
 Proof.
-  induction u1 ; simpl ; intros ; auto ; try congruence ; repeat uc_simp. 
-  destruct t1 ; try congruence. uc_simp. rewrite (decorate_synth _ _ H0). auto.
-  simpl. specialize (IHu1_1 _ _ _ (eq_sym HeqH1) t3 (xcomp x4 x2) (ucomp u1_2 u2)). 
-  apply IHu1_1. clear IHu1_1. specialize (IHu1_2 _ _ _ (eq_sym HeqH0) t3 x2 u2). 
-  apply IHu1_2. auto. destruct u2 ; simpl in * ; try congruence ; repeat uc_simp.
-  destruct x1 ; try congruence. repeat uc_simp. 
-  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence.
-  destruct x1 ; try congruence. repeat uc_simp.
-  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence.
-  destruct x1 ; try congruence ; repeat uc_simp. simpl.
-  rewrite (@decorate_synth u2 m _ x0 (eq_sym HeqH)). auto.
-  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence ; simpl. 
-  rewrite <- HeqH1. rewrite <- HeqH0. simpl ; uc_simp.
-  rewrite <- HeqH1. rewrite <- HeqH0. rewrite <- HeqH. rewrite <- HeqH2.
-  simpl ; uc_simp. rewrite <- HeqH1. rewrite <- HeqH0. rewrite <- HeqH. rewrite <- HeqH2. 
-  simpl ; uc_simp. rewrite <- HeqH1. rewrite <- HeqH. simpl ; uc_simp.
-  rewrite <- HeqH0. rewrite <- HeqH. simpl ; uc_simp. 
-  rewrite <- HeqH1. rewrite <- HeqH0. rewrite <- HeqH. simpl ; uc_simp.
-  rewrite <- HeqH1. rewrite <- HeqH0. rewrite <- HeqH. simpl ; uc_simp.
-  destruct x6 ; try congruence. repeat uc_simp. rewrite <- HeqH1. rewrite <- HeqH0.
-  rewrite <- HeqH2. rewrite <- HeqH. destruct (type_dec x6 x6) ; try congruence.
-  rewrite (proof_irrelevance _ e (eq_refl _)). simpl ; uc_simp.
-  destruct t1 ; try congruence ; repeat uc_simp. destruct u2 ; simpl in * ; repeat uc_simp ; 
-  rewrite <- HeqH1 ; auto. destruct t2 ; try congruence ; repeat uc_simp.
-  rewrite <- HeqH. rewrite <- HeqH0. auto. rewrite <- HeqH. rewrite <- HeqH0. auto.
-  destruct t2 ; try congruence ; repeat uc_simp. destruct t2 ; try congruence ; 
-  repeat uc_simp. rewrite <- HeqH. auto. rewrite <- HeqH ; auto. 
-  destruct t2 ; try congruence ; repeat uc_simp. destruct x3 ; try congruence ; 
-  repeat uc_simp. rewrite <- HeqH. rewrite <- HeqH0. destruct (type_dec x3 x3) ; try
-  congruence. rewrite (proof_irrelevance _ e (eq_refl _)). simpl ; uc_simp.
-  destruct t2 ; try congruence ; repeat uc_simp. 
+  induction u1 ; simpl ; intros ; auto ; try congruence ; repeat uc_simp ; 
+    try (destruct u2 ; simpl in * ; repeat uc_simp ; try congruence ; destruct x1 ; 
+    try congruence ; repeat uc_simp ; fail).
+  destruct t1 ; try congruence ; uc_simp. rewrite (decorate_synth _ _ H0). auto.
+  simpl. 
+
+  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence. 
+  destruct x1 ; try congruence. destruct (type_dec x x1) ; try congruence. 
+  subst. simpl. uc_simp.
+
+  simpl. rewrite (@decorate_synth u2 m _ x0 (eq_sym HeqH)). auto.
+
+  clear IHu1_1 IHu1_2. destruct u2 ; simpl in * ; repeat uc_simp ; try congruence ; 
+  rewrite <- HeqH1 ; rewrite <- HeqH0 ; simpl ; auto ; rewrite <- HeqH ; 
+    rewrite <- HeqH2 ; simpl ; auto. 
+  destruct x6 ; try congruence ; repeat uc_simp. 
+
   destruct t1 ; try congruence ; repeat uc_simp. 
-  specialize (IHu1 _ _ x0 (eq_sym HeqH1) _ x2 u2 H0). 
-  destruct u2 ; simpl in * ; repeat uc_simp. rewrite <- HeqH1.  auto.
-  rewrite <- HeqH1. destruct t2 ; try congruence. repeat uc_simp.
-  rewrite <- HeqH1. rewrite <- HeqH. rewrite <- HeqH0. auto.
-  rewrite <- HeqH1. rewrite <- HeqH. rewrite <- HeqH0. auto.
-  rewrite <- HeqH1. destruct t2 ; try congruence ; repeat uc_simp.
-  rewrite <- HeqH1. destruct t2 ; try congruence ; repeat uc_simp.
-  rewrite <- HeqH1. rewrite <- HeqH. auto. rewrite <- HeqH1. rewrite <- HeqH. auto.
-  rewrite <- HeqH1. destruct t2 ; try congruence ; repeat uc_simp.
-  rewrite <- HeqH1. rewrite <- HeqH. rewrite <- HeqH0. destruct x3 ; 
-  try congruence ; repeat uc_simp. rewrite <- HeqH1. destruct t2 ; 
-  try congruence ; repeat uc_simp. 
-  destruct u2 ; simpl in * ; try congruence ; repeat uc_simp ; 
-    rewrite <- HeqH1 ; simpl ; try uc_simp ; rewrite <- HeqH ; simpl ; try uc_simp ; 
-      rewrite <- HeqH0 ; simpl ; try uc_simp.
-  destruct x4 ; try congruence ; repeat uc_simp.
-  destruct u2 ; simpl in * ; try congruence ; repeat uc_simp ; 
-    rewrite <- HeqH1 ; simpl ; try uc_simp ; try rewrite <- HeqH ; try rewrite <- HeqH0 ; 
-      simpl ; try uc_simp. destruct x4 ; try congruence ; repeat uc_simp.
+  destruct u2 ; simpl in * ; repeat uc_simp ; try
+  congruence ; try (destruct t2 ; try congruence ; uc_simp) ; repeat uc_simp.
+  destruct x1 ; try congruence ; repeat uc_simp. 
+
   destruct t1 ; try congruence ; repeat uc_simp.
-  destruct u2 ; simpl in * ; try congruence ; repeat uc_simp ; rewrite <- HeqH1 ; 
-    try rewrite <- HeqH ; try rewrite <- HeqH0 ; simpl ; try uc_simp ; 
-  try (destruct (type_dec t2 t2) ; try congruence ; 
-    rewrite (proof_irrelevance _ e (eq_refl _))).
-  destruct (type_dec t3 t3) ; try congruence ; 
-    rewrite (proof_irrelevance _ e (eq_refl _)) ; simpl ; repeat uc_simp.
-  destruct t2 ; try congruence ; simpl ; repeat uc_simp. 
-  rewrite <- HeqH. rewrite <- HeqH2. auto. rewrite <- HeqH2. rewrite <- HeqH. auto.
-  destruct t2 ; try congruence ; simpl ; repeat uc_simp.
-  destruct t2 ; try congruence ; simpl ; repeat uc_simp.
-  rewrite <- HeqH. auto. rewrite <- HeqH. auto. 
-  destruct t2 ; try congruence ; simpl ; repeat uc_simp.
-  destruct x3 ; try congruence ; simpl ; repeat uc_simp. rewrite <- HeqH.
-  rewrite <- HeqH2. destruct (type_dec x3 x3) ; try congruence.
-  rewrite (proof_irrelevance _ e0 (eq_refl _)). simpl ; uc_simp.
-  destruct t2 ; try congruence ; simpl ; repeat uc_simp.
-  destruct x3 ; try congruence ; simpl ; repeat uc_simp.
-  destruct u2 ; simpl in * ; try congruence ; repeat uc_simp ; rewrite <- HeqH1 ; 
-    rewrite <- HeqH0 ; try (
-  destruct (type_dec x3 x3) ; try congruence ; rewrite (proof_irrelevance _ e (eq_refl _)) ; 
-    simpl ; repeat uc_simp) ; try rewrite <- HeqH ; try rewrite <- HeqH2 ; simpl ; 
-    repeat uc_simp. destruct x5 ; try congruence. 
-  destruct (type_dec x x5) ; try congruence. subst. simpl. repeat uc_simp.
-  destruct (type_dec x x) ; try congruence. rewrite (proof_irrelevance _ e (eq_refl _)).
-  simpl ; repeat uc_simp. destruct t1 ; try congruence.
-  destruct u2 ; simpl in * ; try congruence ; repeat uc_simp ; try congruence ; 
-    rewrite <- HeqH1 ; simpl ; repeat uc_simp ; rewrite <- HeqH2 ; simpl ; repeat uc_simp.
-  destruct x3 ; try congruence. destruct (type_dec x x3) ; try congruence.
-  subst. repeat uc_simp.
+  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence ; 
+    try (destruct t2 ; try congruence ; uc_simp) ; repeat uc_simp.
+  destruct x1 ; try congruence ; repeat uc_simp.
+
+  destruct t1 ; try congruence ; repeat uc_simp. simpl. clear IHu1_1 IHu1_2.
+  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence ; 
+    rewrite <- HeqH1 ; rewrite <- HeqH0 ; 
+      match goal with 
+        | [ |- context[type_dec ?e1 ?e1] ] => 
+          destruct (type_dec e1 e1) ; try congruence ; 
+            rewrite (@proof_irrelevance _ e (eq_refl _)) ; clear e ; auto
+      end ; try (rewrite <- HeqH ; rewrite <- HeqH2 ; simpl ; auto) ; 
+      try (destruct t2 ; try congruence ; repeat uc_simp ; fail).
+  destruct x3 ; try congruence ; repeat uc_simp.
+  
+  destruct x3 ; try congruence ; repeat uc_simp. simpl. clear IHu1_1 IHu1_2.
+  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence ; 
+    try rewrite <- HeqH1 ; rewrite <- HeqH0 ;
+      match goal with 
+        | [ |- context[type_dec ?e1 ?e1] ] => 
+          destruct (type_dec e1 e1) ; try congruence ; 
+            rewrite (@proof_irrelevance _ e (eq_refl _)) ; clear e ; auto
+        | _ => idtac
+      end ; try rewrite <- HeqH ; try rewrite <- HeqH2 ; auto.
+  destruct x5 ; try congruence ; repeat uc_simp.
+  destruct (type_dec x x) ; try congruence. 
+  rewrite (@proof_irrelevance _ e (eq_refl _)). auto.
+
+  destruct t1 ; try congruence ; uc_simp. destruct s. uc_simp. clear IHu1.
+  destruct u2 ; simpl in * ; repeat uc_simp ; try congruence ;
+    (try rewrite <- HeqH1) ; auto ; 
+      (try rewrite <- HeqH1) ; (try rewrite <- HeqH0) ; (try rewrite <- HeqH) ; auto.
+    rewrite <- HeqH0. auto. 
+  destruct x4 ; try congruence. repeat uc_simp.
+Qed.
+
+Lemma ucomp'_corr : forall u2 t2 t3 (x2:t2->>t3),
+  decorate t2 u2 = Some (existT _ t3 x2) -> 
+  forall t1 (x1:t1 ->> t2) u1,
+    decorate t1 u1 = Some (existT _ t2 x1) -> 
+    decorate t1 (ucomp' u2 u1) = Some (existT _ t3 (xcomp' x2 x1)).
+Proof.
+  induction u2 ; simpl ; intros ; auto ; try congruence ; repeat uc_simp ; 
+    simpl ; try apply ucomp_corr ; auto ; 
+  match goal with 
+    | [ H : match ?t as _ return _ with
+              | Unit_t => _ | Char_t => _ | Void_t => _ | Pair_t _ _ => _
+              | Sum_t _ _ => _ | List_t _ => _ | User_t _ => _ end = _ |- _ ] => 
+    destruct t ; try congruence ; repeat uc_simp ; simpl ; apply ucomp_corr ; auto
+    | _ => idtac
+  end.
+  specialize (IHu2_1 _ _ _ (eq_sym HeqH1) _ _ _ H0). rewrite IHu2_1.
+  specialize (IHu2_2 _ _ _ (eq_sym HeqH0) _ _ _ H0). rewrite IHu2_2. auto.
+  simpl. rewrite <- HeqH1. rewrite <- HeqH0. destruct (type_dec t3 t3) ; try congruence.
+  rewrite (@proof_irrelevance _ e (eq_refl _)). auto.
+  destruct x3 ; try congruence ; repeat uc_simp. simpl. apply ucomp_corr ; auto.
+  simpl. rewrite <- HeqH1. rewrite <- HeqH0. destruct (type_dec x3 x3) ; try congruence.
+  rewrite (@proof_irrelevance _ e (eq_refl _)) ; auto. simpl. rewrite <- HeqH1. auto.
 Qed.
 
 Ltac up_simp := 
@@ -2700,8 +2692,6 @@ Lemma upair_corr : forall u1 ta tb (x1:ta->>tb),
 Proof.
   intros.
   destruct u1 ; up_help ; repeat up_rw.
-  destruct u1 ; up_help ; repeat up_rw.
-  destruct u2 ; up_help ; repeat up_rw.
   destruct u2 ; up_help ; repeat up_rw.
 Qed.
 
@@ -2725,16 +2715,10 @@ Lemma umatch_corr : forall u1 ta t (x1:ta->>t),
 Proof.
   intros.
   destruct u1 ; up_help ; repeat us_help.
-  destruct u1 ; up_help ; repeat us_help.
   destruct u2 ; up_help ; repeat us_help ; try discriminate. rewrite H0 in H. mysimp. 
-  generalize HeqH H. clear HeqH H. rewrite e0. simpl. clear H0. 
-  rewrite <- e0. intros. mysimp.
-  destruct u2 ; up_help ; repeat us_help ; subst ; 
-    try (clear H0 e ; generalize (force m) e0 x0 H ; clear e0 x0 H ; intros t e0 ; subst ; 
-      simpl ; intros ; mysimp ; fail) ; simpl ; uc_simp. 
-  clear e0 H0. generalize (force m) e1 x0 H ; clear e1 x0 H. intros t e1 ; subst ; 
-  simpl ; intros ; mysimp. subst. repeat uc_simp. up_help. repeat us_help.
-  repeat uc_simp. up_help. repeat us_help.
+  rewrite <- e0 in *. simpl. clear e e0 H0.
+  generalize (inj_pairT2 _ (fun x => ta ->> x) (Sum_t ta (force m)) _ _ H).  
+  intros. subst. simpl. auto.
 Qed.
 
 (** Prove that the untyped optimizer for [uform]s is equivalent to the
@@ -2743,7 +2727,7 @@ Lemma uopt_corr : forall t1 t2 (x:t1 ->> t2),
   decorate t1 (uopt (erase x)) = Some (existT _ t2 (xopt x)).
 Proof.
   induction x ; simpl ; auto ; try (rewrite IHx ; auto). 
-  apply (ucomp_corr _ IHx1 _ IHx2).
+  apply (ucomp'_corr _ IHx2 _ IHx1).
   apply (upair_corr _ IHx1 _ IHx2).
   apply (umatch_corr _ IHx1 _ IHx2). 
   rewrite IHx1. rewrite IHx2. destruct (type_dec t2 t2) ; try congruence. 
@@ -2754,14 +2738,16 @@ Definition thunk {A B} (f:A -> B) (x:A) : memo B := Thunk (fun _ => f x).
 
 (** Now build optimizations for [astgram]s paired with [uform]s as done
     above with [xform]s and prove they are equivalent. *)
+(*
 Definition uassoc_left_sum t1 t2 t3 := 
   Umatch (Uinl t3 (Uinl t2 Uid))
          (Umatch (Uinl t3 (Uinr t1 Uid)) 
                  (Uinr (Thunk (fun _ => Sum_t (force t1) (force t2))) Uid)).
+*)
 
 Fixpoint uappend_alt (ag1 ag2:astgram) : astgram * uform := 
   match ag1 with 
-    | aZero => (ag2, Uinr (Val Void_t) Uid)
+    | aZero => (ag2, Uinr (Val Void_t))
 (*
    Too expensive to do all the time, so omit.  The longer proof of 
    equivalence is also commented out below. 
@@ -2775,7 +2761,7 @@ Fixpoint uappend_alt (ag1 ag2:astgram) : astgram * uform :=
 *)
     | ag1' => 
       match ag2 with 
-        | aZero => (ag1', Uinl (Val Void_t) Uid)
+        | aZero => (ag1', Uinl (Val Void_t))
         | ag2' => (aAlt ag1' ag2', Uid)
       end
   end.
@@ -2916,15 +2902,15 @@ Fixpoint unull_and_split (ag1:astgram) : astgram * uform :=
       let (ag11', f1) := unull_and_split ag11 in
         let (ag12', f2) := unull_and_split ag12 in
           opt_aguf (aAlt ag11' ag12')
-                    (Umatch (Uinl (thunk astgram_type ag12) f1) 
-                            (Uinr (thunk astgram_type ag11) f2))
+                    (Umatch (Ucomp f1 (Uinl (thunk astgram_type ag12)))
+                            (Ucomp f2 (Uinr (thunk astgram_type ag11))))
     | aCat ag11 ag12 =>
       let (ag11', f1) := unull_and_split ag11 in 
         match ag11' with 
           | aZero => (aZero, Uzero (thunk astgram_type (aCat ag11 ag12)))
           | ag11'' => 
             let (ag12', f2) := unull_and_split ag12 in 
-              opt_aguf (aCat ag11'' ag12') (Upair (Ufst f1) (Usnd f2))
+              opt_aguf (aCat ag11'' ag12') (Upair (Ucomp Ufst f1) (Ucomp Usnd f2))
         end
     | aStar ag11 => (aEps, Uempty (thunk astgram_type ag11))
   end.
@@ -2967,23 +2953,24 @@ Fixpoint uderiv_and_split (ag1:astgram) (c:char_p) : astgram * uform :=
       let (ag11', f1) := uderiv_and_split ag11 c in 
         let (ag12', f2) := uderiv_and_split ag12 c in 
           opt_aguf (aAlt ag11' ag12') 
-            (Umatch (Uinl (thunk astgram_type ag12) f1) (Uinr (thunk astgram_type ag11) f2))
+            (Umatch (Ucomp f1 (Uinl (thunk astgram_type ag12))) 
+                    (Ucomp f2 (Uinr (thunk astgram_type ag11))))
     | aCat ag11 ag12 => 
       let (ag11', f1) := uderiv_and_split ag11 c in 
         let (ag_left, f_left) := uopt_ag (aCat ag11' ag12) in
           let (ag11null', fnull) := unull_and_split ag11 in 
             match ag11null' with 
-              | aZero => (ag_left, Ucomp f_left (Upair (Ufst f1) (Usnd Uid)))
+              | aZero => (ag_left, Ucomp f_left (Upair (Ucomp Ufst f1) Usnd))
               | ag11null => 
                 let (ag12', f2) := uderiv_and_split ag12 c in 
                   let (ag_right, f_right) := uopt_ag (aCat ag11null ag12') in
                     opt_aguf (aAlt ag_left ag_right)
-                    (Umatch (Ucomp f_left (Upair (Ufst f1) (Usnd Uid))) 
-                      (Ucomp f_right (Upair (Ufst fnull) (Usnd f2))))
+                    (Umatch (Ucomp f_left (Upair (Ucomp Ufst f1) Usnd)) 
+                      (Ucomp f_right (Upair (Ucomp Ufst fnull) (Ucomp Usnd f2))))
             end
     | aStar ag0 => 
       let (ag0', f) := uderiv_and_split ag0 c in 
-        opt_aguf (aCat ag0' (aStar ag0)) (Ucons (Ufst f) (Usnd Uid))
+        opt_aguf (aCat ag0' (aStar ag0)) (Ucons (Ucomp Ufst f) Usnd)
   end.
 
 (** Proof that untyped derivative-and-split is equivalent to typed one. *)
@@ -3014,11 +3001,12 @@ Proof.
   remember (uappend_cat a0 a1) as e9 ; destruct e9. 
   simpl.
   generalize (@opt_aguf_corr _ (aAlt (fst (uappend_cat a ag1_2)) (fst (uappend_cat a0 a1)))
-    (Xmatch (Xcomp x6 (Xpair (Xfst (astgram_type ag1_2) x0) 
-      (Xsnd (astgram_type a) (Xid (astgram_type ag1_2)))))
-      (Xcomp x8 (Xpair (Xfst (astgram_type a1) x2) (Xsnd (astgram_type a0) x4))))
-    (Umatch (Ucomp u2 (Upair (Ufst u) (Usnd Uid))) (Ucomp u3 (Upair (Ufst u0) (Usnd u1))))).
-  
+    (Xmatch (Xcomp x6 (Xpair (Xcomp (Xfst _ _) x0) 
+      (Xsnd (astgram_type a) (astgram_type ag1_2))))
+      (Xcomp x8 (Xpair (Xcomp (Xfst _ _) x2) 
+                       (Xcomp (Xsnd _ _) x4))))
+    (Umatch (Ucomp u2 (Upair (Ucomp Ufst u) Usnd)) 
+      (Ucomp u3 (Upair (Ucomp Ufst u0) (Ucomp Usnd u1))))).
   subst ; simpl in *. assert (H:u2 = snd (uappend_cat a ag1_2)) ;
   [ rewrite <- Heqe8 ; auto | idtac ] ; rewrite <- H in H3 ; rewrite H3 ; rewrite H8.
   assert (H0:u3 = snd (uappend_cat a0 a1)). rewrite <- Heqe6 ; auto. rewrite <- H0 in H2.
@@ -3026,9 +3014,10 @@ Proof.
   repeat us_help ; unfold xcoerce, eq_rec_r, eq_rec, eq_rect ; simpl ;
   intro H1 ; specialize (H1 (eq_refl _)).
   remember (opt_agxf (aAlt (fst (uappend_cat a ag1_2)) (fst (uappend_cat a0 a1)))
-    (Xmatch (Xcomp x6 (Xpair (Xfst (astgram_type ag1_2) x0) 
-      (Xsnd (astgram_type a) (Xid (astgram_type ag1_2)))))
-      (Xcomp x8 (Xpair (Xfst (astgram_type a1) x2) (Xsnd (astgram_type a0) x4))))) as x.
+    (Xmatch (Xcomp x6 (Xpair (Xcomp (Xfst _ _) x0) 
+      (Xsnd (astgram_type a) (astgram_type ag1_2))))
+      (Xcomp x8 (Xpair (Xcomp (Xfst _ _) x2) 
+                       (Xcomp (Xsnd _ _) x4))))) as x.
   destruct x. destruct H1. subst. 
   assert (a2 = fst (uappend_cat a ag1_2)). rewrite <- Heqe8 ; auto.
   assert (a3 = fst (uappend_cat a0 a1)). rewrite <- Heqe6 ; auto. subst. 
@@ -3053,7 +3042,7 @@ Fixpoint uderivs_and_split (ag:astgram) (cs:list char_p) : astgram * uform :=
     | c::cs' => 
       let (ag1, x1) := uderiv_and_split ag c in 
         let (ag2, x2) := uderivs_and_split ag1 cs' in 
-          (ag2, ucomp x2 x1)
+          (ag2, ucomp' x1 x2)
   end.
 
 Lemma uderivs_and_split_corr cs ag : 
@@ -3071,7 +3060,7 @@ Proof.
   remember (derivs_and_split (fst (uderiv_and_split ag a)) cs) as e2. destruct e2. 
   destruct IHcs. subst. simpl. remember (uderiv_and_split ag a) as e3. destruct e3.
   simpl in *. remember (uderivs_and_split a0 cs) as e4. destruct e4 ; simpl in *.
-  split ; auto. eapply ucomp_corr ; auto.
+  split ; auto. eapply ucomp'_corr ; auto.
 Qed.
   
 (** Construction of "untyped" DFA. *)
