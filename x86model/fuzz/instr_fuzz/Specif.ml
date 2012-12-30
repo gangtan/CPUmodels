@@ -1,3 +1,5 @@
+open Datatypes
+
 type __ = Obj.t
 let __ = let rec f _ = Obj.repr f in Obj.repr f
 
@@ -82,29 +84,37 @@ let sig_of_sigT = function
 let sigT_of_sig x =
   Coq_existT (x, __)
 
-(** val sumbool_rect : (__ -> 'a1) -> (__ -> 'a1) -> bool -> 'a1 **)
+type sumbool =
+| Coq_left
+| Coq_right
+
+(** val sumbool_rect : (__ -> 'a1) -> (__ -> 'a1) -> sumbool -> 'a1 **)
 
 let sumbool_rect f f0 = function
-| true -> f __
-| false -> f0 __
+| Coq_left -> f __
+| Coq_right -> f0 __
 
-(** val sumbool_rec : (__ -> 'a1) -> (__ -> 'a1) -> bool -> 'a1 **)
+(** val sumbool_rec : (__ -> 'a1) -> (__ -> 'a1) -> sumbool -> 'a1 **)
 
 let sumbool_rec f f0 = function
-| true -> f __
-| false -> f0 __
+| Coq_left -> f __
+| Coq_right -> f0 __
 
-(** val sumor_rect : ('a1 -> 'a2) -> (__ -> 'a2) -> 'a1 option -> 'a2 **)
+type 'a sumor =
+| Coq_inleft of 'a
+| Coq_inright
+
+(** val sumor_rect : ('a1 -> 'a2) -> (__ -> 'a2) -> 'a1 sumor -> 'a2 **)
 
 let sumor_rect f f0 = function
-| Some x -> f x
-| None -> f0 __
+| Coq_inleft x -> f x
+| Coq_inright -> f0 __
 
-(** val sumor_rec : ('a1 -> 'a2) -> (__ -> 'a2) -> 'a1 option -> 'a2 **)
+(** val sumor_rec : ('a1 -> 'a2) -> (__ -> 'a2) -> 'a1 sumor -> 'a2 **)
 
 let sumor_rec f f0 = function
-| Some x -> f x
-| None -> f0 __
+| Coq_inleft x -> f x
+| Coq_inright -> f0 __
 
 (** val coq_Choice : ('a1 -> 'a2) -> ('a1 -> 'a2) **)
 
@@ -118,20 +128,18 @@ let coq_Choice2 h =
   Coq_existT ((fun z -> projT1 (h z)), (fun z ->
     let s = h z in let Coq_existT (x, r) = s in r))
 
-(** val bool_choice : ('a1 -> bool) -> ('a1 -> bool) **)
+(** val bool_choice : ('a1 -> sumbool) -> ('a1 -> bool) **)
 
 let bool_choice h z =
-  if h z then true else false
+  match h z with
+  | Coq_left -> true
+  | Coq_right -> false
 
-(** val dependent_choice : ('a1 -> 'a1) -> 'a1 -> (Big.big_int -> 'a1) **)
+(** val dependent_choice : ('a1 -> 'a1) -> 'a1 -> (nat -> 'a1) **)
 
-let rec dependent_choice h x0 n =
-  Big.nat_case
-    (fun _ ->
-    x0)
-    (fun n' ->
-    h (dependent_choice h x0 n'))
-    n
+let rec dependent_choice h x0 = function
+| 0 -> x0
+| n' -> h (dependent_choice h x0 n')
 
 type 'a coq_Exc = 'a option
 

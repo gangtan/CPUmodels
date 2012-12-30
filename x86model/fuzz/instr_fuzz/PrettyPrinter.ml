@@ -13,7 +13,6 @@ let addrSize = OpSize32
 
 (** Util functions *)
 
-
 let mkPrefix l so oo ao =
   {lock_rep = l; seg_override = so; op_override = oo; addr_override = ao}
 
@@ -58,6 +57,20 @@ let str_of_segreg seg = match seg with
   | DS -> "ds"
   | FS -> "fs"
   | GS -> "gs";;
+
+let str_of_controlreg cr = match cr with 
+  | CR0 -> "CR0"
+  | CR2 -> "CR2"
+  | CR3 -> "CR3"
+  | CR4 -> "CR4";;
+
+let str_of_debugreg db = match db with 
+  | DR0 -> "DR0"
+  | DR1 -> "DR1"
+  | DR2 -> "DR2"
+  | DR3 -> "DR3"
+  | DR6 -> "DR6"
+  | DR7 -> "DR7";;
 
 (*
 let flag_to_str f = match f with
@@ -350,6 +363,7 @@ let pp_instr (prefix, ins) =
 	| Some n -> Printf.printf "%s" (to_string n)
 	| None -> ())
     | IN (w, Some p) -> Printf.printf "in %s%s" (if w then "true" else "false") (to_string p)
+    | IN (w, None) -> Printf.printf "in %s" (if w then "true" else "false")
     | INC (w,a) -> Printf.printf "inc %s" (pp_one_op (w,a))
     | INS (w) -> Printf.printf "ins %s" (if w then "true" else "false")
     | INTn (n) -> Printf.printf "intn %s" (to_string n)
@@ -377,14 +391,34 @@ let pp_instr (prefix, ins) =
     | LEAVE -> Printf.printf "leave"
     | LES (a,b) -> Printf.printf "les %s" (pp_two_ops (true,a,b))
     | LFS (a,b) -> Printf.printf "lfs %s" (pp_two_ops (true,a,b))
+    | LGDT (a) -> Printf.printf "lgdt %s" (pp_one_op (true, a))
     | LGS (a,b) -> Printf.printf "lgs %s" (pp_two_ops (true,a,b))
+    | LIDT (op) -> Printf.printf "lidt %s" (pp_one_op (true, op))
+    | LLDT (op) -> Printf.printf "lldt %s" (pp_one_op (true, op))
+    | LMSW (op) -> Printf.printf "lmsw %s" (pp_one_op (true, op)) 
+    | LODS (w) -> Printf.printf "lods %s" (if w then "true" else "false")
+    | LOOP (disp) -> Printf.printf "loop %s" (to_string disp)
+    | LOOPZ (disp) -> Printf.printf "loopz %s" (to_string disp)
+    | LOOPNZ (disp) -> Printf.printf "loopnz %s" (to_string disp)
+    | LSL (a,b) -> Printf.printf "lsl %s" (pp_two_ops (true,a,b))
     | LSS (a,b) -> Printf.printf "lss %s" (pp_two_ops (true,a,b))
+    | LTR (op) -> Printf.printf "ltr %s" (pp_one_op (true, op))    
 
     | MOV (w,a,b) -> Printf.printf "mov %s" (pp_two_ops (true,a,b))
+    | MOVCR (d, cr, reg) ->
+      if d then 
+	Printf.printf "movcr %s, %s" (str_of_reg OpSize32 reg) (str_of_controlreg cr)
+      else Printf.printf "movcr %s, %s" (str_of_controlreg cr) (str_of_reg OpSize32 reg)
+    | MOVDR (d, dr, reg) ->
+      if d then 
+	Printf.printf "movdr %s, %s" (str_of_reg OpSize32 reg) (str_of_debugreg dr)
+      else Printf.printf "movdr %s, %s" (str_of_debugreg dr) (str_of_reg OpSize32 reg)
     | MOVSR (d,seg,op) -> 
       if d then 
 	Printf.printf "mov %s, %s" (pp_one_op (true,op)) (str_of_segreg seg)
       else Printf.printf "mov %s, %s" (str_of_segreg seg) (pp_one_op (true,op))
+    | MOVBE (op1, op2) -> Printf.printf "movbe %s" (pp_two_ops (true, op1, op2))    
+
     | MOVS w -> 
       Printf.printf "movs %s" 
 	(pp_two_ops (w, Address_op (mkAddress zero (Some EDI) None), 
@@ -399,15 +433,33 @@ let pp_instr (prefix, ins) =
 
     | MUL (w,op) -> Printf.printf "mul %s" (pp_one_op (w,op))
     | NEG (w,a) -> Printf.printf "neg %s" (pp_one_op (w,a))
-    | NOP (Some op) -> Printf.printf "nop %s" (pp_one_op (true,op))
+    | NOP  (op) -> Printf.printf "nop %s" (pp_one_op (true,op))
     | NOT (w,a) -> Printf.printf "not %s" (pp_one_op (w,a))
     | OR  (w,a,b) -> Printf.printf "or %s"  (pp_two_ops (w,a,b))
-
+    | OUT (w, Some n) -> Printf.printf "out %s %s" 
+			 (if w then "true" else "false") (to_string n)
+    | OUT (w, None) -> Printf.printf "out %s"
+	 		 (if w then "true" else "false")
+   
+    | OUTS (w) -> Printf.printf "outs %s"
+	 		 (if w then "true" else "false")
     | POP op -> Printf.printf "pop %s" (pp_one_op (true,op))
+    | POPA -> Printf.printf "popa"
     | POPF -> Printf.printf "popf"
     | PUSH (w,a) -> Printf.printf "push %s" (pp_one_op (w,a))
+    | PUSHA -> Printf.printf "pusha"
     | PUSHF -> Printf.printf "pushf"
+    | PUSHSR seg -> Printf.printf "pushsr %s" (str_of_segreg seg)
     | POPSR seg -> Printf.printf "pop %s" (str_of_segreg seg)
+
+    | RCL (w,op,ri) -> 
+      Printf.printf "rcl %s, %s" (pp_one_op (w,op)) (reg_or_imm_to_str OpSize32 ri)
+    | RCR (w,op,ri) -> 
+      Printf.printf "rcr %s, %s" (pp_one_op (w,op)) (reg_or_imm_to_str OpSize32 ri)
+    | RDMSR -> Printf.printf "rdmsr"
+    | RDPMC -> Printf.printf "rdpmc"
+    | RDTSC -> Printf.printf "rdtsc"
+    | RDTSCP -> Printf.printf "rdtscp"
     | RET (sameseg, disp) -> 
       let disp_s = match disp with
 	| Some n -> to_string n
@@ -422,17 +474,19 @@ let pp_instr (prefix, ins) =
     | ROR (w,op,ri) ->
       Printf.printf "ror %s, %s" (pp_one_op (w,op))
 	(reg_or_imm_to_str OpSize32 ri)
-
+    
+    | RSM -> Printf.printf "rsm"
     | SAHF -> Printf.printf "sahf"
 
     | SAR (w,op,ri) -> 
       Printf.printf "sar %s, %s" (pp_one_op (w,op)) (reg_or_imm_to_str OpSize32 ri)
+    | SBB (w, a, b) -> Printf.printf "sbb %s" (pp_two_ops (w, a, b))
     | SCAS w ->
       Printf.printf "scas %s"
 	(pp_two_ops (w, Reg_op EAX, Address_op (mkAddress zero (Some EDI) None)))
     | SETcc (ct,op) ->
       Printf.printf "set%s %s" (cond_ty_to_str ct) (pp_one_op (false,op))
-
+    | SGDT (a) -> Printf.printf "sgdt %s" (pp_one_op (true, a))
     | SHL (w,op,ri) -> 
       Printf.printf "shl %s, %s" (pp_one_op (w,op))
 	(reg_or_imm_to_str OpSize32 ri)
@@ -447,8 +501,15 @@ let pp_instr (prefix, ins) =
       Printf.printf "shrd %s, %s, %s"
 	(pp_one_op (true,op)) (str_of_reg OpSize32 r)
 	(reg_or_imm_to_str OpSize32 ri)
+    | SIDT (a) -> Printf.printf "sidt %s" (pp_one_op (true, a))
+    | SLDT (a) -> Printf.printf "sldt %s" (pp_one_op (true, a))
+    | SMSW (a) -> Printf.printf "smsw %s" (pp_one_op (true, a))
+    | STC -> Printf.printf "stc"
+    | STD -> Printf.printf "std"
+    | STI -> Printf.printf "sti"
+    | STR (a) -> Printf.printf "str %s" (pp_one_op (true, a))
 
-    | SBB (w,a,b) -> Printf.printf "sbb %s" (pp_two_ops (w,a,b))
+    | SBB (w,a,b) -> Printf.printf "sbb %s" (pp_two_ops (w,a,b)) 
     | SUB (w,a,b) -> Printf.printf "sub %s" (pp_two_ops (w,a,b))
 
     | STMXCSR sop -> Printf.printf "stmxcsr %s" (pp_sse_operand sop)
@@ -459,9 +520,16 @@ let pp_instr (prefix, ins) =
 		    Reg_op EAX))
 
     | TEST (w,a,b) -> Printf.printf "test %s" (pp_two_ops (w,a,b))
+ 
+    | UD2 -> Printf.printf "ud2"
+    | VERR (a) -> Printf.printf "verr %s" (pp_one_op (true, a))
+    | VERW (a) -> Printf.printf "verw %s" (pp_one_op (true, a))
+    | WBINVD -> Printf.printf "wbinvd"
+    | WRMSR -> Printf.printf "wrmsr"
 
     | XADD (w,a,b) -> Printf.printf "xadd %s" (pp_two_ops (w,a,b))
     | XCHG (w,a,b) -> Printf.printf "xchg %s" (pp_two_ops (w,a,b))
+    | XLAT -> Printf.printf "xlat"
     | XOR (w,a,b) -> Printf.printf "xor %s" (pp_two_ops (w,a,b))
     | _ -> Printf.printf "???"
 

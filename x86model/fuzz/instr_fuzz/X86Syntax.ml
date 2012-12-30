@@ -2692,7 +2692,6 @@ type instr =
 | NEG of bool
    * operand
 | NOP of operand
-         option
 | NOT of bool
    * operand
 | OR of bool
