@@ -1,6 +1,6 @@
 open X86Syntax
 open Big
-(*open Enc_dec *)
+open Enc_dec
 open PrettyPrinter
 open Random
 
@@ -686,11 +686,12 @@ let rec fuzz_gp n =
      let prefix = choose_prefix () in
      let instr = choose_gp_instr () in 
 
-   (*  test_encode_decode (prefix, instr); *)
-   (*  pp_prefix_instr (prefix, instr);  *)
-     pp_instr (prefix, instr); 
-     print_string "\n";
-     fuzz_gp (x - 1) 
+     F.printf "------------\nTesting %a\n"
+       pp_prefix_instr (prefix,instr);
+     test_encode_decode_instr prefix instr;
+     Printf.printf "------------\n";
+     F.print_newline (); (* flush *)
+     fuzz_gp (x - 1)
   ;;
 
 Random.self_init();;

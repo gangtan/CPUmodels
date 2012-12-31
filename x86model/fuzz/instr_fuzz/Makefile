@@ -1,15 +1,16 @@
 syntaxfuzzer.native: syntaxfuzzer.ml PrettyPrinter.ml
-	ocamlbuild -verbose 1 -cflag -g -lflag -g syntaxfuzzer.native -lib unix -lib nums
+	ocamlbuild -verbose 1 -cflag -g -lflag -g syntaxfuzzer.native -lib unix -lib nums -Is extract
 
-extraction:: 
-	echo 'Require Import X8x6Syntax. Extraction Blacklist String List. Recursive Extraction Library X86Syntax.' > tmp1.v
-	make -C "../Model/"
-	coqc Fuzz.v -I "../Model/"
-	coqc tmp1.v -I "../Model/"
-	cp Parser.ml_fastarray Parser.ml
-	rm Parser.mli
-	rm *.mli
-	cp cZeven.ml Zeven.ml
+debugging: extraction
+	ocamlbuild -use-ocamlfind -Is ocamlutil,extract -cflag -g -lflag -g main.native
+
+profiling: extraction
+	ocamlbuild -use-ocamlfind -Is ocamlutil,extract -cflag -g -lflag -g main.p.native
+
+extraction::
+	cd extract; make extraction; cd ..
 
 clean::
-	rm -rf _build/
+	ocamlbuild -clean
+	cd extract; make clean; cd ..
+	rm -f *.glob *.vo 

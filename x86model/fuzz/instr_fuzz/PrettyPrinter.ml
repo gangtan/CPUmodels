@@ -1,10 +1,11 @@
 (*open Batteries_uni *)
 
 module F=Format
+module P=Printf
 (*module E=Errormsg *)
 open X86Syntax
 open Big
-(*open Abbrev*)
+open Abbrev
 
 type op_size = OpSize8 | OpSize16 | OpSize32
 
@@ -92,7 +93,7 @@ let str_to_flag s = match s with
   | _ -> None;;
 *)
 
-let cond_ty_to_str ct = match ct with
+let str_of_cond_ty ct = match ct with
   | O_ct -> "o"
   | NO_ct -> "no"
   | B_ct -> "b"
@@ -110,7 +111,7 @@ let cond_ty_to_str ct = match ct with
   | LE_ct -> "le"
   | NLE_ct -> "nle"
 
-let fp_cond_ty_to_str fct = match fct with
+let str_of_fp_cond_ty fct = match fct with
   | B_fct -> "b"
   | E_fct -> "e"
   | BE_fct -> "be"
@@ -120,46 +121,45 @@ let fp_cond_ty_to_str fct = match fct with
   | NBE_fct -> "nbe"
   | NU_fct -> "nu"
 
-let pp_addr (a:address) = 
+let str_of_addr (a:address) = 
   let l1 = match a.addrIndex with
-    | Some (Scale1, idx) -> str_of_reg addrSize idx ^ "*1"
-    | Some (Scale2, idx) -> str_of_reg addrSize idx ^ "*2"
-    | Some (Scale4, idx) -> str_of_reg addrSize idx ^ "*4"
-    | Some (Scale8, idx) -> str_of_reg addrSize idx ^ "*8"
-    | None -> ""
+    | Some (Scale1, idx) -> [str_of_reg addrSize idx ^ "*1"]
+    | Some (Scale2, idx) -> [str_of_reg addrSize idx ^ "*2"]
+    | Some (Scale4, idx) -> [str_of_reg addrSize idx ^ "*4"]
+    | Some (Scale8, idx) -> [str_of_reg addrSize idx ^ "*8"]
+    | None -> []
   in
   let l2 = match a.addrBase with
-    | Some r -> (str_of_reg addrSize r) ^ " " ^ l1
+    | Some r -> (str_of_reg addrSize r) :: l1
     | None -> l1
   in
-  (*let sdisp = signed32_to_hex a.addrDisp in
+  let sdisp = signed32_to_hex a.addrDisp in
   if (Big_int.sign_big_int (signed32 a.addrDisp) = 0) then 
-    Printf.printf "[%s]" (String.concat "+" l2)
+    Printf.sprintf "[%s]" (String.concat "+" l2)
   else if (Big_int.sign_big_int (signed32 a.addrDisp) > 0) then
-    if (List.is_empty l2) then Printf.printf "[%s]" sdisp
-    else Printf.printf "[%s+%s]" (String.concat "+" l2) sdisp
-  else Printf.printf "[%s%s]" (String.concat "+" l2) sdisp *)
-  
-  let sdisp = to_string a.addrDisp in
-    "+" ^ l2 ^ sdisp
+    if (List.length l2 = 0) then Printf.sprintf "[%s]" sdisp
+    else Printf.sprintf "[%s+%s]" (String.concat "+" l2) sdisp
+  else Printf.sprintf "[%s%s]" (String.concat "+" l2) sdisp
 
-let p_size_dir (sz:op_size) = match sz with
+let str_of_size_dir (sz:op_size) = match sz with
     | OpSize8 -> "BYTE PTR "
     | OpSize16 -> "WORD PTR "
     | OpSize32 -> "DWORD PTR "
 
-let reg_or_imm_to_str (sz:op_size) op = match op with
+let str_of_reg_or_imm (sz:op_size) op = match op with
   | Reg_ri r -> str_of_reg sz r
-  | Imm_ri n -> "0x" ^ (to_string n)
+  | Imm_ri n -> "0x" ^ hex_of_big (unsigned8 n)
 
-let pp_operand (sz, op) = 
+
+let str_of_operand (sz, op) = 
   match op with
-    | Reg_op r -> (str_of_reg sz r)
-    | Imm_op n -> (to_string n)
-    | Address_op a -> (p_size_dir sz) ^ (pp_addr a)
-    | Offset_op w -> to_string w
+    | Reg_op r -> str_of_reg sz r
+    | Imm_op n -> unsigned32_to_hex n
+    | Address_op a -> Printf.sprintf "%s %s" (str_of_size_dir sz) (str_of_addr a)
+    | Offset_op w -> Printf.sprintf "[%s]" (unsigned32_to_hex w)
 
-let lock_rep_to_str pre ins = match pre.lock_rep with
+
+let str_of_lock_rep pre ins = match pre.lock_rep with
     | Some Coq_lock -> "lock"
     | Some Coq_rep -> 
       (match ins with 
@@ -168,14 +168,15 @@ let lock_rep_to_str pre ins = match pre.lock_rep with
     | Some Coq_repn -> "repnz"
     | None -> ""
 
-let pp_prefix  (pre,ins) = 
+let str_of_prefix (pre,ins) = 
   let so_s = match pre.seg_override with
     | Some seg -> "seg_override(" ^ str_of_segreg seg ^ ")"
     | None -> ""
   in 
   let op_s = if pre.op_override then "op_override" else "" in
   let addr_s = if pre.addr_override then "addr_override" else "" in
-  (lock_rep_to_str pre ins) ^ so_s ^ op_s ^ addr_s ^ " "
+  Printf.sprintf "%s %s %s %s" (str_of_lock_rep pre ins) so_s op_s addr_s
+
 
 let get_size prefix w = match prefix.op_override, w with
   | true, true -> OpSize16
@@ -185,7 +186,7 @@ let get_size prefix w = match prefix.op_override, w with
 
 let selector_to_str (sel: selector option) = 
   match sel with
-    | Some n -> to_string n
+    | Some n -> hex_of_big (unsigned16 n)
     | None -> ""
 
 let str_of_fpu_register fr = 
@@ -199,16 +200,16 @@ let str_of_fpu_register fr =
   | ST6 -> "st6"
   | ST7 -> "st7"
 
-let pp_fp_operand fop = 
+let str_of_fp_operand fop = 
   match fop with
     | FPS_op offset ->
-      "st" ^ 
-	(if (eq offset zero) then ""
-	 else "(" ^ to_string offset ^ ")")
-    | FPM16_op a -> "WORD PTR " ^ (pp_addr a)
-    | FPM32_op a -> "DWORD PTR " ^ (pp_addr a)
-    | FPM64_op a -> "QWORD PTR " ^ (pp_addr a)
-    | FPM80_op a -> "TBYTE PTR " ^ (pp_addr a)
+      Printf.sprintf "st%s" 
+	(if (Big_int.eq_big_int (unsigned3 offset) Big_int.zero_big_int) then ""
+	 else "(" ^ (Big_int.string_of_big_int (unsigned3 offset)) ^ ")")
+    | FPM16_op a -> Printf.sprintf "WORD PTR %s" (str_of_addr a)
+    | FPM32_op a -> Printf.sprintf "DWORD PTR %s" (str_of_addr a)
+    | FPM64_op a -> Printf.sprintf "QWORD PTR %s" (str_of_addr a)
+    | FPM80_op a -> Printf.sprintf "TBYTE PTR %s" (str_of_addr a)
 
 let str_of_sse_register ssr = 
   match ssr with
@@ -221,321 +222,324 @@ let str_of_sse_register ssr =
   | XMM6 -> "xmm6"
   | XMM7 -> "xmm7"
 
-let pp_sse_operand  sop = 
+let str_of_sse_operand sop = 
   match sop with
-  | SSE_XMM_Reg_op ssr -> (str_of_sse_register ssr)
-  | SSE_MM_Reg_op mmr -> (str_of_fpu_register mmr)
-  | SSE_Addr_op a ->  (pp_addr a)
-  | SSE_GP_Reg_op r -> (str_of_reg OpSize32 r)
-  | SSE_Imm_op n -> (to_string n)
+  | SSE_XMM_Reg_op ssr -> Printf.sprintf "%s" (str_of_sse_register ssr)
+  | SSE_MM_Reg_op mmr -> Printf.sprintf "%s" (str_of_fpu_register mmr)
+  | SSE_Addr_op a -> Printf.sprintf "%s" (str_of_addr a)
+  | SSE_GP_Reg_op r -> Printf.sprintf "%s" (str_of_reg OpSize32 r)
+  | SSE_Imm_op n -> Printf.sprintf "%s" (unsigned32_to_hex n)
 
 
 (** Pretty printing an instruction *)
-let pp_instr (prefix, ins) = 
+let str_of_instr (prefix, ins) = 
   let pp_one_op (w, op) = 
     let sz = get_size prefix w in
-    pp_operand (sz,op)
+    Printf.sprintf "%s" (str_of_operand (sz,op))
   in
   let pp_two_ops (w, op1, op2) = 
     let sz = get_size prefix w in
-    (pp_operand (sz,op1)) ^ ", " ^ (pp_operand (sz,op2)) in
-
-  let pp_two_ops_sz  (sz1, op1, sz2, op2) = 
-    (pp_operand (sz1,op1)) ^ ", " ^ (pp_operand (sz2,op2)) in
-
+    F.sprintf "%s, %s" (str_of_operand (sz,op1)) (str_of_operand (sz,op2)) in
+  let pp_two_ops_sz (sz1, op1, sz2, op2) = 
+    F.sprintf "%s, %s" (str_of_operand (sz1,op1)) (str_of_operand (sz2,op2)) in
   (* the sizes function for movsx and movzx *)
   let movx_sizes prefix w = 
     match prefix.op_override, w with
       | true, true -> (OpSize16, OpSize16)
       | true, false -> (OpSize8, OpSize16)
+      | false, true -> (OpSize16, OpSize32)
       | false, false -> (OpSize8, OpSize32)
-      | _ -> (OpSize32, OpSize32)
   in
   match ins with 
-    | AAA -> Printf.printf "aaa"
-    | AAD -> Printf.printf "aad"
-    | AAM -> Printf.printf "aam"
-    | AAS -> Printf.printf "aas"
-    | ADC (w,a,b) -> Printf.printf "adc %s" (pp_two_ops (w,a,b))
-    | ADD (w,a,b) -> Printf.printf "add %s" (pp_two_ops (w,a,b))
-    | AND (w,a,b) -> Printf.printf "and %s" (pp_two_ops (w,a,b))
-    | ARPL (a, b) -> Printf.printf "arpl %s" (pp_two_ops (true, a, b))
-    | BOUND (a, b) -> Printf.printf "bound %s" (pp_two_ops (true, a, b))
-    | BSF (a,b) -> Printf.printf "bsf %s" (pp_two_ops (true,a,b))
-    | BSR (a,b) -> Printf.printf "bsr %s" (pp_two_ops (true,a,b))
-    | BSWAP r -> Printf.printf "bswap %s" (str_of_reg OpSize32 r)
-    | BT (a,b) -> Printf.printf "bt %s" (pp_two_ops (true,a,b))
-    | BTC (a, b) -> Printf.printf "btc %s" (pp_two_ops (true,a,b))
-    | BTR (a, b) -> Printf.printf "btr %s" (pp_two_ops (true,a,b))
-    | BTS (a, b) -> Printf.printf "bts %s" (pp_two_ops (true,a,b))
+    | AAA -> "aaa"
+    | AAD -> "aad"
+    | AAM -> "aam"
+    | AAS -> "aas"
+    | ADC (w,a,b) -> P.sprintf "adc %s" (pp_two_ops (w,a,b))
+    | ADD (w,a,b) -> P.sprintf "add %s" (pp_two_ops (w,a,b))
+    | AND (w,a,b) -> P.sprintf "and %s" (pp_two_ops (w,a,b))
+    | ARPL (a, b) -> P.sprintf "arpl %s" (pp_two_ops (true, a, b))
+    | BOUND (a, b) -> P.sprintf "bound %s" (pp_two_ops (true, a, b))
+    | BSF (a,b) -> P.sprintf "bsf %s" (pp_two_ops (true,a,b))
+    | BSR (a,b) -> P.sprintf "bsr %s" (pp_two_ops (true,a,b))
+    | BSWAP r -> P.sprintf "bswap %s" (str_of_reg OpSize32 r)
+    | BT (a,b) -> P.sprintf "bt %s" (pp_two_ops (true,a,b))
+    | BTC (a, b) -> P.sprintf "btc %s" (pp_two_ops (true,a,b))
+    | BTR (a, b) -> P.sprintf "btr %s" (pp_two_ops (true,a,b))
+    | BTS (a, b) -> P.sprintf "bts %s" (pp_two_ops (true,a,b))
     | CALL (true, absolute, op, None) ->
       (* using the comment PC-REL to indicate the pc-relative jump;
     	 disassemblers always seem to print out the absolute address
     	 (i.e., adding the pc following the instr with the offset);
     	 I'll tolerate this for now *)
        let sa = if absolute then "" else "PC-REL" in
-	 Printf.printf "call %s %s" sa (pp_one_op (true,op))
+	 P.sprintf "call %s %s" sa (pp_one_op (true,op))
 
     (* far calls *)
     | CALL (false, _, op, sel) ->
-      Printf.printf "call far %s:%s" (selector_to_str sel) (pp_one_op (true,op))
+      P.sprintf "call far %s:%s" (selector_to_str sel) (pp_one_op (true,op))
 
-    | CDQ -> Printf.printf "cdq"
-    | CLC -> Printf.printf "clc"
-    | CLD -> Printf.printf "cld"
-    | CLI -> Printf.printf "cli"
-    | CLTS -> Printf.printf "clts"
-    | CMC -> Printf.printf "cmc"
+    | CDQ -> "cdq"
+    | CLC -> "clc"
+    | CLD -> "cld"
+    | CLI -> "cli"
+    | CLTS -> "clts"
+    | CMC -> "cmc"
     | CMOVcc (ct,a,b) -> 
-      Printf.printf "cmov%s %s" (cond_ty_to_str ct) (pp_two_ops (true,a,b))
-    | CMP (w,a,b) -> Printf.printf "cmp %s" (pp_two_ops (w,a,b))
+      P.sprintf "cmov%s %s" (str_of_cond_ty ct) (pp_two_ops (true,a,b))
+    | CMP (w,a,b) -> P.sprintf "cmp %s" (pp_two_ops (w,a,b))
     | CMPS w -> 
-      Printf.printf "cmps %s" 
+      P.sprintf "cmps %s" 
 	(pp_two_ops (w, Address_op (mkAddress zero (Some ESI) None), 
 		    Address_op (mkAddress zero (Some EDI) None)))
 
-    | CMPXCHG (w,a,b) -> Printf.printf "cmpxchg %s" (pp_two_ops (w,a,b))
+    | CMPXCHG (w,a,b) -> P.sprintf "cmpxchg %s" (pp_two_ops (w,a,b))
 
-    | CPUID -> Printf.printf "cpuid"
-    | CWDE -> Printf.printf "cwde"
-    | DAA -> Printf.printf "daa"
-    | DAS -> Printf.printf "das"
-    | DEC (w,a) -> Printf.printf "dec %s" (pp_one_op (w,a))
-    | DIV (w,op) -> Printf.printf "div %s" (pp_one_op (w,op))
+    | CPUID -> "cpuid"
+    | CWDE -> "cwde"
+    | DAA -> "daa"
+    | DAS -> "das"
+    | DEC (w,a) -> P.sprintf "dec %s" (pp_one_op (w,a))
+    | DIV (w,op) -> P.sprintf "div %s" (pp_one_op (w,op))
 
-    | FABS -> Printf.printf "fabs"
-    | FADD (true,fop) -> Printf.printf "fadd st, %s" ((pp_fp_operand fop))
-    | FADD (false,fop) -> Printf.printf "fadd %s, st" ((pp_fp_operand fop))
-    | FADDP fop -> Printf.printf "faddp %s, st" ((pp_fp_operand fop))
-    | FCHS -> Printf.printf "fchs"
+    | FABS -> "fabs"
+    | FADD (true,fop) -> P.sprintf "fadd st, %s" (str_of_fp_operand fop)
+    | FADD (false,fop) -> P.sprintf "fadd %s, st" (str_of_fp_operand fop)
+    | FADDP fop -> P.sprintf "faddp %s, st" (str_of_fp_operand fop)
+    | FCHS -> "fchs"
     | FCMOVcc (fct,fop) -> 
-      Printf.printf "fcmov%s st, %s" (fp_cond_ty_to_str fct) ((pp_fp_operand fop))
+      P.sprintf "fcmov%s st, %s" (str_of_fp_cond_ty fct) (str_of_fp_operand fop)
     | FDIV (fop1,fop2) -> 
-      Printf.printf "fdiv %s, %s" (pp_fp_operand fop1) (pp_fp_operand fop2)
-    | FDIVP fop -> Printf.printf "fdivp %s, st" ((pp_fp_operand fop))
+      P.sprintf "fdiv %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
+    | FDIVP fop -> P.sprintf "fdivp %s, st" ((str_of_fp_operand fop))
     | FDIVR (fop1,fop2) -> 
-      Printf.printf "fdivr %s, %s" (pp_fp_operand fop1) (pp_fp_operand fop2)
-    | FDIVRP fop -> Printf.printf "fdivrp %s, st" (pp_fp_operand fop)
-    | FILD fop -> Printf.printf "fild %s" (pp_fp_operand fop)
-    | FIST fop -> Printf.printf "fist %s" (pp_fp_operand fop)
-    | FISUB fop -> Printf.printf "fisub %s" (pp_fp_operand fop)
-    | FISUBR fop -> Printf.printf "fisubr %s" (pp_fp_operand fop)
-    | FISTP fop -> Printf.printf "fistp %s" (pp_fp_operand fop)
-    | FLD fop -> Printf.printf "fld %s" (pp_fp_operand fop)
-    | FLD1 -> Printf.printf "fld1"
-    | FLDCW fop -> Printf.printf "fldcw %s" (pp_fp_operand fop)
-    | FLDZ -> Printf.printf "fldz"
-    | FMUL (true,fop) -> Printf.printf "fmul st, %s" (pp_fp_operand fop)
-    | FMUL (false,fop) -> Printf.printf "fmul %s, st" (pp_fp_operand fop)
-    | FMULP fop -> Printf.printf "fmulp %s, st" (pp_fp_operand fop)
-    | FNSTCW fop -> Printf.printf "fnstcw %s" (pp_fp_operand fop)
+      P.sprintf "fdivr %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
+    | FDIVRP fop -> P.sprintf "fdivrp %s, st" (str_of_fp_operand fop)
+    | FILD fop -> P.sprintf "fild %s" (str_of_fp_operand fop)
+    | FIST fop -> P.sprintf "fist %s" (str_of_fp_operand fop)
+    | FISUB fop -> P.sprintf "fisub %s" (str_of_fp_operand fop)
+    | FISUBR fop -> P.sprintf "fisubr %s" (str_of_fp_operand fop)
+    | FISTP fop -> P.sprintf "fistp %s" (str_of_fp_operand fop)
+    | FLD fop -> P.sprintf "fld %s" (str_of_fp_operand fop)
+    | FLD1 -> P.sprintf "fld1"
+    | FLDCW fop -> P.sprintf "fldcw %s" (str_of_fp_operand fop)
+    | FLDZ -> P.sprintf "fldz"
+    | FMUL (true,fop) -> P.sprintf "fmul st, %s" (str_of_fp_operand fop)
+    | FMUL (false,fop) -> P.sprintf "fmul %s, st" (str_of_fp_operand fop)
+    | FMULP fop -> P.sprintf "fmulp %s, st" (str_of_fp_operand fop)
+    | FNSTCW fop -> P.sprintf "fnstcw %s" (str_of_fp_operand fop)
     | FNSTSW opt -> 
       (match opt with
-      | None -> Printf.printf "fnstsw ax"
-      | Some fop -> Printf.printf "fnstsw %s" (pp_fp_operand fop))
-    | FPREM -> Printf.printf "fprem"
-    | FRNDINT -> Printf.printf "frndint"
-    | FSQRT -> Printf.printf "fsqrt"
-    | FST fop -> Printf.printf "fst %s" (pp_fp_operand fop)
-    | FSTP fop -> Printf.printf "fstp %s" (pp_fp_operand fop)
+      | None -> P.sprintf "fnstsw ax"
+      | Some fop -> P.sprintf "fnstsw %s" (str_of_fp_operand fop))
+    | FPREM -> P.sprintf "fprem"
+    | FRNDINT -> P.sprintf "frndint"
+    | FSQRT -> P.sprintf "fsqrt"
+    | FST fop -> P.sprintf "fst %s" (str_of_fp_operand fop)
+    | FSTP fop -> P.sprintf "fstp %s" (str_of_fp_operand fop)
     | FSUB (fop1,fop2) -> 
-      Printf.printf "fsub %s, %s" (pp_fp_operand fop1) (pp_fp_operand fop2)
+      P.sprintf "fsub %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
     | FSUBR (fop1,fop2) -> 
-      Printf.printf "fsubr %s, %s" (pp_fp_operand fop1) (pp_fp_operand fop2)
-    | FSUBRP fop -> Printf.printf "fsubrp %s, st" (pp_fp_operand fop)
-    | FSUBP fop -> Printf.printf "fsubp %s, st" (pp_fp_operand fop)
-    | FUCOM fop -> Printf.printf "fucom st, %s" (pp_fp_operand fop)
-    | FUCOMI fop -> Printf.printf "fucomi st, %s" (pp_fp_operand fop)
-    | FUCOMIP fop -> Printf.printf "fucomip st, %s" (pp_fp_operand fop)
-    | FUCOMP fop -> Printf.printf "fucomp %s" (pp_fp_operand fop)
-    | FUCOMPP -> Printf.printf "fucompp"
-    | FXAM -> Printf.printf "fxam"
-    | FXCH fop -> Printf.printf "fxch %s" (pp_fp_operand fop)
+      P.sprintf "fsubr %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
+    | FSUBRP fop -> P.sprintf "fsubrp %s, st" (str_of_fp_operand fop)
+    | FSUBP fop -> P.sprintf "fsubp %s, st" (str_of_fp_operand fop)
+    | FUCOM fop -> P.sprintf "fucom st, %s" (str_of_fp_operand fop)
+    | FUCOMI fop -> P.sprintf "fucomi st, %s" (str_of_fp_operand fop)
+    | FUCOMIP fop -> P.sprintf "fucomip st, %s" (str_of_fp_operand fop)
+    | FUCOMP fop -> P.sprintf "fucomp %s" (str_of_fp_operand fop)
+    | FUCOMPP -> P.sprintf "fucompp"
+    | FXAM -> P.sprintf "fxam"
+    | FXCH fop -> P.sprintf "fxch %s" (str_of_fp_operand fop)
 
-    | HLT -> Printf.printf "hlt"
-    | IDIV (w,op) -> Printf.printf "idiv %s" (pp_one_op (w,op));
+    | HLT -> P.sprintf "hlt"
+    | IDIV (w,op) -> P.sprintf "idiv %s" (pp_one_op (w,op))
+
     | IMUL (w,op1,op2,op3) ->
-      Printf.printf "imul %s" (pp_one_op (w,op1));
-      (match op2 with
-	| Some op -> Printf.printf ", %s" (pp_one_op (w,op))
-	| None -> ());
-      (match op3 with
-	| Some n -> Printf.printf "%s" (to_string n)
-	| None -> ())
-    | IN (w, Some p) -> Printf.printf "in %s%s" (if w then "true" else "false") (to_string p)
-    | IN (w, None) -> Printf.printf "in %s" (if w then "true" else "false")
-    | INC (w,a) -> Printf.printf "inc %s" (pp_one_op (w,a))
-    | INS (w) -> Printf.printf "ins %s" (if w then "true" else "false")
-    | INTn (n) -> Printf.printf "intn %s" (to_string n)
-    | INT -> Printf.printf "int"
-    | INTO -> Printf.printf "into"
-    | INVD -> Printf.printf "invd"
-    | INVLPG (op) -> Printf.printf "invlpg %s" (pp_one_op (true, op))
-    | IRET -> Printf.printf "iret"
-    | JCXZ (n) -> Printf.printf "jcxz %s" (to_string n)
-    | LAHF -> Printf.printf "lahf"
+      let s1 = P.sprintf "imul %s" (pp_one_op (w,op1)) in
+      let s2 = 
+	match op2 with
+	  | Some op -> P.sprintf ", %s" (pp_one_op (w,op))
+	  | None -> ""
+      in
+      let s3 =
+	match op3 with
+	  | Some n -> P.sprintf "%s" (unsigned32_to_hex n)
+	  | None -> ""
+      in s1 ^ s2 ^ s3
+
+    | IN (w, Some p) -> P.sprintf "in %s%s" (if w then "true" else "false") (unsigned32_to_hex p)
+    | IN (w, None) -> P.sprintf "in %s" (if w then "true" else "false")
+    | INC (w,a) -> P.sprintf "inc %s" (pp_one_op (w,a))
+    | INS (w) -> P.sprintf "ins %s" (if w then "true" else "false")
+    | INTn (n) -> P.sprintf "intn %s" (unsigned32_to_hex n)
+    | INT -> "int"
+    | INTO -> "into"
+    | INVD -> "invd"
+    | INVLPG (op) -> P.sprintf "invlpg %s" (pp_one_op (true, op))
+    | IRET -> "iret"
+    | JCXZ (n) -> P.sprintf "jcxz %s" (unsigned32_to_hex n)
+    | LAHF -> "lahf"
     | Jcc (ct,disp)-> 
-      Printf.printf "j%s PC-REL %s" (cond_ty_to_str ct)
-	(to_string disp)
+      P.sprintf "j%s PC-REL %s" (str_of_cond_ty ct)
+	(unsigned32_to_hex disp)
 
     | JMP (true, absolute, op, None) ->
        let sa = if absolute then "" else "PC-REL" in
-	 Printf.printf "jmp %s %s" sa (pp_one_op (true,op))
+	 P.sprintf "jmp %s %s" sa (pp_one_op (true,op))
 
     (* far jumps *)
     | JMP (false, _, op, sel) ->
-      Printf.printf "jmp far %s:%s" (selector_to_str sel) (pp_one_op (true,op))
+      P.sprintf "jmp far %s:%s" (selector_to_str sel) (pp_one_op (true,op))
 
-    | LDS (a,b) -> Printf.printf "lds %s" (pp_two_ops (true,a,b))
-    | LEA (a,b) -> Printf.printf "lea %s" (pp_two_ops (true,a,b))
-    | LEAVE -> Printf.printf "leave"
-    | LES (a,b) -> Printf.printf "les %s" (pp_two_ops (true,a,b))
-    | LFS (a,b) -> Printf.printf "lfs %s" (pp_two_ops (true,a,b))
-    | LGDT (a) -> Printf.printf "lgdt %s" (pp_one_op (true, a))
-    | LGS (a,b) -> Printf.printf "lgs %s" (pp_two_ops (true,a,b))
-    | LIDT (op) -> Printf.printf "lidt %s" (pp_one_op (true, op))
-    | LLDT (op) -> Printf.printf "lldt %s" (pp_one_op (true, op))
-    | LMSW (op) -> Printf.printf "lmsw %s" (pp_one_op (true, op)) 
-    | LODS (w) -> Printf.printf "lods %s" (if w then "true" else "false")
-    | LOOP (disp) -> Printf.printf "loop %s" (to_string disp)
-    | LOOPZ (disp) -> Printf.printf "loopz %s" (to_string disp)
-    | LOOPNZ (disp) -> Printf.printf "loopnz %s" (to_string disp)
-    | LSL (a,b) -> Printf.printf "lsl %s" (pp_two_ops (true,a,b))
-    | LSS (a,b) -> Printf.printf "lss %s" (pp_two_ops (true,a,b))
-    | LTR (op) -> Printf.printf "ltr %s" (pp_one_op (true, op))    
+    | LDS (a,b) -> P.sprintf "lds %s" (pp_two_ops (true,a,b))
+    | LEA (a,b) -> P.sprintf "lea %s" (pp_two_ops (true,a,b))
+    | LEAVE -> P.sprintf "leave"
+    | LES (a,b) -> P.sprintf "les %s" (pp_two_ops (true,a,b))
+    | LFS (a,b) -> P.sprintf "lfs %s" (pp_two_ops (true,a,b))
+    | LGDT (a) -> P.sprintf "lgdt %s" (pp_one_op (true, a))
+    | LGS (a,b) -> P.sprintf "lgs %s" (pp_two_ops (true,a,b))
+    | LIDT (op) -> P.sprintf "lidt %s" (pp_one_op (true, op))
+    | LLDT (op) -> P.sprintf "lldt %s" (pp_one_op (true, op))
+    | LMSW (op) -> P.sprintf "lmsw %s" (pp_one_op (true, op)) 
+    | LODS (w) -> P.sprintf "lods %s" (if w then "true" else "false")
+    | LOOP (disp) -> P.sprintf "loop %s" (unsigned32_to_hex disp)
+    | LOOPZ (disp) -> P.sprintf "loopz %s" (unsigned32_to_hex disp)
+    | LOOPNZ (disp) -> P.sprintf "loopnz %s" (unsigned32_to_hex disp)
+    | LSL (a,b) -> P.sprintf "lsl %s" (pp_two_ops (true,a,b))
+    | LSS (a,b) -> P.sprintf "lss %s" (pp_two_ops (true,a,b))
+    | LTR (op) -> P.sprintf "ltr %s" (pp_one_op (true, op))    
 
-    | MOV (w,a,b) -> Printf.printf "mov %s" (pp_two_ops (true,a,b))
+    | MOV (w,a,b) -> P.sprintf "mov %s" (pp_two_ops (true,a,b))
     | MOVCR (d, cr, reg) ->
       if d then 
-	Printf.printf "movcr %s, %s" (str_of_reg OpSize32 reg) (str_of_controlreg cr)
-      else Printf.printf "movcr %s, %s" (str_of_controlreg cr) (str_of_reg OpSize32 reg)
+	P.sprintf "movcr %s, %s" (str_of_reg OpSize32 reg) (str_of_controlreg cr)
+      else P.sprintf "movcr %s, %s" (str_of_controlreg cr) (str_of_reg OpSize32 reg)
     | MOVDR (d, dr, reg) ->
       if d then 
-	Printf.printf "movdr %s, %s" (str_of_reg OpSize32 reg) (str_of_debugreg dr)
-      else Printf.printf "movdr %s, %s" (str_of_debugreg dr) (str_of_reg OpSize32 reg)
+	P.sprintf "movdr %s, %s" (str_of_reg OpSize32 reg) (str_of_debugreg dr)
+      else P.sprintf "movdr %s, %s" (str_of_debugreg dr) (str_of_reg OpSize32 reg)
     | MOVSR (d,seg,op) -> 
       if d then 
-	Printf.printf "mov %s, %s" (pp_one_op (true,op)) (str_of_segreg seg)
-      else Printf.printf "mov %s, %s" (str_of_segreg seg) (pp_one_op (true,op))
-    | MOVBE (op1, op2) -> Printf.printf "movbe %s" (pp_two_ops (true, op1, op2))    
+	P.sprintf "mov %s, %s" (pp_one_op (true,op)) (str_of_segreg seg)
+      else P.sprintf "mov %s, %s" (str_of_segreg seg) (pp_one_op (true,op))
+    | MOVBE (op1, op2) -> P.sprintf "movbe %s" (pp_two_ops (true, op1, op2))    
 
     | MOVS w -> 
-      Printf.printf "movs %s" 
+      P.sprintf "movs %s" 
 	(pp_two_ops (w, Address_op (mkAddress zero (Some EDI) None), 
 		    Address_op (mkAddress zero (Some ESI) None)))
 
     | MOVSX (w,a,b) -> 
       let sz_from, sz_to = movx_sizes prefix w in
-      Printf.printf "movsx %s" (pp_two_ops_sz (sz_to,a,sz_from,b))
+      P.sprintf "movsx %s" (pp_two_ops_sz (sz_to,a,sz_from,b))
     | MOVZX (w,a,b) -> 
       let sz_from, sz_to = movx_sizes prefix w in
-      Printf.printf "movzx %s" (pp_two_ops_sz (sz_to,a,sz_from,b))
+      P.sprintf "movzx %s" (pp_two_ops_sz (sz_to,a,sz_from,b))
 
-    | MUL (w,op) -> Printf.printf "mul %s" (pp_one_op (w,op))
-    | NEG (w,a) -> Printf.printf "neg %s" (pp_one_op (w,a))
-    | NOP  (op) -> Printf.printf "nop %s" (pp_one_op (true,op))
-    | NOT (w,a) -> Printf.printf "not %s" (pp_one_op (w,a))
-    | OR  (w,a,b) -> Printf.printf "or %s"  (pp_two_ops (w,a,b))
-    | OUT (w, Some n) -> Printf.printf "out %s %s" 
+    | MUL (w,op) -> P.sprintf "mul %s" (pp_one_op (w,op))
+    | NEG (w,a) -> P.sprintf "neg %s" (pp_one_op (w,a))
+    | NOP  (op) -> P.sprintf "nop %s" (pp_one_op (true,op))
+    | NOT (w,a) -> P.sprintf "not %s" (pp_one_op (w,a))
+    | OR  (w,a,b) -> P.sprintf "or %s"  (pp_two_ops (w,a,b))
+    | OUT (w, Some n) -> P.sprintf "out %s %s" 
 			 (if w then "true" else "false") (to_string n)
-    | OUT (w, None) -> Printf.printf "out %s"
+    | OUT (w, None) -> P.sprintf "out %s"
 	 		 (if w then "true" else "false")
    
-    | OUTS (w) -> Printf.printf "outs %s"
+    | OUTS (w) -> P.sprintf "outs %s"
 	 		 (if w then "true" else "false")
-    | POP op -> Printf.printf "pop %s" (pp_one_op (true,op))
-    | POPA -> Printf.printf "popa"
-    | POPF -> Printf.printf "popf"
-    | PUSH (w,a) -> Printf.printf "push %s" (pp_one_op (w,a))
-    | PUSHA -> Printf.printf "pusha"
-    | PUSHF -> Printf.printf "pushf"
-    | PUSHSR seg -> Printf.printf "pushsr %s" (str_of_segreg seg)
-    | POPSR seg -> Printf.printf "pop %s" (str_of_segreg seg)
+    | POP op -> P.sprintf "pop %s" (pp_one_op (true,op))
+    | POPA -> P.sprintf "popa"
+    | POPF -> P.sprintf "popf"
+    | PUSH (w,a) -> P.sprintf "push %s" (pp_one_op (w,a))
+    | PUSHA -> P.sprintf "pusha"
+    | PUSHF -> P.sprintf "pushf"
+    | PUSHSR seg -> P.sprintf "pushsr %s" (str_of_segreg seg)
+    | POPSR seg -> P.sprintf "pop %s" (str_of_segreg seg)
 
     | RCL (w,op,ri) -> 
-      Printf.printf "rcl %s, %s" (pp_one_op (w,op)) (reg_or_imm_to_str OpSize32 ri)
+      P.sprintf "rcl %s, %s" (pp_one_op (w,op)) (str_of_reg_or_imm OpSize32 ri)
     | RCR (w,op,ri) -> 
-      Printf.printf "rcr %s, %s" (pp_one_op (w,op)) (reg_or_imm_to_str OpSize32 ri)
-    | RDMSR -> Printf.printf "rdmsr"
-    | RDPMC -> Printf.printf "rdpmc"
-    | RDTSC -> Printf.printf "rdtsc"
-    | RDTSCP -> Printf.printf "rdtscp"
+      P.sprintf "rcr %s, %s" (pp_one_op (w,op)) (str_of_reg_or_imm OpSize32 ri)
+    | RDMSR -> P.sprintf "rdmsr"
+    | RDPMC -> P.sprintf "rdpmc"
+    | RDTSC -> P.sprintf "rdtsc"
+    | RDTSCP -> P.sprintf "rdtscp"
     | RET (sameseg, disp) -> 
       let disp_s = match disp with
-	| Some n -> to_string n
+	| Some n -> hex_of_big (unsigned16 n)
 	| None -> ""
       in 
       let ss_s = if sameseg then "ret" else "ret far"
-      in Printf.printf "%s %s" ss_s disp_s
+      in P.sprintf "%s %s" ss_s disp_s
 
     | ROL (w,op,ri) ->
-      Printf.printf "rol %s, %s" (pp_one_op (w,op))
-	(reg_or_imm_to_str OpSize32 ri)
+      P.sprintf "rol %s, %s" (pp_one_op (w,op))
+	(str_of_reg_or_imm OpSize32 ri)
     | ROR (w,op,ri) ->
-      Printf.printf "ror %s, %s" (pp_one_op (w,op))
-	(reg_or_imm_to_str OpSize32 ri)
+      P.sprintf "ror %s, %s" (pp_one_op (w,op))
+	(str_of_reg_or_imm OpSize32 ri)
     
-    | RSM -> Printf.printf "rsm"
-    | SAHF -> Printf.printf "sahf"
+    | RSM -> P.sprintf "rsm"
+    | SAHF -> P.sprintf "sahf"
 
     | SAR (w,op,ri) -> 
-      Printf.printf "sar %s, %s" (pp_one_op (w,op)) (reg_or_imm_to_str OpSize32 ri)
-    | SBB (w, a, b) -> Printf.printf "sbb %s" (pp_two_ops (w, a, b))
+      P.sprintf "sar %s, %s" (pp_one_op (w,op)) (str_of_reg_or_imm OpSize32 ri)
+    | SBB (w, a, b) -> P.sprintf "sbb %s" (pp_two_ops (w, a, b))
     | SCAS w ->
-      Printf.printf "scas %s"
+      P.sprintf "scas %s"
 	(pp_two_ops (w, Reg_op EAX, Address_op (mkAddress zero (Some EDI) None)))
     | SETcc (ct,op) ->
-      Printf.printf "set%s %s" (cond_ty_to_str ct) (pp_one_op (false,op))
-    | SGDT (a) -> Printf.printf "sgdt %s" (pp_one_op (true, a))
+      P.sprintf "set%s %s" (str_of_cond_ty ct) (pp_one_op (false,op))
+    | SGDT (a) -> P.sprintf "sgdt %s" (pp_one_op (true, a))
     | SHL (w,op,ri) -> 
-      Printf.printf "shl %s, %s" (pp_one_op (w,op))
-	(reg_or_imm_to_str OpSize32 ri)
+      P.sprintf "shl %s, %s" (pp_one_op (w,op))
+	(str_of_reg_or_imm OpSize32 ri)
     | SHLD (op,r,ri) ->
-      Printf.printf "shld %s, %s, %s"
+      P.sprintf "shld %s, %s, %s"
 	(pp_one_op (true,op)) (str_of_reg OpSize32 r)
-	(reg_or_imm_to_str OpSize32 ri)
+	(str_of_reg_or_imm OpSize32 ri)
     | SHR (w,op,ri) ->
-      Printf.printf "shr %s, %s" (pp_one_op (w,op))
-	(reg_or_imm_to_str OpSize32 ri)
+      P.sprintf "shr %s, %s" (pp_one_op (w,op))
+	(str_of_reg_or_imm OpSize32 ri)
     | SHRD (op,r,ri) ->
-      Printf.printf "shrd %s, %s, %s"
+      P.sprintf "shrd %s, %s, %s"
 	(pp_one_op (true,op)) (str_of_reg OpSize32 r)
-	(reg_or_imm_to_str OpSize32 ri)
-    | SIDT (a) -> Printf.printf "sidt %s" (pp_one_op (true, a))
-    | SLDT (a) -> Printf.printf "sldt %s" (pp_one_op (true, a))
-    | SMSW (a) -> Printf.printf "smsw %s" (pp_one_op (true, a))
-    | STC -> Printf.printf "stc"
-    | STD -> Printf.printf "std"
-    | STI -> Printf.printf "sti"
-    | STR (a) -> Printf.printf "str %s" (pp_one_op (true, a))
+	(str_of_reg_or_imm  OpSize32 ri)
+    | SIDT (a) -> P.sprintf "sidt %s" (pp_one_op (true, a))
+    | SLDT (a) -> P.sprintf "sldt %s" (pp_one_op (true, a))
+    | SMSW (a) -> P.sprintf "smsw %s" (pp_one_op (true, a))
+    | STC -> P.sprintf "stc"
+    | STD -> P.sprintf "std"
+    | STI -> P.sprintf "sti"
+    | STR (a) -> P.sprintf "str %s" (pp_one_op (true, a))
 
-    | SBB (w,a,b) -> Printf.printf "sbb %s" (pp_two_ops (w,a,b)) 
-    | SUB (w,a,b) -> Printf.printf "sub %s" (pp_two_ops (w,a,b))
+    | SUB (w,a,b) -> P.sprintf "sub %s" (pp_two_ops (w,a,b))
 
-    | STMXCSR sop -> Printf.printf "stmxcsr %s" (pp_sse_operand sop)
+    | STMXCSR sop -> P.sprintf "stmxcsr %s" (str_of_sse_operand sop)
 
     | STOS w -> 
-      Printf.printf "stos %s" 
+      P.sprintf "stos %s" 
 	(pp_two_ops (w, Address_op (mkAddress zero (Some EDI) None), 
 		    Reg_op EAX))
 
-    | TEST (w,a,b) -> Printf.printf "test %s" (pp_two_ops (w,a,b))
+    | TEST (w,a,b) -> P.sprintf "test %s" (pp_two_ops (w,a,b))
  
-    | UD2 -> Printf.printf "ud2"
-    | VERR (a) -> Printf.printf "verr %s" (pp_one_op (true, a))
-    | VERW (a) -> Printf.printf "verw %s" (pp_one_op (true, a))
-    | WBINVD -> Printf.printf "wbinvd"
-    | WRMSR -> Printf.printf "wrmsr"
+    | UD2 -> P.sprintf "ud2"
+    | VERR (a) -> P.sprintf "verr %s" (pp_one_op (true, a))
+    | VERW (a) -> P.sprintf "verw %s" (pp_one_op (true, a))
+    | WBINVD -> P.sprintf "wbinvd"
+    | WRMSR -> P.sprintf "wrmsr"
 
-    | XADD (w,a,b) -> Printf.printf "xadd %s" (pp_two_ops (w,a,b))
-    | XCHG (w,a,b) -> Printf.printf "xchg %s" (pp_two_ops (w,a,b))
-    | XLAT -> Printf.printf "xlat"
-    | XOR (w,a,b) -> Printf.printf "xor %s" (pp_two_ops (w,a,b))
-    | _ -> Printf.printf "???"
+    | XADD (w,a,b) -> P.sprintf "xadd %s" (pp_two_ops (w,a,b))
+    | XCHG (w,a,b) -> P.sprintf "xchg %s" (pp_two_ops (w,a,b))
+    | XLAT -> P.sprintf "xlat"
+    | XOR (w,a,b) -> P.sprintf "xor %s" (pp_two_ops (w,a,b))
+    | _ -> P.sprintf "???"
 
-let pp_prefix_instr  (pre,ins) = 
-  Printf.printf "%s" (pp_prefix (pre,ins)); 
-  (pp_instr (pre,ins))
+
+let pp_prefix_instr fmt (pre,ins) = 
+  Format.fprintf fmt "%s %s" (str_of_prefix (pre,ins)) (str_of_instr (pre,ins))
 
 (** An instruction equivalence checker *)
 (*
