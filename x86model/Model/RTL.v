@@ -81,39 +81,26 @@ Module RTL(M : MACHINE_SIG).
 
   Inductive test_op : Set := eq_op | lt_op | ltu_op.
 
-  Inductive pseudo_reg (s:nat) : Set := 
-  | ps_reg : Z -> pseudo_reg s.
+  Inductive rtl_exp : nat -> Type := 
+  | arith_rtl_exp : forall s (b:bit_vector_op)(e1 e2:rtl_exp s), rtl_exp s
+  | test_rtl_exp : forall s (top:test_op)(e1 e2:rtl_exp s), rtl_exp size1
+  | if_rtl_exp : forall s (cond:rtl_exp size1) (e1 e2: rtl_exp s), rtl_exp s
+  | cast_s_rtl_exp : forall s1 s2 (e:rtl_exp s1), rtl_exp s2
+  | cast_u_rtl_exp : forall s1 s2 (e:rtl_exp s1), rtl_exp s2
+  | imm_rtl_exp : forall s, int s -> rtl_exp s
+  | get_loc_rtl_exp : forall s (l:location s), rtl_exp s
+  | get_byte_rtl_exp : forall (addr:rtl_exp size_addr),  rtl_exp size8
+  | choose_rtl_exp : forall s, rtl_exp s.
 
-  Inductive rtl_instr : Set := 
-  | arith_rtl : forall s (b:bit_vector_op)(r1 r2:pseudo_reg s)(rd:pseudo_reg s), rtl_instr
-  | test_rtl : forall s (top:test_op)(r1 r2:pseudo_reg s)(rd:pseudo_reg size1), rtl_instr
-  | if_rtl : pseudo_reg size1 -> rtl_instr -> rtl_instr
-  | cast_s_rtl : forall s1 s2 (r1:pseudo_reg s1) (rd:pseudo_reg s2),  rtl_instr
-  | cast_u_rtl : forall s1 s2 (r1:pseudo_reg s1) (rd:pseudo_reg s2),  rtl_instr
-  | load_imm_rtl : forall s (i:int s) (rd:pseudo_reg s),  rtl_instr
-  | set_loc_rtl : forall s (rs:pseudo_reg s) (l:location s), rtl_instr
-  | get_loc_rtl : forall s (l:location s) (rd:pseudo_reg s), rtl_instr
-  | set_byte_rtl: forall (rs:pseudo_reg size8)(addr:pseudo_reg size_addr), rtl_instr
-  | get_byte_rtl: forall (addr:pseudo_reg size_addr)(rd:pseudo_reg size8), rtl_instr
-  | choose_rtl : forall s (rd:pseudo_reg s), rtl_instr
+  Inductive rtl_instr : Type :=
+  | set_loc_rtl : forall s (e:rtl_exp s) (l:location s), rtl_instr
+  | set_byte_rtl: forall (e:rtl_exp size8)(addr:rtl_exp size_addr), rtl_instr
+  | if_rtl : rtl_exp size1 -> rtl_instr -> rtl_instr
   | error_rtl : rtl_instr
-  | safe_fail_rtl : rtl_instr.
+  | trap_rtl : rtl_instr.
 
-  (** Next, we give meaning to RTL instructions as transformers over an
-      environment for pseudo-registers and a machine state. *)
-  Definition pseudo_env := forall s, pseudo_reg s -> int s.
-  Definition empty_env : pseudo_env := fun s _ => Word.zero.
-  Definition eq_pseudo_reg s : forall (r1 r2:pseudo_reg s), {r1 = r2} + {r1 <> r2}.
-    intros. destruct r1. destruct r2. destruct (Z_eq_dec z z0). subst. left. auto.
-    right. intro. apply n. congruence.
-  Defined.
-  Definition update_env s (r:pseudo_reg s) (v:int s) (env:pseudo_env) : pseudo_env.
-    intros s r v env s' r'.
-    destruct (eq_nat_dec s s'). subst. destruct (eq_pseudo_reg r r'). subst. apply v.
-    apply (env s' r').
-    apply (env s' r').
-  Defined.
 
+  (** Next, we give meaning to RTL instructions as transformers over a machine state *)
 
   Record oracle := { 
     oracle_bits : forall s, Z -> int s ; 
@@ -122,14 +109,13 @@ Module RTL(M : MACHINE_SIG).
 
   Record rtl_state := { 
     rtl_oracle : oracle ; 
-    rtl_env : pseudo_env ; 
     rtl_mach_state : mach_state ; 
     rtl_memory : AddrMap.t int8
   }. 
 
   Inductive RTL_ans(A:Type) : Type := 
   | Fail_ans : RTL_ans A
-  | SafeFail_ans : RTL_ans A
+  | Trap_ans : RTL_ans A
   | Okay_ans : A -> RTL_ans A.
 
   Definition RTL(T:Type) := rtl_state -> (RTL_ans T * rtl_state).
@@ -140,7 +126,7 @@ Module RTL(M : MACHINE_SIG).
       match c rs with
         | (Okay_ans v, rs') => f v rs'
         | (Fail_ans, rs') => (Fail_ans _, rs')
-        | (SafeFail_ans, rs') => (SafeFail_ans _, rs')
+        | (SafeFail_ans, rs') => (Trap_ans _, rs')
       end
   }.
   intros ; apply Coqlib.extensionality. auto.
@@ -150,46 +136,31 @@ Module RTL(M : MACHINE_SIG).
   Defined.
 
   Definition Fail T : RTL T := fun rs => (Fail_ans T,rs).
-  Definition SafeFail T : RTL T := fun rs => (SafeFail_ans T,rs).
+  Definition Trap T : RTL T := fun rs => (Trap_ans T,rs).
 
-  Definition flush_env : RTL unit :=
-    fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_env := empty_env;
-                           rtl_mach_state := rtl_mach_state rs ; 
-                           rtl_memory := rtl_memory rs |}).
-  Definition set_ps s (r:pseudo_reg s) (v:int s) : RTL unit := 
-    fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_env := update_env r v (rtl_env rs) ;
-                           rtl_mach_state := rtl_mach_state rs ; 
-                           rtl_memory := rtl_memory rs |}).
   Definition set_loc s (l:location s) (v:int s) : RTL unit := 
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_env := rtl_env rs ; 
                            rtl_mach_state := set_location l v (rtl_mach_state rs) ; 
                            rtl_memory := rtl_memory rs |}).
-  Print AddrIndexed.t.
   Definition set_byte (addr:int size_addr) (v:int size8) : RTL unit := 
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_env := rtl_env rs ; 
                            rtl_mach_state := rtl_mach_state rs ;
                            rtl_memory := AddrMap.set addr v (rtl_memory rs) |}).
-  Definition get_ps s (r:pseudo_reg s) : RTL (int s) := 
-    fun rs => (Okay_ans (rtl_env rs r), rs).
+
   Definition get_loc s (l:location s) : RTL (int s) :=
     fun rs => (Okay_ans (get_location l (rtl_mach_state rs)), rs).
   Definition get_byte (addr:int size_addr) : RTL (int size8) := 
     fun rs => (Okay_ans (AddrMap.get addr (rtl_memory rs)), rs).
 
-  Definition choose_bits (s:nat) : RTL (int s) := 
-    fun rs => 
-      let o := rtl_oracle rs in 
+  Definition choose_bits (s:nat) : RTL (int s) :=
+    fun rs =>
+      let o := rtl_oracle rs in
       let o' := {| oracle_bits := oracle_bits o; oracle_offset := oracle_offset o + 1 |} in
-        (Okay_ans (oracle_bits o s (oracle_offset o)), 
+        (Okay_ans (oracle_bits o s (oracle_offset o)),
           {| rtl_oracle := o' ;
-             rtl_env := rtl_env rs ; 
              rtl_mach_state := rtl_mach_state rs ;
              rtl_memory := rtl_memory rs |}).
-  
+
   Definition interp_arith s (b:bit_vector_op)(v1 v2:int s) : int s := 
     match b with 
       | add_op => Word.add v1 v2
@@ -218,28 +189,38 @@ Module RTL(M : MACHINE_SIG).
 
   Local Open Scope monad_scope.
 
+  Fixpoint interp_rtl_exp s (e:rtl_exp s) : RTL (int s) := 
+    match e with 
+      | arith_rtl_exp _ b e1 e2 =>
+        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; ret (interp_arith b v1 v2)
+      | test_rtl_exp _ t e1 e2 => 
+        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; ret (interp_test t v1 v2)
+      | if_rtl_exp _ cd e1 e2 =>
+        v <- interp_rtl_exp cd;
+        if (Word.eq v Word.one) then interp_rtl_exp e1
+          else interp_rtl_exp e2
+      | cast_s_rtl_exp _ _ e =>
+        v <- interp_rtl_exp e; ret (Word.repr (Word.signed v))
+      | cast_u_rtl_exp _ _ e => 
+        v <- interp_rtl_exp e; ret (Word.repr (Word.unsigned v))
+      | imm_rtl_exp _ v => ret v
+      | get_loc_rtl_exp _ l => get_loc l
+      | get_byte_rtl_exp addr => 
+        v <- interp_rtl_exp addr; get_byte v
+      | choose_rtl_exp _ => choose_bits _
+    end.
+
+
   Fixpoint interp_rtl (instr:rtl_instr) : RTL unit := 
     match instr with 
-      | arith_rtl s b r1 r2 rd => 
-        v1 <- get_ps r1 ; v2 <- get_ps r2 ; set_ps rd (interp_arith b v1 v2)
-      | test_rtl s t r1 r2 rd => 
-        v1 <- get_ps r1 ; v2 <- get_ps r2 ; set_ps rd (interp_test t v1 v2)
+      | set_loc_rtl _ e l => 
+        v <- interp_rtl_exp e; set_loc l v
+      | set_byte_rtl e addr => 
+        v <- interp_rtl_exp e; a <- interp_rtl_exp addr; set_byte a v
       | if_rtl r i => 
-        v <- get_ps r ; if (Word.eq v Word.one) then interp_rtl i else ret tt
-      | cast_s_rtl s1 s2 rs rd => 
-        v <- get_ps rs ; 
-        set_ps rd (Word.repr (Word.signed v))
-      | cast_u_rtl s1 s2 rs rd => 
-        v <- get_ps rs ; 
-        set_ps rd (Word.repr (Word.unsigned v))
-      | load_imm_rtl s i rd => set_ps rd i
-      | set_loc_rtl s rs l => v <- get_ps rs ; set_loc l v
-      | get_loc_rtl s l rd => v <- get_loc l ; set_ps rd v
-      | set_byte_rtl rs addr => v <- get_ps rs ; a <- get_ps addr ; set_byte a v
-      | get_byte_rtl addr rd => a <- get_ps addr ; v <- get_byte a ; set_ps rd v
-      | choose_rtl s rd => v <- choose_bits s ; set_ps rd v
+        v <- interp_rtl_exp r ; if (Word.eq v Word.one) then interp_rtl i else ret tt
       | error_rtl => Fail unit
-      | safe_fail_rtl => SafeFail unit
+      | trap_rtl => Trap unit
     end.
 
   (** We collect all of the information for an instruction into a record
