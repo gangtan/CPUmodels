@@ -442,7 +442,7 @@ Definition enc_CPUID := ret (s2bl "0000111110100010").
 Definition enc_CWDE := ret (s2bl "10011000").
 
 
-Definition enc_DAA := ret (s2bl "00101111"). 
+Definition enc_DAA := ret (s2bl "00100111"). 
 Definition enc_DAS := ret (s2bl "00101111").
 (*DEC has alternate coding for a register operand that is ommited for now*)
 Definition enc_DEC (w : bool) (op1 : operand) : Enc (list bool) :=
@@ -683,8 +683,8 @@ Definition enc_PUSH (w:bool)(op1:operand) : Enc (list bool) :=
         | _ => invalid
       end
   end.
-Definition enc_PUSHA := ret (s2bl "10011101").
-Definition enc_PUSHF := ret (s2bl "10011101").
+Definition enc_PUSHA := ret (s2bl "01100000").
+Definition enc_PUSHF := ret (s2bl "10011100").
 Definition enc_PUSHSR (sr:segment_register) :=
   match sr with
     | CS => ret (s2bl "00001110")

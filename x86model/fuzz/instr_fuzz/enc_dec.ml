@@ -132,19 +132,45 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
 
   | BSWAP r1, BSWAP r2 -> r1 = r2
 
+  | ARPL(op11, op12), ARPL (op21, op22)
+  | BOUND(op11, op12), BOUND(op21, op22)
+  | BSF(op11, op12), BSF(op21, op22)
+  | BSR(op11, op12), BSR(op21, op22)
   | BT (op11,op12), BT (op21, op22)
-  | BSR (op11,op12), BSR (op21,op22)
+  | BTC(op11, op12), BTC (op21, op22)
+  | BTR(op11, op12), BTR (op21, op22)
+  | BTS(op11, op12), BTS (op21, op22)
+  | LAR (op11, op12), LAR (op21, op22)
+  | LDS (op11, op12), LDS (op21, op22)
   | LEA (op11,op12), LEA (op21,op22)
-    -> operand_eq_dec op11 op21 && operand_eq_dec op12 op22
-
+  | LES (op11, op12), LES (op21, op22)
+  | LFS (op11, op12), LFS (op21, op22)
+  | LGS (op11, op12), LGS (op21, op22)
+  | LSL (op11, op12), LSL (op21, op22)
+  | LSS (op11, op12), LSS (op21, op22)   
+  | MOVBE (op11, op12), MOVBE (op21, op22)
+     -> operand_eq_dec op11 op21 && operand_eq_dec op12 op22
+  
   | CALL (near1,abs1,op1,sel1), CALL (near2,abs2,op2,sel2)
   | JMP (near1,abs1,op1,sel1), JMP (near2,abs2,op2,sel2) ->
     near1 = near2 && abs2 = abs2 && operand_eq_dec op1 op2
 	  && option_eq_dec (Big_int.eq_big_int) sel1 sel2
 
+  | AAA, AAA
+  | AAD, AAD
+  | AAM, AAM
+  | AAS, AAS
   | CDQ, CDQ
+  | CLC, CLC
   | CLD, CLD
+  | CLI, CLI
+  | CLTS, CLTS
+  | CMC, CMC
+  | CPUID, CPUID
   | CWDE, CWDE
+  | DAA, DAA
+  | DAS, DAS
+
   | FABS, FABS
   | FCHS, FCHS
   | FLDZ, FLDZ
@@ -155,18 +181,56 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | FUCOMPP, FUCOMPP
   | FXAM, FXAM
   | HLT, HLT
+  | INT, INT
+  | INTO, INTO
+  | INVD, INVD
+  | IRET, IRET
+  | LAHF, LAHF
   | LEAVE, LEAVE
+  | POPA, POPA
+  | POPF, POPF
+  | PUSHA, PUSHA
+  | PUSHF, PUSHF
+  | RDMSR, RDMSR
+  | RDPMC, RDPMC
+  | RDTSC, RDTSC
+  | RDTSCP, RDTSCP
+  | RSM, RSM
   | SAHF, SAHF
+  | STC, STC
+  | STD, STD
+  | STI, STI
+  | UD2, UD2
+  | WBINVD, WBINVD
+  | WRMSR, WRMSR
+  | XLAT, XLAT
     -> true
+
+  | MOVCR (d1, cr1, r1), MOVCR (d2, cr2, r2) 
+    -> d1 = d2 && cr1 = cr2 && r1 = r2
+ 
+  | MOVDR (d1, dr1, r1), MOVDR (d2, dr2, r2)
+    -> d1 = d2 && dr1 = dr2 && r1 = r2
+  | MOVSR (d1, sr1, op1), MOVSR (d2, sr2, op2)
+    -> d1 = d2 && sr1 = sr2 && operand_eq_dec op1 op2
 
   | CMOVcc (ct1, op11, op12), CMOVcc (ct2, op21, op22) ->
     ct1 = ct2 && operand_eq_dec op11 op21 && operand_eq_dec op12 op22
 
   | CMPS w1, CMPS w2 
+  | INS w1, INS w2
+  | LODS w1, LODS w2
   | MOVS w1, MOVS w2 
+  | OUTS w1, OUTS w2
   | SCAS w1, SCAS w2 
   | STOS w1, STOS w2 -> w1 = w2
 
+  | IN(w1, port_no1), IN(w2, port_no2) 
+  | OUT (w1, port_no1), OUT(w2, port_no2) 
+    -> w1 = w2 && option_eq_dec (Big_int.eq_big_int) port_no1 port_no2 
+
+  | INTn it1, INTn it2 -> Big_int.eq_big_int it1 it2
+ 
   | DIV (w1,op1), DIV (w2, op2)
   | DEC (w1,op1), DEC (w2, op2)
   | INC (w1,op1), INC (w2, op2)
@@ -223,14 +287,39 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | Jcc (ct1,disp1), Jcc (ct2,disp2) ->
     ct1 = ct2 && (Big_int.eq_big_int disp1 disp2)
 
+
+  | JCXZ b1, JCXZ b2
+  | LOOP b1, LOOP b2
+  | LOOPZ b1, LOOPZ b2
+  | LOOPNZ b1, LOOPNZ b2 -> (Big_int.eq_big_int b1 b2)
+
+  | INVLPG op1, INVLPG op2
+  | LGDT op1, LGDT op2
+  | LIDT op1, LIDT op2
+  | LLDT op1, LLDT op2
+  | LMSW op1, LMSW op2
+  | LTR op1, LTR op2
   | NOP op1, NOP op2 
-  | POP op1, POP op2 -> operand_eq_dec op1 op2
+  | POP op1, POP op2 
+  | SGDT op1, SGDT op2
+  | SIDT op1, SIDT op2
+  | SLDT op1, SLDT op2
+  | SMSW op1, SMSW op2
+  | STR op1, STR op2
+  | VERR op1, VERR op2
+  | VERW op1, VERW op2
+    -> operand_eq_dec op1 op2
+
+  | POPSR s1, POPSR s2 
+  | PUSHSR s1, PUSHSR s2 -> s1 = s2
 
   | RET (ss1,dopt1), RET (ss2,dopt2) -> 
     ss1 = ss2 && option_eq_dec (Big_int.eq_big_int) dopt1 dopt2
 
   | ROL (w1,op1,ri1), ROL (w2,op2,ri2)
   | ROR (w1,op1,ri1), ROR (w2,op2,ri2)
+  | RCL (w1,op1,ri1), RCL (w2,op2,ri2)
+  | RCR (w1,op1,ri1), RCR (w2,op2,ri2)
   | SAR (w1,op1,ri1), SAR (w2,op2,ri2)
   | SHL (w1,op1,ri1), SHL (w2,op2,ri2)
   | SHR (w1,op1,ri1), SHR (w2,op2,ri2) -> 
@@ -249,10 +338,10 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | _ -> false
 
 let prefix_eq_dec pre1 pre2 = 
-  pre1 = pre2
+pre1 = pre2 
 
 let pre_instr_eq_dec (pre1,ins1) (pre2,ins2) = 
-  prefix_eq_dec pre1 pre2 && instr_eq_dec ins1 ins2
+  prefix_eq_dec pre1 pre2 && instr_eq_dec ins1 ins2 
 
 
 

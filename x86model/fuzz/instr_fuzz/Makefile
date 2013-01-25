@@ -1,4 +1,4 @@
-syntaxfuzzer.native: syntaxfuzzer.ml PrettyPrinter.ml
+syntaxfuzzer.native: syntaxfuzzer.ml PrettyPrinter.ml enc_dec.ml
 	ocamlbuild -verbose 1 -cflag -g -lflag -g syntaxfuzzer.native -lib unix -lib nums -Is extract
 
 debugging: extraction

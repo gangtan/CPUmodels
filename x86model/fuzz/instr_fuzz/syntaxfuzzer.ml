@@ -544,10 +544,10 @@ let choose_XOR() =
 	XOR (w, op1, op2)
 
 (** returns a random gp instruction  **)
-let choose_gp_instr()  = 
- (* print_string "c:\n";
-  print_int c; *)
-   match (Random.int 133) with 
+let choose_gp_instr lb ub  = 
+
+   let diff = ub - lb in
+   match (lb + Random.int diff) with 
       0 -> choose_ADC()
     | 1 -> choose_ADD ()
     | 2 -> choose_AND ()
@@ -679,26 +679,48 @@ let choose_gp_instr()  =
     | 130 -> choose_XOR ()
     | _ -> choose_NOP () 
     
-let rec fuzz_gp n = 
+let rec fuzz_gp lb ub n = 
   match n with 
     | 0 -> ()
     | x ->   
      let prefix = choose_prefix () in
-     let instr = choose_gp_instr () in 
-
+     let instr = choose_gp_instr lb ub in 
+     
      F.printf "------------\nTesting %a\n"
-       pp_prefix_instr (prefix,instr);
-     test_encode_decode_instr prefix instr;
+     pp_prefix_instr (prefix,instr);
+     
+     test_encode_decode_instr (*prefix*) emptyPrefix instr;
      Printf.printf "------------\n";
      F.print_newline (); (* flush *)
-     fuzz_gp (x - 1)
+     fuzz_gp lb ub (x - 1)
   ;;
 
 Random.self_init();;
 
+let some_lb = ref 0
+let some_ub = ref 100
+let some_n = ref 500
+
+let usage = "usage: " ^ Sys.argv.(0) ^ " [lb int] [ub int] [n int]"
+
+let speclist = [
+    ("-lb", Arg.Int (fun a -> some_lb := a), ": set the lowerbound");
+    ("-ub", Arg.Int (fun b -> some_ub := b), ": set the upperbound");
+    ("-n", Arg.Int (fun c -> some_n := c), ": set number of runs");
+   ]
+
+(*let check = check that command line args are ok
+
+*)
 let main () = 
   print_string("running syntaxfuzzer:\n");
+
+  Arg.parse 
+	speclist 
+	(fun x -> raise (Arg.Bad ("Bad argument : " ^ x)))
+	usage;
+ 
   
-  fuzz_gp 500;;
+  fuzz_gp !some_lb !some_ub !some_n;;
 
 main();;
