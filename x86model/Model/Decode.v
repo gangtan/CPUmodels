@@ -2002,7 +2002,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      that is, in lock_or_rep, only lock can be used;
      and op_override prefix *must not* be used *)
   Definition instr_parsers_lock_no_op_override := 
-    ADD_p false :: ADC_p false :: AND_p false :: (*CLTS_p :: show as example*) BTC_p :: BTR_p :: 
+    ADD_p false :: ADC_p false :: AND_p false :: BTC_p :: BTR_p :: 
     BTS_p :: CMPXCHG_p :: DEC_p :: INC_p :: NEG_p :: NOT_p :: OR_p false
     :: SBB_p false :: SUB_p false :: XOR_p false :: XADD_p :: XCHG_p :: nil.
 
@@ -2040,7 +2040,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition instr_parsers_seg_override := 
     AAA_p :: AAD_p :: AAM_p :: AAS_p :: CMP_p false ::
     ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p :: 
-    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CMC_p :: CPUID_p :: DAA_p :: DAS_p ::
+    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CLTS_p :: CMC_p :: CPUID_p :: DAA_p :: DAS_p ::
     HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: 
     LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: 
     LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 

@@ -302,20 +302,39 @@ let str_of_instr (prefix, ins) =
     | DEC (w,a) -> P.sprintf "dec %s" (pp_one_op (w,a))
     | DIV (w,op) -> P.sprintf "div %s" (pp_one_op (w,op))
 
-    | FABS -> "fabs"
+    | F2XM1 -> "f2xm1 st0"
+    | FABS -> "fabs st0"
     | FADD (true,fop) -> P.sprintf "fadd st, %s" (str_of_fp_operand fop)
     | FADD (false,fop) -> P.sprintf "fadd %s, st" (str_of_fp_operand fop)
     | FADDP fop -> P.sprintf "faddp %s, st" (str_of_fp_operand fop)
-    | FCHS -> "fchs"
-    | FCMOVcc (fct,fop) -> 
+    | FBLD fop -> P.sprintf "fbld %s, st" (str_of_fp_operand fop) 
+    | FBSTP fop -> P.sprintf "fbstp %s, st" (str_of_fp_operand fop) 
+    | FCHS -> "fchs st0"
+    | FCLEX -> "fclex"
+    | FCOM (None) -> P.sprintf "fcom st0, st1"
+    | FCOM(Some fop) -> P.sprintf "fcom st0, %s" (str_of_fp_operand fop)
+    | FCOMP (None) -> P.sprintf "fcomp st0, st1"
+    | FCOMP (Some fop) -> P.sprintf "fcomp st0, %s" (str_of_fp_operand fop)
+    | FCOMIP fop -> P.sprintf "fcomip %s" (str_of_fp_operand fop)
+    | FCOS -> "fcos st0"
+    | FCMOVcc (fct,fop) ->  
       P.sprintf "fcmov%s st, %s" (str_of_fp_cond_ty fct) (str_of_fp_operand fop)
+    | FDECSTP -> "fdecstp"
     | FDIV (fop1,fop2) -> 
       P.sprintf "fdiv %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
     | FDIVP fop -> P.sprintf "fdivp %s, st" ((str_of_fp_operand fop))
     | FDIVR (fop1,fop2) -> 
       P.sprintf "fdivr %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
     | FDIVRP fop -> P.sprintf "fdivrp %s, st" (str_of_fp_operand fop)
+    | FFREE fop -> P.sprintf "ffree %s" (str_of_fp_operand fop)
+    | FIADD fop -> P.sprintf "fiadd %s" (str_of_fp_operand fop)
+    | FICOMP fop -> P.sprintf "ficomp %s" (str_of_fp_operand fop)
+    | FIDIV fop -> P.sprintf "fidiv %s" (str_of_fp_operand fop)
+    | FIDIVR fop -> P.sprintf "fidivr %s" (str_of_fp_operand fop)
     | FILD fop -> P.sprintf "fild %s" (str_of_fp_operand fop)
+    | FIMUL fop -> P.sprintf "fimul %s" (str_of_fp_operand fop)
+    | FINCSTP -> "fincstp"
+    | FINIT -> "finit"
     | FIST fop -> P.sprintf "fist %s" (str_of_fp_operand fop)
     | FISUB fop -> P.sprintf "fisub %s" (str_of_fp_operand fop)
     | FISUBR fop -> P.sprintf "fisubr %s" (str_of_fp_operand fop)
@@ -323,19 +342,34 @@ let str_of_instr (prefix, ins) =
     | FLD fop -> P.sprintf "fld %s" (str_of_fp_operand fop)
     | FLD1 -> P.sprintf "fld1"
     | FLDCW fop -> P.sprintf "fldcw %s" (str_of_fp_operand fop)
+    | FLDENV fop -> P.sprintf "fldenv %s" (str_of_fp_operand fop)
+    | FLDL2E -> "fldl2e"
+    | FLDL2T -> "fldl2t"
+    | FLDLG2 -> "fldlg2"
+    | FLDPI -> "fldpi"
     | FLDZ -> P.sprintf "fldz"
     | FMUL (true,fop) -> P.sprintf "fmul st, %s" (str_of_fp_operand fop)
     | FMUL (false,fop) -> P.sprintf "fmul %s, st" (str_of_fp_operand fop)
     | FMULP fop -> P.sprintf "fmulp %s, st" (str_of_fp_operand fop)
+    | FNOP -> "fnop"
+    | FNSAVE fop -> P.sprintf "fnsave %s" (str_of_fp_operand fop)
     | FNSTCW fop -> P.sprintf "fnstcw %s" (str_of_fp_operand fop)
     | FNSTSW opt -> 
       (match opt with
       | None -> P.sprintf "fnstsw ax"
       | Some fop -> P.sprintf "fnstsw %s" (str_of_fp_operand fop))
+    | FPATAN -> "fpatan"
     | FPREM -> P.sprintf "fprem"
+    | FPREM1 -> "fprem1"
+    | FPTAN -> "fptan"
     | FRNDINT -> P.sprintf "frndint"
+    | FRSTOR fop -> P.sprintf "frstor %s" (str_of_fp_operand fop)
+    | FSCALE -> "fscale" 
+    | FSIN -> "fsin"
+    | FSINCOS -> "fsincos"
     | FSQRT -> P.sprintf "fsqrt"
     | FST fop -> P.sprintf "fst %s" (str_of_fp_operand fop)
+    | FSTENV fop -> P.sprintf "fstenv %s" (str_of_fp_operand fop)
     | FSTP fop -> P.sprintf "fstp %s" (str_of_fp_operand fop)
     | FSUB (fop1,fop2) -> 
       P.sprintf "fsub %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
@@ -343,6 +377,7 @@ let str_of_instr (prefix, ins) =
       P.sprintf "fsubr %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
     | FSUBRP fop -> P.sprintf "fsubrp %s, st" (str_of_fp_operand fop)
     | FSUBP fop -> P.sprintf "fsubp %s, st" (str_of_fp_operand fop)
+    | FTST -> "ftst"
     | FUCOM fop -> P.sprintf "fucom st, %s" (str_of_fp_operand fop)
     | FUCOMI fop -> P.sprintf "fucomi st, %s" (str_of_fp_operand fop)
     | FUCOMIP fop -> P.sprintf "fucomip st, %s" (str_of_fp_operand fop)
@@ -350,6 +385,10 @@ let str_of_instr (prefix, ins) =
     | FUCOMPP -> P.sprintf "fucompp"
     | FXAM -> P.sprintf "fxam"
     | FXCH fop -> P.sprintf "fxch %s" (str_of_fp_operand fop)
+    | FXTRACT -> "fxctract"
+    | FYL2X -> "fyl2x"
+    | FYL2XP1 -> "fyl2xp1"
+    | FWAIT -> "fwait"
 
     | HLT -> P.sprintf "hlt"
     | IDIV (w,op) -> P.sprintf "idiv %s" (pp_one_op (w,op))

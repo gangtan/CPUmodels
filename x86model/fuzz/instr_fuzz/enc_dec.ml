@@ -171,15 +171,38 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | DAA, DAA
   | DAS, DAS
 
+  | F2XM1, F2XM1
   | FABS, FABS
   | FCHS, FCHS
+  | FCLEX, FCLEX
+  | FCOS, FCOS
+  | FDECSTP, FDECSTP
+  | FINCSTP, FINCSTP
+  | FINIT, FINIT
+  | FLDL2E, FLDL2E
+  | FLDL2T, FLDL2T
+  | FLDLG2, FLDLG2
+  | FLDLN2, FLDLN2
+  | FLDPI, FLDPI
   | FLDZ, FLDZ
   | FLD1, FLD1
+  | FNOP, FNOP
+  | FPATAN, FPATAN
   | FPREM, FPREM
+  | FPREM1, FPREM1
+  | FPTAN, FPTAN
   | FRNDINT, FRNDINT
+  | FSCALE, FSCALE
+  | FSIN, FSIN
+  | FSINCOS, FSINCOS
   | FSQRT, FSQRT
   | FUCOMPP, FUCOMPP
   | FXAM, FXAM
+  | FXTRACT, FXTRACT
+  | FYL2X, FYL2X
+  | FYL2XP1, FYL2XP1
+  | FWAIT, FWAIT
+  
   | HLT, HLT
   | INT, INT
   | INTO, INTO
@@ -243,29 +266,44 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | FADD (d1,op1), FADD (d2,op2)
   | FMUL (d1,op1), FMUL (d2,op2) ->
     d1 = d2 && fp_operand_eq_dec op1 op2
-
+   
   | FADDP op1, FADDP op2
+  | FBLD op1, FBLD op2
+  | FCOMIP op1, FCOMIP op2
+  | FBSTP op1, FBSTP op2
   | FDIVP op1, FDIVP op2
   | FDIVRP op1, FDIVRP op2
+  | FFREE op1, FFREE op2
+  | FIADD op1, FIADD op2
+  | FICOM op1, FICOM op2
+  | FICOMP op1, FICOMP op2
+  | FIDIV op1, FIDIV op2
+  | FIDIVR op1, FIDIVR op2
   | FILD op1, FILD op2 
+  | FIMUL op1, FIMUL op2
   | FISUB op1, FISUB op2 
   | FISUBR op1, FISUBR op2 
   | FIST op1, FIST op2 
   | FISTP op1, FISTP op2 
   | FLD op1, FLD op2 
   | FLDCW op1, FLDCW op2 
+  | FLDENV op1, FLDENV op2
   | FMULP op1, FMULP op2 
+  | FNSAVE op1, FNSAVE op2 
   | FNSTCW op1, FNSTCW op2 
+(*  | FNSTSW op1, FNSTSW op2 *)
+  | FRSTOR op1, FRSTOR op2
   | FSUBRP op1, FSUBRP op2 
-  | FSUBP op1, FSUBP op2 
+  | FSUBP op1, FSUBP op2   
   | FST op1, FST op2 
+  | FSTENV op1, FSTENV op2
   | FSTP op1, FSTP op2 
   | FUCOM op1, FUCOM op2 
   | FUCOMI op1, FUCOMI op2 
   | FUCOMIP op1, FUCOMIP op2 
   | FUCOMP op1, FUCOMP op2 
   | FXCH op1, FXCH op2 
-    -> fp_operand_eq_dec op1 op2
+    -> fp_operand_eq_dec op1 op2 
 
   | FCMOVcc (fct1,op1), FCMOVcc (fct2,op2) ->
     fct1 = fct2 && fp_operand_eq_dec op1 op2
@@ -276,7 +314,9 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | FSUBR (op11,op12), FSUBR (op21, op22) -> 
     fp_operand_eq_dec op11 op21 && fp_operand_eq_dec op12 op22
 
-  | FNSTSW opt1, FNSTSW opt2 
+  | FCOM opt1, FCOM opt2
+  | FCOMP opt1, FCOMP opt2
+ (* | FNSTSW opt1, FNSTSW opt2  *)
     -> option_eq_dec fp_operand_eq_dec opt1 opt2
 
   | IMUL (w1,op1,opopt1,iopt1), IMUL (w2,op2,opopt2,iopt2) ->
@@ -343,14 +383,20 @@ pre1 = pre2
 let pre_instr_eq_dec (pre1,ins1) (pre2,ins2) = 
   prefix_eq_dec pre1 pre2 && instr_eq_dec ins1 ins2 
 
+let succ_count = ref 0
+let dec_fails_count = ref 0
+let enc_dec_fails_count = ref 0
+let enc_fails_count = ref 0
 
 
 (****************************************************)
 (* Testing the encode-decode loop on an instruction *)
 let test_encode_decode_instr
     (pre:X86Syntax.prefix) (ins:X86Syntax.instr) =
+
   match (Encode.enc_pre_instr_bytes pre ins) with
   | None ->
+    incr enc_fails_count;
     F.printf "  Instruction %a cannot be encoded!\n"
       pp_prefix_instr (pre,ins)
   | Some lz ->
@@ -360,12 +406,16 @@ let test_encode_decode_instr
       if (not (pre_instr_eq_dec (pre,ins) (pre',ins'))) then
 	(F.printf "  Encoding-decoding loop fails with instr %a\n"
 	   pp_prefix_instr (pre,ins);
+           incr enc_dec_fails_count;
 	 F.printf "    after encoding: @[  %a@]\n after decoding: %a\n"
 	   (pp_list ~sep:"," pp_big_int) lz
 	   pp_prefix_instr (pre',ins'))
-      else F.printf "  Encoding-decoding loop succeeds with instr %a\n"
+      else
+	   incr succ_count;
+	   F.printf "  Encoding-decoding loop succeeds with instr %a\n"
 	   pp_prefix_instr (pre,ins)
     with DF_IllegalInstr ->
+      incr dec_fails_count;
       F.printf "  Decoding step fails after encoding %a\n"
 	pp_prefix_instr (pre,ins);
       F.printf "    after encoding: @[  %a@]\n"

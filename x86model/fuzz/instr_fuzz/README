@@ -3,4 +3,13 @@ To make the syntax fuzzer, just do:
 (1) make extraction
 (2) make syntaxfuzzer.native
 
-Then you can run it (i.e ./syntaxfuzzer.native)
+Then you can run it. Here's how to run:
+
+./syntaxfuzzer.native [type string] [lb int] [ub int] [n int]
+
+  -type : specify instruction set to fuzz (gp or fp)
+  -lb : set the lowerbound
+  -ub : set the upperbound
+  -n : set number of runs
+
+example: ./syntaxfuzzer.native -type fp -lb 0 -ub 30 -n 10000

@@ -86,7 +86,16 @@ let choose_prefix () =
         let lock_rep = if lr_opt_c then Some (choose_lock_or_rep()) else None in
         let seg_override = if sr_opt_c then Some (choose_segment_reg()) else None in
 
-        mkPrefix lock_rep seg_override op_c addr_c
+        mkPrefix lock_rep seg_override op_c addr_c 
+	(*Create new prefix for each kind of prefix combination defined in Decode.v *)
+	
+(*	
+	match(Random.int 4) with     
+       	  0 -> mkPrefix lock_rep None false false 
+        | 1 -> mkPrefix None seg_override false false
+	| 2 -> mkPrefix None None op_c false	
+	| _ -> mkPrefix None None false addr_c
+*)
 
 let choose_addr() =
 	let c_base = choose_bool() in
@@ -104,10 +113,23 @@ let choose_op() =
   | 2 -> let addr = choose_addr() in Address_op addr;
   | _ -> let wint = choose_word_int () in Offset_op wint 
 
+let choose_fp_reg() =
+	of_int (Random.int 8)
+
+let choose_fp_op() = 
+	match (Random.int 5) with
+	| 0 -> let fpr = choose_fp_reg() in FPS_op fpr
+	| 1 -> FPM16_op (choose_addr())
+	| 2 -> FPM32_op (choose_addr())
+	| 3 -> FPM64_op (choose_addr())
+	| _ -> FPM80_op (choose_addr())
+
 let choose_two_ops() = 
 	let op1 = choose_op() in
 	let op2 = choose_op() in
 	op1, op2
+
+(**General purpose fuzz functions **)
 
 let choose_ADC () = 
   let b = choose_bool()in
@@ -543,9 +565,197 @@ let choose_XOR() =
 	let op1, op2 = choose_two_ops() in
 	XOR (w, op1, op2)
 
+(**End of general-purpose, start floating-point fuzz functions **)
+let choose_FADD() = 
+	let w = choose_bool() in
+	let op1 = choose_fp_op() in
+	FADD (w, op1)
+
+let choose_FADDP() = 
+	let op1 = choose_fp_op() in
+	FADDP (op1)
+
+let choose_FBLD() = 
+	let op1 = choose_fp_op() in
+	FBLD (op1)
+
+let choose_FBSTP() = 
+	let op1 = choose_fp_op() in
+	FBSTP (op1)
+
+let choose_FCOM() = 
+	let opt_c = choose_bool() in
+	let op = choose_fp_op() in
+	let op1 = if opt_c then (Some op) else None in
+	FCOM (op1)
+
+let choose_FCOMP() = 
+	let opt_c = choose_bool() in
+	let op = choose_fp_op() in
+	let op1 = if opt_c then (Some op) else None in
+	FCOMP (op1)
+
+let choose_FCOMIP() = 
+	let op1 = choose_fp_op() in
+	FCOMIP (op1)
+
+let choose_FDIV() = 
+	let op1 = choose_fp_op() in
+	let op2 = choose_fp_op() in
+	FDIV (op1, op2)
+
+let choose_FDIVP() = 
+	let op1 = choose_fp_op() in
+	FDIVP (op1)
+
+let choose_FDIVR() = 
+	let op1 = choose_fp_op() in
+	let op2 = choose_fp_op() in
+	FDIVR (op1, op2)
+
+let choose_FDIVRP() = 
+	let op1 = choose_fp_op() in
+	FDIVRP (op1)
+
+let choose_FFREE() = 
+	let op1 = choose_fp_op() in
+	FFREE (op1)
+
+let choose_FIADD() = 
+	let op1 = choose_fp_op() in
+	FIADD (op1)
+
+let choose_FICOM() = 
+	let op1 = choose_fp_op() in
+	FICOM (op1)
+
+let choose_FICOMP() = 
+	let op1 = choose_fp_op() in
+	FICOMP (op1)
+
+let choose_FIDIV() = 
+	let op1 = choose_fp_op() in
+	FIDIV (op1)
+
+let choose_FIDIVR() = 
+	let op1 = choose_fp_op() in
+	FIDIVR (op1)
+
+let choose_FILD() = 
+	let op1 = choose_fp_op() in
+	FILD (op1)
+
+let choose_FIMUL() = 
+	let op1 = choose_fp_op() in
+	FIMUL (op1)
+
+let choose_FIST() = 
+	let op1 = choose_fp_op() in
+	FIST (op1)
+
+let choose_FISTP() = 
+	let op1 = choose_fp_op() in
+	FISTP (op1)
+
+let choose_FISUB() = 
+	let op1 = choose_fp_op() in
+	FISUB (op1)
+
+let choose_FISUBR() = 
+	let op1 = choose_fp_op() in
+	FISUBR (op1)
+
+let choose_FLD() = 
+	let op1 = choose_fp_op() in
+	FLD (op1)
+
+let choose_FLDCW() = 
+	let op1 = choose_fp_op() in
+	FLDCW (op1)
+
+let choose_FLDENV() = 
+	let op1 = choose_fp_op() in
+	FLDENV (op1)
+
+let choose_FMUL() = 
+	let d = choose_bool() in
+	let op1 = choose_fp_op() in
+	FMUL(d, op1)
+
+let choose_FMULP() = 
+	let op1 = choose_fp_op() in
+	FMULP (op1)
+
+let choose_FNSAVE() = 
+	let op1 = choose_fp_op() in
+	FNSAVE (op1)
+
+let choose_FNSTCW() = 
+	let op1 = choose_fp_op() in
+	FNSTCW (op1)
+
+(*let choose_FNSTSW() = 
+	let opt_c = choose_bool() in
+	let op = choose_fp_op() in
+	let op1 = if opt_c then (Some op) else None in
+	FNSTSW (op1) *)
+
+let choose_FRSTOR() = 
+	let op1 = choose_fp_op() in
+	FRSTOR (op1)
+
+let choose_FST() = 
+	let op1 = choose_fp_op() in
+	FST (op1)
+
+let choose_FSTENV() = 
+	let op1 = choose_fp_op() in
+	FSTENV (op1)
+
+let choose_FSTP() = 
+	let op1 = choose_fp_op() in
+	FSTP (op1)
+
+let choose_FSUB() = 
+	let op1 = choose_fp_op() in
+	let op2 = choose_fp_op() in
+	FSUB (op1, op2)
+
+let choose_FSUBR() = 
+	let op1 = choose_fp_op() in
+	let op2 = choose_fp_op() in
+	FSUBR (op1, op2)
+
+let choose_FSUBP() = 
+	let op1 = choose_fp_op() in
+	FSUBP (op1)
+
+let choose_FSUBRP() = 
+	let op1 = choose_fp_op() in
+	FSUBRP (op1)
+
+let choose_FUCOM() = 
+	let op1 = choose_fp_op() in
+	FUCOM (op1)
+
+let choose_FUCOMP() = 
+	let op1 = choose_fp_op() in
+	FUCOMP (op1)
+
+let choose_FUCOMI() = 
+	let op1 = choose_fp_op() in
+	FUCOMI (op1)
+
+let choose_FUCOMIP() = 
+	let op1 = choose_fp_op() in
+	FUCOMIP (op1)
+
+let choose_FXCH() = 
+	let op1 = choose_fp_op() in
+	FXCH (op1)
+
 (** returns a random gp instruction  **)
 let choose_gp_instr lb ub  = 
-
    let diff = ub - lb in
    match (lb + Random.int diff) with 
       0 -> choose_ADC()
@@ -678,6 +888,88 @@ let choose_gp_instr lb ub  =
     | 129 -> XLAT
     | 130 -> choose_XOR ()
     | _ -> choose_NOP () 
+
+(**Returns a randomly generated floating-point instuction**)
+let choose_fp_instr lb ub = 
+    let diff = ub - lb in
+    match (lb + Random.int diff) with 
+    | 0 -> F2XM1
+    | 1 -> FABS
+    | 2 -> choose_FADD()
+    | 3 -> choose_FADDP()
+    | 4 -> choose_FBLD()
+    | 5 -> choose_FBSTP()
+    | 6 -> FCHS
+    | 7 -> FCLEX
+    | 8 -> choose_FCOM()
+    | 9 -> choose_FCOMP()
+    | 10 -> FCOMPP
+    | 11 -> choose_FCOMIP()
+    | 12 -> FCOS
+    | 13 -> FDECSTP
+    | 14 -> choose_FDIV() 
+    | 15 -> choose_FDIVP()
+    | 16 -> choose_FDIVR()
+    | 17 -> choose_FDIVRP()
+    | 18 -> choose_FFREE()
+    | 19 -> choose_FIADD()
+    | 20 -> choose_FICOM()
+    | 21 -> choose_FICOMP()
+    | 22 -> choose_FIDIV()
+    | 23 -> choose_FIDIVR()
+    | 24 -> choose_FILD()
+    | 25 -> choose_FIMUL()
+    | 26 -> FINCSTP
+    | 27 -> FINIT
+    | 28 -> choose_FIST()
+    | 29 -> choose_FISTP()
+    | 30 -> choose_FISUB()
+    | 31 -> choose_FISUBR()
+    | 32 -> choose_FLD()
+    | 33 -> FLD1
+    | 34 -> choose_FLDCW()
+    | 35 -> choose_FLDENV()
+    | 36 -> FLDL2E
+    | 37 -> FLDL2T
+    | 38 -> FLDLG2
+    | 39 -> FLDLN2
+    | 40 -> FLDPI
+    | 41 -> FLDZ
+    | 42 -> choose_FMUL()
+    | 43 -> choose_FMULP()
+    | 44 -> FNOP
+    | 45 -> choose_FNSAVE()
+    | 46 -> choose_FNSTCW()
+   (* | 47 -> choose_FNSTSW() *)
+    | 48 -> FPATAN
+    | 49 -> FPREM
+    | 50 -> FPREM1
+    | 51 -> FPTAN
+    | 52 -> FRNDINT
+    | 53 -> choose_FRSTOR()
+    | 54 -> FSCALE
+    | 55 -> FSIN
+    | 56 -> FSINCOS
+    | 57 -> FSQRT
+    | 58 -> choose_FST()
+    | 59 -> choose_FSTENV()
+    | 60 -> choose_FSTP()
+    | 61 -> choose_FSUB()
+    | 62 -> choose_FSUBP()
+    | 63 -> choose_FSUBR()
+    | 64 -> choose_FSUBRP()
+    | 65 -> FTST
+    | 66 -> choose_FUCOM()
+    | 67 -> choose_FUCOMP()
+    | 68 -> FUCOMPP
+    | 69 -> choose_FUCOMI()
+    | 70 -> choose_FUCOMIP()
+    | 71 -> FXAM
+    | 72 -> choose_FXCH()
+    | 73 -> FXTRACT
+    | 74 -> FYL2X
+    | 75 -> FYL2XP1
+    | _ ->  FNOP 
     
 let rec fuzz_gp lb ub n = 
   match n with 
@@ -687,7 +979,7 @@ let rec fuzz_gp lb ub n =
      let instr = choose_gp_instr lb ub in 
      
      F.printf "------------\nTesting %a\n"
-     pp_prefix_instr (prefix,instr);
+     pp_prefix_instr (emptyPrefix,instr);
      
      test_encode_decode_instr (*prefix*) emptyPrefix instr;
      Printf.printf "------------\n";
@@ -695,15 +987,32 @@ let rec fuzz_gp lb ub n =
      fuzz_gp lb ub (x - 1)
   ;;
 
+let rec fuzz_fp lb ub n = 
+  match n with
+    | 0 -> ()
+    | x ->   
+     let instr = choose_fp_instr lb ub in 
+     
+     F.printf "------------\nTesting %a\n"
+     pp_prefix_instr (emptyPrefix,instr);
+     
+     test_encode_decode_instr (*prefix*) emptyPrefix instr;
+     Printf.printf "------------\n";
+     F.print_newline (); (* flush *)
+     fuzz_fp lb ub (x - 1)
+  ;;
+
 Random.self_init();;
 
 let some_lb = ref 0
 let some_ub = ref 100
 let some_n = ref 500
+let some_type = ref "gp"
 
-let usage = "usage: " ^ Sys.argv.(0) ^ " [lb int] [ub int] [n int]"
+let usage = "usage: " ^ Sys.argv.(0) ^ " [type string] [lb int] [ub int] [n int]"
 
 let speclist = [
+    ("-type", Arg.String (fun d -> some_type := d), ": specify instruction set to fuzz (gp or fp)"); 
     ("-lb", Arg.Int (fun a -> some_lb := a), ": set the lowerbound");
     ("-ub", Arg.Int (fun b -> some_ub := b), ": set the upperbound");
     ("-n", Arg.Int (fun c -> some_n := c), ": set number of runs");
@@ -712,6 +1021,13 @@ let speclist = [
 (*let check = check that command line args are ok
 
 *)
+
+let gp_or_fp() = 
+	match !some_type with 
+	| "gp" -> fuzz_gp !some_lb !some_ub !some_n
+	| "fp" -> fuzz_fp !some_lb !some_ub !some_n
+	| _ -> fuzz_fp !some_lb !some_ub !some_n
+
 let main () = 
   print_string("running syntaxfuzzer:\n");
 
@@ -719,8 +1035,19 @@ let main () =
 	speclist 
 	(fun x -> raise (Arg.Bad ("Bad argument : " ^ x)))
 	usage;
- 
+
+  gp_or_fp();
+
+  let s_fl = float_of_int !succ_count in
+  let e_d_fl = float_of_int !enc_dec_fails_count in
+  let d_fl = float_of_int !dec_fails_count in
+  let e_fl = float_of_int !enc_fails_count in
+  let n_fl = float_of_int !some_n in
+
+  Printf.printf "Percentage successful:                  %f\n" (s_fl /. n_fl);
+  Printf.printf "Percentage decode step failures:        %f\n" (d_fl /. n_fl);
+  Printf.printf "Percentage encode-decode loop failures: %f\n" (e_d_fl /. n_fl);
+  Printf.printf "Percentage encode failures:             %f\n" (e_fl /. n_fl);;
   
-  fuzz_gp !some_lb !some_ub !some_n;;
 
 main();;

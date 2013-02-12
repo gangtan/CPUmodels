@@ -988,8 +988,8 @@ Definition enc_FCOMP (op1: option fp_operand) : Enc (list bool) :=
 Definition enc_FCOMPP := ret (s2bl "1101111011011001").
 Definition enc_FCOMIP (op1: fp_operand) : Enc (list bool) := 
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111111110" ++ l1).
-Definition enc_FCOS := ret (s2bl "1101111011011001").
-Definition enc_FDECSTP := ret (s2bl "1101111011011001").
+Definition enc_FCOS := ret    (s2bl "1101100111111111").
+Definition enc_FDECSTP := ret (s2bl "1101100111110110").
 Definition enc_FDIV := enc_fp_arith true (s2bl "1") (s2bl "110").
 Definition enc_FDIVP (fp1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 fp1; ret (s2bl "1101111011111" ++ l1).
