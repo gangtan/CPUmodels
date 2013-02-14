@@ -50,13 +50,6 @@ Module X86_PARSER_ARG.
   | Address_t : type
   | Operand_t : type
   | Fpu_Register_t : type
-  | Fp_Status_Register_t : type
-  | Fp_Control_Register_t : type 
-  | Fp_TagWord_Register_t : type
-  | Fp_LastOperPtr_Register_t : type
-  | Fp_LastInstrPtr_Register_t : type
-  | Fp_Opcode_Register_t : type
-  | Fpu_TagWords_t : type
   | Fp_Debug_Register_t : type
   | Fp_Operand_t : type 
   | MMX_Granularity_t : type
@@ -94,13 +87,6 @@ Module X86_PARSER_ARG.
       | Address_t => address
       | Operand_t => operand
       | Fpu_Register_t => int3
-      | Fp_Status_Register_t => fp_status_register
-      | Fp_Control_Register_t => fp_control_register
-      | Fp_TagWord_Register_t => fp_tagWord_register
-      | Fp_LastOperPtr_Register_t => fp_lastOperandPtr_register
-      | Fp_LastInstrPtr_Register_t => fp_lastInstrPtr_register
-      | Fp_Opcode_Register_t => fp_opcode_register
-      | Fpu_TagWords_t => fpu_tagWords
       | Fp_Debug_Register_t => fp_debug_register
       | Fp_Operand_t => fp_operand  
       | MMX_Granularity_t => mmx_granularity
@@ -138,13 +124,6 @@ Module X86_PARSER.
   Definition scale_t := tipe_t Scale_t.
   Definition condition_t := tipe_t Condition_t.
   Definition fpu_register_t := tipe_t Fpu_Register_t.
-  Definition fp_status_register_t := tipe_t Fp_Status_Register_t.
-  Definition fp_control_register_t := tipe_t Fp_Control_Register_t. 
-  Definition fp_tagWord_register_t := tipe_t Fp_TagWord_Register_t.
-  Definition fp_lastOperPtr_register_t := tipe_t Fp_LastOperPtr_Register_t.
-  Definition fp_lastInstrPtr_register_t := tipe_t Fp_LastInstrPtr_Register_t.
-  Definition fp_opcode_register_t := tipe_t Fp_Opcode_Register_t.
-  Definition fpu_tagWords_t := tipe_t Fpu_TagWords_t.
   Definition fp_debug_register_t := tipe_t Fp_Debug_Register_t.
   Definition mmx_granularity_t := tipe_t MMX_Granularity_t.
   Definition mmx_operand_t := tipe_t MMX_Operand_t.

@@ -3094,7 +3094,7 @@ Section UDFA.
           let (g', u) := uderivs_and_split g (token_id_to_chars tid) in 
             let p := find_or_add g' s in 
               let (s2, row) := ugen_row' n' (1 + tid) (s ++ (fst p))  in
-              let e : uentry_t := {| unext_state := (snd p) ; unext_uform := u |} in
+              let e : uentry_t := {| unext_state := (snd p) ; unext_uform := uopt u |} in
                 ((fst p) ++ s2, e::row)
       end.
     Definition ugen_row (s:states_t) : states_t * urow_t := 

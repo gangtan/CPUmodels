@@ -137,60 +137,9 @@ Definition Z_to_condition_type(n:Z) : condition_type :=
 
 (* Floating point instruction syntax *)
 
-Inductive fpu_register : Set := ST7 | ST6 | ST5 | ST4 | ST3 | ST2 | ST1 | ST0.
-Definition fpu_register_eq_dec : 
-  forall (x y:fpu_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
 Inductive fp_debug_register : Set := eMF | eDB | eBP | eUD | eNM | eDF | eSS | eGP | ePF | eAC | eMC.
 Definition fp_debug_register_eq_dec : 
   forall (x y: fp_debug_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_status_register : Set := Busy | C3 | Top | C2 | C1 | C0 |
-                                      Es | Sf | Pe | Ue | Oe | Ze | De | Ie.
-
-Definition fp_status_register_eq_dec : 
-  forall (x y:fp_status_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_control_register : Set := Res15 | Res14 | Res13 | Res7 | Res6 | IC | RC | PC 
-				     | Pm | Um | Om | Zm | Dm | Im.
-Definition fp_control_register_eq_dec : 
-  forall (x y:fp_control_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_tagWord_register : Set := valid | zero | special | empty.
-Definition fp_tagWord_register_eq_dec : 
-  forall (x y:fp_tagWord_register), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Definition Z_to_fp_tagWord_register (n:Z) :=
-  match n with
-  | 0 => valid
-  | 1 => zero
-  | 2 => special
-  | _ => empty
-  end.
-
-Inductive fpu_tagWords : Set := Tag0 | Tag1 | Tag2 | Tag3 | Tag4 | Tag5 | Tag6 | Tag7.
-
-Definition fp_tagWords_eq_dec : 
-  forall (x y:fpu_tagWords), {x=y} + {x<>y}.
-  intros ; decide equality.
-Defined.
-
-Inductive fp_lastOperandPtr_register : Set := 
-| Valid
-| Undefined.
-
-Definition fp_lastOperandPtr_register_eq_dec : 
-  forall (x y:fp_lastOperandPtr_register), {x=y} + {x<>y}.
   intros ; decide equality.
 Defined.
 
@@ -227,19 +176,21 @@ Definition Z_to_fp_condition_type(n:Z) : fp_condition_type :=
 
 (*MMX syntax *)
 
-(*Uses x87 fpu stack but elements can be directly addressed*)
-Definition mmx_register := fpu_register.
+(* Eight 64-bit mmx registers; mmx registers are syntactically
+   different from fpu registers, but are semantically mapped
+   to the same set of eight 80-bit registers as FPU registers *)
+Inductive mmx_register := MM0 | MM1 | MM2 | MM3 | MM4 | MM5 | MM6 | MM7.
 
 Definition Z_to_mmx_register (n:Z) := 
   match n with 
-    | 0 => ST0
-    | 1 => ST1
-    | 2 => ST2
-    | 3 => ST3
-    | 4 => ST4
-    | 5 => ST5
-    | 6 => ST6
-    | _ => ST7
+    | 0 => MM0
+    | 1 => MM1
+    | 2 => MM2
+    | 3 => MM3
+    | 4 => MM4
+    | 5 => MM5
+    | 6 => MM6
+    | _ => MM7
   end.
 
 Inductive mmx_granularity : Set :=

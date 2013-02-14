@@ -37,6 +37,53 @@ Module X86_MACHINE.
   Definition flag_eq_dec : forall(f1 f2:flag), {f1=f2}+{f1<>f2}.
     intros ; decide equality. Defined.
 
+  Inductive fp_lastOperandPtr_register : Set := 
+  | Valid
+  | Undefined.
+
+  Definition fp_lastOperandPtr_register_eq_dec : 
+    forall (x y:fp_lastOperandPtr_register), {x=y} + {x<>y}.
+    intros ; decide equality.
+  Defined.
+
+  Inductive fp_status_register : Set := Busy | C3 | Top | C2 | C1 | C0 |
+    Es | Sf | Pe | Ue | Oe | Ze | De | Ie.
+
+  Definition fp_status_register_eq_dec : 
+    forall (x y:fp_status_register), {x=y} + {x<>y}.
+    intros ; decide equality.
+  Defined.
+
+  Inductive fp_control_register : Set := 
+    Res15 | Res14 | Res13 | Res7 | Res6 | IC | RC | PC 
+  | Pm | Um | Om | Zm | Dm | Im.
+  Definition fp_control_register_eq_dec : 
+    forall (x y:fp_control_register), {x=y} + {x<>y}.
+    intros ; decide equality.
+  Defined.
+
+  Inductive fp_tagWord_register : Set := valid | zero | special | empty.
+  Definition fp_tagWord_register_eq_dec : 
+    forall (x y:fp_tagWord_register), {x=y} + {x<>y}.
+    intros ; decide equality.
+  Defined.
+
+  Definition Z_to_fp_tagWord_register (n:Z) :=
+  match n with
+    | 0 => valid
+    | 1 => zero
+    | 2 => special
+    | _ => empty
+  end.
+
+  Inductive fpu_tagWords : Set := Tag0 | Tag1 | Tag2 | Tag3 | Tag4 | Tag5 | Tag6 | Tag7.
+
+  Definition fp_tagWords_eq_dec : 
+    forall (x y:fpu_tagWords), {x=y} + {x<>y}.
+    intros ; decide equality.
+  Defined.
+
+
   Inductive loc : nat -> Set := 
   | reg_loc : register -> loc size32
   | seg_reg_start_loc : segment_register -> loc size32
@@ -45,8 +92,8 @@ Module X86_MACHINE.
   | control_register_loc : control_register -> loc size32
   | debug_register_loc : debug_register -> loc size32
   | pc_loc : loc size32
-  (*Floating-Point locations *)
-  | fpu_reg_loc : fpu_register -> loc size80
+  (* Locations for FPU *)
+  | fpu_reg_loc : int3 -> loc size80 (* 8 registers shared between FPU and MMX *)
   | fpu_lastOperPtr_loc : fp_lastOperandPtr_register -> loc size64
   | fpu_st_loc : fp_status_register -> loc size3
   | fpu_cntrl_loc : fp_control_register -> loc size3
@@ -66,12 +113,11 @@ Module X86_MACHINE.
     control_regs : fmap control_register int32 ; 
     debug_regs : fmap debug_register int32 ; 
     pc_reg : int size32 ;
-    fpu_regs : fmap fpu_register int80 ;
+    fpu_regs : fmap int3 int80 ;
     fpu_lastOperPtr : fmap fp_lastOperandPtr_register int64 ;
     fpu_status : fmap fp_status_register int3 ;
     fpu_control : fmap fp_control_register int3 ;
     fpu_tags : fmap fpu_tagWords int2
-    
   }.
   Definition mach_state := mach.
 
@@ -104,8 +150,8 @@ Module X86_MACHINE.
        fpu_status := fpu_status m ;
        fpu_control := fpu_control m ;
        fpu_tags := fpu_tags m 
-       
     |}.
+
 
   Definition set_seg_regs_starts r v m := 
     {| gp_regs := gp_regs m ;
@@ -197,9 +243,9 @@ Module X86_MACHINE.
        fpu_tags := fpu_tags m 
     |}.
 
-  Definition set_fpu_regs r v m := 
+  Definition set_fpu_regs (r:int3) v m := 
     {| gp_regs := gp_regs m ;
-       fpu_regs := upd fpu_register_eq_dec (fpu_regs m) r v ;
+       fpu_regs := upd (@Word.eq_dec _) (fpu_regs m) r v ;
        seg_regs_starts := seg_regs_starts m ; 
        seg_regs_limits := seg_regs_limits m ;
        flags_reg := flags_reg m ;
@@ -328,8 +374,8 @@ Module X86_Decode.
   Definition load_reg (r:register) := ret (get_loc_rtl_exp (reg_loc r)).
   Definition set_reg (p:rtl_exp size32) (r:register) := 
     emit set_loc_rtl p (reg_loc r).
-  Definition load_fpu_reg (f_r : fpu_register) := ret (get_loc_rtl_exp (fpu_reg_loc f_r)).
-  Definition set_fpu_reg (p: rtl_exp size80) (f_r: fpu_register) :=
+  Definition load_fpu_reg (f_r : int3) := ret (get_loc_rtl_exp (fpu_reg_loc f_r)).
+  Definition set_fpu_reg (p: rtl_exp size80) (f_r: int3) :=
     emit set_loc_rtl p (fpu_reg_loc f_r).
   Definition cast_u s1 s2 (e:rtl_exp s1) := ret (@cast_u_rtl_exp s1 s2 e).
   Definition cast_s s1 s2 (e:rtl_exp s1) := ret (@cast_s_rtl_exp s1 s2 e).

@@ -18,8 +18,11 @@ Require Import Monad.
 Require Import Maps.
 Require Import X86Syntax.
 Require Import Eqdep.
+Require Import Flocq.Appli.Fappli_IEEE_bits.
+Require Import Flocq.Appli.Fappli_IEEE.
 Set Implicit Arguments.
 Unset Automatic Introduction.
+
 
 Definition size1 := 0.
 Definition size2 := 1.
@@ -79,7 +82,16 @@ Module RTL(M : MACHINE_SIG).
     add_op | sub_op | mul_op | divs_op | divu_op | modu_op | mods_op
   | and_op | or_op | xor_op | shl_op | shr_op | shru_op | ror_op | rol_op.
 
+  Inductive float_arith_op : Set :=
+    fadd_op | fsub_op | fmul_op | fdiv_op.
+
   Inductive test_op : Set := eq_op | lt_op | ltu_op.
+
+  (* Constraints on mantissa and exponent widths of floating-point numbers *)
+  Definition float_width_hyp (mw ew:positive) :=
+    Zpos mw + 1 < 2 ^ (Zpos ew - 1).
+
+  Definition rounding_mode := Flocq.Appli.Fappli_IEEE.mode.
 
   Inductive rtl_exp : nat -> Type := 
   | arith_rtl_exp : forall s (b:bit_vector_op)(e1 e2:rtl_exp s), rtl_exp s
@@ -90,6 +102,17 @@ Module RTL(M : MACHINE_SIG).
   | imm_rtl_exp : forall s, int s -> rtl_exp s
   | get_loc_rtl_exp : forall s (l:location s), rtl_exp s
   | get_byte_rtl_exp : forall (addr:rtl_exp size_addr),  rtl_exp size8
+  | farith_rtl_exp : (* floating-point arithmetics *)
+    forall (mw ew:positive),
+      let len := (1 + nat_of_P mw + nat_of_P ew)%nat in
+        float_width_hyp mw ew ->
+        float_arith_op -> rounding_mode ->
+        rtl_exp len -> rtl_exp len -> rtl_exp len
+  | fcast_rtl_exp : (* cast between floats of different precisions *)
+    forall (mw1 ew1 mw2 ew2:positive),
+      float_width_hyp mw1 ew1 -> float_width_hyp mw2 ew2 -> rounding_mode ->
+      rtl_exp (1 + nat_of_P mw1 + nat_of_P ew1)%nat ->
+      rtl_exp (1 + nat_of_P mw2 + nat_of_P ew2)%nat
   | choose_rtl_exp : forall s, rtl_exp s.
 
   Inductive rtl_instr : Type :=
@@ -187,6 +210,54 @@ Module RTL(M : MACHINE_SIG).
       | ltu_op => Word.ltu v1 v2
         end) then Word.one else Word.zero.
 
+  Lemma prec_gt_0 : forall mw:positive, 0 < Zpos mw + 1.
+  Proof. intros. generalize (Pos2Z.is_pos mw). omega. Qed.
+
+  Definition interp_farith (mw ew:positive) (hyp: float_width_hyp mw ew)
+    (fop:float_arith_op) (rm: rounding_mode)
+    (v1 v2: int (1 + nat_of_P mw + nat_of_P ew)) :
+    int (1 + nat_of_P mw + nat_of_P ew) :=
+    let prec := Zpos mw + 1 in
+    let emax := Zpower 2 (Zpos ew - 1) in
+    let bf_of_bits := binary_float_of_bits (Zpos mw) (Zpos ew) 
+      (Pos2Z.is_pos mw) (Pos2Z.is_pos ew) hyp in
+    let bf1 := bf_of_bits (Word.unsigned v1) in
+    let bf2 := bf_of_bits (Word.unsigned v2) in
+    let res := 
+      match fop with
+        | fadd_op => Bplus prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
+        | fsub_op => Bminus prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
+        | fmul_op => Bmult prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
+        | fdiv_op => Bdiv prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
+      end
+    in
+    Word.repr (bits_of_binary_float (Zpos mw) (Zpos ew) res).
+
+  Definition cond_Zopp (b : bool) m := if b then Zopp m else m.
+
+  Definition binary_float_cast (prec1 emax1 prec2 emax2:Z) 
+    (H1: 0 < prec2)  (H2: prec2 < emax2)
+    (rm: rounding_mode)
+    (bf: binary_float prec1 emax1)
+        : binary_float prec2 emax2 :=
+    match bf with
+      | B754_nan => B754_nan _ _
+      | B754_zero sign => B754_zero _ _ sign
+      | B754_infinity sign => B754_infinity _ _ sign
+      | B754_finite sign mant ep _  => 
+        binary_normalize prec2 emax2 H1 H2 rm (cond_Zopp sign (Zpos mant)) ep true
+    end.
+
+  Definition interp_fcast (mw1 ew1 mw2 ew2:positive)
+     (hyp1: float_width_hyp mw1 ew1) (hyp2: float_width_hyp mw2 ew2)
+     (rm:rounding_mode) (v: int (1 + nat_of_P mw1 + nat_of_P ew1)) :
+     int (1 + nat_of_P mw2 + nat_of_P ew2) :=
+     let bf_of_bits := binary_float_of_bits (Zpos mw1) (Zpos ew1)
+       (Pos2Z.is_pos mw1) (Pos2Z.is_pos ew1) hyp1 in
+     let bf := bf_of_bits (Word.unsigned v) in
+     let bf' := binary_float_cast (prec_gt_0 mw2) hyp2 rm bf in
+       Word.repr (bits_of_binary_float (Zpos mw2) (Zpos ew2) bf').
+
   Local Open Scope monad_scope.
 
   Fixpoint interp_rtl_exp s (e:rtl_exp s) : RTL (int s) := 
@@ -207,6 +278,10 @@ Module RTL(M : MACHINE_SIG).
       | get_loc_rtl_exp _ l => get_loc l
       | get_byte_rtl_exp addr => 
         v <- interp_rtl_exp addr; get_byte v
+      | farith_rtl_exp _ _ hyp fop rm e1 e2 =>
+        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; ret (interp_farith hyp fop rm v1 v2)
+      | fcast_rtl_exp _ _ _ _ hyp1 hyp2 rm e =>
+        v <- interp_rtl_exp e; ret (interp_fcast hyp1 hyp2 rm v)
       | choose_rtl_exp _ => choose_bits _
     end.
 

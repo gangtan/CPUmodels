@@ -809,16 +809,16 @@ Definition enc_XOR := enc_logic_or_arith "00110" "110".
 
 (* Definition matches a floating-point register and returns a list of booleans that 
  * represents its bit encoding. *)
-Definition enc_fpr r : list bool :=
+Definition enc_mmx_reg r : list bool :=
   match r with
-    | (ST0) => s2bl "000"
-    | (ST1) => s2bl "001"
-    | (ST2) => s2bl "010"
-    | (ST3) => s2bl "011"
-    | (ST4) => s2bl "100"
-    | (ST5) => s2bl "101"
-    | (ST6) => s2bl "110"
-    | (ST7) => s2bl "111"
+    | MM0 => s2bl "000"
+    | MM1 => s2bl "001"
+    | MM2 => s2bl "010"
+    | MM3 => s2bl "011"
+    | MM4 => s2bl "100"
+    | MM5 => s2bl "101"
+    | MM6 => s2bl "110"
+    | MM7 => s2bl "111"
   end.
 
 (* encoding the modrm byte for floating-point instructions, given the 3 bits for
@@ -1158,7 +1158,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_mmx_modrm_gen (mmx_reg: list bool) (op2: mmx_operand) : Enc (list bool) := 
   match op2 with
-    | MMX_Reg_op r2 => ret (s2bl "11" ++ mmx_reg ++ enc_fpr r2)
+    | MMX_Reg_op r2 => ret (s2bl "11" ++ mmx_reg ++ enc_mmx_reg r2)
     | MMX_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
       ret (s2bl "00" ++ mmx_reg ++ s2bl "101" ++ enc_word disp)
     | MMX_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
@@ -1185,7 +1185,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
 
   Definition enc_mmx_modrm (op1 op2: mmx_operand) := 
   match op1 with 
-  | MMX_Reg_op r1 => enc_mmx_modrm_gen (enc_fpr r1) op2
+  | MMX_Reg_op r1 => enc_mmx_modrm_gen (enc_mmx_reg r1) op2
   | _ => invalid
   end.
 
@@ -1202,9 +1202,9 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
   Definition enc_MOVD (op1 op2: mmx_operand) := 
     match op1, op2 with 
     | GP_Reg_op r, MMX_Reg_op m =>
-        ret (s2bl "000011110110111011" ++ (enc_reg r) ++ (enc_fpr m))(*reg to mmxreg*)
+        ret (s2bl "000011110110111011" ++ (enc_reg r) ++ (enc_mmx_reg m))(*reg to mmxreg*)
     | MMX_Reg_op m, GP_Reg_op r =>
-        ret (s2bl "000011110111111011" ++ (enc_fpr m) ++ (enc_reg r))(*reg from mmxreg*)
+        ret (s2bl "000011110111111011" ++ (enc_mmx_reg m) ++ (enc_reg r))(*reg from mmxreg*)
     | MMX_Addr_op a, MMX_Reg_op m => 
 	l1 <- enc_mmx_modrm op2 op1; ret (s2bl "0000111101101110" ++ l1) (*mem to mmxreg *)
     | MMX_Reg_op m, MMX_Addr_op a =>
@@ -1338,7 +1338,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | MMX_16, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl     "00001111111100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
-    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
+    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r) ++ (enc_byte imm))
     | _, _, _ => invalid
     end.
 
@@ -1348,7 +1348,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111000" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
-    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111000" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
+    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111000" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r) ++ (enc_byte imm))
     | _, _, _ => invalid
     end.
 
@@ -1358,7 +1358,7 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | MMX_16, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
-    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111110100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_fpr r) ++ (enc_byte imm))
+    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111110100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r) ++ (enc_byte imm))
     | _, _, _ => invalid
     end.
 
@@ -1486,7 +1486,7 @@ Definition enc_xmm_r r :=
   (*Also needs to be enc_mm_modrm and enc_r32_modrm for SSE encodings *)
   Definition enc_mm_modrm_gen (mm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
-    | SSE_MM_Reg_op r2 => ret (s2bl "11" ++ mm_reg ++ enc_fpr r2)
+    | SSE_MM_Reg_op r2 => ret (s2bl "11" ++ mm_reg ++ enc_mmx_reg r2)
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
       ret (s2bl "00" ++ mm_reg ++ s2bl "101" ++ enc_word disp)
     | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
@@ -1539,7 +1539,7 @@ Definition enc_xmm_r r :=
 
   Definition enc_mm_modrm (op1 op2: sse_operand) := 
   match op1 with 
-  | SSE_MM_Reg_op r1 => enc_mm_modrm_gen (enc_fpr r1) op2
+  | SSE_MM_Reg_op r1 => enc_mm_modrm_gen (enc_mmx_reg r1) op2
   | _ => invalid
   end.
 
@@ -1698,7 +1698,7 @@ Definition enc_CVTPI2PS (op1 op2: sse_operand) :=
 Definition enc_CVTPS2PI (op1 op2: sse_operand) := 
   match op1, op2 with
   | SSE_XMM_Reg_op a, SSE_MM_Reg_op r => 
-    ret s2bl "000011110010110111" ++ (enc_xmm_r a) ++ (enc_fpr r)
+    ret s2bl "000011110010110111" ++ (enc_xmm_r a) ++ (enc_mmx_reg r)
   | SSE_XMM_Reg_op r, SSE_Addr_op m =>
     l1 <- enc_xmm_modrm op1 op2; ret s2bl "0000111100101101" ++ l1
   | _, _  => invalid
@@ -1985,16 +1985,16 @@ Definition enc_PAVGB (op1 op2: sse_operand):=
 Definition enc_PEXTRW (op1 op2 imm: sse_operand):=
   match op1, op2, imm with
   | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
-    ret (s2bl "000011111100010111" ++ (enc_reg r) ++(enc_fpr mx) ++ enc_byte i) 
+    ret (s2bl "000011111100010111" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ enc_byte i) 
   | _, _, _  => invalid
   end.
 
 Definition enc_PINSRW (op1 op2 imm: sse_operand):=
   match op1, op2, imm with
   | SSE_MM_Reg_op xmm, SSE_GP_Reg_op r32, SSE_Imm_op i => 
-    ret (s2bl "000011111100010011" ++ (enc_fpr xmm) ++(enc_reg r32) ++ enc_byte i) 
+    ret (s2bl "000011111100010011" ++ (enc_mmx_reg xmm) ++(enc_reg r32) ++ enc_byte i) 
   | SSE_MM_Reg_op mm, SSE_Addr_op a, SSE_Imm_op i =>
-    l1 <- enc_mm_modrm_noreg (enc_fpr mm) op2; 
+    l1 <- enc_mm_modrm_noreg (enc_mmx_reg mm) op2; 
     ret (s2bl "0000111111000100" ++ l1 ++ enc_byte i) 
   | _, _, _  => invalid
   end.
@@ -2030,7 +2030,7 @@ Definition enc_PMINUB (op1 op2: sse_operand):=
 Definition enc_PMOVMSKB (op1 op2: sse_operand):=
   match op1, op2 with
   | SSE_GP_Reg_op a, SSE_MM_Reg_op r => 
-    ret s2bl "000011111101011111" ++ (enc_reg a) ++ (enc_fpr r)
+    ret s2bl "000011111101011111" ++ (enc_reg a) ++ (enc_mmx_reg r)
   | _, _  => invalid
   end.
 
@@ -2044,14 +2044,14 @@ Definition enc_PSADBW (op1 op2: sse_operand):=
 Definition enc_PSHUFW (op1 op2 imm: sse_operand) :=
   match op1, op2, imm with
   | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
-    ret (s2bl "0000111101110000" ++ (enc_reg r) ++(enc_fpr mx) ++ enc_byte i) 
+    ret (s2bl "0000111101110000" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ enc_byte i) 
   | _, _, _  => invalid
   end.
 
 Definition enc_MASKMOVQ (op1 op2: sse_operand) :=
   match op1, op2 with
   | SSE_MM_Reg_op a, SSE_MM_Reg_op r => 
-    ret s2bl "000011111101011111" ++ (enc_fpr a) ++ (enc_fpr r)
+    ret s2bl "000011111101011111" ++ (enc_mmx_reg a) ++ (enc_mmx_reg r)
   | _, _  => invalid
   end.
 
