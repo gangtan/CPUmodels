@@ -37,52 +37,16 @@ Module X86_MACHINE.
   Definition flag_eq_dec : forall(f1 f2:flag), {f1=f2}+{f1<>f2}.
     intros ; decide equality. Defined.
 
-  Inductive fp_lastOperandPtr_register : Set := 
-  | Valid
-  | Undefined.
+  Inductive fpu_flag : Set := F_Busy | F_C3 | F_C2 | F_C1 | F_C0
+  | F_ES | F_SF | F_PE | F_UE | F_OE | F_ZE | F_DE | F_IE.
 
-  Definition fp_lastOperandPtr_register_eq_dec : 
-    forall (x y:fp_lastOperandPtr_register), {x=y} + {x<>y}.
-    intros ; decide equality.
-  Defined.
+  Inductive fpu_ctrl_flag : Set :=
+    F_Res15 | F_Res14 | F_Res13 | F_Res7 | F_Res6
+  | F_IC | F_PM | F_UM | F_OM | F_ZM | F_DM | F_IM.
 
-  Inductive fp_status_register : Set := Busy | C3 | Top | C2 | C1 | C0 |
-    Es | Sf | Pe | Ue | Oe | Ze | De | Ie.
-
-  Definition fp_status_register_eq_dec : 
-    forall (x y:fp_status_register), {x=y} + {x<>y}.
-    intros ; decide equality.
-  Defined.
-
-  Inductive fp_control_register : Set := 
-    Res15 | Res14 | Res13 | Res7 | Res6 | IC | RC | PC 
-  | Pm | Um | Om | Zm | Dm | Im.
-  Definition fp_control_register_eq_dec : 
-    forall (x y:fp_control_register), {x=y} + {x<>y}.
-    intros ; decide equality.
-  Defined.
-
-  Inductive fp_tagWord_register : Set := valid | zero | special | empty.
-  Definition fp_tagWord_register_eq_dec : 
-    forall (x y:fp_tagWord_register), {x=y} + {x<>y}.
-    intros ; decide equality.
-  Defined.
-
-  Definition Z_to_fp_tagWord_register (n:Z) :=
-  match n with
-    | 0 => valid
-    | 1 => zero
-    | 2 => special
-    | _ => empty
-  end.
-
-  Inductive fpu_tagWords : Set := Tag0 | Tag1 | Tag2 | Tag3 | Tag4 | Tag5 | Tag6 | Tag7.
-
-  Definition fp_tagWords_eq_dec : 
-    forall (x y:fpu_tagWords), {x=y} + {x<>y}.
-    intros ; decide equality.
-  Defined.
-
+  Definition size11 := 10%nat.
+  Definition size48 := 47%nat.
+  Definition int48 := Word.int size48.
 
   Inductive loc : nat -> Set := 
   | reg_loc : register -> loc size32
@@ -93,11 +57,17 @@ Module X86_MACHINE.
   | debug_register_loc : debug_register -> loc size32
   | pc_loc : loc size32
   (* Locations for FPU *)
-  | fpu_reg_loc : int3 -> loc size80 (* 8 registers shared between FPU and MMX *)
-  | fpu_lastOperPtr_loc : fp_lastOperandPtr_register -> loc size64
-  | fpu_st_loc : fp_status_register -> loc size3
-  | fpu_cntrl_loc : fp_control_register -> loc size3
-  | fpu_tag_loc : fpu_tagWords -> loc size2.
+  | fpu_datareg_loc : int3 -> loc size80 
+  | fpu_stktop_loc : loc size3  (* the stack top location *)
+  | fpu_flag_loc : fpu_flag -> loc size1 
+  | fpu_rctrl_loc : loc size2 (* rounding control *)
+  | fpu_pctrl_loc : loc size2 (* precision control *)
+  | fpu_ctrl_flag_loc : fpu_ctrl_flag -> loc size1
+  | fpu_tag_loc : int3 -> loc size2
+  | fpu_lastInstrPtr_loc : loc size48
+  | fpu_lastOperandPtr_loc : loc size48
+  | fpu_lastOpcode_loc : loc size11. 
+
   Definition location := loc.
 
   Definition fmap (A B:Type) := A -> B.
@@ -105,231 +75,400 @@ Module X86_MACHINE.
     fmap A B := fun y => if eq_dec x y then v else f y.
   Definition look A B (f:fmap A B) (x:A) : B := f x.
 
-  Record mach := { 
+  Record core_state := {
     gp_regs : fmap register int32 ;
     seg_regs_starts : fmap segment_register int32 ; 
     seg_regs_limits : fmap segment_register int32 ; 
     flags_reg : fmap flag int1 ; 
     control_regs : fmap control_register int32 ; 
     debug_regs : fmap debug_register int32 ; 
-    pc_reg : int size32 ;
-    fpu_regs : fmap int3 int80 ;
-    fpu_lastOperPtr : fmap fp_lastOperandPtr_register int64 ;
-    fpu_status : fmap fp_status_register int3 ;
-    fpu_control : fmap fp_control_register int3 ;
-    fpu_tags : fmap fpu_tagWords int2
+    pc_reg : int size32 
   }.
+
+  Record fpu_state := {
+    fpu_data_regs : fmap int3 int80 ; (* 8 80-bit registers shared between FPU and MMX *)
+    fpu_status : int16 ; (* 16-bit status word; contains stack top and other flag bits *)
+    fpu_control : int16 ; (* 16-bit control word; contrains rounding control, precision
+                             control and other control flags*)
+    fpu_tags : fmap int3 int2;
+    fpu_lastInstrPtr : int48;
+    fpu_lastOperandPtr : int48;
+    fpu_lastOpcode : int size11  (* 11 bits for the last opcode *)
+  }.
+
+  Record mach := { 
+    core : core_state;
+    fpu : fpu_state
+  }.
+
   Definition mach_state := mach.
+
+  (* get the bits between n and m *)
+  Definition get_bits_rng s (i: int s) (n m: nat) : int (m-n) :=
+    Word.repr (Word.unsigned (Word.shru i (Word.repr (Z_of_nat n)))).
+
+  (* set the bits between n and m *)
+  Definition set_bits_rng s (i: int s) (n m: nat) (v:int (m-n)) : int s :=
+    let highbits := Word.unsigned (Word.shru i (Word.repr (Z_of_nat m + 1))) in
+    let lowbits := Zmod (Word.unsigned i) (two_power_nat n) in 
+      Word.repr 
+      (lowbits + (Word.unsigned v) * (two_power_nat n) + highbits * (two_power_nat (m + 1))).
+
+  (* return the nth bit in bitvector i *)
+  Definition get_bit s (i:int s) n : int1 := 
+    let wordsize := S s in
+    if Word.bits_of_Z wordsize (Word.unsigned i) n
+      then Word.one
+      else Word.zero.
+
+  (* set the nth bit in a bitvector *)
+  Definition set_bit s (i:int s) (n:nat) (v:bool) : int s :=
+    set_bits_rng i n n (Word.bool_to_int v).
+
+  (* some testing of get_bits_rng and set_bits_rng *)
+  (* Definition x := (Zpos 1~1~1~1~1~1~0~1~0~1~0~0~0~1~0~1). *)
+  (* Eval compute in (get_bits_rng (@Word.repr size16 x) 2 5). *)
+  (* Eval compute in (set_bits_rng (@Word.repr size16 x) 1 1 (Word.repr 1)). *)
+
+  Definition get_fpu_flag (f:fpu_flag) (fs:fpu_state) : int1 :=
+    match f with
+      | F_Busy => get_bit (fpu_status fs) 15
+      | F_C3 => get_bit (fpu_status fs) 14
+      | F_C2 => get_bit (fpu_status fs) 10
+      | F_C1 => get_bit (fpu_status fs) 9
+      | F_C0 => get_bit (fpu_status fs) 8
+      | F_ES => get_bit (fpu_status fs) 7
+      | F_SF => get_bit (fpu_status fs) 6
+      | F_PE => get_bit (fpu_status fs) 5
+      | F_UE => get_bit (fpu_status fs) 4
+      | F_OE => get_bit (fpu_status fs) 3
+      | F_ZE => get_bit (fpu_status fs) 2
+      | F_DE => get_bit (fpu_status fs) 1
+      | F_IE => get_bit (fpu_status fs) 0
+    end.
+
+  (* stack top is bits 11 to 13 in the 16-bit status register *)
+  Definition get_stktop (fs:fpu_state) : int3 :=
+    get_bits_rng (fpu_status fs) 11 13.
+
+  Definition get_fpu_ctrl_flag (f:fpu_ctrl_flag) (fs:fpu_state) : int1 := 
+    match f with
+      | F_Res15 => get_bit (fpu_control fs) 15
+      | F_Res14 => get_bit (fpu_control fs) 14
+      | F_Res13 => get_bit (fpu_control fs) 13
+      | F_IC => get_bit (fpu_control fs) 12
+      | F_Res7 => get_bit (fpu_control fs) 7
+      | F_Res6 => get_bit (fpu_control fs) 6
+      | F_PM => get_bit (fpu_control fs) 5
+      | F_UM => get_bit (fpu_control fs) 4
+      | F_OM => get_bit (fpu_control fs) 3
+      | F_ZM => get_bit (fpu_control fs) 2
+      | F_DM => get_bit (fpu_control fs) 1
+      | F_IM => get_bit (fpu_control fs) 0
+    end.
+
+  (* rounding control is bits 10 to 11 in the control register *)
+  Definition get_rctrl (fs:fpu_state) : int2 :=
+    get_bits_rng (fpu_control fs) 10 11.
+
+  (* precision control is bits 8 to 9 in the control register *)
+  Definition get_pctrl (fs:fpu_state) : int2 :=
+    get_bits_rng (fpu_control fs) 8 9.
 
   Definition get_location s (l:loc s) (m:mach_state) : int s := 
     match l in loc s' return int s' with 
-      | reg_loc r => look (gp_regs m) r
-      | seg_reg_start_loc r => look (seg_regs_starts m) r
-      | seg_reg_limit_loc r => look (seg_regs_limits m) r
-      | flag_loc f => look (flags_reg m) f
-      | control_register_loc r => look (control_regs m) r
-      | debug_register_loc r => look (debug_regs m) r
-      | pc_loc => pc_reg m
-      | fpu_reg_loc r => look (fpu_regs m) r
-      | fpu_lastOperPtr_loc r=> look (fpu_lastOperPtr m) r
-      | fpu_st_loc r=> look (fpu_status m) r
-      | fpu_cntrl_loc r=> look (fpu_control m) r
-      | fpu_tag_loc r=> look (fpu_tags m) r
+      | reg_loc r => look (gp_regs (core m)) r
+      | seg_reg_start_loc r => look (seg_regs_starts (core m)) r
+      | seg_reg_limit_loc r => look (seg_regs_limits (core m)) r
+      | flag_loc f => look (flags_reg (core m)) f
+      | control_register_loc r => look (control_regs (core m)) r
+      | debug_register_loc r => look (debug_regs (core m)) r
+      | pc_loc => pc_reg (core m)
+      | fpu_datareg_loc r => look (fpu_data_regs (fpu m)) r
+      | fpu_stktop_loc => get_stktop (fpu m)
+      | fpu_flag_loc f => get_fpu_flag f (fpu m)
+      | fpu_rctrl_loc => get_rctrl (fpu m)
+      | fpu_pctrl_loc => get_rctrl (fpu m)
+      | fpu_ctrl_flag_loc f => get_fpu_ctrl_flag f (fpu m)
+      | fpu_tag_loc r => look (fpu_tags (fpu m)) r
+      | fpu_lastInstrPtr_loc => fpu_lastInstrPtr (fpu m)
+      | fpu_lastOperandPtr_loc => fpu_lastOperandPtr (fpu m)
+      | fpu_lastOpcode_loc => fpu_lastOpcode (fpu m)
     end.
 
-  Definition set_gp_regs r v m := 
-    {| gp_regs := upd register_eq_dec (gp_regs m) r v ; 
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ; 
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ;
-       control_regs := control_regs m; 
-       debug_regs := debug_regs m; 
-       pc_reg := pc_reg m;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+  Definition set_gp_reg r v m := 
+    {| core := 
+       {| gp_regs := upd register_eq_dec (gp_regs (core m)) r v ; 
+         seg_regs_starts := seg_regs_starts (core m) ; 
+         seg_regs_limits := seg_regs_limits (core m) ;
+         flags_reg := flags_reg (core m) ;
+         control_regs := control_regs (core m); 
+         debug_regs := debug_regs (core m); 
+         pc_reg := pc_reg (core m)
+       |};
+       fpu := fpu m
     |}.
 
-
-  Definition set_seg_regs_starts r v m := 
-    {| gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := upd segment_register_eq_dec (seg_regs_starts m) r v ; 
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ;
-       control_regs := control_regs m; 
-       debug_regs := debug_regs m; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+  Definition set_seg_reg_start r v m := 
+    {| core := 
+       {| gp_regs := gp_regs (core m) ;
+         seg_regs_starts := upd segment_register_eq_dec (seg_regs_starts (core m)) r v ; 
+         seg_regs_limits := seg_regs_limits (core m) ;
+         flags_reg := flags_reg (core m) ;
+         control_regs := control_regs (core m); 
+         debug_regs := debug_regs (core m); 
+         pc_reg := pc_reg (core m) 
+       |};
+       fpu := fpu m
     |}.
 
-  Definition set_seg_regs_limits r v m := 
-    {| gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := upd segment_register_eq_dec (seg_regs_limits m) r v ; 
-       flags_reg := flags_reg m ;
-       control_regs := control_regs m; 
-       debug_regs := debug_regs m; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+  Definition set_seg_reg_limit r v m := 
+    {| core := 
+       {| gp_regs := gp_regs (core m) ;
+         seg_regs_starts := seg_regs_starts (core m) ;
+         seg_regs_limits := upd segment_register_eq_dec (seg_regs_limits (core m)) r v ; 
+         flags_reg := flags_reg (core m) ;
+         control_regs := control_regs (core m); 
+         debug_regs := debug_regs (core m); 
+         pc_reg := pc_reg (core m) 
+       |};
+       fpu := fpu m
     |}.
 
   Definition set_flags_reg r v m := 
-    {| gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := upd flag_eq_dec (flags_reg m) r v ;
-       control_regs := control_regs m; 
-       debug_regs := debug_regs m; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+    {| core := 
+      {| gp_regs := gp_regs (core m) ;
+        seg_regs_starts := seg_regs_starts (core m) ;
+        seg_regs_limits := seg_regs_limits (core m) ;
+        flags_reg := upd flag_eq_dec (flags_reg (core m)) r v ;
+        control_regs := control_regs (core m); 
+        debug_regs := debug_regs (core m); 
+        pc_reg := pc_reg (core m)
+      |};
+      fpu := fpu m
     |}.
 
-  Definition set_control_regs r v m := 
-    {| gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ; 
-       control_regs := upd control_register_eq_dec (control_regs m) r v ;
-       debug_regs := debug_regs m; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+  Definition set_control_reg r v m := 
+    {| core := 
+      {| gp_regs := gp_regs (core m) ;
+        seg_regs_starts := seg_regs_starts (core m) ;
+        seg_regs_limits := seg_regs_limits (core m) ;
+        flags_reg := flags_reg (core m) ; 
+        control_regs := upd control_register_eq_dec (control_regs (core m)) r v ;
+        debug_regs := debug_regs (core m); 
+        pc_reg := pc_reg (core m)
+      |};
+      fpu := fpu m
     |}.
 
-  Definition set_debug_regs r v m := 
-    {| gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ; 
-       control_regs := control_regs m ;
-       debug_regs := upd debug_register_eq_dec (debug_regs m) r v ;
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+  Definition set_debug_reg r v m := 
+    {| core := 
+      {| gp_regs := gp_regs (core m) ;
+        seg_regs_starts := seg_regs_starts (core m) ;
+        seg_regs_limits := seg_regs_limits (core m) ;
+        flags_reg := flags_reg (core m) ; 
+        control_regs := control_regs (core m) ;
+        debug_regs := upd debug_register_eq_dec (debug_regs (core m)) r v ;
+        pc_reg := pc_reg (core m) 
+      |};
+      fpu := fpu m
     |}.
 
   Definition set_pc v m := 
-    {| gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ; 
-       control_regs := control_regs m ;
-       debug_regs := debug_regs m ; 
-       pc_reg := v ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+    {| core := 
+      {| gp_regs := gp_regs (core m) ;
+        seg_regs_starts := seg_regs_starts (core m) ;
+        seg_regs_limits := seg_regs_limits (core m) ;
+        flags_reg := flags_reg (core m) ; 
+        control_regs := control_regs (core m) ;
+        debug_regs := debug_regs (core m) ; 
+        pc_reg := v
+      |};
+      fpu := fpu m
     |}.
 
-  Definition set_fpu_regs (r:int3) v m := 
-    {| gp_regs := gp_regs m ;
-       fpu_regs := upd (@Word.eq_dec _) (fpu_regs m) r v ;
-       seg_regs_starts := seg_regs_starts m ; 
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ;
-       control_regs := control_regs m; 
-       debug_regs := debug_regs m; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
+  Definition set_fpu_datareg (r:int3) (v:int80) m := 
+    {| core := core m ;
+       fpu := {|
+         fpu_data_regs := upd (@Word.eq_dec size3) (fpu_data_regs (fpu m)) r v ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := fpu_tags (fpu m) ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
     |}.
 
-  Definition set_fpu_lastOper r v m :=
-   {|  gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ; 
-       control_regs := control_regs m ;
-       debug_regs := debug_regs m ; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := upd fp_lastOperandPtr_register_eq_dec (fpu_lastOperPtr m) r v ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
-    |}.
+  Definition set_fpu_stktop (v:int3) m := 
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := set_bits_rng (fpu_status (fpu m)) 11 13 v ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := fpu_tags (fpu m) ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+  |}.
 
-  Definition set_fpu_status r v m :=
-  {|   gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ; 
-       control_regs := control_regs m ;
-       debug_regs := debug_regs m ; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := upd fp_status_register_eq_dec (fpu_status m) r v ;
-       fpu_control := fpu_control m ;
-       fpu_tags := fpu_tags m 
-    |}.
-  Definition set_fpu_control r v m :=
-  {|   gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ; 
-       control_regs := control_regs m ;
-       debug_regs := debug_regs m ; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := upd fp_control_register_eq_dec (fpu_control m) r v ;
-       fpu_tags := fpu_tags m 
-    |}.
+  Definition set_fpu_flag (f:fpu_flag) (v:int1) m := 
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := 
+           let old_status := fpu_status (fpu m) in
+           let b : bool := negb (Word.eq v Word.zero) in
+             match f with
+               | F_Busy => set_bit old_status 15 b
+               | F_C3 => set_bit old_status 14 b
+               | F_C2 => set_bit old_status 10 b
+               | F_C1 => set_bit old_status 9 b
+               | F_C0 => set_bit old_status 8 b
+               | F_ES => set_bit old_status 7 b
+               | F_SF => set_bit old_status 6 b
+               | F_PE => set_bit old_status 5 b
+               | F_UE => set_bit old_status 4 b
+               | F_OE => set_bit old_status 3 b
+               | F_ZE => set_bit old_status 2 b
+               | F_DE => set_bit old_status 1 b
+               | F_IE => set_bit old_status 0 b
+             end;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := fpu_tags (fpu m) ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+  |}.
+
+  Definition set_fpu_rctrl (v:int2) m := 
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := set_bits_rng (fpu_control (fpu m)) 10 11 v ;
+         fpu_tags := fpu_tags (fpu m) ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+  |}.
+  
+  Definition set_fpu_pctrl (v:int2) m := 
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := set_bits_rng (fpu_control (fpu m)) 8 9 v ;
+         fpu_tags := fpu_tags (fpu m) ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+  |}.
+
+  Definition set_fpu_ctrl (f:fpu_ctrl_flag) (v:int1) m :=
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := 
+           let old_ctrl := fpu_control (fpu m) in
+           let b : bool := negb (Word.eq v Word.zero) in
+             match f with
+               | F_Res15 => set_bit old_ctrl 15 b
+               | F_Res14 => set_bit old_ctrl 14 b
+               | F_Res13 => set_bit old_ctrl 13 b
+               | F_IC => set_bit old_ctrl 12 b
+               | F_Res7 => set_bit old_ctrl 7 b
+               | F_Res6 => set_bit old_ctrl 6 b
+               | F_PM => set_bit old_ctrl 5 b
+               | F_UM => set_bit old_ctrl 4 b
+               | F_OM => set_bit old_ctrl 3 b
+               | F_ZM => set_bit old_ctrl 2 b
+               | F_DM => set_bit old_ctrl 1 b
+               | F_IM => set_bit old_ctrl 0 b
+             end;
+         fpu_tags := fpu_tags (fpu m) ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+  |}.
+
   Definition set_fpu_tags r v m:=
-  {|   gp_regs := gp_regs m ;
-       fpu_regs := fpu_regs m ;
-       seg_regs_starts := seg_regs_starts m ;
-       seg_regs_limits := seg_regs_limits m ;
-       flags_reg := flags_reg m ; 
-       control_regs := control_regs m ;
-       debug_regs := debug_regs m ; 
-       pc_reg := pc_reg m ;
-       fpu_lastOperPtr := fpu_lastOperPtr m ;
-       fpu_status := fpu_status m ;
-       fpu_control := fpu_control m ;
-       fpu_tags := upd fp_tagWords_eq_dec (fpu_tags m) r v 
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := upd (@Word.eq_dec size3) (fpu_tags (fpu m)) r v ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+  |}.
+
+  Definition set_fpu_lastInstrPtr v m :=
+   {|  core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := fpu_tags (fpu m);
+         fpu_lastInstrPtr := v;
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
     |}.
+
+  Definition set_fpu_lastOperand v m :=
+   {|  core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := fpu_tags (fpu m);
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m);
+         fpu_lastOperandPtr := v ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+    |}.
+
+  Definition set_lastOpcode v m:=
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := fpu_tags (fpu m);
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m);
+         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastOpcode := v
+       |}
+  |}.
 
   Definition set_location s (l:loc s) (v:int s) m := 
     match l in loc s' return int s' -> mach_state with 
-      | reg_loc r => fun v => set_gp_regs r v m
-      | seg_reg_start_loc r => fun v => set_seg_regs_starts r v m
-      | seg_reg_limit_loc r => fun v => set_seg_regs_limits r v m
+      | reg_loc r => fun v => set_gp_reg r v m
+      | seg_reg_start_loc r => fun v => set_seg_reg_start r v m
+      | seg_reg_limit_loc r => fun v => set_seg_reg_limit r v m
       | flag_loc f => fun v => set_flags_reg f v m
-      | control_register_loc r => fun v => set_control_regs r v m
-      | debug_register_loc r => fun v => set_debug_regs r v m
+      | control_register_loc r => fun v => set_control_reg r v m
+      | debug_register_loc r => fun v => set_debug_reg r v m
       | pc_loc => fun v => set_pc v m
-      | fpu_reg_loc r => fun v => set_fpu_regs r v m
-      | fpu_lastOperPtr_loc r => fun v => set_fpu_lastOper r v m 
-      | fpu_st_loc r=> fun v => set_fpu_status r v m
-      | fpu_cntrl_loc r=> fun v => set_fpu_control r v m
-      | fpu_tag_loc r=> fun v => set_fpu_tags r v m
+      | fpu_datareg_loc r => fun v => set_fpu_datareg r v m
+      | fpu_stktop_loc => fun v => set_fpu_stktop v m
+      | fpu_flag_loc f => fun v => set_fpu_flag f v m
+      | fpu_rctrl_loc => fun v => set_fpu_rctrl v m
+      | fpu_pctrl_loc => fun v => set_fpu_pctrl v m
+      | fpu_ctrl_flag_loc f => fun v => set_fpu_ctrl f v m
+      | fpu_tag_loc r => fun v => set_fpu_tags r v m
+      | fpu_lastInstrPtr_loc => fun v => set_fpu_lastInstrPtr v m 
+      | fpu_lastOperandPtr_loc => fun v => set_fpu_lastOperand v m 
+      | fpu_lastOpcode => fun v => set_lastOpcode v m
     end v.
 
 End X86_MACHINE.
@@ -338,7 +477,8 @@ Module X86_RTL := RTL.RTL(X86_MACHINE).
 
 Require Import List.
 
-Module X86_Decode.
+(* compilation from x86 instructions to RTL instructions *)
+Module X86_Compile.
   Import X86_MACHINE.
   Import X86_RTL.
   Local Open Scope monad_scope.
@@ -374,9 +514,6 @@ Module X86_Decode.
   Definition load_reg (r:register) := ret (get_loc_rtl_exp (reg_loc r)).
   Definition set_reg (p:rtl_exp size32) (r:register) := 
     emit set_loc_rtl p (reg_loc r).
-  Definition load_fpu_reg (f_r : int3) := ret (get_loc_rtl_exp (fpu_reg_loc f_r)).
-  Definition set_fpu_reg (p: rtl_exp size80) (f_r: int3) :=
-    emit set_loc_rtl p (fpu_reg_loc f_r).
   Definition cast_u s1 s2 (e:rtl_exp s1) := ret (@cast_u_rtl_exp s1 s2 e).
   Definition cast_s s1 s2 (e:rtl_exp s1) := ret (@cast_s_rtl_exp s1 s2 e).
   Definition get_seg_start (s:segment_register) := 
@@ -388,12 +525,6 @@ Module X86_Decode.
     emit set_byte_rtl v a.
   Definition get_flag fl := ret (get_loc_rtl_exp (flag_loc fl)).
   Definition set_flag fl (r: rtl_exp size1) := emit set_loc_rtl r (flag_loc fl). 
-  Definition set_fpu_status fp_s (p: rtl_exp size3) := emit set_loc_rtl p (fpu_st_loc fp_s).
-  Definition get_fpu_status fp_s := ret (get_loc_rtl_exp (fpu_st_loc fp_s)).
-  Definition set_fpu_tags tag_s (p: rtl_exp size2) := emit set_loc_rtl p (fpu_tag_loc tag_s).
-  Definition get_fpu_tags tag_s := ret (get_loc_rtl_exp (fpu_tag_loc tag_s)).
-  Definition set_fpu_control cntrl_s (p: rtl_exp size3) := emit set_loc_rtl p (fpu_cntrl_loc cntrl_s).
-  Definition get_fpu_control cntrl_s := ret (get_loc_rtl_exp (fpu_cntrl_loc cntrl_s)).
 
   Definition get_pc := ret (get_loc_rtl_exp pc_loc).
   Definition set_pc v := emit set_loc_rtl v pc_loc.
@@ -408,30 +539,6 @@ Module X86_Decode.
     arith xor_op p mask.
   Definition undef_flag (f: flag) :=
     v <- @choose size1; set_flag f v.
-
-  (* gtan: the following three definitions are wrong and need to be adjusted *)
-  (* Definition int_to_fpu_reg_aux (sum : Z) : fpu_register := *)
-  (*    match sum with *)
-  (*    | 0%Z => ST0 *)
-  (*    | 1%Z => ST1 *)
-  (*    | 2%Z => ST2 *)
-  (*    | 3%Z => ST3 *)
-  (*    | 4%Z => ST4 *)
-  (*    | 5%Z => ST5 *)
-  (*    | 6%Z => ST6 *)
-  (*    | _   => ST7 *)
-  (*    end. *)
-
-  (* (*Returns an fpu register at position index, where top is the current stack top *) *)
-  (* Definition int_to_fpu_reg (top index : pseudo_reg size3) : fpu_register := *)
-  (*    let (t) := top in *)
-  (*    let (i) := index in *)
-  (*    let ind := Zmod (t + i) 8 in *)
-  (*    int_to_fpu_reg_aux ind. *)
-
-  (* Definition fpu_from_int (fpu_index : int3) (top : pseudo_reg size3) : fpu_register := *)
-  (*    let intv := Word.intval size3 fpu_index in *)
-  (*    int_to_fpu_reg top (ps_reg size3 intv). *)
 
   Definition copy_ps s (rs:rtl_exp s) := ret (@cast_u_rtl_exp s s rs).
 
@@ -2700,7 +2807,7 @@ Definition conv_POPF pre :=
                       -Will include more comprehensive handling of errors and exceptions in next update. For now, 
                        emit error_rtl is used in most exception cases.
 
-    By : Mark Kogan (mak215@lehigh.edu)
+    By : Mark Kogan (mak215@lehigh.edu) and Gang Tan
 *)
 Section X86FloatSemantics.
 
@@ -2709,12 +2816,59 @@ Section X86FloatSemantics.
     Require Import Flocq.Core.Fcore.
     Require Import FloatingAux.
 
+    Definition load_data_reg (f_r : int3) := ret (get_loc_rtl_exp (fpu_datareg_loc f_r)).
+    Definition set_data_reg (p: rtl_exp size80) (f_r: int3) :=
+      emit set_loc_rtl p (fpu_datareg_loc f_r).
+
+    (* Definition set_status (p: rtl_exp size16) := emit set_loc_rtl p fpu_status_loc. *)
+    (* Definition get_status := ret (get_loc_rtl_exp fpu_status_loc). *)
+
+    (* (* get FPU statck top *) *)
+    (* Definition get_stk_top  *)
+
+
+
+    Definition set_fpu_tags tag_s (p: rtl_exp size2) := emit set_loc_rtl p (fpu_tag_loc tag_s).
+    Definition get_fpu_tags tag_s := ret (get_loc_rtl_exp (fpu_tag_loc tag_s)).
+    (* Definition set_fpu_control (p: rtl_exp size16) := emit set_loc_rtl p fpu_ctrl_loc. *)
+    (* Definition get_fpu_control := ret (get_loc_rtl_exp fpu_ctrl_loc). *)
+    
+
+  (* gtan: the following three definitions are wrong and need to be adjusted *)
+  (* Definition int_to_fpu_reg_aux (sum : Z) : fpu_register := *)
+  (*    match sum with *)
+  (*    | 0%Z => ST0 *)
+  (*    | 1%Z => ST1 *)
+  (*    | 2%Z => ST2 *)
+  (*    | 3%Z => ST3 *)
+  (*    | 4%Z => ST4 *)
+  (*    | 5%Z => ST5 *)
+  (*    | 6%Z => ST6 *)
+  (*    | _   => ST7 *)
+  (*    end. *)
+
+  (* (*Returns an fpu register at position index, where top is the current stack top *) *)
+  (* Definition int_to_fpu_reg (top index : pseudo_reg size3) : fpu_register := *)
+  (*    let (t) := top in *)
+  (*    let (i) := index in *)
+  (*    let ind := Zmod (t + i) 8 in *)
+  (*    int_to_fpu_reg_aux ind. *)
+
+  (* Definition fpu_from_int (fpu_index : int3) (top : pseudo_reg size3) : fpu_register := *)
+  (*    let intv := Word.intval size3 fpu_index in *)
+  (*    int_to_fpu_reg top (ps_reg size3 intv). *)
+
+
+
 (*Floating-Point Constants. For pi, e, 0.0, +1.0, and -1.0 I found the double-extended precision bit-values but
   for other constants I only found double-precision using this site: 
   http://www.binaryconvert.com/result_double.html?decimal=046051048049048050057057057053055 
 *)
 
 (*Start of floating-point conversion functions *)
+
+
+
 
   Definition int_to_bin32 (i : Word.int size32) : binary32 := b32_of_bits (Word.intval size32 i).
   Definition bin32_to_int (b : binary32) : Word.int size32 := Word.repr (bits_of_b32 b).
@@ -2774,46 +2928,46 @@ Section X86FloatSemantics.
          de_float_of_bits joined 
      end.
   
-  Definition conv_FCLEX :=
-    clear <- load_Z size3 0;
-    set_fpu_status Pe clear;;
-    set_fpu_status Ue clear;;
-    set_fpu_status Oe clear;;
-    set_fpu_status Ze clear;;
-    set_fpu_status De clear;;
-    set_fpu_status Ie clear;;
+  (* Definition conv_FCLEX := *)
+  (*   clear <- load_Z size3 0; *)
+  (*   set_fpu_status Pe clear;; *)
+  (*   set_fpu_status Ue clear;; *)
+  (*   set_fpu_status Oe clear;; *)
+  (*   set_fpu_status Ze clear;; *)
+  (*   set_fpu_status De clear;; *)
+  (*   set_fpu_status Ie clear;; *)
 
-    clear0 <- cast_u size3 clear;
-    set_fpu_control Pm clear0;;
-    set_fpu_control Um clear0;;
-    set_fpu_control Om clear0;;
-    set_fpu_control Zm clear0;;
-    set_fpu_control Dm clear0;;
-    set_fpu_control Im clear0.
+  (*   clear0 <- cast_u size3 clear; *)
+  (*   set_fpu_control Pm clear0;; *)
+  (*   set_fpu_control Um clear0;; *)
+  (*   set_fpu_control Om clear0;; *)
+  (*   set_fpu_control Zm clear0;; *)
+  (*   set_fpu_control Dm clear0;; *)
+  (*   set_fpu_control Im clear0. *)
 
   (*Top may have to be 0 *)
-  Definition init_top := sev <- load_Z size3 7; set_fpu_status Top sev.
+  (* Definition init_top := sev <- load_Z size3 7; set_fpu_status Top sev. *)
 
-  Definition set_CC_unordered := 
-   onee <- load_Z size3 1;
-   set_fpu_status C3 onee;; set_fpu_status C2 onee;; set_fpu_status C0 onee.
+  (* Definition set_CC_unordered :=  *)
+  (*  onee <- load_Z size3 1; *)
+  (*  set_fpu_status C3 onee;; set_fpu_status C2 onee;; set_fpu_status C0 onee. *)
 
-  Definition init_tags :=
-    empty <- load_Z size2 3;
-    set_fpu_tags Tag0 empty;;
-    set_fpu_tags Tag1 empty;;
-    set_fpu_tags Tag2 empty;;
-    set_fpu_tags Tag3 empty;;
-    set_fpu_tags Tag4 empty;;
-    set_fpu_tags Tag5 empty;;
-    set_fpu_tags Tag6 empty;;
-    set_fpu_tags Tag7 empty.
+  (* Definition init_tags := *)
+  (*   empty <- load_Z size2 3; *)
+  (*   set_fpu_tags Tag0 empty;; *)
+  (*   set_fpu_tags Tag1 empty;; *)
+  (*   set_fpu_tags Tag2 empty;; *)
+  (*   set_fpu_tags Tag3 empty;; *)
+  (*   set_fpu_tags Tag4 empty;; *)
+  (*   set_fpu_tags Tag5 empty;; *)
+  (*   set_fpu_tags Tag6 empty;; *)
+  (*   set_fpu_tags Tag7 empty. *)
 
-  Definition conv_FINIT := 
-     init_top;;
-     set_CC_unordered;;
-     conv_FCLEX;;
-     init_tags. (*Probably init more stuff *)
+  (* Definition conv_FINIT :=  *)
+  (*    init_top;; *)
+  (*    set_CC_unordered;; *)
+  (*    conv_FCLEX;; *)
+  (*    init_tags. (*Probably init more stuff *) *)
 
   (* gtan: need adjustment *)
  (*load val into an fpu-register stack where the top reg is stacktop and num is the number of registers from the top 
@@ -2848,14 +3002,14 @@ Section X86FloatSemantics.
      t6 <- test eq_op index six;
      t7 <- test eq_op index seven;
      
-     emit if_rtl t0 (set_loc_rtl tagval (fpu_tag_loc Tag0));;
-     emit if_rtl t1 (set_loc_rtl tagval (fpu_tag_loc Tag1));;
-     emit if_rtl t2 (set_loc_rtl tagval (fpu_tag_loc Tag2));;
-     emit if_rtl t3 (set_loc_rtl tagval (fpu_tag_loc Tag3));;
-     emit if_rtl t4 (set_loc_rtl tagval (fpu_tag_loc Tag4));;
-     emit if_rtl t5 (set_loc_rtl tagval (fpu_tag_loc Tag5));;
-     emit if_rtl t6 (set_loc_rtl tagval (fpu_tag_loc Tag6));;
-     emit if_rtl t7 (set_loc_rtl tagval (fpu_tag_loc Tag7)).
+     emit if_rtl t0 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 0)));;
+     emit if_rtl t1 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 1)));;
+     emit if_rtl t2 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 2)));;
+     emit if_rtl t3 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 3)));;
+     emit if_rtl t4 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 4)));;
+     emit if_rtl t5 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 5)));;
+     emit if_rtl t6 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 6)));;
+     emit if_rtl t7 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 7))).
 
   (* gtan: need adjustment *)
   (*Wraps around to 7 if current top is 0 *)
@@ -2892,7 +3046,7 @@ Section X86FloatSemantics.
   (* Definition conv_FDECSTP := dec_stack size3. *)
   (* Definition conv_FINCSTP := inc_stack size3. *)
 
-  Definition get_stacktop := topp <- get_fpu_status Top; castt <- cast_u size3 topp; Return castt.
+  (* Definition get_stacktop := topp <- get_fpu_status Top; castt <- cast_u size3 topp; Return castt. *)
 
   (* gtan: need adjustment *)
   (* Definition psreg_to_int n (p : rtl_exp n) : Word.int n :=  *)
@@ -3485,11 +3639,11 @@ End X86FloatSemantics.
     end
     ).
 
-End X86_Decode.
+End X86_Compile.
 
 Local Open Scope Z_scope.
 Local Open Scope monad_scope.
-Import X86_Decode.
+Import X86_Compile.
 Import X86_RTL.
 Import X86_MACHINE.
 
@@ -3572,7 +3726,7 @@ Definition run_rep
   if (Word.eq ecx Word.zero) then set_loc pc_loc default_new_pc
     else 
       set_loc (reg_loc ECX) (Word.sub ecx Word.one);;
-      RTL_step_list (X86_Decode.instr_to_rtl pre ins);;
+      RTL_step_list (X86_Compile.instr_to_rtl pre ins);;
       ecx' <- get_loc (reg_loc ECX);
       (if (Word.eq ecx' Word.zero) then 
         set_loc pc_loc default_new_pc
@@ -3601,7 +3755,7 @@ Definition step : RTL unit :=
         | Some rep (* We'll only allow rep, not lock or repn *) =>
           run_rep pre instr default_new_pc
         | None => set_loc pc_loc default_new_pc;; 
-                  RTL_step_list (X86_Decode.instr_to_rtl pre instr)
+                  RTL_step_list (X86_Compile.instr_to_rtl pre instr)
         | _ => Fail _ 
       end
   else Trap _.
