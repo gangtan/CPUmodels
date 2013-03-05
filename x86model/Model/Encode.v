@@ -956,7 +956,6 @@ Definition enc_FBLD (op1: fp_operand) : Enc (list bool) :=
 Definition enc_FBSTP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_modrm (s2bl "110") op1; ret (s2bl "11011111" ++ l1).
 Definition enc_FCHS := ret (s2bl "1101100111100000"). 
-Definition enc_FCLEX := ret (s2bl "1101101111100010").
 
 Definition enc_FCMOVcc (fct: fp_condition_type) (op1: fp_operand) : Enc (list bool) :=
   match op1 with
@@ -1028,7 +1027,6 @@ Definition enc_FILD (op1: fp_operand) : Enc (list bool) :=
 Definition enc_FIMUL := enc_FI_instrs "001".
 
 Definition enc_FINCSTP := ret (s2bl "1101100111110111").
-Definition enc_FINIT :=  ret (s2bl "100110111101101111100011").
 Definition enc_FIST (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_modrm (s2bl "010") op1; 
   match op1 with
@@ -1081,6 +1079,9 @@ Definition enc_FMUL (d: bool) (op1: fp_operand) : Enc (list bool) :=
   end.
 Definition enc_FMULP (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_int3 op1; ret (s2bl "1101111011001" ++ l1).
+
+Definition enc_FNCLEX := ret (s2bl "1101101111100010").
+Definition enc_FNINIT :=  ret (s2bl "1101101111100011").
 
 Definition enc_FNSAVE (op1: fp_operand) : Enc (list bool) :=
   l1 <- enc_fp_modrm (s2bl "110") op1;
@@ -2166,7 +2167,6 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | FBLD op1 => enc_FADDP op1
     | FBSTP op1 => enc_FADDP op1
     | FCHS => enc_FCHS
-    | FCLEX => enc_FCLEX
     | FCMOVcc fct op1 => enc_FCMOVcc fct op1
     | FCOM op1 => enc_FCOM op1
     | FCOMP op1 => enc_FCOMP op1
@@ -2187,7 +2187,6 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | FILD op1 => enc_FILD op1
     | FIMUL op1 => enc_FIMUL op1
     | FINCSTP => enc_FINCSTP
-    | FINIT => enc_FINIT
     | FIST op1 => enc_FIST op1
     | FISTP op1 => enc_FISTP op1
     | FISUB op1 => enc_FISUB op1
@@ -2204,6 +2203,8 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | FLDZ => enc_FLDZ
     | FMUL d op1 => enc_FMUL d op1
     | FMULP op1 => enc_FMULP op1
+    | FNCLEX => enc_FNCLEX
+    | FNINIT => enc_FNINIT
     | FNOP => enc_FNOP
     | FNSAVE op1 => enc_FNSAVE op1
     | FNSTCW op1 => enc_FNSTCW op1

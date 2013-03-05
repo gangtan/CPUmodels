@@ -65,7 +65,7 @@ Module X86_MACHINE.
   | fpu_ctrl_flag_loc : fpu_ctrl_flag -> loc size1
   | fpu_tag_loc : int3 -> loc size2
   | fpu_lastInstrPtr_loc : loc size48
-  | fpu_lastOperandPtr_loc : loc size48
+  | fpu_lastDataPtr_loc : loc size48
   | fpu_lastOpcode_loc : loc size11. 
 
   Definition location := loc.
@@ -85,6 +85,25 @@ Module X86_MACHINE.
     pc_reg : int size32 
   }.
 
+  (* FPU status word format:
+     bits  15   14   13   12   11   10   9   8   7   6   5   4   3   2   1   0
+           Busy C3   Top  Top  Top  C2   C1  C0  ES  SF  PE  UE  OE  ZE  DE IE       
+      
+           C0-C3: condition codes
+           ES: error summary
+           SF: stack fault
+           PE-IE: exception flags
+     *)
+
+  (* FPU contorl word format:
+     bits  15   14   13   12   11   10   9   8   7   6   5   4   3   2   1   0
+           Res  Res  Res  IC   RC   RC   PC  PC  Res Res PM  UM  OM  ZM  DM  IM
+      
+           IC: infinity control 
+           RC: round control
+           PC: Precision control
+     *)
+
   Record fpu_state := {
     fpu_data_regs : fmap int3 int80 ; (* 8 80-bit registers shared between FPU and MMX *)
     fpu_status : int16 ; (* 16-bit status word; contains stack top and other flag bits *)
@@ -92,7 +111,7 @@ Module X86_MACHINE.
                              control and other control flags*)
     fpu_tags : fmap int3 int2;
     fpu_lastInstrPtr : int48;
-    fpu_lastOperandPtr : int48;
+    fpu_lastDataPtr : int48;
     fpu_lastOpcode : int size11  (* 11 bits for the last opcode *)
   }.
 
@@ -130,7 +149,7 @@ Module X86_MACHINE.
   (* Eval compute in (get_bits_rng (@Word.repr size16 x) 2 5). *)
   (* Eval compute in (set_bits_rng (@Word.repr size16 x) 1 1 (Word.repr 1)). *)
 
-  Definition get_fpu_flag (f:fpu_flag) (fs:fpu_state) : int1 :=
+  Definition get_fpu_flag_reg (f:fpu_flag) (fs:fpu_state) : int1 :=
     match f with
       | F_Busy => get_bit (fpu_status fs) 15
       | F_C3 => get_bit (fpu_status fs) 14
@@ -148,10 +167,10 @@ Module X86_MACHINE.
     end.
 
   (* stack top is bits 11 to 13 in the 16-bit status register *)
-  Definition get_stktop (fs:fpu_state) : int3 :=
+  Definition get_stktop_reg (fs:fpu_state) : int3 :=
     get_bits_rng (fpu_status fs) 11 13.
 
-  Definition get_fpu_ctrl_flag (f:fpu_ctrl_flag) (fs:fpu_state) : int1 := 
+  Definition get_fpu_ctrl_flag_reg (f:fpu_ctrl_flag) (fs:fpu_state) : int1 := 
     match f with
       | F_Res15 => get_bit (fpu_control fs) 15
       | F_Res14 => get_bit (fpu_control fs) 14
@@ -168,11 +187,11 @@ Module X86_MACHINE.
     end.
 
   (* rounding control is bits 10 to 11 in the control register *)
-  Definition get_rctrl (fs:fpu_state) : int2 :=
+  Definition get_rctrl_reg (fs:fpu_state) : int2 :=
     get_bits_rng (fpu_control fs) 10 11.
 
   (* precision control is bits 8 to 9 in the control register *)
-  Definition get_pctrl (fs:fpu_state) : int2 :=
+  Definition get_pctrl_reg (fs:fpu_state) : int2 :=
     get_bits_rng (fpu_control fs) 8 9.
 
   Definition get_location s (l:loc s) (m:mach_state) : int s := 
@@ -185,14 +204,14 @@ Module X86_MACHINE.
       | debug_register_loc r => look (debug_regs (core m)) r
       | pc_loc => pc_reg (core m)
       | fpu_datareg_loc r => look (fpu_data_regs (fpu m)) r
-      | fpu_stktop_loc => get_stktop (fpu m)
-      | fpu_flag_loc f => get_fpu_flag f (fpu m)
-      | fpu_rctrl_loc => get_rctrl (fpu m)
-      | fpu_pctrl_loc => get_rctrl (fpu m)
-      | fpu_ctrl_flag_loc f => get_fpu_ctrl_flag f (fpu m)
+      | fpu_stktop_loc => get_stktop_reg (fpu m)
+      | fpu_flag_loc f => get_fpu_flag_reg f (fpu m)
+      | fpu_rctrl_loc => get_rctrl_reg (fpu m)
+      | fpu_pctrl_loc => get_rctrl_reg (fpu m)
+      | fpu_ctrl_flag_loc f => get_fpu_ctrl_flag_reg f (fpu m)
       | fpu_tag_loc r => look (fpu_tags (fpu m)) r
       | fpu_lastInstrPtr_loc => fpu_lastInstrPtr (fpu m)
-      | fpu_lastOperandPtr_loc => fpu_lastOperandPtr (fpu m)
+      | fpu_lastDataPtr_loc => fpu_lastDataPtr (fpu m)
       | fpu_lastOpcode_loc => fpu_lastOpcode (fpu m)
     end.
 
@@ -287,7 +306,7 @@ Module X86_MACHINE.
       fpu := fpu m
     |}.
 
-  Definition set_fpu_datareg (r:int3) (v:int80) m := 
+  Definition set_fpu_data_reg (r:int3) (v:int80) m := 
     {| core := core m ;
        fpu := {|
          fpu_data_regs := upd (@Word.eq_dec size3) (fpu_data_regs (fpu m)) r v ;
@@ -295,12 +314,12 @@ Module X86_MACHINE.
          fpu_control := fpu_control (fpu m) ;
          fpu_tags := fpu_tags (fpu m) ;
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
     |}.
 
-  Definition set_fpu_stktop (v:int3) m := 
+  Definition set_fpu_stktop_reg (v:int3) m := 
   {|   core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -308,12 +327,12 @@ Module X86_MACHINE.
          fpu_control := fpu_control (fpu m) ;
          fpu_tags := fpu_tags (fpu m) ;
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
   |}.
 
-  Definition set_fpu_flag (f:fpu_flag) (v:int1) m := 
+  Definition set_fpu_flags_reg (f:fpu_flag) (v:int1) m := 
   {|   core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -338,12 +357,12 @@ Module X86_MACHINE.
          fpu_control := fpu_control (fpu m) ;
          fpu_tags := fpu_tags (fpu m) ;
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
   |}.
 
-  Definition set_fpu_rctrl (v:int2) m := 
+  Definition set_fpu_rctrl_reg (v:int2) m := 
   {|   core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -351,12 +370,12 @@ Module X86_MACHINE.
          fpu_control := set_bits_rng (fpu_control (fpu m)) 10 11 v ;
          fpu_tags := fpu_tags (fpu m) ;
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
   |}.
   
-  Definition set_fpu_pctrl (v:int2) m := 
+  Definition set_fpu_pctrl_reg (v:int2) m := 
   {|   core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -364,12 +383,12 @@ Module X86_MACHINE.
          fpu_control := set_bits_rng (fpu_control (fpu m)) 8 9 v ;
          fpu_tags := fpu_tags (fpu m) ;
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
   |}.
 
-  Definition set_fpu_ctrl (f:fpu_ctrl_flag) (v:int1) m :=
+  Definition set_fpu_ctrl_reg (f:fpu_ctrl_flag) (v:int1) m :=
   {|   core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -393,12 +412,12 @@ Module X86_MACHINE.
              end;
          fpu_tags := fpu_tags (fpu m) ;
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
   |}.
 
-  Definition set_fpu_tags r v m:=
+  Definition set_fpu_tags_reg r v m:=
   {|   core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -406,12 +425,12 @@ Module X86_MACHINE.
          fpu_control := fpu_control (fpu m) ;
          fpu_tags := upd (@Word.eq_dec size3) (fpu_tags (fpu m)) r v ;
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
   |}.
 
-  Definition set_fpu_lastInstrPtr v m :=
+  Definition set_fpu_lastInstrPtr_reg v m :=
    {|  core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -419,12 +438,12 @@ Module X86_MACHINE.
          fpu_control := fpu_control (fpu m) ;
          fpu_tags := fpu_tags (fpu m);
          fpu_lastInstrPtr := v;
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
     |}.
 
-  Definition set_fpu_lastOperand v m :=
+  Definition set_fpu_lastDataPtr_reg v m :=
    {|  core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -432,12 +451,12 @@ Module X86_MACHINE.
          fpu_control := fpu_control (fpu m) ;
          fpu_tags := fpu_tags (fpu m);
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m);
-         fpu_lastOperandPtr := v ;
+         fpu_lastDataPtr := v ;
          fpu_lastOpcode := fpu_lastOpcode (fpu m)
        |}
     |}.
 
-  Definition set_lastOpcode v m:=
+  Definition set_lastOpcode_reg v m:=
   {|   core := core m ;
        fpu := {|
          fpu_data_regs := fpu_data_regs (fpu m) ;
@@ -445,7 +464,7 @@ Module X86_MACHINE.
          fpu_control := fpu_control (fpu m) ;
          fpu_tags := fpu_tags (fpu m);
          fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m);
-         fpu_lastOperandPtr := fpu_lastOperandPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
          fpu_lastOpcode := v
        |}
   |}.
@@ -459,16 +478,16 @@ Module X86_MACHINE.
       | control_register_loc r => fun v => set_control_reg r v m
       | debug_register_loc r => fun v => set_debug_reg r v m
       | pc_loc => fun v => set_pc v m
-      | fpu_datareg_loc r => fun v => set_fpu_datareg r v m
-      | fpu_stktop_loc => fun v => set_fpu_stktop v m
-      | fpu_flag_loc f => fun v => set_fpu_flag f v m
-      | fpu_rctrl_loc => fun v => set_fpu_rctrl v m
-      | fpu_pctrl_loc => fun v => set_fpu_pctrl v m
-      | fpu_ctrl_flag_loc f => fun v => set_fpu_ctrl f v m
-      | fpu_tag_loc r => fun v => set_fpu_tags r v m
-      | fpu_lastInstrPtr_loc => fun v => set_fpu_lastInstrPtr v m 
-      | fpu_lastOperandPtr_loc => fun v => set_fpu_lastOperand v m 
-      | fpu_lastOpcode => fun v => set_lastOpcode v m
+      | fpu_datareg_loc r => fun v => set_fpu_data_reg r v m
+      | fpu_stktop_loc => fun v => set_fpu_stktop_reg v m
+      | fpu_flag_loc f => fun v => set_fpu_flags_reg f v m
+      | fpu_rctrl_loc => fun v => set_fpu_rctrl_reg v m
+      | fpu_pctrl_loc => fun v => set_fpu_pctrl_reg v m
+      | fpu_ctrl_flag_loc f => fun v => set_fpu_ctrl_reg f v m
+      | fpu_tag_loc r => fun v => set_fpu_tags_reg r v m
+      | fpu_lastInstrPtr_loc => fun v => set_fpu_lastInstrPtr_reg v m 
+      | fpu_lastDataPtr_loc => fun v => set_fpu_lastDataPtr_reg v m 
+      | fpu_lastOpcode => fun v => set_lastOpcode_reg v m
     end v.
 
 End X86_MACHINE.
@@ -2800,8 +2819,9 @@ Definition conv_POPF pre :=
 (************************)
 
 (*
-    Uses Flocq library for conversion functions.
-    Things to check : 
+   compilation from FPU instructions to RTL instructions
+
+   Things to check : 
                       -DS segment register used for all memory-related conversions
                       -Values of floating-point constants may be off (had a hard time finding them)
                       -Will include more comprehensive handling of errors and exceptions in next update. For now, 
@@ -2823,7 +2843,6 @@ Section X86FloatSemantics.
     (* Definition set_status (p: rtl_exp size16) := emit set_loc_rtl p fpu_status_loc. *)
     (* Definition get_status := ret (get_loc_rtl_exp fpu_status_loc). *)
 
-    (* (* get FPU statck top *) *)
     (* Definition get_stk_top  *)
 
 
@@ -2927,47 +2946,176 @@ Section X86FloatSemantics.
          let joined := join_bits 64 16384 s (shifted_m - 1) exp_val in
          de_float_of_bits joined 
      end.
-  
-  (* Definition conv_FCLEX := *)
-  (*   clear <- load_Z size3 0; *)
-  (*   set_fpu_status Pe clear;; *)
-  (*   set_fpu_status Ue clear;; *)
-  (*   set_fpu_status Oe clear;; *)
-  (*   set_fpu_status Ze clear;; *)
-  (*   set_fpu_status De clear;; *)
-  (*   set_fpu_status Ie clear;; *)
 
-  (*   clear0 <- cast_u size3 clear; *)
-  (*   set_fpu_control Pm clear0;; *)
-  (*   set_fpu_control Um clear0;; *)
-  (*   set_fpu_control Om clear0;; *)
-  (*   set_fpu_control Zm clear0;; *)
-  (*   set_fpu_control Dm clear0;; *)
-  (*   set_fpu_control Im clear0. *)
 
-  (*Top may have to be 0 *)
-  (* Definition init_top := sev <- load_Z size3 7; set_fpu_status Top sev. *)
+
+  Inductive fpu_rounding_mode : Set :=
+  | RM_nearest_even  (* round to nearest even *)
+  | RM_down (* round down to negative infinity *)
+  | RM_up (* round up to positive infinity *)
+  | RM_truncate (* round toward zero *).
+
+  Definition enc_fpu_rounding_mode (rm: fpu_rounding_mode) : Z := 
+    (match rm with
+      | RM_nearest_even => 0
+      | RM_down => 1
+      | RM_up => 2
+      | RM_truncate => 3
+     end)%Z.
+
+  Inductive fpu_precision_control : Set := 
+  | PC_single (* single precision *)
+  | PC_reserved
+  | PC_double (* double precision *)
+  | PC_double_extended (* double extended precision *).
+
+  Definition enc_fpu_precision_control (pc: fpu_precision_control) : Z := 
+    (match pc with
+      | PC_single => 0
+      | PC_reserved => 1
+      | PC_double => 2
+      | PC_double_extended => 3
+     end)%Z.
+
+  Inductive fpu_tag_mode : Set :=
+  | TM_valid (* a valid number *)
+  | TM_zero (* number zero *)
+  | TM_special
+  | TM_empty.
+
+  Definition enc_fpu_tag_mode (tm: fpu_tag_mode) : Z := 
+    (match tm with
+      | TM_valid => 0
+      | TM_zero => 1
+      | TM_special => 2
+      | TM_empty => 3
+     end)%Z.
+
+  Definition get_stktop : Conv (rtl_exp size3) := 
+    ret (get_loc_rtl_exp fpu_stktop_loc).
+
+  Definition set_stktop (t:rtl_exp size3) := 
+    emit set_loc_rtl t fpu_stktop_loc.
+  Definition set_stktop_const (t:Z) := 
+    r <- load_Z size3 t; set_stktop r.
+
+  Definition set_fpu_flag (fl:fpu_flag) (r: rtl_exp size1) := 
+    emit set_loc_rtl r (fpu_flag_loc fl).
+  Definition set_fpu_flag_const (fl:fpu_flag) (bit:Z) := 
+    r <- load_Z size1 bit; set_fpu_flag fl r.
+
+  Definition set_fpu_ctrl (cf:fpu_ctrl_flag) (r:rtl_exp size1) := 
+    emit set_loc_rtl r (fpu_ctrl_flag_loc cf).
+  Definition set_fpu_ctrl_const (cf:fpu_ctrl_flag) (bit:Z) := 
+    r <- load_Z size1 bit; set_fpu_ctrl cf r.
+
+  Definition set_fpu_rctrl (r:rtl_exp size2) :=
+    emit set_loc_rtl r fpu_rctrl_loc.
+  Definition set_fpu_rctrl_const (rm:fpu_rounding_mode) :=
+    r <- load_Z _ (enc_fpu_rounding_mode rm);
+    set_fpu_rctrl r.
+
+  Definition set_fpu_pctrl (r: rtl_exp size2) :=
+    emit set_loc_rtl r fpu_pctrl_loc.
+  Definition set_fpu_pctrl_const (pc:fpu_precision_control) :=
+    r <- load_Z _ (enc_fpu_precision_control pc);
+    set_fpu_pctrl r.
+
+  Definition set_fpu_tag (loc:Z) (r: rtl_exp size2) := 
+    emit set_loc_rtl r (fpu_tag_loc (Word.repr loc)).
+  Definition set_fpu_tag_const (loc:Z) (tm:fpu_tag_mode) := 
+    r <- load_Z _ (enc_fpu_tag_mode tm);
+    set_fpu_tag loc r.
+
+  Definition set_fpu_lastInstrPtr (r: rtl_exp size48) := 
+    emit set_loc_rtl r fpu_lastInstrPtr_loc.
+  Definition set_fpu_lastInstrPtr_const (v:Z) := 
+    r <- load_Z size48 v; set_fpu_lastInstrPtr r.
+
+  Definition set_fpu_lastDataPtr (r: rtl_exp size48) := 
+    emit set_loc_rtl r fpu_lastDataPtr_loc.
+  Definition set_fpu_lastDataPtr_const (v:Z) := 
+    r <- load_Z size48 v; set_fpu_lastDataPtr r.
+
+  Definition set_fpu_lastOpcode (r: rtl_exp size11) :=
+    emit set_loc_rtl r fpu_lastOpcode_loc.
+  Definition set_fpu_lastOpcode_const (v:Z) :=
+    r <- load_Z size11 v; set_fpu_lastOpcode r.
+
+
+  Definition conv_FNCLEX :=
+    set_fpu_flag_const F_PE 0;;
+    set_fpu_flag_const F_UE 0;;
+    set_fpu_flag_const F_OE 0;;
+    set_fpu_flag_const F_ZE 0;;
+    set_fpu_flag_const F_DE 0;;
+    set_fpu_flag_const F_IE 0;;
+    set_fpu_flag_const F_ES 0;;
+    set_fpu_flag_const F_Busy 0.
 
   (* Definition set_CC_unordered :=  *)
   (*  onee <- load_Z size3 1; *)
   (*  set_fpu_status C3 onee;; set_fpu_status C2 onee;; set_fpu_status C0 onee. *)
 
-  (* Definition init_tags := *)
-  (*   empty <- load_Z size2 3; *)
-  (*   set_fpu_tags Tag0 empty;; *)
-  (*   set_fpu_tags Tag1 empty;; *)
-  (*   set_fpu_tags Tag2 empty;; *)
-  (*   set_fpu_tags Tag3 empty;; *)
-  (*   set_fpu_tags Tag4 empty;; *)
-  (*   set_fpu_tags Tag5 empty;; *)
-  (*   set_fpu_tags Tag6 empty;; *)
-  (*   set_fpu_tags Tag7 empty. *)
+  (* In FNINIT, the FPUControlWord is set to 037FH *)
+  Definition init_control_word := 
+    set_fpu_ctrl_const F_Res15 0;;
+    set_fpu_ctrl_const F_Res14 0;;
+    set_fpu_ctrl_const F_Res13 0;;
+    set_fpu_ctrl_const F_IC 0;;
+    set_fpu_rctrl_const RM_nearest_even;;
+    set_fpu_pctrl_const PC_double_extended;;
+    set_fpu_ctrl_const F_Res6 0;;
+    set_fpu_ctrl_const F_Res7 1;;
+    set_fpu_ctrl_const F_PM 1;;
+    set_fpu_ctrl_const F_UM 1;;
+    set_fpu_ctrl_const F_OM 1;;
+    set_fpu_ctrl_const F_ZM 1;;
+    set_fpu_ctrl_const F_DM 1;;
+    set_fpu_ctrl_const F_IM 1.
 
-  (* Definition conv_FINIT :=  *)
-  (*    init_top;; *)
-  (*    set_CC_unordered;; *)
-  (*    conv_FCLEX;; *)
-  (*    init_tags. (*Probably init more stuff *) *)
+  (* FNINIT sets the status word to zero *)
+  Definition init_status_word := 
+    set_fpu_flag_const F_Busy 0;;
+    set_fpu_flag_const F_C3 0;;
+    set_stktop_const 0;;
+    set_fpu_flag_const F_C2 0;;
+    set_fpu_flag_const F_C1 0;;
+    set_fpu_flag_const F_C0 0;;
+    set_fpu_flag_const F_ES 0;;
+    set_fpu_flag_const F_SF 0;;
+    set_fpu_flag_const F_PE 0;;
+    set_fpu_flag_const F_UE 0;;
+    set_fpu_flag_const F_OE 0;;
+    set_fpu_flag_const F_ZE 0;;
+    set_fpu_flag_const F_DE 0;;
+    set_fpu_flag_const F_IE 0.
+
+  (* FNINIT sets the tag word to be 0xFFFF *)
+  Definition init_tag_word :=
+    set_fpu_tag_const 0 TM_empty;;
+    set_fpu_tag_const 1 TM_empty;;
+    set_fpu_tag_const 2 TM_empty;;
+    set_fpu_tag_const 3 TM_empty;;
+    set_fpu_tag_const 4 TM_empty;;
+    set_fpu_tag_const 5 TM_empty;;
+    set_fpu_tag_const 6 TM_empty;;
+    set_fpu_tag_const 7 TM_empty.
+
+  (* FNINIT sets all three last pointers to be zero *)
+  Definition init_last_ptrs :=
+    set_fpu_lastInstrPtr_const 0;;
+    set_fpu_lastDataPtr_const 0;;
+    set_fpu_lastOpcode_const 0.
+
+  Definition conv_FNINIT :=
+    init_control_word;;
+    init_status_word;;
+    init_tag_word;;
+    init_last_ptrs.
+
+
+
 
   (* gtan: need adjustment *)
  (*load val into an fpu-register stack where the top reg is stacktop and num is the number of registers from the top 
@@ -3011,42 +3159,35 @@ Section X86FloatSemantics.
      emit if_rtl t6 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 6)));;
      emit if_rtl t7 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 7))).
 
-  (* gtan: need adjustment *)
-  (*Wraps around to 7 if current top is 0 *)
-  (* Definition dec_stack (size : nat) :=  *)
-  (*    t <- get_fpu_status Top; *)
-  (*    topp <- cast_u size t; *)
-  (*    z <- load_Z size 0; *)
-     
-  (*    let (t) := topp in *)
-  (*    if (Zeq_bool t 0) then *)
-  (*        sev <- load_Z size3 7; *)
-  (*        set_fpu_status Top sev *)
-  (*    else *)
-  (*        one <- load_Z size 1; *)
-  (*        u <- arith sub_op topp one; *)
-  (*        upd <- cast_u size3 u; *)
-  (*        set_fpu_status Top upd. *)
 
-  (*Wraps around to 0 if current top is 7 *)
-  (* Definition inc_stack (size : nat) :=  *)
-  (*    t <- get_fpu_status Top; *)
-  (*    topp <- cast_u size t; *)
-     
-  (*    let (t) := topp in *)
-  (*    if (Zeq_bool t 7) then *)
-  (*       z <- load_Z size3 0; *)
-  (*       set_fpu_status Top z *)
-  (*    else *)
-  (*       one <- load_Z size 1; *)
-  (*       u <- arith add_op topp one; *)
-  (*       updd <- cast_u size3 u; *)
-  (*       set_fpu_status Top updd. *)
+  Definition fpu_undef_flag (f: fpu_flag) := 
+    v <- @choose size1; 
+    set_fpu_flag f v.
 
-  (* Definition conv_FDECSTP := dec_stack size3. *)
-  (* Definition conv_FINCSTP := inc_stack size3. *)
+  Definition conv_FINCSTP := 
+    st <- get_stktop;
+    one <- load_Z _ 1;
+    newst <- arith add_op st one;
+    set_stktop newst;;
 
-  (* Definition get_stacktop := topp <- get_fpu_status Top; castt <- cast_u size3 topp; Return castt. *)
+    (* The C1 flag is set to 0. The C0, C2, and C3 flags are undefined *)
+    set_fpu_flag_const F_C1 0;;
+    fpu_undef_flag F_C0;;
+    fpu_undef_flag F_C2;;
+    fpu_undef_flag F_C3.
+
+  Definition conv_FDECSTP := 
+    st <- get_stktop;
+    one <- load_Z _ 1;
+    newst <- arith sub_op st one;
+    set_stktop newst;;
+
+    (* The C1 flag is set to 0. The C0, C2, and C3 flags are undefined *)
+    set_fpu_flag_const F_C1 0;;
+    fpu_undef_flag F_C0;;
+    fpu_undef_flag F_C2;;
+    fpu_undef_flag F_C3.
+
 
   (* gtan: need adjustment *)
   (* Definition psreg_to_int n (p : rtl_exp n) : Word.int n :=  *)

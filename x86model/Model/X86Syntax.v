@@ -291,7 +291,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FBLD : forall (op1: fp_operand), instr
 | FBSTP : forall (op1: fp_operand), instr
 | FCHS : instr
-| FCLEX : instr
+(* FCLEX is the same as FWAIT followed FNCLEX
+   | FCLEX : instr *)
 | FCMOVcc : forall (ct:fp_condition_type)(op1: fp_operand), instr
 | FCOM : forall (op1: option fp_operand), instr
 | FCOMP : forall (op1: option fp_operand), instr
@@ -314,7 +315,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FILD : forall (op1: fp_operand), instr
 | FIMUL : forall (op1: fp_operand), instr
 | FINCSTP : instr
-| FINIT : instr
+(* FINIT is FWAIT followed by FNINIT;
+   | FINIT : instr *)
 | FIST : forall (op1: fp_operand), instr
 | FISTP : forall (op1: fp_operand), instr
 | FISUB : forall (op1: fp_operand), instr
@@ -331,6 +333,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FLDZ : instr
 | FMUL : forall (d: bool) (op1: fp_operand), instr
 | FMULP : forall (op1: fp_operand), instr
+| FNCLEX : instr
+| FNINIT : instr
 | FNOP : instr
 | FNSAVE : forall (op1: fp_operand), instr
 | FNSTCW : forall (op1 : fp_operand), instr
@@ -342,24 +346,22 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FPTAN : instr
 | FRNDINT : instr
 | FRSTOR : forall (op1: fp_operand), instr
-(*  FSAVE's encoding the same as FWAIT followed FNSAVE
-     | FSAVE : forall (op1: fp_operand), instr *)
+(* FSAVE's encoding the same as FWAIT followed FNSAVE
+   | FSAVE : forall (op1: fp_operand), instr *)
 | FSCALE : instr
 | FSIN : instr
 | FSINCOS : instr
 | FSQRT : instr
 | FST : forall (op1: fp_operand), instr
 
-(* FSTCW's encoding is the same as FWAIT followed by FNSTCW; its
-   semantics seems the same as "FWAIT;FNSTCW" as well
-   | FSTCW : forall (op1: fp_operand), instr
-*)
+(* FSTCW's is the same as FWAIT followed by FNSTCW
+   | FSTCW : forall (op1: fp_operand), instr *)
 
 | FSTENV : forall (op1: fp_operand), instr
 | FSTP : forall (op1: fp_operand), instr
 
-(* FSTSW is the same as FWAIT followed by FNSTSW *)
-(* | FSTSW : forall (op1: option fp_operand), instr *)
+(* FSTSW is the same as FWAIT followed by FNSTSW 
+   | FSTSW : forall (op1: option fp_operand), instr *)
 
 (* op1 <- op1 - op2 *)
 | FSUB : forall (op1 op2 : fp_operand), instr
