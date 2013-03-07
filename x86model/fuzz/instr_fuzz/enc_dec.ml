@@ -110,6 +110,14 @@ let sse_operand_eq_dec sop1 sop2 : bool =
   | SSE_Imm_op i1, SSE_Imm_op i2 -> Big_int.eq_big_int i1 i2
   | _,_ -> false
 
+let mmx_operand_eq_dec mop1 mop2 = 
+  match mop1, mop2 with
+  | GP_Reg_op r1, GP_Reg_op r2 -> r1 = r2
+  | MMX_Addr_op a1, MMX_Addr_op a2 -> address_eq_dec a1 a2
+  | MMX_Reg_op m1, MMX_Reg_op m2 -> m1 = m2
+  | MMX_Imm_op i1, MMX_Imm_op i2 -> Big_int.eq_big_int i1 i2
+  | _, _ -> false
+
 (* todo: make it complete for all instructions *)
 let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   match ins1, ins2 with
@@ -171,14 +179,17 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | DAA, DAA
   | DAS, DAS
 
+  | EMMS, EMMS
+
   | F2XM1, F2XM1
   | FABS, FABS
   | FCHS, FCHS
-  | FCLEX, FCLEX
+  | FNCLEX, FNCLEX
+  | FCOMPP, FCOMPP
   | FCOS, FCOS
   | FDECSTP, FDECSTP
   | FINCSTP, FINCSTP
-  | FINIT, FINIT
+  | FNINIT, FNINIT
   | FLDL2E, FLDL2E
   | FLDL2T, FLDL2T
   | FLDLG2, FLDLG2
@@ -196,6 +207,7 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | FSIN, FSIN
   | FSINCOS, FSINCOS
   | FSQRT, FSQRT
+  | FTST, FTST
   | FUCOMPP, FUCOMPP
   | FXAM, FXAM
   | FXTRACT, FXTRACT
@@ -314,10 +326,10 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | FSUBR (op11,op12), FSUBR (op21, op22) -> 
     fp_operand_eq_dec op11 op21 && fp_operand_eq_dec op12 op22
 
-  | FCOM opt1, FCOM opt2
-  | FCOMP opt1, FCOMP opt2
+  | FCOM (opt1), FCOM (opt2)
+  | FCOMP (opt1), FCOMP (opt2)
  (* | FNSTSW opt1, FNSTSW opt2  *)
-    -> option_eq_dec fp_operand_eq_dec opt1 opt2
+    -> (*option_eq_dec*) fp_operand_eq_dec opt1 opt2
 
   | IMUL (w1,op1,opopt1,iopt1), IMUL (w2,op2,opopt2,iopt2) ->
     w1 = w2 && operand_eq_dec op1 op2 
@@ -375,6 +387,37 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | STMXCSR sop1, STMXCSR sop2 -> 
     sse_operand_eq_dec sop1 sop2
 
+  | MOVD (op11, op12), MOVD (op21, op22) 
+  | MOVQ (op11, op12), MOVQ (op21, op22) 
+  | PACKSSDW (op11, op12), PACKSSDW (op21, op22) 
+  | PACKSSWB (op11, op12), PACKSSWB (op21, op22) 
+  | PACKUSWB (op11, op12), PACKUSWB (op21, op22) 
+  | PAND (op11, op12), PAND (op21, op22) 
+  | PANDN (op11, op12), PANDN (op21, op22) 
+  | PMADDWD (op11, op12), PMADDWD (op21, op22) 
+  | PMULHUW (op11, op12), PMULHUW (op21, op22) 
+  | PMULHW (op11, op12), PMULHW (op21, op22) 
+  | PMULLW (op11, op12), PMULLW (op21, op22) 
+  | POR (op11, op12), POR (op21, op22) 
+  | PXOR (op11, op12), PXOR (op21, op22) ->
+    mmx_operand_eq_dec op11 op21 && mmx_operand_eq_dec op12 op22
+
+  | PADD (g1, op11, op12), PADD (g2, op21, op22)
+  | PADDS (g1, op11, op12), PADDS (g2, op21, op22)
+  | PADDUS (g1, op11, op12), PADDUS (g2, op21, op22)
+  | PCMPEQ (g1, op11, op12), PCMPEQ (g2, op21, op22)
+  | PCMPGT (g1, op11, op12), PCMPGT (g2, op21, op22)
+  | PSLL (g1, op11, op12), PSLL (g2, op21, op22)
+  | PSRA (g1, op11, op12), PSRA (g2, op21, op22)
+  | PSRL (g1, op11, op12), PSRL (g2, op21, op22)
+  | PSUB (g1, op11, op12), PSUB (g2, op21, op22)
+  | PSUBS (g1, op11, op12), PSUBS (g2, op21, op22)
+  | PSUBUS (g1, op11, op12), PSUBUS (g2, op21, op22)
+  | PUNPCKH (g1, op11, op12), PUNPCKH (g2, op21, op22)
+  | PUNPCKL (g1, op11, op12), PUNPCKL (g2, op21, op22) ->
+    g1 = g2 && mmx_operand_eq_dec op11 op21 && mmx_operand_eq_dec op12 op22
+
+
   | _ -> false
 
 let prefix_eq_dec pre1 pre2 = 
@@ -404,20 +447,20 @@ let test_encode_decode_instr
     try
       let (pre',ins') = decode_instr prog in
       if (not (pre_instr_eq_dec (pre,ins) (pre',ins'))) then
-	(F.printf "  Encoding-decoding loop fails with instr %a\n"
+	  (F.printf "  Encoding-decoding loop fails with instr %a\n"
 	   pp_prefix_instr (pre,ins);
            incr enc_dec_fails_count;
-	 F.printf "    after encoding: @[  %a@]\n after decoding: %a\n"
+	   F.printf "    after encoding: @[  %a@]\n after decoding: %a\n"
 	   (pp_list ~sep:"," pp_big_int) lz
 	   pp_prefix_instr (pre',ins'))
       else
-	   incr succ_count;
+	  (incr succ_count;
 	   F.printf "  Encoding-decoding loop succeeds with instr %a\n"
-	   pp_prefix_instr (pre,ins)
+	   pp_prefix_instr (pre,ins) )
     with DF_IllegalInstr ->
-      incr dec_fails_count;
-      F.printf "  Decoding step fails after encoding %a\n"
+       (incr dec_fails_count;
+        F.printf "  Decoding step fails after encoding %a\n"
 	pp_prefix_instr (pre,ins);
-      F.printf "    after encoding: @[  %a@]\n"
-	(pp_list ~sep:"," pp_big_int) lz
+        F.printf "    after encoding: @[  %a@]\n"
+	(pp_list ~sep:"," pp_big_int) lz)
 

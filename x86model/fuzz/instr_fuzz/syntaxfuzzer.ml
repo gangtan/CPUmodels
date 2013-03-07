@@ -87,15 +87,6 @@ let choose_prefix () =
         let seg_override = if sr_opt_c then Some (choose_segment_reg()) else None in
 
         mkPrefix lock_rep seg_override op_c addr_c 
-	(*Create new prefix for each kind of prefix combination defined in Decode.v *)
-	
-(*	
-	match(Random.int 4) with     
-       	  0 -> mkPrefix lock_rep None false false 
-        | 1 -> mkPrefix None seg_override false false
-	| 2 -> mkPrefix None None op_c false	
-	| _ -> mkPrefix None None false addr_c
-*)
 
 let choose_addr() =
 	let c_base = choose_bool() in
@@ -113,6 +104,11 @@ let choose_op() =
   | 2 -> let addr = choose_addr() in Address_op addr;
   | _ -> let wint = choose_word_int () in Offset_op wint 
 
+let choose_two_ops() = 
+	let op1 = choose_op() in
+	let op2 = choose_op() in
+	op1, op2
+
 let choose_fp_reg() =
 	of_int (Random.int 8)
 
@@ -124,10 +120,53 @@ let choose_fp_op() =
 	| 3 -> FPM64_op (choose_addr())
 	| _ -> FPM80_op (choose_addr())
 
-let choose_two_ops() = 
-	let op1 = choose_op() in
-	let op2 = choose_op() in
+let choose_mmx_reg() = 
+	coq_Z_to_mmx_register (of_int (Random.int 8))
+
+let choose_mmx_gran() = 
+	match (Random.int 4) with
+	| 0 -> MMX_8
+	| 1 -> MMX_16
+	| 2 -> MMX_32
+	| _ -> MMX_64
+
+let choose_mxcsr() = 
+	match (Random.int 17) with
+	| 0 -> FZ
+	| 1 -> Rpos
+	| 2 -> Rneg
+	| 3 -> RZ
+	| 4 -> RN 
+	| 5 -> PM
+	| 6 -> UM
+ 	| 7 -> OM
+	| 8 -> ZM
+	| 9 -> DM
+	| 10 -> IM
+	| 11 -> DAZ
+	| 12 -> PE
+	| 13 -> UE
+	| 14 -> OE
+	| 15 -> ZE
+	| 16 -> DE
+	| _ -> IE
+
+let choose_mmx_op() = 
+	match (Random.int 4) with
+	| 0 -> let reg = choose_reg() in GP_Reg_op reg
+	| 1 -> let addr = choose_addr() in MMX_Addr_op addr
+	| 2 -> let mmx_reg = choose_mmx_reg() in MMX_Reg_op mmx_reg
+	| _ -> let imm = choose_word_int() in MMX_Imm_op imm
+
+let choose_two_mmx_ops() = 
+	let op1 = choose_mmx_op() in
+	let op2 = choose_mmx_op() in
 	op1, op2
+
+let choose_gmmx_ops() = 
+	let g = choose_mmx_gran() in 
+	let ops = choose_two_mmx_ops() in 
+	g, ops
 
 (**General purpose fuzz functions **)
 
@@ -584,16 +623,12 @@ let choose_FBSTP() =
 	FBSTP (op1)
 
 let choose_FCOM() = 
-	let opt_c = choose_bool() in
 	let op = choose_fp_op() in
-	let op1 = if opt_c then (Some op) else None in
-	FCOM (op1)
+	FCOM (op)
 
 let choose_FCOMP() = 
-	let opt_c = choose_bool() in
 	let op = choose_fp_op() in
-	let op1 = if opt_c then (Some op) else None in
-	FCOMP (op1)
+	FCOMP (op)
 
 let choose_FCOMIP() = 
 	let op1 = choose_fp_op() in
@@ -689,12 +724,12 @@ let choose_FMULP() =
 let choose_FNSAVE() = 
 	let op1 = choose_fp_op() in
 	FNSAVE (op1)
-
+(*
 let choose_FNSTCW() = 
 	let op1 = choose_fp_op() in
 	FNSTCW (op1)
 
-(*let choose_FNSTSW() = 
+let choose_FNSTSW() = 
 	let opt_c = choose_bool() in
 	let op = choose_fp_op() in
 	let op1 = if opt_c then (Some op) else None in
@@ -753,6 +788,112 @@ let choose_FUCOMIP() =
 let choose_FXCH() = 
 	let op1 = choose_fp_op() in
 	FXCH (op1)
+
+(**End of floating point, start of MMX **)
+
+let choose_MOVD() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	MOVD(op1, op2)
+
+let choose_MOVQ() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	MOVQ(op1, op2)
+
+let choose_PACKSSDW() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PACKSSDW(op1, op2)
+
+let choose_PACKSSWB() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PACKSSWB(op1, op2)
+
+let choose_PACKUSWB() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PACKUSWB(op1, op2)
+
+let choose_PADD() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PADD(g, op1, op2)
+
+let choose_PADDS() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PADDS(g, op1, op2)
+
+let choose_PADDUS() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PADDUS(g, op1, op2)
+
+let choose_PAND() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PAND(op1, op2)
+
+let choose_PANDN() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PANDN(op1, op2)
+
+let choose_PCMPEQ() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PCMPEQ(g, op1, op2)
+
+let choose_PCMPGT() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PCMPGT(g, op1, op2)
+
+let choose_PMADDWD() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PMADDWD(op1, op2)
+
+let choose_PMULHUW() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PMULHUW(op1, op2)
+
+let choose_PMULHW() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PMULHW(op1, op2)
+
+let choose_PMULLW() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PMULLW(op1, op2)
+
+let choose_POR() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	POR(op1, op2)
+
+let choose_PSLL() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PSLL(g, op1, op2)
+
+let choose_PSRA() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PSRA(g, op1, op2)
+
+let choose_PSRL() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PSRL(g, op1, op2)
+
+let choose_PSUB() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PSUB(g, op1, op2)
+
+let choose_PSUBS() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PSUBS(g, op1, op2)
+
+let choose_PSUBUS() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PSUBUS(g, op1, op2)
+
+let choose_PUNPCKH() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PUNPCKH(g, op1, op2)
+
+let choose_PUNPCKL() = 
+	let g, (op1, op2) = choose_gmmx_ops() in 
+	PUNPCKL(g, op1, op2)
+
+let choose_PXOR() = 
+	let op1, op2 = choose_two_mmx_ops() in
+	PXOR(op1, op2)
 
 (** returns a random gp instruction  **)
 let choose_gp_instr lb ub  = 
@@ -900,7 +1041,7 @@ let choose_fp_instr lb ub =
     | 4 -> choose_FBLD()
     | 5 -> choose_FBSTP()
     | 6 -> FCHS
-    | 7 -> FCLEX
+    | 7 -> FNCLEX
     | 8 -> choose_FCOM()
     | 9 -> choose_FCOMP()
     | 10 -> FCOMPP
@@ -920,7 +1061,7 @@ let choose_fp_instr lb ub =
     | 24 -> choose_FILD()
     | 25 -> choose_FIMUL()
     | 26 -> FINCSTP
-    | 27 -> FINIT
+    | 27 -> FNINIT
     | 28 -> choose_FIST()
     | 29 -> choose_FISTP()
     | 30 -> choose_FISUB()
@@ -939,8 +1080,8 @@ let choose_fp_instr lb ub =
     | 43 -> choose_FMULP()
     | 44 -> FNOP
     | 45 -> choose_FNSAVE()
-    | 46 -> choose_FNSTCW()
-   (* | 47 -> choose_FNSTSW() *)
+   (* | 46 -> choose_FNSTCW()
+    | 47 -> choose_FNSTSW() *)
     | 48 -> FPATAN
     | 49 -> FPREM
     | 50 -> FPREM1
@@ -971,35 +1112,53 @@ let choose_fp_instr lb ub =
     | 75 -> FYL2XP1
     | _ ->  FNOP 
     
-let rec fuzz_gp lb ub n = 
-  match n with 
-    | 0 -> ()
-    | x ->   
-     let prefix = choose_prefix () in
-     let instr = choose_gp_instr lb ub in 
-     
-     F.printf "------------\nTesting %a\n"
-     pp_prefix_instr (emptyPrefix,instr);
-     
-     test_encode_decode_instr (*prefix*) emptyPrefix instr;
-     Printf.printf "------------\n";
-     F.print_newline (); (* flush *)
-     fuzz_gp lb ub (x - 1)
-  ;;
+(**Returns a random MMX instruction **)
+let choose_mmx_instr lb ub = 
+	let diff = ub - lb in
+    	match (lb + Random.int diff) with 
+	| 0 -> EMMS
+	| 1 -> choose_MOVD()
+	| 2 -> choose_MOVQ()
+	| 3 -> choose_PACKSSDW()
+	| 4 -> choose_PACKSSWB()
+	| 5 -> choose_PACKUSWB()
+	| 6 -> choose_PADD()
+	| 7 -> choose_PADDS()
+	| 8 -> choose_PADDUS()
+	| 9 -> choose_PAND()
+	| 10 -> choose_PANDN()
+	| 11 -> choose_PCMPEQ()
+	| 12 -> choose_PCMPGT()
+	| 13 -> choose_PMADDWD()
+	| 14 -> choose_PMULHUW()
+	| 15 -> choose_PMULHW()
+	| 16 -> choose_PMULLW()
+	| 17 -> choose_POR()
+	| 18 -> choose_PSLL()
+	| 19 -> choose_PSRA()
+	| 20 -> choose_PSRL()
+	| 21 -> choose_PSUB()
+ 	| 22 -> choose_PSUBS()
+	| 23 -> choose_PSUBUS()
+	| 24 -> choose_PUNPCKH()
+	| 25 -> choose_PUNPCKL()
+	| 26 -> choose_PXOR()
+	| _ -> EMMS
 
-let rec fuzz_fp lb ub n = 
-  match n with
-    | 0 -> ()
-    | x ->   
-     let instr = choose_fp_instr lb ub in 
+let rec fuzz_instr instr_func lb ub n = 
+	match n with 
+	| 0 -> ()
+	| x -> 
+	 (*let prefix = choose_prefix() in*)
+	let instr = instr_func lb ub in
+	
+	F.printf "------------\nTesting %a\n"
+    	pp_prefix_instr (emptyPrefix,instr);
      
-     F.printf "------------\nTesting %a\n"
-     pp_prefix_instr (emptyPrefix,instr);
-     
-     test_encode_decode_instr (*prefix*) emptyPrefix instr;
-     Printf.printf "------------\n";
-     F.print_newline (); (* flush *)
-     fuzz_fp lb ub (x - 1)
+     	test_encode_decode_instr (*prefix*) emptyPrefix instr;
+     	Printf.printf "------------\n";
+     	F.print_newline (); (* flush *)
+     	fuzz_instr instr_func lb ub (x - 1)
   ;;
 
 Random.self_init();;
@@ -1012,7 +1171,7 @@ let some_type = ref "gp"
 let usage = "usage: " ^ Sys.argv.(0) ^ " [type string] [lb int] [ub int] [n int]"
 
 let speclist = [
-    ("-type", Arg.String (fun d -> some_type := d), ": specify instruction set to fuzz (gp or fp)"); 
+    ("-type", Arg.String (fun d -> some_type := d), ": specify instruction set to fuzz (gp, fp or mmx)"); 
     ("-lb", Arg.Int (fun a -> some_lb := a), ": set the lowerbound");
     ("-ub", Arg.Int (fun b -> some_ub := b), ": set the upperbound");
     ("-n", Arg.Int (fun c -> some_n := c), ": set number of runs");
@@ -1022,11 +1181,11 @@ let speclist = [
 
 *)
 
-let gp_or_fp() = 
+let start_instr_type() = 
 	match !some_type with 
-	| "gp" -> fuzz_gp !some_lb !some_ub !some_n
-	| "fp" -> fuzz_fp !some_lb !some_ub !some_n
-	| _ -> fuzz_fp !some_lb !some_ub !some_n
+	| "gp" -> fuzz_instr choose_gp_instr !some_lb !some_ub !some_n
+	| "fp" -> fuzz_instr choose_fp_instr !some_lb !some_ub !some_n
+	| _ -> fuzz_instr choose_mmx_instr !some_lb !some_ub !some_n
 
 let main () = 
   print_string("running syntaxfuzzer:\n");
@@ -1036,7 +1195,7 @@ let main () =
 	(fun x -> raise (Arg.Bad ("Bad argument : " ^ x)))
 	usage;
 
-  gp_or_fp();
+  start_instr_type();
 
   let s_fl = float_of_int !succ_count in
   let e_d_fl = float_of_int !enc_dec_fails_count in

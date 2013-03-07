@@ -795,10 +795,10 @@ Module X86_PARSER.
   
   Definition MOVCR_p := 
     "0000" $$ "1111" $$ "0010" $$ "0010" $$ "11" $$ control_reg_p $ reg @ 
-    (fun p => MOVCR false (fst p) (snd p) %% instruction_t)
+    (fun p => MOVCR true (fst p) (snd p) %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "0010" $$ "0000" $$ "11" $$ control_reg_p $ reg @ 
-    (fun p => MOVCR true (fst p) (snd p) %% instruction_t).
+    (fun p => MOVCR false (fst p) (snd p) %% instruction_t).
 
   (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
    * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
@@ -815,10 +815,10 @@ Module X86_PARSER.
 
   Definition MOVDR_p := 
     "0000" $$ "1111" $$ "0010" $$ "0011" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR false (fst p) (snd p) %% instruction_t)
+    (fun p => MOVDR true (fst p) (snd p) %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "0010" $$ "0001" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR true (fst p) (snd p) %% instruction_t).
+    (fun p => MOVDR false (fst p) (snd p) %% instruction_t).
 
   Definition segment_reg_p := 
       bits "000" @ (fun _ => ES %% segment_register_t) 
@@ -839,10 +839,10 @@ Module X86_PARSER.
 
   Definition MOVSR_p := 
     "1000" $$ "1110" $$ seg_modrm @ 
-      (fun p => MOVSR false (fst p) (snd p) %% instruction_t)
+      (fun p => MOVSR true (fst p) (snd p) %% instruction_t)
   |+|
     "1000" $$ "1100" $$ seg_modrm @ 
-     (fun p => MOVSR true (fst p) (snd p) %% instruction_t).
+     (fun p => MOVSR false (fst p) (snd p) %% instruction_t).
 
   Definition MOVBE_p := 
     "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0000" $$ modrm @
@@ -1101,21 +1101,21 @@ Module X86_PARSER.
 
   Definition FCOM_p :=
     "11011" $$ "000" $$ ext_op_modrm_FPM32 "010" @
-        (fun x => FCOM (Some x) %% instruction_t)
+        (fun x => FCOM x %% instruction_t)
   |+|
     "11011" $$ "100" $$ ext_op_modrm_FPM64 "010" @
-        (fun x => FCOM (Some x) %% instruction_t) 
+        (fun x => FCOM x %% instruction_t) 
   |+|  
-    "11011" $$ "000" $$ "11010" $$ fpu_reg @ (fun x => FCOM (Some (FPS_op x)) %% instruction_t).
+    "11011" $$ "000" $$ "11010" $$ fpu_reg @ (fun x => FCOM (FPS_op x) %% instruction_t).
 
   Definition FCOMP_p :=
     "11011" $$ "000" $$ ext_op_modrm_FPM32 "011" @
-       (fun x => FCOMP (Some x) %% instruction_t)
+       (fun x => FCOMP x %% instruction_t)
   |+|
     "11011" $$ "100" $$ ext_op_modrm_FPM64 "011" @
-       (fun x => FCOMP (Some x) %% instruction_t) 
+       (fun x => FCOMP x %% instruction_t) 
   |+|  
-    "11011" $$ "000" $$ "11011" $$ fpu_reg @ (fun x => FCOMP (Some (FPS_op x)) %% instruction_t).
+    "11011" $$ "000" $$ "11011" $$ fpu_reg @ (fun x => FCOMP (FPS_op x) %% instruction_t).
 
   Definition FCOMPP_p := "11011" $$ "110" $$ "11011" $$ bits "001" @ (fun _ => FCOMPP %% instruction_t).
   Definition FCOMIP_p := "11011" $$ "111" $$ "11110" $$ fpu_reg @ (fun x => FCOMIP (FPS_op x) %% instruction_t).

@@ -191,14 +191,25 @@ let selector_to_str (sel: selector option) =
 
 let str_of_fpu_register fr = 
   match fr with
-  | ST0 -> "st0"
-  | ST1 -> "st1"
-  | ST2 -> "st2"
-  | ST3 -> "st3"
-  | ST4 -> "st4"
-  | ST5 -> "st5"
-  | ST6 -> "st6"
-  | ST7 -> "st7"
+  | MM0 -> "st0"
+  | MM1 -> "st1"
+  | MM2 -> "st2"
+  | MM3 -> "st3"
+  | MM4 -> "st4"
+  | MM5 -> "st5"
+  | MM6 -> "st6"
+  | MM7 -> "st7"
+
+let str_of_mmx_register mmx = 
+  match mmx with 
+  | MM0 -> "mm0"
+  | MM1 -> "mmx1"
+  | MM2 -> "mmx2"
+  | MM3 -> "mmx3"
+  | MM4 -> "mmx4"
+  | MM5 -> "mmx5"
+  | MM6 -> "mmx6"
+  | MM7 -> "mmx7"
 
 let str_of_fp_operand fop = 
   match fop with
@@ -230,6 +241,19 @@ let str_of_sse_operand sop =
   | SSE_GP_Reg_op r -> Printf.sprintf "%s" (str_of_reg OpSize32 r)
   | SSE_Imm_op n -> Printf.sprintf "%s" (unsigned32_to_hex n)
 
+let str_of_gg gg = 
+  match gg with 
+  | MMX_8 -> "mmx_8"
+  | MMX_16 -> "mmx_16"
+  | MMX_32 -> "mmx_32"
+  | MMX_64 -> "mmx_64"
+
+let str_of_mmx_operand mmx = 
+  match mmx with 
+  | GP_Reg_op r -> Printf.sprintf "%s" (str_of_reg OpSize32 r)
+  | MMX_Addr_op addr -> Printf.sprintf "%s" (str_of_addr addr)
+  | MMX_Reg_op m -> Printf.sprintf "%s" (str_of_mmx_register m)
+  | MMX_Imm_op n -> Printf.sprintf "%s" (unsigned32_to_hex n)
 
 (** Pretty printing an instruction *)
 let str_of_instr (prefix, ins) = 
@@ -242,6 +266,12 @@ let str_of_instr (prefix, ins) =
     F.sprintf "%s, %s" (str_of_operand (sz,op1)) (str_of_operand (sz,op2)) in
   let pp_two_ops_sz (sz1, op1, sz2, op2) = 
     F.sprintf "%s, %s" (str_of_operand (sz1,op1)) (str_of_operand (sz2,op2)) in
+
+  let pp_two_mmx_ops (op1, op2) =
+    F.sprintf "%s, %s" (str_of_mmx_operand op1) (str_of_mmx_operand op2) in
+
+  let pp_gmmx_ops (gg, op1, op2) = 
+    F.sprintf "%s, %s, %s" (str_of_gg gg) (str_of_mmx_operand op1) (str_of_mmx_operand op2) in
   (* the sizes function for movsx and movzx *)
   let movx_sizes prefix w = 
     match prefix.op_override, w with
@@ -310,11 +340,10 @@ let str_of_instr (prefix, ins) =
     | FBLD fop -> P.sprintf "fbld %s, st" (str_of_fp_operand fop) 
     | FBSTP fop -> P.sprintf "fbstp %s, st" (str_of_fp_operand fop) 
     | FCHS -> "fchs st0"
-    | FCLEX -> "fclex"
-    | FCOM (None) -> P.sprintf "fcom st0, st1"
-    | FCOM(Some fop) -> P.sprintf "fcom st0, %s" (str_of_fp_operand fop)
-    | FCOMP (None) -> P.sprintf "fcomp st0, st1"
-    | FCOMP (Some fop) -> P.sprintf "fcomp st0, %s" (str_of_fp_operand fop)
+    | FNCLEX -> "fnclex"
+    | FCOM(fop) -> P.sprintf "fcom st0, %s" (str_of_fp_operand fop)
+    | FCOMP (fop) -> P.sprintf "fcomp st0, %s" (str_of_fp_operand fop)
+    | FCOMPP -> P.sprintf "fcomp st0, st1"
     | FCOMIP fop -> P.sprintf "fcomip %s" (str_of_fp_operand fop)
     | FCOS -> "fcos st0"
     | FCMOVcc (fct,fop) ->  
@@ -334,7 +363,7 @@ let str_of_instr (prefix, ins) =
     | FILD fop -> P.sprintf "fild %s" (str_of_fp_operand fop)
     | FIMUL fop -> P.sprintf "fimul %s" (str_of_fp_operand fop)
     | FINCSTP -> "fincstp"
-    | FINIT -> "finit"
+    | FNINIT -> "fninit"
     | FIST fop -> P.sprintf "fist %s" (str_of_fp_operand fop)
     | FISUB fop -> P.sprintf "fisub %s" (str_of_fp_operand fop)
     | FISUBR fop -> P.sprintf "fisubr %s" (str_of_fp_operand fop)
@@ -459,8 +488,8 @@ let str_of_instr (prefix, ins) =
       else P.sprintf "movdr %s, %s" (str_of_debugreg dr) (str_of_reg OpSize32 reg)
     | MOVSR (d,seg,op) -> 
       if d then 
-	P.sprintf "mov %s, %s" (pp_one_op (true,op)) (str_of_segreg seg)
-      else P.sprintf "mov %s, %s" (str_of_segreg seg) (pp_one_op (true,op))
+	P.sprintf "movsr %s, %s" (pp_one_op (true,op)) (str_of_segreg seg)
+      else P.sprintf "movsr %s, %s" (str_of_segreg seg) (pp_one_op (true,op))
     | MOVBE (op1, op2) -> P.sprintf "movbe %s" (pp_two_ops (true, op1, op2))    
 
     | MOVS w -> 
@@ -494,7 +523,7 @@ let str_of_instr (prefix, ins) =
     | PUSHA -> P.sprintf "pusha"
     | PUSHF -> P.sprintf "pushf"
     | PUSHSR seg -> P.sprintf "pushsr %s" (str_of_segreg seg)
-    | POPSR seg -> P.sprintf "pop %s" (str_of_segreg seg)
+    | POPSR seg -> P.sprintf "popsr %s" (str_of_segreg seg)
 
     | RCL (w,op,ri) -> 
       P.sprintf "rcl %s, %s" (pp_one_op (w,op)) (str_of_reg_or_imm OpSize32 ri)
@@ -574,6 +603,35 @@ let str_of_instr (prefix, ins) =
     | XCHG (w,a,b) -> P.sprintf "xchg %s" (pp_two_ops (w,a,b))
     | XLAT -> P.sprintf "xlat"
     | XOR (w,a,b) -> P.sprintf "xor %s" (pp_two_ops (w,a,b))
+
+   (*MMX pretty-printing *)
+    | EMMS -> P.sprintf "emms"
+    | MOVD (op1, op2) -> P.sprintf "movd %s" (pp_two_mmx_ops (op1, op2))
+    | MOVQ (op1, op2) -> P.sprintf "movq %s" (pp_two_mmx_ops (op1, op2))
+    | PACKSSDW (op1, op2) -> P.sprintf "packssdw %s" (pp_two_mmx_ops (op1, op2))
+    | PACKSSWB (op1, op2) -> P.sprintf "packsswb %s" (pp_two_mmx_ops (op1, op2))
+    | PACKUSWB (op1, op2) -> P.sprintf "packuswb %s" (pp_two_mmx_ops (op1, op2))
+    | PADD (g, op1, op2) -> P.sprintf "padd %s" (pp_gmmx_ops (g, op1, op2))
+    | PADDS (g, op1, op2) -> P.sprintf "padds %s" (pp_gmmx_ops (g, op1, op2))
+    | PADDUS (g, op1, op2) -> P.sprintf "paddus %s" (pp_gmmx_ops (g, op1, op2))
+    | PAND (op1, op2) -> P.sprintf "pand %s" (pp_two_mmx_ops (op1, op2))
+    | PANDN (op1, op2) -> P.sprintf "pandn %s" (pp_two_mmx_ops (op1, op2))
+    | PCMPEQ (g, op1, op2) -> P.sprintf "pcmpeq %s" (pp_gmmx_ops (g, op1, op2))
+    | PCMPGT (g, op1, op2) -> P.sprintf "pcmpgt %s" (pp_gmmx_ops (g, op1, op2))
+    | PMADDWD (op1, op2) -> P.sprintf "pmaddwd %s" (pp_two_mmx_ops (op1, op2))
+    | PMULHUW (op1, op2) -> P.sprintf "pmulhuw %s" (pp_two_mmx_ops (op1, op2))
+    | PMULHW (op1, op2) -> P.sprintf "pmulhw %s" (pp_two_mmx_ops (op1, op2))
+    | PMULLW (op1, op2) -> P.sprintf "pmullw %s" (pp_two_mmx_ops (op1, op2))
+    | POR (op1, op2) -> P.sprintf "por %s" (pp_two_mmx_ops (op1, op2))
+    | PSLL (g, op1, op2) -> P.sprintf "psll %s" (pp_gmmx_ops (g, op1, op2))
+    | PSRA (g, op1, op2) -> P.sprintf "psra %s" (pp_gmmx_ops (g, op1, op2))
+    | PSRL (g, op1, op2) -> P.sprintf "psrl %s" (pp_gmmx_ops (g, op1, op2))
+    | PSUB (g, op1, op2) -> P.sprintf "psub %s" (pp_gmmx_ops (g, op1, op2))
+    | PSUBS (g, op1, op2) -> P.sprintf "psubs %s" (pp_gmmx_ops (g, op1, op2))
+    | PSUBUS (g, op1, op2) -> P.sprintf "psubus %s" (pp_gmmx_ops (g, op1, op2))
+    | PUNPCKH (g, op1, op2) -> P.sprintf "punpckh %s" (pp_gmmx_ops (g, op1, op2))
+    | PUNPCKL (g, op1, op2) -> P.sprintf "punpckl %s" (pp_gmmx_ops (g, op1, op2))
+    | PXOR (op1, op2) -> P.sprintf "pxor %s" (pp_two_mmx_ops (op1, op2))
     | _ -> P.sprintf "???"
 
 

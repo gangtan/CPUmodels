@@ -294,8 +294,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 (* FCLEX is the same as FWAIT followed FNCLEX
    | FCLEX : instr *)
 | FCMOVcc : forall (ct:fp_condition_type)(op1: fp_operand), instr
-| FCOM : forall (op1: option fp_operand), instr
-| FCOMP : forall (op1: option fp_operand), instr
+| FCOM : forall (op1: fp_operand), instr
+| FCOMP : forall (op1: fp_operand), instr
 | FCOMPP : instr
 | FCOMIP : forall (op1: fp_operand), instr
 | FCOS : instr
