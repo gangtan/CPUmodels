@@ -32,6 +32,7 @@ Definition size8 := 7.
 Definition size16 := 15.
 Definition size32 := 31.
 Definition size64 := 63.
+Definition size79 := 78.
 Definition size80 := 79.
 Definition int n := Word.int n.
 
@@ -40,6 +41,11 @@ Module Type MACHINE_SIG.
       segment registers, etc.  Our only assumption is that updates to distinct locations
       commute. *)
   Variable location : nat -> Set.  (* registers, flags, etc. *)
+
+  (** An array of locations for things like the FPU data-register stack;
+     the first nat is the size of an array index; the second nat is the size of
+     the contents in the array. *)
+  Variable array : nat -> nat -> Set.
 
   (** We also abstract over the size of memory, by parameterizing the RTLs over the
       number of bits in addresses. *)
@@ -50,6 +56,11 @@ Module Type MACHINE_SIG.
   (** And operations for reading/writing locations *)
   Variable get_location : forall s, location s -> mach_state -> Word.int s.
   Variable set_location : forall s, location s -> Word.int s -> mach_state -> mach_state.
+  (** array subscripts *)
+  Variable array_sub : forall l s, array l s -> Word.int l -> mach_state -> Word.int s.
+  (** array updates *)
+  Variable array_upd : 
+    forall l s, array l s -> Word.int l -> Word.int s -> mach_state -> mach_state.
 End MACHINE_SIG.
 
 (** Generic register-transfer language *)    
@@ -88,7 +99,7 @@ Module RTL(M : MACHINE_SIG).
   Inductive test_op : Set := eq_op | lt_op | ltu_op.
 
   (* Constraints on mantissa and exponent widths of floating-point numbers *)
-  Definition float_width_hyp (mw ew:positive) :=
+  Definition float_width_hyp (ew mw: positive) :=
     Zpos mw + 1 < 2 ^ (Zpos ew - 1).
 
   Definition rounding_mode := Flocq.Appli.Fappli_IEEE.mode.
@@ -101,22 +112,27 @@ Module RTL(M : MACHINE_SIG).
   | cast_u_rtl_exp : forall s1 s2 (e:rtl_exp s1), rtl_exp s2
   | imm_rtl_exp : forall s, int s -> rtl_exp s
   | get_loc_rtl_exp : forall s (l:location s), rtl_exp s
+  | get_array_rtl_exp : forall l s, array l s -> rtl_exp l -> rtl_exp s
   | get_byte_rtl_exp : forall (addr:rtl_exp size_addr),  rtl_exp size8
+  | choose_rtl_exp : forall s, rtl_exp s
+    (* a float has one sign bit, ew bit of exponent, and mw bits of mantissa *)
   | farith_rtl_exp : (* floating-point arithmetics *)
-    forall (mw ew:positive),
-      let len := (1 + nat_of_P mw + nat_of_P ew)%nat in
-        float_width_hyp mw ew ->
-        float_arith_op -> rounding_mode ->
+    forall (ew mw: positive),
+      let len := (nat_of_P ew + nat_of_P mw)%nat in
+        float_width_hyp ew mw ->
+        float_arith_op -> rtl_exp size2 (* rounding mode *) ->
         rtl_exp len -> rtl_exp len -> rtl_exp len
   | fcast_rtl_exp : (* cast between floats of different precisions *)
-    forall (mw1 ew1 mw2 ew2:positive),
-      float_width_hyp mw1 ew1 -> float_width_hyp mw2 ew2 -> rounding_mode ->
-      rtl_exp (1 + nat_of_P mw1 + nat_of_P ew1)%nat ->
-      rtl_exp (1 + nat_of_P mw2 + nat_of_P ew2)%nat
-  | choose_rtl_exp : forall s, rtl_exp s.
+    forall (ew1 mw1 ew2 mw2:positive),
+      float_width_hyp ew1 mw1 -> float_width_hyp ew2 mw2 -> 
+      rtl_exp size2 (* rounding mode *) ->
+      rtl_exp (nat_of_P ew1 + nat_of_P mw1)%nat ->
+      rtl_exp (nat_of_P ew2 + nat_of_P mw2)%nat.
+
 
   Inductive rtl_instr : Type :=
   | set_loc_rtl : forall s (e:rtl_exp s) (l:location s), rtl_instr
+  | set_array_rtl : forall l s, array l s -> rtl_exp l -> rtl_exp s -> rtl_instr
   | set_byte_rtl: forall (e:rtl_exp size8)(addr:rtl_exp size_addr), rtl_instr
   | if_rtl : rtl_exp size1 -> rtl_instr -> rtl_instr
   | error_rtl : rtl_instr
@@ -165,6 +181,10 @@ Module RTL(M : MACHINE_SIG).
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
                            rtl_mach_state := set_location l v (rtl_mach_state rs) ; 
                            rtl_memory := rtl_memory rs |}).
+  Definition set_array l s (a:array l s) (i:int l) (v:int s) : RTL unit := 
+    fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
+                           rtl_mach_state := array_upd a i v (rtl_mach_state rs) ; 
+                           rtl_memory := rtl_memory rs |}).
   Definition set_byte (addr:int size_addr) (v:int size8) : RTL unit := 
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
                            rtl_mach_state := rtl_mach_state rs ;
@@ -172,6 +192,8 @@ Module RTL(M : MACHINE_SIG).
 
   Definition get_loc s (l:location s) : RTL (int s) :=
     fun rs => (Okay_ans (get_location l (rtl_mach_state rs)), rs).
+  Definition get_array l s (a:array l s) (i:int l) : RTL (int s) :=
+    fun rs => (Okay_ans (array_sub a i (rtl_mach_state rs)), rs).
   Definition get_byte (addr:int size_addr) : RTL (int size8) := 
     fun rs => (Okay_ans (AddrMap.get addr (rtl_memory rs)), rs).
 
@@ -213,22 +235,29 @@ Module RTL(M : MACHINE_SIG).
   Lemma prec_gt_0 : forall mw:positive, 0 < Zpos mw + 1.
   Proof. intros. generalize (Pos2Z.is_pos mw). omega. Qed.
 
-  Definition interp_farith (mw ew:positive) (hyp: float_width_hyp mw ew)
-    (fop:float_arith_op) (rm: rounding_mode)
-    (v1 v2: int (1 + nat_of_P mw + nat_of_P ew)) :
-    int (1 + nat_of_P mw + nat_of_P ew) :=
+  Definition dec_rounding_mode (rm: int size2) : rounding_mode :=
+    if (Word.eq rm (Word.repr 0)) then mode_NE
+    else if (Word.eq rm (Word.repr 1)) then mode_DN
+    else if (Word.eq rm (Word.repr 2)) then mode_UP
+    else mode_ZR.
+
+  Definition interp_farith (ew mw: positive) (hyp: float_width_hyp ew mw)
+    (fop:float_arith_op) (rm: int size2)
+    (v1 v2: int (nat_of_P ew + nat_of_P mw)) :
+    int (nat_of_P ew + nat_of_P mw) :=
     let prec := Zpos mw + 1 in
     let emax := Zpower 2 (Zpos ew - 1) in
     let bf_of_bits := binary_float_of_bits (Zpos mw) (Zpos ew) 
       (Pos2Z.is_pos mw) (Pos2Z.is_pos ew) hyp in
     let bf1 := bf_of_bits (Word.unsigned v1) in
     let bf2 := bf_of_bits (Word.unsigned v2) in
+    let md := dec_rounding_mode rm in 
     let res := 
       match fop with
-        | fadd_op => Bplus prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
-        | fsub_op => Bminus prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
-        | fmul_op => Bmult prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
-        | fdiv_op => Bdiv prec emax (prec_gt_0 mw) hyp rm bf1 bf2 
+        | fadd_op => Bplus prec emax (prec_gt_0 mw) hyp md bf1 bf2 
+        | fsub_op => Bminus prec emax (prec_gt_0 mw) hyp md bf1 bf2 
+        | fmul_op => Bmult prec emax (prec_gt_0 mw) hyp md bf1 bf2 
+        | fdiv_op => Bdiv prec emax (prec_gt_0 mw) hyp md bf1 bf2 
       end
     in
     Word.repr (bits_of_binary_float (Zpos mw) (Zpos ew) res).
@@ -237,21 +266,22 @@ Module RTL(M : MACHINE_SIG).
 
   Definition binary_float_cast (prec1 emax1 prec2 emax2:Z) 
     (H1: 0 < prec2)  (H2: prec2 < emax2)
-    (rm: rounding_mode)
+    (rm: int size2)
     (bf: binary_float prec1 emax1)
         : binary_float prec2 emax2 :=
+    let md := dec_rounding_mode rm in
     match bf with
       | B754_nan => B754_nan _ _
       | B754_zero sign => B754_zero _ _ sign
       | B754_infinity sign => B754_infinity _ _ sign
       | B754_finite sign mant ep _  => 
-        binary_normalize prec2 emax2 H1 H2 rm (cond_Zopp sign (Zpos mant)) ep true
+        binary_normalize prec2 emax2 H1 H2 md (cond_Zopp sign (Zpos mant)) ep true
     end.
 
-  Definition interp_fcast (mw1 ew1 mw2 ew2:positive)
-     (hyp1: float_width_hyp mw1 ew1) (hyp2: float_width_hyp mw2 ew2)
-     (rm:rounding_mode) (v: int (1 + nat_of_P mw1 + nat_of_P ew1)) :
-     int (1 + nat_of_P mw2 + nat_of_P ew2) :=
+  Definition interp_fcast (ew1 mw1 ew2 mw2:positive)
+     (hyp1: float_width_hyp ew1 mw1) (hyp2: float_width_hyp ew2 mw2)
+     (rm: int size2) (v: int (nat_of_P ew1 + nat_of_P mw1)) :
+     int (nat_of_P ew2 + nat_of_P mw2) :=
      let bf_of_bits := binary_float_of_bits (Zpos mw1) (Zpos ew1)
        (Pos2Z.is_pos mw1) (Pos2Z.is_pos ew1) hyp1 in
      let bf := bf_of_bits (Word.unsigned v) in
@@ -276,12 +306,18 @@ Module RTL(M : MACHINE_SIG).
         v <- interp_rtl_exp e; ret (Word.repr (Word.unsigned v))
       | imm_rtl_exp _ v => ret v
       | get_loc_rtl_exp _ l => get_loc l
+      | get_array_rtl_exp _ _ a e => 
+        i <- interp_rtl_exp e; get_array a i
       | get_byte_rtl_exp addr => 
         v <- interp_rtl_exp addr; get_byte v
       | farith_rtl_exp _ _ hyp fop rm e1 e2 =>
-        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; ret (interp_farith hyp fop rm v1 v2)
+        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; 
+        vrm <- interp_rtl_exp rm;
+        ret (interp_farith hyp fop vrm v1 v2)
       | fcast_rtl_exp _ _ _ _ hyp1 hyp2 rm e =>
-        v <- interp_rtl_exp e; ret (interp_fcast hyp1 hyp2 rm v)
+        v <- interp_rtl_exp e; 
+        vrm <- interp_rtl_exp rm;
+        ret (interp_fcast hyp1 hyp2 vrm v)
       | choose_rtl_exp _ => choose_bits _
     end.
 
@@ -290,6 +326,8 @@ Module RTL(M : MACHINE_SIG).
     match instr with 
       | set_loc_rtl _ e l => 
         v <- interp_rtl_exp e; set_loc l v
+      | set_array_rtl _ _ a e1 e2 =>
+        i <- interp_rtl_exp e1; v <- interp_rtl_exp e2; set_array a i v
       | set_byte_rtl e addr => 
         v <- interp_rtl_exp e; a <- interp_rtl_exp addr; set_byte a v
       | if_rtl r i => 

@@ -57,18 +57,22 @@ Module X86_MACHINE.
   | debug_register_loc : debug_register -> loc size32
   | pc_loc : loc size32
   (* Locations for FPU *)
-  | fpu_datareg_loc : int3 -> loc size80 
   | fpu_stktop_loc : loc size3  (* the stack top location *)
   | fpu_flag_loc : fpu_flag -> loc size1 
   | fpu_rctrl_loc : loc size2 (* rounding control *)
   | fpu_pctrl_loc : loc size2 (* precision control *)
   | fpu_ctrl_flag_loc : fpu_ctrl_flag -> loc size1
-  | fpu_tag_loc : int3 -> loc size2
   | fpu_lastInstrPtr_loc : loc size48
   | fpu_lastDataPtr_loc : loc size48
-  | fpu_lastOpcode_loc : loc size11. 
+  | fpu_lastOpcode_loc : loc size11.
 
   Definition location := loc.
+
+  Inductive arr : nat -> nat -> Set :=
+  | fpu_datareg: arr size3 size80
+  | fpu_tag : arr size3 size2.
+
+  Definition array := arr.
 
   Definition fmap (A B:Type) := A -> B.
   Definition upd A (eq_dec:forall (x y:A),{x=y}+{x<>y}) B (f:fmap A B) (x:A) (v:B) : 
@@ -203,13 +207,11 @@ Module X86_MACHINE.
       | control_register_loc r => look (control_regs (core m)) r
       | debug_register_loc r => look (debug_regs (core m)) r
       | pc_loc => pc_reg (core m)
-      | fpu_datareg_loc r => look (fpu_data_regs (fpu m)) r
       | fpu_stktop_loc => get_stktop_reg (fpu m)
       | fpu_flag_loc f => get_fpu_flag_reg f (fpu m)
       | fpu_rctrl_loc => get_rctrl_reg (fpu m)
       | fpu_pctrl_loc => get_rctrl_reg (fpu m)
       | fpu_ctrl_flag_loc f => get_fpu_ctrl_flag_reg f (fpu m)
-      | fpu_tag_loc r => look (fpu_tags (fpu m)) r
       | fpu_lastInstrPtr_loc => fpu_lastInstrPtr (fpu m)
       | fpu_lastDataPtr_loc => fpu_lastDataPtr (fpu m)
       | fpu_lastOpcode_loc => fpu_lastOpcode (fpu m)
@@ -304,19 +306,6 @@ Module X86_MACHINE.
         pc_reg := v
       |};
       fpu := fpu m
-    |}.
-
-  Definition set_fpu_data_reg (r:int3) (v:int80) m := 
-    {| core := core m ;
-       fpu := {|
-         fpu_data_regs := upd (@Word.eq_dec size3) (fpu_data_regs (fpu m)) r v ;
-         fpu_status := fpu_status (fpu m) ;
-         fpu_control := fpu_control (fpu m) ;
-         fpu_tags := fpu_tags (fpu m) ;
-         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
-         fpu_lastOpcode := fpu_lastOpcode (fpu m)
-       |}
     |}.
 
   Definition set_fpu_stktop_reg (v:int3) m := 
@@ -417,19 +406,6 @@ Module X86_MACHINE.
        |}
   |}.
 
-  Definition set_fpu_tags_reg r v m:=
-  {|   core := core m ;
-       fpu := {|
-         fpu_data_regs := fpu_data_regs (fpu m) ;
-         fpu_status := fpu_status (fpu m) ;
-         fpu_control := fpu_control (fpu m) ;
-         fpu_tags := upd (@Word.eq_dec size3) (fpu_tags (fpu m)) r v ;
-         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
-         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
-         fpu_lastOpcode := fpu_lastOpcode (fpu m)
-       |}
-  |}.
-
   Definition set_fpu_lastInstrPtr_reg v m :=
    {|  core := core m ;
        fpu := {|
@@ -478,17 +454,55 @@ Module X86_MACHINE.
       | control_register_loc r => fun v => set_control_reg r v m
       | debug_register_loc r => fun v => set_debug_reg r v m
       | pc_loc => fun v => set_pc v m
-      | fpu_datareg_loc r => fun v => set_fpu_data_reg r v m
       | fpu_stktop_loc => fun v => set_fpu_stktop_reg v m
       | fpu_flag_loc f => fun v => set_fpu_flags_reg f v m
       | fpu_rctrl_loc => fun v => set_fpu_rctrl_reg v m
       | fpu_pctrl_loc => fun v => set_fpu_pctrl_reg v m
       | fpu_ctrl_flag_loc f => fun v => set_fpu_ctrl_reg f v m
-      | fpu_tag_loc r => fun v => set_fpu_tags_reg r v m
       | fpu_lastInstrPtr_loc => fun v => set_fpu_lastInstrPtr_reg v m 
       | fpu_lastDataPtr_loc => fun v => set_fpu_lastDataPtr_reg v m 
       | fpu_lastOpcode => fun v => set_lastOpcode_reg v m
     end v.
+
+
+  Definition array_sub l s (a:array l s) :=
+    match a in arr l' s' return int l' -> mach_state -> int s' with
+      | fpu_datareg => fun i m => look (fpu_data_regs (fpu m)) i
+      | fpu_tag => fun i m => look (fpu_tags (fpu m)) i
+    end.
+
+
+  Definition set_fpu_datareg (r:int3) (v:int80) m := 
+    {| core := core m ;
+       fpu := {|
+         fpu_data_regs := upd (@Word.eq_dec size3) (fpu_data_regs (fpu m)) r v ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := fpu_tags (fpu m) ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+    |}.
+
+  Definition set_fpu_tags_reg r v m:=
+  {|   core := core m ;
+       fpu := {|
+         fpu_data_regs := fpu_data_regs (fpu m) ;
+         fpu_status := fpu_status (fpu m) ;
+         fpu_control := fpu_control (fpu m) ;
+         fpu_tags := upd (@Word.eq_dec size3) (fpu_tags (fpu m)) r v ;
+         fpu_lastInstrPtr := fpu_lastInstrPtr (fpu m) ;
+         fpu_lastDataPtr := fpu_lastDataPtr (fpu m) ;
+         fpu_lastOpcode := fpu_lastOpcode (fpu m)
+       |}
+  |}.
+
+  Definition array_upd l s (a:array l s) (i:int l) (v:int s) m :=
+    match a in arr l' s' return int l' -> int s' -> mach_state with
+      | fpu_datareg => fun i v => set_fpu_datareg i v m
+      | fpu_tag => fun i v => set_fpu_tags_reg i v m
+    end i v.
 
 End X86_MACHINE.
 
@@ -551,6 +565,9 @@ Module X86_Compile.
   Definition if_exp s g (e1 e2:rtl_exp s) : Conv (rtl_exp s) :=
     ret (if_rtl_exp g e1 e2).
 
+  Definition if_test g (i: rtl_instr) : Conv unit :=
+    emit (if_rtl g i).
+
   Definition choose s : Conv (rtl_exp s) := ret (@choose_rtl_exp s).
 
   Definition not {s} (p: rtl_exp s) : Conv (rtl_exp s) :=
@@ -558,6 +575,30 @@ Module X86_Compile.
     arith xor_op p mask.
   Definition undef_flag (f: flag) :=
     v <- @choose size1; set_flag f v.
+
+  (* get the first s1+1 bits from a bitvector of length s2+1;
+     note the length of bits in "rtl_exp s1" is really s1+1. *)
+  Definition first_bits s1 s2 (x: rtl_exp s2) : Conv (rtl_exp s1) :=
+    c <- load_Z _ (Z_of_nat (s2 - s1));
+    r <- arith shru_op x c;
+    cast_u s1 r.
+
+  (* get the last s2+1 bits from a bitvector of length s2+1 *)
+  Definition last_bits s1 s2 (x: rtl_exp s2) : Conv (rtl_exp s1) :=
+    c <- load_Z _ (two_power_nat (s1 + 1));
+    r <- arith modu_op x c;
+    cast_u s1 r.
+
+  (* concatenate a bitvector of length s1+1 and a bitvector of
+     length s2+1 to a bit vector of length s1+s2+2. *)
+  Definition concat_bits s1 s2 (x: rtl_exp s1) (y: rtl_exp s2) :
+    Conv (rtl_exp (s1 + s2 + 1)) := 
+    x' <- cast_u (s1+s2+1) x;
+    c <- load_Z _ (Z_of_nat (s2+1));
+    raised_x <- arith shl_op x' c;
+    y' <- cast_u (s1+s2+1) y;
+    arith add_op raised_x y'.
+
 
   Definition copy_ps s (rs:rtl_exp s) := ret (@cast_u_rtl_exp s s rs).
 
@@ -2836,58 +2877,7 @@ Section X86FloatSemantics.
     Require Import Flocq.Core.Fcore.
     Require Import FloatingAux.
 
-    Definition load_data_reg (f_r : int3) := ret (get_loc_rtl_exp (fpu_datareg_loc f_r)).
-    Definition set_data_reg (p: rtl_exp size80) (f_r: int3) :=
-      emit set_loc_rtl p (fpu_datareg_loc f_r).
-
-    (* Definition set_status (p: rtl_exp size16) := emit set_loc_rtl p fpu_status_loc. *)
-    (* Definition get_status := ret (get_loc_rtl_exp fpu_status_loc). *)
-
-    (* Definition get_stk_top  *)
-
-
-
-    Definition set_fpu_tags tag_s (p: rtl_exp size2) := emit set_loc_rtl p (fpu_tag_loc tag_s).
-    Definition get_fpu_tags tag_s := ret (get_loc_rtl_exp (fpu_tag_loc tag_s)).
-    (* Definition set_fpu_control (p: rtl_exp size16) := emit set_loc_rtl p fpu_ctrl_loc. *)
-    (* Definition get_fpu_control := ret (get_loc_rtl_exp fpu_ctrl_loc). *)
-    
-
-  (* gtan: the following three definitions are wrong and need to be adjusted *)
-  (* Definition int_to_fpu_reg_aux (sum : Z) : fpu_register := *)
-  (*    match sum with *)
-  (*    | 0%Z => ST0 *)
-  (*    | 1%Z => ST1 *)
-  (*    | 2%Z => ST2 *)
-  (*    | 3%Z => ST3 *)
-  (*    | 4%Z => ST4 *)
-  (*    | 5%Z => ST5 *)
-  (*    | 6%Z => ST6 *)
-  (*    | _   => ST7 *)
-  (*    end. *)
-
-  (* (*Returns an fpu register at position index, where top is the current stack top *) *)
-  (* Definition int_to_fpu_reg (top index : pseudo_reg size3) : fpu_register := *)
-  (*    let (t) := top in *)
-  (*    let (i) := index in *)
-  (*    let ind := Zmod (t + i) 8 in *)
-  (*    int_to_fpu_reg_aux ind. *)
-
-  (* Definition fpu_from_int (fpu_index : int3) (top : pseudo_reg size3) : fpu_register := *)
-  (*    let intv := Word.intval size3 fpu_index in *)
-  (*    int_to_fpu_reg top (ps_reg size3 intv). *)
-
-
-
-(*Floating-Point Constants. For pi, e, 0.0, +1.0, and -1.0 I found the double-extended precision bit-values but
-  for other constants I only found double-precision using this site: 
-  http://www.binaryconvert.com/result_double.html?decimal=046051048049048050057057057053055 
-*)
-
 (*Start of floating-point conversion functions *)
-
-
-
 
   Definition int_to_bin32 (i : Word.int size32) : binary32 := b32_of_bits (Word.intval size32 i).
   Definition bin32_to_int (b : binary32) : Word.int size32 := Word.repr (bits_of_b32 b).
@@ -2901,6 +2891,10 @@ Section X86FloatSemantics.
   Definition string_to_de_float (s : string) := let intval := Word.string_to_int size80 s in int_to_de_float intval.
   Definition s2bf (s : string) := string_to_de_float s.
 
+(*Floating-Point Constants. For pi, e, 0.0, +1.0, and -1.0 I found the double-extended precision bit-values but
+  for other constants I only found double-precision using this site: 
+  http://www.binaryconvert.com/result_double.html?decimal=046051048049048050057057057053055 
+*)
   (*These values may not be correct - have to check against C's floating-point constants or something *)
   Definition pos1 :=      s2bf "00111111111111110000000000000000000000000000000000000000000000000000000000000000".
   Definition neg1 :=      s2bf "10111111111111110000000000000000000000000000000000000000000000000000000000000000".
@@ -2912,25 +2906,6 @@ Section X86FloatSemantics.
   Definition ln_2  :=     s2bf "00111111111000000110001011100100001011111110111111111011101100111100000000000000".
   Definition log2_e :=    s2bf "00111111111110000111000101010100011101100101001100110010010001011110000000000000".
  
-   (* Definition pos1_fl := de_float_of_bits   *)
-   (*   (Zpos 0~0~1~1~1~1~1~1~1~1~1~1~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0). *)
-   (* Definition neg1_fl := de_float_of_bits  *)
-   (*   (Zpos 1~0~1~1~1~1~1~1~1~1~1~1~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0).  *)
-   (* Definition pi_fl := de_float__of_bits  *)
-   (*   (Zpos 0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~1~1~0~0~1~0~0~1~0~0~0~0~1~1~1~1~1~1~0~1~1~0~1~0~1~0~1~0~0~0~1~0~0~0~1~0~0~0~0~1~0~1~1~0~1~0~0~0~1~1~0~0~0~0~1~0~0~0~1~1~0~1~0~1~0).  *)
-   (* Definition e_fl := de_float_of_bits  *)
-   (*   (Zpos 0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~1~0~1~0~1~1~0~1~1~1~1~1~1~0~0~0~0~1~0~1~0~1~0~0~0~1~0~1~1~0~0~0~1~0~1~0~0~0~1~0~1~0~1~1~1~0~1~1~0~1~0~0~1~0~1~0~1~0~0~1~1~0~1~1~0).  *)
-   (* Definition pos_zero_fl := de_float_of_bits  *)
-   (*   (Zpos 0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0).  *)
-   (* Definition log2_10_fl := de_float_of_bits  *)
-   (*   (Zpos 0~1~1~1~1~1~1~1~1~1~1~1~1~1~1~1~1~0~1~0~1~0~0~1~0~0~1~1~0~1~0~0~1~1~1~1~0~0~0~0~1~0~0~1~0~1~1~1~1~1~0~1~1~0~0~0~0~0~1~0~0~0~1~1~0~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0).  *)
-   (* Definition log10_2_fl := de_float_of_bits  *)
-   (*   (Zpos 0~0~1~1~1~1~1~1~1~1~0~1~0~0~0~0~0~0~1~1~0~1~0~0~0~1~0~0~0~0~0~1~0~0~1~1~0~1~0~1~0~0~0~0~1~0~1~0~1~0~0~1~0~1~1~0~0~0~0~0~1~0~0~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0).  *)
-   (* Definition ln_2_fl  := de_float_of_bits  *)
-   (*   (Zpos 0~0~1~1~1~1~1~1~1~1~1~0~0~0~0~0~0~1~1~0~0~0~1~0~1~1~1~0~0~1~0~0~0~0~1~0~1~1~1~1~1~1~1~0~1~1~1~1~1~1~1~1~1~0~1~1~1~0~1~1~0~0~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0~0).  *)
-   (* Definition log2_e_fl := de_float_of_bits  *)
-   (*   (Zpos 0~0~1~1~1~1~1~1~1~1~1~1~1~0~0~0~0~1~1~1~0~0~0~1~0~1~0~1~0~1~0~0~0~1~1~1~0~1~1~0~0~1~0~1~0~0~1~1~0~0~1~1~0~0~1~0~0~1~0~0~0~1~0~1~1~1~1~0~0~0~0~0~0~0~0~0~0~0~0~0). *)
-
   (* Get normal de_float representation to determine sign, then make mantissa the val of i and subtract
      most significant 1 to denormalize, then make exponent the number of significant bits of i. Then combine everything *)
   Definition integer_to_de_float (i : Word.int size80) : de_float := 
@@ -2949,18 +2924,13 @@ Section X86FloatSemantics.
 
 
 
-  Inductive fpu_rounding_mode : Set :=
-  | RM_nearest_even  (* round to nearest even *)
-  | RM_down (* round down to negative infinity *)
-  | RM_up (* round up to positive infinity *)
-  | RM_truncate (* round toward zero *).
-
-  Definition enc_fpu_rounding_mode (rm: fpu_rounding_mode) : Z := 
+  Definition enc_rounding_mode (rm: rounding_mode) : Z := 
     (match rm with
-      | RM_nearest_even => 0
-      | RM_down => 1
-      | RM_up => 2
-      | RM_truncate => 3
+       | mode_NE => 0   (* round to nearest even *)
+       | mode_DN => 1   (* round down to negative infinity *)
+       | mode_UP => 2   (* round up to positive infinity *)
+       | mode_ZR => 3   (* round toward zero *)
+       | mode_NA => 0   (* dummy, this rounding unused by x86 *)
      end)%Z.
 
   Inductive fpu_precision_control : Set := 
@@ -2994,6 +2964,16 @@ Section X86FloatSemantics.
   Definition get_stktop : Conv (rtl_exp size3) := 
     ret (get_loc_rtl_exp fpu_stktop_loc).
 
+  Definition get_fpu_rctrl :=
+    ret (get_loc_rtl_exp fpu_rctrl_loc).
+
+  Definition get_fpu_reg (i: rtl_exp size3) : Conv (rtl_exp size80) := 
+    ret (get_array_rtl_exp fpu_datareg i).
+
+  Definition get_fpu_tag (i: rtl_exp size3) := 
+    ret (get_array_rtl_exp fpu_tag i).
+
+
   Definition set_stktop (t:rtl_exp size3) := 
     emit set_loc_rtl t fpu_stktop_loc.
   Definition set_stktop_const (t:Z) := 
@@ -3011,8 +2991,8 @@ Section X86FloatSemantics.
 
   Definition set_fpu_rctrl (r:rtl_exp size2) :=
     emit set_loc_rtl r fpu_rctrl_loc.
-  Definition set_fpu_rctrl_const (rm:fpu_rounding_mode) :=
-    r <- load_Z _ (enc_fpu_rounding_mode rm);
+  Definition set_fpu_rctrl_const (rm: mode) :=
+    r <- load_Z _ (enc_rounding_mode rm);
     set_fpu_rctrl r.
 
   Definition set_fpu_pctrl (r: rtl_exp size2) :=
@@ -3020,12 +3000,6 @@ Section X86FloatSemantics.
   Definition set_fpu_pctrl_const (pc:fpu_precision_control) :=
     r <- load_Z _ (enc_fpu_precision_control pc);
     set_fpu_pctrl r.
-
-  Definition set_fpu_tag (loc:Z) (r: rtl_exp size2) := 
-    emit set_loc_rtl r (fpu_tag_loc (Word.repr loc)).
-  Definition set_fpu_tag_const (loc:Z) (tm:fpu_tag_mode) := 
-    r <- load_Z _ (enc_fpu_tag_mode tm);
-    set_fpu_tag loc r.
 
   Definition set_fpu_lastInstrPtr (r: rtl_exp size48) := 
     emit set_loc_rtl r fpu_lastInstrPtr_loc.
@@ -3043,6 +3017,244 @@ Section X86FloatSemantics.
     r <- load_Z size11 v; set_fpu_lastOpcode r.
 
 
+  Definition set_fpu_reg (i: rtl_exp size3) (v: rtl_exp size80) :=
+    emit set_array_rtl fpu_datareg i v.
+
+  Definition set_fpu_tag (i: rtl_exp size3) (v: rtl_exp size2) := 
+    emit set_array_rtl fpu_tag i v.
+  Definition set_fpu_tag_const (loc:Z) (tm:fpu_tag_mode) := 
+    i <- load_Z _ loc;
+    v <- load_Z _ (enc_fpu_tag_mode tm);
+    set_fpu_tag i v.
+
+
+  (* increment the stack top; this is for popping the FPU stack grows downward *)
+  Definition inc_stktop := 
+    st <- get_stktop;
+    one <- load_Z _ 1;
+    newst <- arith add_op st one;
+    set_stktop newst.
+
+  (* decrement the stack top *)
+  Definition dec_stktop := 
+    st <- get_stktop;
+    one <- load_Z _ 1;
+    newst <- arith sub_op st one;
+    set_stktop newst.
+
+  (* push a float to the top of the stack *)
+  Definition stk_push (f: rtl_exp size80) : Conv unit :=
+    dec_stktop;;
+    topp <- get_stktop;
+    set_fpu_reg topp f.
+
+  (* converting a stack offset to the index of an FPU reg *)
+  Definition freg_of_offset (offset: int3) : Conv (rtl_exp size3) :=
+    topp <- get_stktop;
+    ri <- load_Z _ (Word.unsigned offset);
+    arith add_op topp ri.
+
+  Definition undef_fpu_flag (f: fpu_flag) := 
+    v <- choose size1; 
+    set_fpu_flag f v.
+
+  (* return 1 iff the i-th tag is not empty *)
+  Definition nonempty_tag (i: rtl_exp size3) : Conv (rtl_exp size1) := 
+    tag <- get_fpu_tag i;
+    empty_tag <- load_Z _ 3;
+    test ltu_op tag empty_tag.
+
+  Section Float_Test.
+    Variable ew mw: positive.
+    Variable f : rtl_exp (nat_of_P ew + nat_of_P mw).
+    
+    Definition test_pos_zero : Conv (rtl_exp size1) :=
+      poszero <- load_Z _ 0;
+      test eq_op f poszero.
+
+    (* return 1 iff the float is negative zero, which has the sign bit on
+       followed by all zero bits. It is the number 2^(ew+mw). *)
+    Definition test_neg_zero : Conv (rtl_exp size1) :=
+      negzero <- load_Z _ (two_power_nat (nat_of_P mw + nat_of_P ew));
+      test eq_op f negzero.
+
+    Definition test_zero : Conv (rtl_exp size1) :=
+      isposzero <- test_pos_zero;
+      isnegzero <- test_neg_zero;
+      arith or_op isposzero isnegzero.
+
+    (* return 1 iff the float is positive infinity, which has the sign bit off,
+       exponent bits on, and mantissa bits off. 
+       It is the number 2^mw (2^ew - 1). *)
+    Definition test_pos_inf : Conv (rtl_exp size1) :=
+      posinf <- load_Z _ (two_power_nat (nat_of_P mw) * (two_power_nat (nat_of_P ew) - 1));
+      test eq_op f posinf.
+
+    (* return 1 iff the float is negative infinity, which has the sign bit on,
+       exponent bits on, and mantissa bits off. 
+       It is the number 2^mw (2^(ew+1) - 1). *)
+    Definition test_neg_inf : Conv (rtl_exp size1) :=
+      neginf <- load_Z _ (two_power_nat (nat_of_P mw) * (two_power_nat (nat_of_P ew + 1) - 1));
+      test eq_op f neginf.
+
+    (* return 1 iff the float is positive or negative infinity. *)
+    Definition test_inf : Conv (rtl_exp size1) := 
+      isposinf <- test_pos_inf;
+      isneginf <- test_neg_inf;
+      arith or_op isposinf isneginf.
+
+    (* return 1 iff the float is a quite NAN, which has the sign bit unconstrained,
+       exponent bits on, and mantissa bits being 1 followed by unconstrained bits.  *)
+    Definition test_qnan : Conv (rtl_exp size1) :=
+      (* the number with all exponents bits on and the first bit of mantissa on *)
+      mask <- load_Z _ (two_power_nat (nat_of_P mw - 1) * (two_power_nat (nat_of_P ew + 1) - 1));
+      maskRes <- arith and_op f mask; (* mask away those unconstrained bits *)
+      test eq_op maskRes mask.
+
+    (* return 1 iff the float is a signal NAN, which has the sign bit unconstrained,
+       exponent bits on, and mantissa bits being 0 followed by unconstrained bits (with at
+       least one bit on in those unconstrained bits). *)
+    Definition test_snan : Conv (rtl_exp size1) :=
+      isinf <- test_inf;
+      isnotinf <- not isinf;
+
+      (* the number with all exponents bits on and the first bit of mantissa on *)
+      mask <- load_Z _ (two_power_nat (nat_of_P mw - 1) * (two_power_nat (nat_of_P ew + 1) - 1));
+      maskRes <- arith and_op f mask; (* mask away those unconstrained bits *)
+      expected <- load_Z _ (two_power_nat (nat_of_P mw) * (two_power_nat (nat_of_P ew) - 1));
+      is_snan <- test eq_op maskRes expected;
+
+      arith and_op isnotinf is_snan.
+
+    (* return 1 iff the float is a NAN *)
+    Definition test_nan : Conv (rtl_exp size1) := 
+      isqnan <- test_qnan;
+      issnan <- test_snan;
+      arith or_op isqnan issnan.
+
+    (* return 1 iff the float is a denomralized finite, which has the sign bit
+       unconstrained, exponent bits off, and unconstrained mantissa bits
+       (with at least one bit on). *)
+    Definition test_denormal : Conv (rtl_exp size1) :=
+      iszero <- test_zero;
+      isnotzero <- not iszero;
+      (* the number with all exponents bits on *)
+      mask <- load_Z _ (two_power_nat (nat_of_P mw) * (two_power_nat (nat_of_P ew) - 1));
+      maskRes <- arith and_op f mask;
+      zero <- load_Z _ 0;
+      expZero <- test eq_op maskRes zero;
+      arith and_op isnotzero expZero.
+
+    (* return 1 iff the float is a normalized finite, which has the sign bit
+       unconstrained, exponent bits greater than 0 and less than 2^mw - 1, 
+       and unconstrained mantissa bits. *)
+    Definition test_normal_fin : Conv (rtl_exp size1) :=
+      (* the number with all exponents bits on *)
+      mask <- load_Z _ (two_power_nat (nat_of_P mw) * (two_power_nat (nat_of_P ew) - 1));
+      maskRes <- arith and_op f mask;
+      zero <- load_Z _ 0;
+      iszero <- test eq_op maskRes zero;
+      notzero <- not iszero;
+      maxexpo <- test eq_op maskRes mask;
+      notmaxexpo <- not maxexpo;
+      arith and_op notzero notmaxexpo.
+    
+    (* return 1 iff the float is a finite. *)
+    Definition test_fin : Conv (rtl_exp size1) :=
+      isdefin <- test_denormal;
+      isnorfin <- test_normal_fin;
+      arith or_op isdefin isnorfin.
+
+  End Float_Test.
+
+
+  Definition size63 := 62.
+    
+  (* convert a 79-bit float to a double-extended float:
+     * if the float is pos/neg zero or a denormal, add 0 as the integer significand;
+     * if the float is a normal finite or infinity, add 1 as the integer signifcand.
+     Note: In those 79 bits, 1 is for the sign, 15 for exponents and 63 for mantissa. *)
+  Definition de_float_of_float79 (f: rtl_exp size79) : Conv (rtl_exp size80) :=
+    signAndExpo <- first_bits size16 f;
+    mantissa <- last_bits size63 f;
+    isInf <- test_inf 63 15 f;
+    isNorFin <- test_normal_fin 63 15 f;
+    intSig <- arith or_op isInf isNorFin;
+    r <- concat_bits intSig mantissa;
+    concat_bits signAndExpo r.
+
+  (* convert a double-extened float to a float of 79 bits by cutting down 
+     integer significand before the floating point.
+     Note: The integer siginficand should be consistent with the rules in de_float_of_float79;
+         otherwise, the processor treats the numbers as an invalid operand; operating
+         on it will generate an exception. *)
+  Definition float79_of_de_float (f: rtl_exp size80) : Conv (rtl_exp size79) :=
+    signAndExpo <- first_bits size16 f;
+    mantissa <- last_bits size63 f;
+    concat_bits signAndExpo mantissa.
+
+  Definition fcast ew1 mw1 ew2 mw2
+    (hyp1: float_width_hyp ew1 mw1)
+    (hyp2: float_width_hyp ew2 mw2)
+    (rm: rtl_exp size2)
+    (e : rtl_exp (nat_of_P ew1 + nat_of_P mw1))
+    : Conv (rtl_exp  (nat_of_P ew2 + nat_of_P mw2)) :=
+    ret (@fcast_rtl_exp ew1 mw1 ew2 mw2 hyp1 hyp2 rm e).
+
+  Lemma fw_hyp_float32 : float_width_hyp 8 23.
+  Proof. reflexivity. Qed.
+  Lemma fw_hyp_float64 : float_width_hyp 11 52.
+  Proof. reflexivity. Qed.
+  Lemma fw_hyp_float79 : float_width_hyp 15 63.
+  Proof. reflexivity. Qed.
+  
+  Definition de_float_of_float32 (f: rtl_exp size32) (rm: rtl_exp size2)
+    : Conv (rtl_exp size80) := 
+    f' <- fcast fw_hyp_float32 fw_hyp_float79 rm f;
+    de_float_of_float79 f'.
+
+  Definition de_float_of_float64 (f: rtl_exp size64) (rm: rtl_exp size2)
+    : Conv (rtl_exp size80) := 
+    f' <- fcast fw_hyp_float64 fw_hyp_float79 rm f;
+    de_float_of_float79 f'.
+
+  (* encode the tag bits according to the double-extended float *)
+  Definition enc_tag (f: rtl_exp size80) : Conv (rtl_exp size2) := 
+    nf <- float79_of_de_float f;
+    iszero <- test_zero 15 63 nf;
+    isnorfin <- test_normal_fin 15 63 nf;
+
+    enc_valid <- load_Z _ (enc_fpu_tag_mode TM_valid);
+    enc_zero <- load_Z _ (enc_fpu_tag_mode TM_zero);
+    enc_special <- load_Z _ (enc_fpu_tag_mode TM_special);
+    z_or_s <- if_exp iszero enc_zero enc_special;
+    if_exp isnorfin enc_valid z_or_s.
+
+  Definition load_fp_op (pre: prefix) (seg: segment_register) (op: fp_operand)
+    : Conv (rtl_exp size80) :=
+    let sr := get_segment pre seg in
+    match op with
+      | FPS_op i =>
+        fi <- freg_of_offset i;
+        get_fpu_reg fi
+      | FPM32_op a =>
+        addr <- compute_addr a;
+        val <- load_mem32 sr addr;
+        rm <- get_fpu_rctrl;
+        de_float_of_float32 val rm
+      | FPM64_op a =>
+        addr <- compute_addr a;
+        val <- load_mem64 sr addr;
+        rm <- get_fpu_rctrl;
+        de_float_of_float64 val rm
+      | FPM80_op a =>
+        addr <- compute_addr a;
+        load_mem80 sr addr
+      | FPM16_op _ => 
+        (* not possible if loading floats from 16-bit memory *)
+        emit error_rtl;; choose size80
+    end.
+
   Definition conv_FNCLEX :=
     set_fpu_flag_const F_PE 0;;
     set_fpu_flag_const F_UE 0;;
@@ -3053,17 +3265,13 @@ Section X86FloatSemantics.
     set_fpu_flag_const F_ES 0;;
     set_fpu_flag_const F_Busy 0.
 
-  (* Definition set_CC_unordered :=  *)
-  (*  onee <- load_Z size3 1; *)
-  (*  set_fpu_status C3 onee;; set_fpu_status C2 onee;; set_fpu_status C0 onee. *)
-
   (* In FNINIT, the FPUControlWord is set to 037FH *)
   Definition init_control_word := 
     set_fpu_ctrl_const F_Res15 0;;
     set_fpu_ctrl_const F_Res14 0;;
     set_fpu_ctrl_const F_Res13 0;;
     set_fpu_ctrl_const F_IC 0;;
-    set_fpu_rctrl_const RM_nearest_even;;
+    set_fpu_rctrl_const mode_NE;;
     set_fpu_pctrl_const PC_double_extended;;
     set_fpu_ctrl_const F_Res6 0;;
     set_fpu_ctrl_const F_Res7 1;;
@@ -3114,131 +3322,50 @@ Section X86FloatSemantics.
     init_tag_word;;
     init_last_ptrs.
 
-
-
-
-  (* gtan: need adjustment *)
- (*load val into an fpu-register stack where the top reg is stacktop and num is the number of registers from the top 
-    where it is located, i.e num is i in st(i). *) 
-  (* Definition set_stack_i (val : rtl_exp size80) (top index : rtl_exp size3): Conv unit :=  *)
-  (*    set_fpu_reg val (int_to_fpu_reg top index). *)
-
- (*return the val of an fpu register where the top reg is stacktop and num is the number of registers from the top 
-    where it is located, i.e num is i in st(i). *) 
-  (* Definition load_from_stack_i (top index: rtl_exp size3) : Conv (rtl_exp size80) :=  *)
-  (*    load_fpu_reg (int_to_fpu_reg top index). *)
-
-  (*index is the tag index to update (corresponding to a given fpu stack register) and tagval is either 00, 01, 10, or 11, depending on 
-    the value of st(index) 
-  *)
-  Definition update_tag (index : rtl_exp size3) (tagval: rtl_exp size2) :=
-     zero <- load_Z size3 0;
-     one <- load_Z size3 1;
-     two <- load_Z size3 2;
-     three <- load_Z size3 3;
-     four <- load_Z size3 4;
-     five <- load_Z size3 5;
-     six <- load_Z size3 6;
-     seven <- load_Z size3 7;
-     
-     t0 <- test eq_op index zero;
-     t1 <- test eq_op index one;
-     t2 <- test eq_op index two;
-     t3 <- test eq_op index three;
-     t4 <- test eq_op index four;
-     t5 <- test eq_op index five;
-     t6 <- test eq_op index six;
-     t7 <- test eq_op index seven;
-     
-     emit if_rtl t0 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 0)));;
-     emit if_rtl t1 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 1)));;
-     emit if_rtl t2 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 2)));;
-     emit if_rtl t3 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 3)));;
-     emit if_rtl t4 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 4)));;
-     emit if_rtl t5 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 5)));;
-     emit if_rtl t6 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 6)));;
-     emit if_rtl t7 (set_loc_rtl tagval (fpu_tag_loc (Word.repr 7))).
-
-
-  Definition fpu_undef_flag (f: fpu_flag) := 
-    v <- @choose size1; 
-    set_fpu_flag f v.
-
   Definition conv_FINCSTP := 
-    st <- get_stktop;
-    one <- load_Z _ 1;
-    newst <- arith add_op st one;
-    set_stktop newst;;
-
+    inc_stktop;;
     (* The C1 flag is set to 0. The C0, C2, and C3 flags are undefined *)
     set_fpu_flag_const F_C1 0;;
-    fpu_undef_flag F_C0;;
-    fpu_undef_flag F_C2;;
-    fpu_undef_flag F_C3.
+    undef_fpu_flag F_C0;;
+    undef_fpu_flag F_C2;;
+    undef_fpu_flag F_C3.
 
   Definition conv_FDECSTP := 
-    st <- get_stktop;
-    one <- load_Z _ 1;
-    newst <- arith sub_op st one;
-    set_stktop newst;;
-
+    dec_stktop;;
     (* The C1 flag is set to 0. The C0, C2, and C3 flags are undefined *)
     set_fpu_flag_const F_C1 0;;
-    fpu_undef_flag F_C0;;
-    fpu_undef_flag F_C2;;
-    fpu_undef_flag F_C3.
+    undef_fpu_flag F_C0;;
+    undef_fpu_flag F_C2;;
+    undef_fpu_flag F_C3.
+
+  (* set the i-th tag word according to a new value v; 
+     returns bit 1 iff the i-th register in the stack has been occupied *)
+  Definition chk_overflow_and_set_tag
+    (i: rtl_exp size3) (f: rtl_exp size80) : Conv (rtl_exp size1) :=
+    notempty <- nonempty_tag i;
+    tag <- enc_tag f;
+    set_fpu_tag i tag;;
+    ret notempty.
+
+  (* push a float to the top of the stack; set up the corresponding
+     tag; return 1 iff overflow *)
+  Definition stk_push_and_set_tag (f : rtl_exp size80) 
+    : Conv (rtl_exp size1) :=
+    stk_push f;;
+    topp <- get_stktop;
+    chk_overflow_and_set_tag topp f.
+
+  Definition conv_FLD (pre:prefix) (op: fp_operand) :=
+     v <- load_fp_op pre DS op; 
+     overflow <- stk_push_and_set_tag v;
+
+     (* set up condition codes *)
+     set_fpu_flag F_C1 overflow;;
+     undef_fpu_flag F_C0;;
+     undef_fpu_flag F_C2;;
+     undef_fpu_flag F_C3.
 
 
-  (* gtan: need adjustment *)
-  (* Definition psreg_to_int n (p : rtl_exp n) : Word.int n :=  *)
-  (*    let (val) := p in *)
-  (*    Word.repr val. *)
-
-  (* gtan: need adjustment *)
-  (* Definition int_to_psreg n (i : Word.int n) : rtl_exp n :=  *)
-  (*    let val := Word.intval n i in *)
-  (*    ps_reg n val. *)
-
-
-  (* Definition conv_FLD (op: fp_operand) :=  *)
-  (*    topp <- get_stacktop; *)
-  (*    zero <- load_Z size3 0; *)
-  (*    match op with *)
-  (*    | FPS_op reg => *)
-  (*      val <- load_fpu_reg (fpu_from_int reg topp); *)
-  (*      conv_FDECSTP;;  *)
-  (*      set_stack_i val topp zero *)
-  (*    | FPM16_op _ => emit error_rtl (* todo: fix this *) *)
-  (*    | FPM32_op a =>   *)
-  (*       addr <- compute_addr a;  *)
-  (*       val <- load_mem32 DS addr; *)
-  (*       conv_FDECSTP;; *)
-  (*       let int_val := psreg_to_int val in *)
-  (*       let b32_val := int_to_bin32 int_val in *)
-  (*       let conv_val := de_float_of_b32 b32_val in *)
-
-  (*       let ps_reg_val := int_to_psreg (de_float_to_int conv_val) in *)
-  (*       set_stack_i ps_reg_val topp zero *)
-  (*    | FPM64_op a => *)
-  (*       addr <- compute_addr a;  *)
-  (*       val <- load_mem64 DS addr; *)
-  (*       conv_FDECSTP;; *)
-  (*       let int_val := psreg_to_int val in *)
-  (*       let b64_val := int_to_bin64 int_val in *)
-  (*       let conv_val := de_float_of_b64 b64_val in *)
-
-  (*       let ps_reg_val := int_to_psreg (de_float_to_int conv_val) in *)
-  (*       set_stack_i ps_reg_val topp zero *)
-  (*    | FPM80_op a => *)
-  (*       addr <- compute_addr a;  *)
-  (*       val <- load_mem80 DS addr; *)
-  (*       conv_FDECSTP;; *)
-  (*       let int_val := psreg_to_int val in *)
-  (*       let b80_val := int_to_de_float int_val in *)
-
-  (*       let ps_reg_val := int_to_psreg (de_float_to_int b80_val) in *)
-  (*       set_stack_i ps_reg_val topp zero *)
-  (*    end. *)
 
 
   (*TODO: Include handling of invalid-operation exception (look at FST/FSTP instruction in manual) *)
@@ -3695,43 +3822,42 @@ End X86FloatSemantics.
          | LOOPZ disp => conv_LOOP pre true true disp
          | LOOPNZ disp => conv_LOOP pre true false disp
          | NOP _ => ret tt
+
          (*Floating-point conversions*)
-    (*     | F2XM1 => conv_F2XM1 pre
-         | FABS => conv_FABS *)
-         (* | FADD d op1 => conv_FADD d op1 *)
-         (* | FADDP op1 => conv_FADDP op1   *)
-    (*     | FBLD op1 => conv_FBLD pre op1
-         | FBSTP op1 => conv_FBSTP pre op1
-         | FCHS => conv_FCHS
-         | FCLEX => conv_FCLEX      *)
+         (* | F2XM1 => conv_F2XM1 pre *)
+         (* | FABS => conv_FABS *)
+         (* | FADD d op1 => conv_FADD d op1  *)
+         (* | FADDP op1 => conv_FADDP op1  *)
+         (* | FBLD op1 => conv_FBLD pre op1 *)
+         (* | FBSTP op1 => conv_FBSTP pre op1 *)
+         (* | FCHS => conv_FCHS  *)
          (* | FCOM op1 => conv_FCOM op1 *)
          (* | FCOMP op1 => conv_FCOMP op1 *)
          (* | FCOMPP => conv_FCOMPP *)
-   (*      | FCOMIP op1 => conv_FCOMIP pre op1
-         | FCOS => conv_FCOS       *)
-         (* | FDECSTP => conv_FDECSTP *)
+         (* | FCOMIP op1 => conv_FCOMIP pre op1 *)
+         (* | FCOS => conv_FCOS      *)
+         | FDECSTP => conv_FDECSTP
            (* gtan: comment out FDIV case for now as I have changed the syntax of FDIV *)
          (* | FDIV a b c d => conv_FDIV a b c d *)
          (* | FDIVP op1 => conv_FDIVP op1 *)
-      (*   | FDIVR : conv_FDIVR pre d r1 r2 op1
-         | FDIVRP : conv_FDIVRP pre op1
-         | FFREE : conv_FFREE pre op1
-         | FIADD : conv_FIADD pre op1
-         | FICOM : conv_FICOM pre op1
-         | FICOMP : conv_FICOMP pre op1
-         | FIDIV : conv_FIDIV pre op1
-         | FIDIVR : conv_FIDIVR pre op1
-         | FILD : conv_FILD pre op1
-         | FIMUL : conv_FIMUL pre op1
-         | FINCSTP : conv_FINCSTP
-         | FINIT : conv_FINIT
-         | FIST : conv_FIST
-         | FISTP : conv_FISTP
-         | FISUB : conv_FISUB
-         | FISUBR : conv_FISUBR    *)
-         (* | FLD a => conv_FLD a *)
+         (* | FDIVR : conv_FDIVR pre d r1 r2 op1 *)
+         (* | FDIVRP : conv_FDIVRP pre op1 *)
+         (* | FFREE : conv_FFREE pre op1 *)
+         (* | FIADD : conv_FIADD pre op1 *)
+         (* | FICOM : conv_FICOM pre op1 *)
+         (* | FICOMP : conv_FICOMP pre op1 *)
+         (* | FIDIV : conv_FIDIV pre op1 *)
+         (* | FIDIVR : conv_FIDIVR pre op1 *)
+         (* | FILD : conv_FILD pre op1 *)
+         (* | FIMUL : conv_FIMUL pre op1 *)
+         | FINCSTP => conv_FINCSTP
+         (* | FIST : conv_FIST *)
+         (* | FISTP : conv_FISTP *)
+         (* | FISUB : conv_FISUB *)
+         (* | FISUBR : conv_FISUBR *)
+         | FLD op => conv_FLD pre op
          (* | FLD1 => conv_FLD1 *)
-       (*  | FLDCW : conv_FLDCW
+         (*  | FLDCW : conv_FLDCW
          | FLDENV : conv_FLDENV  *)
          (* | FLDL2E => conv_FLDL2E *)
          (* | FLDL2T => conv_FLDL2T *)
@@ -3741,6 +3867,8 @@ End X86FloatSemantics.
          (* | FLDZ => conv_FLDZ *)
          (* | FMUL d op1 => conv_FMUL d op1 *)
          (* | FMULP op1 => conv_FMULP op1 *)
+         | FNCLEX => conv_FNCLEX 
+         | FNINIT => conv_FNINIT
        (*  | FNOP : conv_FNOP
          | FNSTCW => conv_FNSTCW
          | FPATAN : conv_FPATAN
