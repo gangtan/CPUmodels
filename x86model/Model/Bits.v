@@ -3733,13 +3733,23 @@ Require Import Coqlib.
 Require Import Ascii.
 Require Import String.
 
+Fixpoint string_to_bool_list (s:string) : list bool := 
+  match s with
+    | EmptyString => nil
+    | String a s => 
+      (if ascii_dec a "0"%char then false else true)::(string_to_bool_list s)
+  end.
+
 Fixpoint string_to_Z_bool (s:string) : Z -> bool :=
-   match s with 
-     | EmptyString => (fun i: Z => false)
-     | String a s0 =>
-        let b := if ascii_dec a "0"%char then false else true in
-       (fun i: Z => if zeq i 0 then b else string_to_Z_bool s0 (i - 1))
-   end.
+  let lb := string_to_bool_list s in
+  let fix to_Z_bool l := 
+    match l with
+      | nil => (fun i: Z => false)
+      | b :: l' =>
+       (fun i: Z => if zeq i 0 then b else to_Z_bool l' (i - 1))
+    end in
+  to_Z_bool (rev lb).
+
 Definition string_to_int n (s : string) := 
   let zb := string_to_Z_bool s in 
   repr n (Z_of_bits n zb).
