@@ -286,7 +286,9 @@ actual instruction details. Instructions can be found here:
 http://download.intel.com/products/processor/manual/325383.pdf*)
 | F2XM1 : instr
 | FABS : instr
-| FADD : forall (d: bool) (op1: fp_operand), instr
+(* zerod is true iff st(0) is the destination; 
+   op1 is the destination when zerod=false *)
+| FADD : forall (zerod: bool) (op1: fp_operand), instr
 | FADDP : forall (op1: fp_operand), instr
 | FBLD : forall (op1: fp_operand), instr
 | FBSTP : forall (op1: fp_operand), instr
@@ -300,11 +302,9 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FCOMIP : forall (op1: fp_operand), instr
 | FCOS : instr
 | FDECSTP : instr
-(** op1 <- op1 / op2 *)
-| FDIV : forall (op1 op2:fp_operand), instr
+| FDIV : forall (zerod: bool) (op: fp_operand), instr
 | FDIVP : forall (op1: fp_operand), instr
-(** reverse divide: op1 <- op2 / op1 *)
-| FDIVR : forall (op1 op2: fp_operand), instr
+| FDIVR : forall (zerod: bool) (op: fp_operand), instr
 | FDIVRP : forall (op1: fp_operand), instr
 | FFREE : forall (op1: fp_operand), instr
 | FIADD : forall (op1: fp_operand), instr
@@ -331,7 +331,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | FLDLN2 : instr
 | FLDPI : instr
 | FLDZ : instr
-| FMUL : forall (d: bool) (op1: fp_operand), instr
+| FMUL : forall (zerod: bool) (op1: fp_operand), instr
 | FMULP : forall (op1: fp_operand), instr
 | FNCLEX : instr
 | FNINIT : instr
@@ -363,11 +363,14 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 (* FSTSW is the same as FWAIT followed by FNSTSW 
    | FSTSW : forall (op1: option fp_operand), instr *)
 
-(* op1 <- op1 - op2 *)
-| FSUB : forall (op1 op2 : fp_operand), instr
+(* st(0) <- st(0) - op, when zerod is true;
+   op <- op - st(0), when zerod is false and op can only be st(i) *)
+| FSUB : forall (zerod: bool) (op: fp_operand), instr
 | FSUBP : forall (op1: fp_operand), instr
-  (* reverse subtraction op1 <- op2 - op1 *)
-| FSUBR : forall (op1 op2 : fp_operand), instr
+(* reverse subtraction
+   st(0) <- op - st(0), when zerod is true;
+   op <- st(0) - op, when zerod is false and op can only be st(i) *)
+| FSUBR : forall (zerod: bool) (op: fp_operand), instr
 | FSUBRP : forall (op1: fp_operand), instr
 | FTST : instr
 | FUCOM : forall (op1: fp_operand), instr

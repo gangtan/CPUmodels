@@ -156,13 +156,6 @@ Module X86_PARSER.
     List.fold_right (fun p1 p2 => map (seq p1 p2) (@cons t)) 
       (@always (list_t t) (@nil (result_m t))) ps.
 
-  Fixpoint string_to_bool_list (s:string) : list bool := 
-    match s with
-      | EmptyString => nil
-      | String a s => 
-        (if ascii_dec a "0"%char then false else true)::(string_to_bool_list s)
-    end.
-
   Fixpoint bits_n (n:nat) : result := 
     match n with 
       | 0%nat => unit_t
@@ -1124,31 +1117,31 @@ Module X86_PARSER.
 
   Definition FDIV_p :=
     "11011" $$ "000" $$ ext_op_modrm_FPM32 "110" @ 
-       (fun x => FDIV (FPS_op Word.zero) x %% instruction_t)
+       (fun x => FDIV true x %% instruction_t)
   |+|
     "11011" $$ "100" $$ ext_op_modrm_FPM64 "110" @
-       (fun x => FDIV (FPS_op Word.zero) x %% instruction_t)
+       (fun x => FDIV true x %% instruction_t)
   |+|  
     "11011" $$ "0" $$ "00" $$ "1111" $$ "0" $$ fpu_reg @ 
-    (fun i => FDIV (FPS_op Word.zero) (FPS_op i) %% instruction_t)
+    (fun i => FDIV true (FPS_op i) %% instruction_t)
   |+| 
     "11011" $$ "1" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
-    (fun i => FDIV (FPS_op i) (FPS_op Word.zero) %% instruction_t).
+    (fun i => FDIV false (FPS_op i) %% instruction_t).
 
   Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg @ (fun x => FDIVP (FPS_op x) %% instruction_t).
 
   Definition FDIVR_p :=
     "11011" $$ "000" $$ ext_op_modrm_FPM32 "111" @
-       (fun x => FDIVR (FPS_op Word.zero) x %% instruction_t)
+       (fun x => FDIVR true x %% instruction_t)
   |+|
     "11011" $$ "100" $$ ext_op_modrm_FPM64 "111" @
-       (fun x => FDIVR (FPS_op Word.zero) x  %% instruction_t)
+       (fun x => FDIVR true x  %% instruction_t)
   |+|  
     "11011" $$ "0" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
-    (fun i => FDIVR (FPS_op Word.zero) (FPS_op i) %% instruction_t)
+    (fun i => FDIVR true (FPS_op i) %% instruction_t)
   |+|  
     "11011" $$ "1" $$ "00" $$ "111" $$ "1" $$ "0" $$ fpu_reg @ 
-    (fun i => FDIVR (FPS_op i) (FPS_op Word.zero) %% instruction_t).
+    (fun i => FDIVR false (FPS_op i) %% instruction_t).
 
   Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg @ (fun x => FDIVRP (FPS_op x) %% instruction_t).
   Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg @ (fun x => FFREE (FPS_op x) %% instruction_t).
@@ -1280,28 +1273,28 @@ Module X86_PARSER.
     "11011" $$ "101" $$ "11011" $$ fpu_reg @ (fun x => FSTP (FPS_op x) %% instruction_t). 
 
   Definition FSUB_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "100" @ (fun x => FSUB (FPS_op Word.zero) x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "100" @ (fun x => FSUB true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "100" @ (fun x => FSUB (FPS_op Word.zero) x %% instruction_t) 
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "100" @ (fun x => FSUB true x %% instruction_t) 
   |+|  
     "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
-    (fun i => FSUB (FPS_op Word.zero) (FPS_op i) %% instruction_t)
+    (fun i => FSUB true (FPS_op i) %% instruction_t)
   |+|  
     "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
-    (fun i => FSUB (FPS_op i) (FPS_op Word.zero) %% instruction_t).
+    (fun i => FSUB false (FPS_op i) %% instruction_t).
 
   Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg @ (fun x => FSUBP (FPS_op x) %% instruction_t).
 
   Definition FSUBR_p := 
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "101" @ (fun x => FSUBR (FPS_op Word.zero) x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "101" @ (fun x => FSUBR true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "101" @ (fun x => FSUBR (FPS_op Word.zero) x %% instruction_t)
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "101" @ (fun x => FSUBR true x %% instruction_t)
   |+|  
     "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
-    (fun i => FSUBR (FPS_op Word.zero) (FPS_op i) %% instruction_t)
+    (fun i => FSUBR true (FPS_op i) %% instruction_t)
   |+|  
     "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
-    (fun i => FSUBR (FPS_op i) (FPS_op Word.zero) %% instruction_t).
+    (fun i => FSUBR false (FPS_op i) %% instruction_t).
 
   Definition FSUBRP_p := "11011" $$ "110" $$ "11100" $$ fpu_reg @ (fun x => FSUBRP (FPS_op x) %% instruction_t). 
   Definition FTST_p := "11011" $$ "001111" $$ bits "00100" @ (fun _ => FTST %% instruction_t).

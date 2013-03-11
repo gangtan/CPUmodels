@@ -897,30 +897,53 @@ Definition enc_fp_int3 (op1 : fp_operand) : Enc (list bool) :=
        the same as the fifth bit of the second byte.
      * when m is false, the two bits should be different.
  *)
-Definition enc_fp_arith (m:bool) (lb opb: list bool)
-  (op1 op2 : fp_operand) : Enc (list bool) :=
-  match op1, op2 with 
-    | FPS_op i1, FPS_op i2 => 
-        if Word.eq i1 Word.zero then
-          (* alternate encoding when i2 is also zero *)
-          l1 <- enc_fp_int3 op2;
-          let bm := if m then false else true in
-            ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ (bm :: l1))
-        else if Word.eq i2 Word.zero then
-          l1 <- enc_fp_int3 op1; 
-          let bm := if m then true else false in
-            ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ (bm :: l1))
-        else invalid
-    | FPS_op i1, FPM32_op fa1 => 
-        if Word.eq i1 Word.zero
-          then l1 <- enc_fp_modrm opb op2; ret (s2bl "11011000" ++ l1)
-          else invalid
-    | FPS_op i1, FPM64_op fa1 => 
-        if Word.eq i1 Word.zero 
-          then l1 <- enc_fp_modrm opb op2; ret (s2bl "11011100" ++ l1)
-          else invalid
-    | _ , _ =>  invalid
+Definition enc_fp_arith (m:bool) (lb opb: list bool) (zerod: bool)
+  (op: fp_operand) : Enc (list bool) :=
+  match zerod, op with
+    | true, FPS_op i =>
+      l1 <- enc_fp_int3 op;
+      let bm := if m then false else true in
+        ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ (bm :: l1))
+
+    | true, FPM32_op fa1 => 
+      l1 <- enc_fp_modrm opb op; ret (s2bl "11011000" ++ l1)
+
+    | true, FPM64_op fa1 => 
+      l1 <- enc_fp_modrm opb op; ret (s2bl "11011100" ++ l1)
+
+    | false, FPS_op i => 
+      l1 <- enc_fp_int3 op; 
+      let bm := if m then true else false in
+        ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ (bm :: l1))
+
+    | _, _ => invalid
   end.
+
+
+(* Definition enc_fp_arith (m:bool) (lb opb: list bool) *)
+(*   (op1 op2 : fp_operand) : Enc (list bool) := *)
+(*   match op1, op2 with  *)
+(*     | FPS_op i1, FPS_op i2 =>  *)
+(*         if Word.eq i1 Word.zero then *)
+(*           (* alternate encoding when i2 is also zero *) *)
+(*           l1 <- enc_fp_int3 op2; *)
+(*           let bm := if m then false else true in *)
+(*             ret (s2bl "11011000" ++ s2bl "111" ++ lb ++ (bm :: l1)) *)
+(*         else if Word.eq i2 Word.zero then *)
+(*           l1 <- enc_fp_int3 op1;  *)
+(*           let bm := if m then true else false in *)
+(*             ret (s2bl "11011100" ++ s2bl "111" ++ lb ++ (bm :: l1)) *)
+(*         else invalid *)
+(*     | FPS_op i1, FPM32_op fa1 =>  *)
+(*         if Word.eq i1 Word.zero *)
+(*           then l1 <- enc_fp_modrm opb op2; ret (s2bl "11011000" ++ l1) *)
+(*           else invalid *)
+(*     | FPS_op i1, FPM64_op fa1 =>  *)
+(*         if Word.eq i1 Word.zero  *)
+(*           then l1 <- enc_fp_modrm opb op2; ret (s2bl "11011100" ++ l1) *)
+(*           else invalid *)
+(*     | _ , _ =>  invalid *)
+(*   end. *)
 
 
 (******* Floating-point Instructions ordered in ABC order *********)
