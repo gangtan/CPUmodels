@@ -262,7 +262,7 @@ Module X86_PARSER.
       |+| bits "100" $ si $ bits "101" $ word @
           (fun p => match p with
                       | (_,(si,(_, disp))) => 
-                        (mkAddress disp (None) si)
+                        (mkAddress disp None si)
                     end : result_m address_t)
       |+| bits "101" $ word @
           (fun p => match p with 
@@ -414,19 +414,28 @@ Module X86_PARSER.
 
   Definition ext_op_modrm_FPM80 : string -> parser fp_operand_t := 
     ext_op_modrm_gen (FPM80_op: address -> result_m fp_operand_t).
-    
 
-  Definition ext_op_modrm2(bs:string) : parser operand_t :=
-    (     ("00" $$ bits bs $ rm00) 
-      |+| ("01" $$ bits bs $ rm01)
-      |+| ("10" $$ bits bs $ rm10)) @
-            (fun p => match p with
-                      | (_,addr) => Address_op addr
-                      end %% operand_t)
-   |+| ("11" $$ bits bs $ reg_op) @ 
-          (fun p => match p with 
-                      | (_, op) => op
-                    end %% operand_t).
+  (* Similar to mod/rm parser except that the register field is fixed to a
+   * particular bit-pattern*)
+  Definition ext_op_modrm2_gen (res_t: result) 
+    (reg_p: parser res_t)
+    (addr_op: address -> result_m res_t)
+    (bs:string) : parser res_t :=
+    (      (bits "00" $ bits bs $ rm00)
+     |+|   (bits "01" $ bits bs $ rm01)
+     |+|   (bits "10" $ bits bs $ rm10) ) @
+           (fun p => match p with 
+                       | (_,(_,addr)) => addr_op addr
+                     end %% res_t)
+     |+|   ("11" $$ bits bs $ reg_p) @ 
+           (fun p => match p with 
+                       | (_, op) => op
+                     end %% res_t).
+  Implicit Arguments ext_op_modrm2_gen [res_t].
+
+  Definition ext_op_modrm2 :=
+    ext_op_modrm2_gen reg_op Address_op.
+
 
   (* Parsers for the individual instructions *)
   Definition AAA_p := bits "00110111" @ (fun _ => AAA %% instruction_t).
@@ -1023,7 +1032,8 @@ Module X86_PARSER.
   Definition STI_p := "1111" $$ bits "1011" @ (fun _ => STI %% instruction_t).
   Definition STOS_p := "1010" $$ "101" $$ anybit @ 
     (fun x => STOS x %% instruction_t).
-  Definition STR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001" @ 
+  Definition STR_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "001" @ 
     (fun x => STR x %% instruction_t).
 
   Definition TEST_p (opsize_override: bool) := 

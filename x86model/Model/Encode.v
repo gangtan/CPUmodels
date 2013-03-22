@@ -208,13 +208,13 @@ Definition enc_word (sz:nat) (i:Word.int sz) : list bool :=
     int_explode hw 32.
 Implicit Arguments enc_word [sz].
 
-(* encoding the modrm byte given the encoding of the reg field *)
-Definition enc_modrm_gen (reg: list bool) (op2 : operand): Enc (list bool) := 
-  match op2 with
-    | Reg_op r2 => ret (s2bl "11" ++ reg ++ enc_reg r2)
-    | Address_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ reg ++ s2bl "101" ++ enc_word disp)
-    | Address_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
+(* encoding an address *)
+Definition enc_address (opb: list bool) (addr: address): Enc (list bool) :=
+  match addr with
+    | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
+      ret (s2bl "00" ++ opb ++ s2bl "101" ++ enc_word disp)
+
+    | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
       let enc_r_or_m :=
         match bs, idxopt with
           | ESP, _  (* special case: when base is ESP, need a SIB byte *)
@@ -223,26 +223,37 @@ Definition enc_modrm_gen (reg: list bool) (op2 : operand): Enc (list bool) :=
           | _, None => ret (enc_reg bs)
         end in
         r_or_m <- enc_r_or_m;
-        let enc_disp_idxopt := 
-          if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
-        in
         (* alternate encoding: even if disp can be in a byte, we can always
            use the encoding of disp32[reg] *)
+        let enc_disp_idxopt := 
+          if (repr_in_signed_byte disp) then
+            ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
+            else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
+        in
         match bs with
           | EBP => (* when base is EBP, cannot use the 00 mod *)
             enc_disp_idxopt
           | _ => 
-            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
+            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
               else enc_disp_idxopt
         end
-    | Address_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
+
+    | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
       (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+      si <- enc_si sc idx;
+      ret (s2bl "10" ++ opb ++ s2bl "100" ++ si ++ s2bl "101" ++ enc_word disp)
+  end.
+
+  
+
+(* encoding the modrm byte given the encoding of the reg field *)
+Definition enc_modrm_gen (opb: list bool) (op2 : operand): Enc (list bool) := 
+  match op2 with
+    | Reg_op r2 => ret (s2bl "11" ++ opb ++ enc_reg r2)
+    | Address_op addr => enc_address opb addr
     | _ => invalid
   end.
+
 
 (* encoding two operands: op1, op2;
    op1 should always be a register operand; 
@@ -829,47 +840,11 @@ Definition enc_fp_modrm (opb: list bool) (op2 : fp_operand) : Enc (list bool) :=
   match op2 with
     | FPS_op r2 => ret (s2bl "11" ++ opb ++ int_explode r2 3)
 
-    | FPM16_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
-    | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
-    | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |}
-    | FPM80_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ opb ++ s2bl "101" ++ enc_word disp)
-
-    | FPM16_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
-    | FPM32_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
-    | FPM64_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |}
-    | FPM80_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        let enc_disp_idxopt := 
-          if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
-        in
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        match bs with
-          | EBP => (* when base is EBP, cannot use the 00 mod *)
-            enc_disp_idxopt
-          | _ => 
-            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
-              else enc_disp_idxopt
-        end
-
-    | FPM16_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
-    | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
-    | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
-    | FPM80_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      si <- enc_si sc idx;
-      ret (s2bl "10" ++ opb ++ s2bl "100" ++ si ++ s2bl "101" ++ enc_word disp)
-
-    (* | _ => invalid *)
+    | FPM16_op addr
+    | FPM32_op addr
+    | FPM64_op addr
+    | FPM80_op addr =>
+      enc_address opb addr
   end.
 
 
@@ -1205,27 +1180,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
   Definition enc_mmx_modrm_gen (mmx_reg: list bool) (op2: mmx_operand) : Enc (list bool) := 
   match op2 with
     | MMX_Reg_op r2 => ret (s2bl "11" ++ mmx_reg ++ enc_mmx_reg r2)
-    | MMX_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ mmx_reg ++ s2bl "101" ++ enc_word disp)
-    | MMX_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l) 
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ mmx_reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ mmx_reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ mmx_reg ++ r_or_m ++ enc_word disp)
-    | MMX_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ mmx_reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | MMX_Addr_op addr =>
+      enc_address mmx_reg addr
     | _ => invalid
   end.
 
@@ -1457,69 +1413,29 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | _, _ => invalid
     end.
 
-(*SSE Encodings*)
-Definition enc_xmm_r r := 
-  match r with 
-  | XMM0 => s2bl "000"
-  | XMM1 => s2bl "001"
-  | XMM2 => s2bl "010"
-  | XMM3 => s2bl "011"
-  | XMM4 => s2bl "100" 
-  | XMM5 => s2bl "101"
-  | XMM6 => s2bl "110"
-  | _    => s2bl "111"
-  end.
+  (*SSE Encodings*)
+  Definition enc_xmm_r r := 
+    match r with 
+      | XMM0 => s2bl "000"
+      | XMM1 => s2bl "001"
+      | XMM2 => s2bl "010"
+      | XMM3 => s2bl "011"
+      | XMM4 => s2bl "100" 
+      | XMM5 => s2bl "101"
+      | XMM6 => s2bl "110"
+      | _    => s2bl "111"
+    end.
 
   Definition enc_xmm_modrm_gen (xmm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
     | SSE_XMM_Reg_op r2 => ret (s2bl "11" ++ xmm_reg ++ enc_xmm_r r2)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ xmm_reg ++ s2bl "101" ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ xmm_reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ xmm_reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ xmm_reg ++ r_or_m ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ xmm_reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op addr => enc_address xmm_reg addr
     | _ => invalid
   end.
 
   Definition enc_xmm_modrm_noreg (xmm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
    match op2 with
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ xmm_reg ++ s2bl "101" ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ xmm_reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ xmm_reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ xmm_reg ++ r_or_m ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ xmm_reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op addr => enc_address xmm_reg addr
     | _ => invalid
   end.
 
@@ -1533,53 +1449,13 @@ Definition enc_xmm_r r :=
   Definition enc_mm_modrm_gen (mm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
     | SSE_MM_Reg_op r2 => ret (s2bl "11" ++ mm_reg ++ enc_mmx_reg r2)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ mm_reg ++ s2bl "101" ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ mm_reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ mm_reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ mm_reg ++ r_or_m ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ mm_reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op addr => enc_address mm_reg addr
     | _ => invalid
   end.
 
   Definition enc_mm_modrm_noreg (mm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ mm_reg ++ s2bl "101" ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ mm_reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ mm_reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ mm_reg ++ r_or_m ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ mm_reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op addr => enc_address mm_reg addr
     | _ => invalid
   end.
 
@@ -1592,53 +1468,13 @@ Definition enc_xmm_r r :=
   Definition enc_r32_modrm_gen (reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
     | SSE_GP_Reg_op r2 => ret (s2bl "11" ++ reg ++ enc_reg r2)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ reg ++ s2bl "101" ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op addr => enc_address reg addr
     | _ => invalid
   end.
 
   Definition enc_r32_modrm_noreg (reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ reg ++ s2bl "101" ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        if (Word.eq disp Word.zero) then ret (s2bl "00" ++ reg ++ r_or_m)
-          else if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ reg ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ reg ++ r_or_m ++ enc_word disp)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ reg ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op addr => enc_address reg addr 
     | _ => invalid
   end.
 
@@ -1651,37 +1487,7 @@ Definition enc_xmm_r r :=
   Definition enc_ext_op_modrm_sse (opb: list bool) (op2: sse_operand) : Enc (list bool) :=
   match op2 with
     | SSE_XMM_Reg_op r2 => ret (s2bl "11" ++ opb ++ enc_xmm_r r2)
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-      ret (s2bl "00" ++ opb ++ s2bl "101" ++ enc_word disp)
-
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=idxopt |} =>
-      let enc_r_or_m :=
-        match bs, idxopt with
-          | ESP, _  (* special case: when base is ESP, need a SIB byte *)
-          | _, Some _ =>
-            l <- enc_SIB bs idxopt; ret (s2bl "100" ++ l)
-          | _, None => ret (enc_reg bs)
-        end in
-        r_or_m <- enc_r_or_m;
-        let enc_disp_idxopt := 
-          if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
-            else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
-        in
-        (* alternate encoding: even if disp can be in a byte, we can always
-           use the encoding of disp32[reg] *)
-        match bs with
-          | EBP => (* when base is EBP, cannot use the 00 mod *)
-            enc_disp_idxopt
-          | _ => 
-            if (Word.eq disp Word.zero) then ret (s2bl "00" ++ opb ++ r_or_m)
-              else enc_disp_idxopt
-        end
-
-    | SSE_Addr_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ opb ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+    | SSE_Addr_op addr => enc_address opb addr 
     | _ => invalid 
   end. 
 
@@ -2512,3 +2318,4 @@ Definition enc_pre_instr_bytes pre ins : Enc (list Z) :=
 (* Definition emptyPrefix := mkPrefix None None false false. *)
 (* Eval compute in (enc_pre_instr_bytes emptyPrefix (PUSH true (Reg_op EBP))). *)
 (* Eval compute in (enc_pre_instr_bytes emptyPrefix (MOV true (Reg_op ESP) (Reg_op EBP))). *)
+
