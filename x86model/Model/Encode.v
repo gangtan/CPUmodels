@@ -156,20 +156,22 @@ Definition enc_scale (sc: scale) :=
     | Scale8 => s2bl "11"
   end.
 
+(* encoding a scale and an index *)
+Definition enc_si (sc: scale) (idx: register) :=
+  match idx with
+    | ESP => invalid
+    | _ => ret (enc_scale sc ++ enc_reg idx)
+  end.
+
 (* encoding an SIB byte *)
 Definition enc_SIB (bs:register) (idxopt: option (scale * register)) :=
   match bs, idxopt with
     | ESP, None => ret (s2bl "00" ++ s2bl "100" ++ s2bl "100")
-    | _, Some (sc,idx) =>
-      match idx with
-        | ESP => invalid
-        | _ => ret (enc_scale sc ++ enc_reg idx ++ enc_reg bs)
-      end
+    | _, Some (sc,idx) => 
+      si <- enc_si sc idx;
+      ret (si ++ enc_reg bs)
     | _, _ => invalid
   end.
-
-(* Definition enc_SIB (sc:scale) (idx base: register) := *)
-(*   enc_scale sc ++ enc_reg idx ++ enc_reg base. *)
 
 (* converting a sz-bit integer to a list of bool of length n *)
 Definition int_explode (sz:nat) (i:Word.int sz) (n:nat) : list bool :=
@@ -864,9 +866,8 @@ Definition enc_fp_modrm (opb: list bool) (op2 : fp_operand) : Enc (list bool) :=
     | FPM32_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
     | FPM64_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |}
     | FPM80_op {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
-      ret (s2bl "00" ++ opb ++ s2bl "100" ++
-           enc_scale sc ++ enc_reg idx ++ s2bl "101" ++ enc_word disp)
+      si <- enc_si sc idx;
+      ret (s2bl "10" ++ opb ++ s2bl "100" ++ si ++ s2bl "101" ++ enc_word disp)
 
     (* | _ => invalid *)
   end.
