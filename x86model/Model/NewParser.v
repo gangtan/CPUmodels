@@ -52,8 +52,105 @@ Module Type NEW_PARSER_ARG.
   Variable token_id_to_chars : token_id -> list char_p.
 End NEW_PARSER_ARG.
 
-Module NewParser(PA : NEW_PARSER_ARG).
-Import PA.
+(* a module for generating the parser for x86 instructions *)
+Module X86_PARSER_ARG.
+  Require Import X86Syntax.
+  Require Import Bits.
+  Local Open Scope Z_scope.
+  
+  Definition char_p : Set := bool.
+  Definition char_dec : forall (c1 c2:char_p), {c1=c2}+{c1<>c2} := bool_dec.
+  Inductive type : Set := 
+  | Int_t : type
+  | Register_t : type
+  | Byte_t : type
+  | Half_t : type
+  | Word_t : type
+  | Double_Word_t : type
+  | Ten_Byte_t : type
+  | Scale_t : type
+  | Condition_t : type
+  | Address_t : type
+  | Operand_t : type
+  | Fpu_Register_t : type
+  | Fp_Debug_Register_t : type
+  | Fp_Operand_t : type 
+  | MMX_Granularity_t : type
+  | MMX_Register_t : type
+  | MMX_Operand_t : type
+  | SSE_Register_t : type
+  | SSE_Operand_t : type
+  | Instruction_t : type
+  | Control_Register_t : type
+  | Debug_Register_t : type
+  | Segment_Register_t : type
+  | Lock_or_Rep_t : type
+  | Bool_t : type
+  | Prefix_t : type
+  | Option_t (t: type) : type
+  (* Need pairs at this level if I want to have options of pairs*)
+  | UPair_t (t1 t2: type) : type. 
+
+  Definition tipe := type.
+  Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
+    intros ; decide equality.
+  Defined.
+
+  Fixpoint tipe_m (t:tipe) := 
+    match t with 
+      | Int_t => Z
+      | Register_t => register
+      | Byte_t => int8
+      | Half_t => int16
+      | Word_t => int32
+      | Double_Word_t => int64
+      | Ten_Byte_t => int80
+      | Scale_t => scale
+      | Condition_t => condition_type
+      | Address_t => address
+      | Operand_t => operand
+      | Fpu_Register_t => int3
+      | Fp_Debug_Register_t => fp_debug_register
+      | Fp_Operand_t => fp_operand  
+      | MMX_Granularity_t => mmx_granularity
+      | MMX_Register_t => mmx_register
+      | MMX_Operand_t => mmx_operand
+      | SSE_Register_t => sse_register
+      | SSE_Operand_t => sse_operand
+      | Instruction_t => instr
+      | Control_Register_t => control_register
+      | Debug_Register_t => debug_register
+      | Segment_Register_t => segment_register
+      | Lock_or_Rep_t => lock_or_rep
+      | Bool_t => bool
+      | Prefix_t => prefix
+      | Option_t t => option (tipe_m t)
+      | UPair_t t1 t2 => ((tipe_m t1) * (tipe_m t2))%type
+    end.
+  Definition user_type := type.
+  Definition user_type_dec : forall (t1 t2:user_type), {t1=t2} + {t1<>t2} := 
+    tipe_eq.
+  Definition user_type_denote := tipe_m.
+
+  Definition byte_explode (b:int8) : list bool := 
+  let bs := Word.bits_of_Z 8 (Word.unsigned b) in
+    (bs 7)::(bs 6)::(bs 5)::(bs 4)::(bs 3)::(bs 2)::(bs 1)::(bs 0)::nil.
+
+  Definition nat_explode (n:nat) : list bool := 
+    byte_explode (Word.repr (Z_of_nat n)).
+
+  Definition token_id := nat.
+  Definition num_tokens : token_id := 256%nat.
+  Definition token_id_to_chars : token_id -> list char_p := nat_explode.
+End X86_PARSER_ARG.
+
+(******************************************************************************)
+(* I would like to put this in a module but alas, the Extraction Implicit     *)
+(* stuff breaks then.  So I've had to break this out to top-level.            *)
+(******************************************************************************)
+(* Module X86_BASE_PARSER(NewParser(PA : NEW_PARSER_ARG). *)
+(*Import PA.*)
+Import X86_PARSER_ARG.
 
 (** The [type]s for our grammars -- later, we'll need to extend this with user-defined 
      types. *)
@@ -108,92 +205,60 @@ Inductive xform : type -> type -> Type :=
 .
 Notation "t1 ->> t2" := (xform t1 t2) (left associativity, at level 69, t2 at next level).
 
+(** These declarations ensure that the types will be erased upon extraction.
+    But we must make sure not to ever eliminate these types... *)
+Extraction Implicit Xid [t].
+Extraction Implicit Xzero [t].
+Extraction Implicit Xcomp [t1 t2 t3].
+Extraction Implicit Xchar [t].
+Extraction Implicit Xunit [t].
+Extraction Implicit Xempty [t1 t2].
+Extraction Implicit Xpair [t t1 t2].
+Extraction Implicit Xfst [t1 t2].
+Extraction Implicit Xsnd [t1 t2].
+Extraction Implicit Xinl [t1 t2].
+Extraction Implicit Xinr [t1 t2].
+Extraction Implicit Xmatch [t1 t2 t].
+Extraction Implicit Xcons [t1 t2].
+Extraction Implicit Xmap [t1 t2].
+
 (** Interpret an [t1 ->> t2] xform as a function [interp t1 -> interp t2]. *)
 Fixpoint xinterp t1 t2 (x: t1 ->> t2) : interp t1 -> interp t2 := 
   match x in t1 ->> t2 return interp t1 -> interp t2 with 
     | Xid t => fun (x:interp t) => x
     | Xzero t => fun (x:interp Void_t) => match x with end
-    | Xcomp t1 t2 t3 f1 f2 => fun (x:interp t1) => xinterp f2 (xinterp f1 x)
+    | Xcomp t1 t2 t3 f1 f2 => 
+      let f1' := xinterp f1 in 
+        let f2' := xinterp f2 in 
+          fun (x:interp t1) => f2' (f1' x)
     | Xchar t c => fun (x:interp t) => c
     | Xunit t => fun (x:interp t) => tt
     | Xempty t1 t2 => fun (x:interp t1) => @nil (interp t2)
-    | Xpair t t1 t2 f1 f2 => fun (x:interp t) => (xinterp f1 x, xinterp f2 x)
+    | Xpair t t1 t2 f1 f2 => 
+      let f1' := xinterp f1 in 
+        let f2' := xinterp f2 in 
+          fun (x:interp t) => (f1' x, f2' x)
     | Xfst t1 t2 => fun (x:interp (Pair_t t1 t2)) => fst x
     | Xsnd t1 t2 => fun (x:interp (Pair_t t1 t2)) => snd x
     | Xinl t1 t2 => fun (x:interp t1) => inl (interp t2) x
     | Xinr t1 t2 => fun (x:interp t2) => inr (interp t1) x
     | Xmatch t1 t2 t f1 f2 => 
+      let f1' := xinterp f1 in 
+        let f2' := xinterp f2 in 
       fun (x:interp (Sum_t t1 t2)) => 
         match x with 
-          | inl x1 => xinterp f1 x1
-          | inr x2 => xinterp f2 x2
+          | inl x1 => f1' x1 
+          | inr x2 => f2' x2 
         end
-    | Xcons t1 t2 f1 f2 => fun (x:interp t1) => (xinterp f1 x)::(xinterp f2 x)
-    | Xmap t1 t2 f => fun (x:interp (List_t t1)) => List.map (xinterp f) x
+    | Xcons t1 t2 f1 f2 => 
+      let f1' := xinterp f1 in 
+        let f2' := xinterp f2 in 
+          fun (x:interp t1) => (f1' x)::(f2' x)
+    | Xmap t1 t2 f => 
+      let f' := xinterp f in 
+        fun (x:interp (List_t t1)) => List.map f' x
   end.
-
-(** * Decidable equality for [xform]'s. *)
-Lemma existT_neq (A:Type) (P:A->Type) (x y:A) (vx:P x) (vy:P y) : 
-  x <> y -> (existT P x vx) <> (existT P y vy).
-Proof.
-  intros. intro. apply (simplification_existT1 _ P _ x y vx vy) ; auto.
-Qed.
-
-Definition type_pair_dec (p1 p2:type*type) : {p1=p2} + {p1<>p2}.
-  intros. destruct p1. destruct p2. destruct (type_dec t t1) ; subst ;
-  [ destruct (type_dec t0 t2) ; subst ; [left | right ] | right ] ; 
-  congruence.
-Defined.
-
-Definition xform_dec' t1 t2 (x:t1 ->> t2) t3 t4 (y:t3 ->> t4) : 
-  {@existT (type*type)%type (fun p => fst p ->> snd p) (t1,t2) x = 
-   @existT (type*type)%type (fun p => fst p ->> snd p) (t3,t4) y}
-+ {@existT (type*type)%type (fun p => fst p ->> snd p) (t1,t2) x <> 
-   @existT (type*type)%type (fun p => fst p ->> snd p) (t3,t4) y}.
-Proof.
-  Ltac xdec := 
-    match goal with 
-      | [ H : existT ?f ?t ?x = existT ?f ?t ?y |- _ ] => 
-        generalize (inj_pairT2 _ f t x y H) ; clear H ; intro H ; subst 
-      | [ H : List_t _ = List_t _ |- _ ] => injection H ; clear H ; intros ; subst
-      | [ H : Pair_t _ _ = Pair_t _ _ |- _ ] => injection H ; clear H ; intros ; subst
-      | [ H : Sum_t _ _ = Sum_t _ _ |- _ ] => injection H ; clear H ; intros ; subst
-      | _ => idtac
-    end.
-  intros. destruct (type_pair_dec (t1,t2) (t3,t4)) ; 
-  [idtac | right ; apply existT_neq ; auto]. injection e. clear e.
-  generalize t3 t4 y ; clear t3 t4 y. induction x ; destruct y ; intros ; repeat xdec ; 
-  try (subst ; congruence) ; try (subst ; left ; auto ; fail) ; 
-  repeat subst ; try (right ; intro ; xdec ; discriminate).
-   destruct (type_dec t2 t4). subst. specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)).
-   specialize (IHx2 _ _ y2 (eq_refl _) (eq_refl _)). 
-   destruct IHx1 ; [ destruct IHx2 ; [left | right ] | right] ; repeat xdec ; auto.
-   intro. xdec. injection H. intros. xdec. xdec. apply n ; auto.
-   intro. xdec. injection H. intros. xdec. xdec. apply n ; auto.
-   right. intro. xdec. injection H. intros. repeat xdec. congruence.
-   destruct (char_dec c c0). subst. left. auto. right. intro. xdec.
-   injection H0. auto. specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)).
-   specialize (IHx2 _ _ y2 (eq_refl _) (eq_refl _)).  
-   destruct IHx1 ; [ destruct IHx2 ; [ left | right ] | right] ; repeat xdec ; auto.
-   intro ; xdec. injection H ; intros ; repeat xdec. apply n ; auto.
-   intro ; xdec. injection H ; intros ; repeat xdec. apply n ; auto.
-   specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)). 
-   specialize (IHx2 _ _ y2 (eq_refl _) (eq_refl _)). 
-   destruct IHx1 ; destruct IHx2 ; try (left ; repeat xdec ; auto ; fail) ; 
-     right ; xdec ; intro ; xdec ; injection H ; intros ; subst ; repeat xdec ; 
-   apply n ; auto. specialize (IHx1 _ _ y1 (eq_refl _) (eq_refl _)).
-   specialize (IHx2 _ _ y2 (eq_refl _) (eq_refl _)). 
-   destruct IHx1 ; [ destruct IHx2 ; [left | right ] | right ] ; repeat xdec ; auto ; 
-     intro H ; repeat xdec ; injection H ; intros ; subst ; repeat xdec ; apply n ; auto.
-   specialize (IHx _ _ y (eq_refl _) (eq_refl _)). destruct IHx ; [left | right ] ; 
-   repeat xdec ; auto. intro. xdec. injection H ; intros ; subst. repeat xdec.
-   apply n ; auto.
-Defined.
-
-Definition xform_dec t1 t2 (x1 x2:t1 ->> t2) : {x1 = x2} + {x1 <> x2}.
-  intros. destruct (xform_dec' x1 x2). xdec. left. auto. right.
-  intro. subst. apply n. auto.
-Defined.
+Extraction Implicit xinterp [t1 t2].
 
 (** * Grammars *)
 (** Our user-facing [grammar]s, indexed by a [type], reflecting the type of the
@@ -208,6 +273,12 @@ Inductive grammar : type -> Type :=
 | Star : forall t, grammar t -> grammar (List_t t)
 | Map : forall t1 t2, (interp t1 -> interp t2) -> grammar t1 -> grammar t2
 | Xform : forall t1 t2, t1 ->> t2 -> grammar t1 -> grammar t2.
+Extraction Implicit Zero [t].
+Extraction Implicit Cat [t1 t2].
+Extraction Implicit Alt [t1 t2].
+Extraction Implicit Star [t].
+Extraction Implicit Map [t1 t2].
+Extraction Implicit Xform [t1 t2].
 
 (** * Denotation of Grammars *)
 (** I'm a little annoyed that I had to break out so many equalities, but
@@ -238,6 +309,7 @@ Hint Constructors in_grammar.
 Definition xcoerce t1 t2 t3 t4 (x:xform t1 t2) : t1 = t3 -> t2 = t4 -> xform t3 t4.
   intros. subst. apply x.
 Defined.
+Extraction Implicit xcoerce [t1 t2 t3 t4].
 Definition eq_pair_fst t1 t2 t3 t4 : (Pair_t t1 t2 = Pair_t t3 t4) -> t3 = t1.
   intros ; injection H. intros. apply (eq_sym H1).
 Defined.
@@ -267,31 +339,33 @@ Definition xpair_fst ta tc (x2:ta->>tc):forall t1 t2,
     | Xsnd t3 t4 => fun t1 t2 H => xcoerce (Xid _) (eq_sym H) (pair_eq_snd H)
     | x2 => fun t1 t2 H => Xpair (xcoerce (Xfst t1 t2) (eq_sym H) (eq_refl _)) x2
   end.
+Extraction Implicit xpair_fst [ta tc t1 t2].
+
+Definition xpair_r ta tb tc (x2:ta ->> tc) : (ta ->> tb) -> ta ->> (Pair_t tb tc) := 
+  match x2 in ta ->> tc return ta->>tb -> ta->>(Pair_t tb tc) with
+    | Xzero _ => fun x1 => Xzero _
+    | x2 => fun x1 => Xpair x1 x2
+  end.
+Extraction Implicit xpair_r [ta tb tc].
 
 Definition xpair ta tb tc (x1:ta ->> tb) (x2:ta ->> tc) : ta ->> (Pair_t tb tc) := 
  match x1 in ta ->> tb return ta->>tc -> ta->>(Pair_t tb tc) with
    | Xfst t1 t2 => fun x2 => xpair_fst x2 (eq_refl _)
-   | x1 => Xpair x1
+   | Xzero t => fun x2 => Xzero _
+   | x1 => fun x2 => xpair_r x2 x1 
   end x2.
+Extraction Implicit xpair [ta tb tc].
 
 (** The [xpair] optimization preserves meaning. *)
 Lemma xpair_corr ta tb tc (x1:ta->>tb) (x2:ta->>tc) v : 
   xinterp (xpair x1 x2) v = xinterp (Xpair x1 x2) v.
 Proof.
-  destruct x1 ; simpl ; auto. intros. dependent destruction x2 ; simpl ; auto.   
+  Ltac xpair_corr_simp := 
+    match goal with | [ H : void |- _ ] => destruct H | _ => auto end.  
+  destruct x1 ; simpl in * ; auto ; intros ; xpair_corr_simp ; 
+  dependent destruction x2 ; simpl in * ; xpair_corr_simp.
   destruct v. auto.
 Qed.
-
-(*
-Definition xmatch_inl tb tc (x2:tb->>tc) : forall t1 t2, tc = Sum_t t1 t2 -> 
-  Sum_t t1 tb ->> tc.
-refine (fun tb tc x2 => 
-  match x2 in tb->>tc return forall t1 t2, tc=Sum_t t1 t2 -> Sum_t t1 tb ->> tc with
-    | Xinr t3 t4 => fun t1 t2 H => _
-    | x2 => fun t1 t2 H => _
-  end
-).*)
-
 
 Definition xmatch_inl t1 t2 tb tc (x2:tb->>tc) : 
   (tc=Sum_t t1 t2) -> Sum_t t1 tb ->> Sum_t t1 t2.
@@ -302,6 +376,7 @@ refine (fun t1 t2 tb tc x2 =>
   end
 ). injection H ; intros ; subst. auto.
 Defined.
+Extraction Implicit xmatch_inl [t1 t2 tb tc].
 
 (** This function and the two above implement the reduction
     [match x with inl a => inl a | inr b => inr b end = id]. *)
@@ -310,6 +385,7 @@ Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : Sum_t ta tb ->> tc :=
     | Xinl t1 t2 => fun x2' => xmatch_inl x2' (eq_refl _)
     | x1' => Xmatch x1'
   end x2.
+Extraction Implicit xmatch [ta tb tc].
 
 (** Correctness of eta-reduction for sums. *)
 Lemma xmatch_corr ta tb tc (x1:ta->>tc) (x2:tb->>tc) v : 
@@ -321,29 +397,16 @@ Qed.
 
 (** These next few functions implement specific reductions for when a particular
     combinator is composed with another.  Together, they implement the cut
-    elimination for the sequent language. *)
+    elimination for the sequent language. 
+*)
 (** (f1, f2) o id = (f1, f2)
     (f1, f2) o (char c) = char c
     (f1, f2) o unit = unit
     (f1, f2) o empty = empty
-    (f1, f2) o (fst f) = f1 o f
-    (f1, f2) o (snd f) = f2 o f
-
-    (f1, f2) o (fst o g1, snd o g2) = (f1 o g1, f2 o g2) ?
+    (f1, f2) o fst = f1
+    (f1, f2) o snd = f2
+    (f1, f2) o (g1, g2) = ((f1, f2) o g1, (f1, f2) o g2)
 *)
-
-(*
-Definition xcomp_pair_pair_fst_snd 
-  t t1 (f1:t ->> t1) t2 (f2:t ->> t2)
-  t3 (g1 : t1 ->> t3) t4 (g2: t2 ->> t4) : t ->> (Pair_t t3 t4) := 
-  (Xcomp (Xpair f1 f2) (Xpair (Xcomp (Xfst _ (Xid _)) g1) (Xcomp (Xsnd _ (Xid _)) g2))).
-
-Definition opt_xcomp_pair_pair_fst_snd 
-  t t1 (f1:t ->> t1) t2 (f2:t ->> t2)
-  t3 (g1 : t1 ->> t3) t4 (g2: t2 ->> t4) : t ->> (Pair_t t3 t4) := 
-  (Xpair (Xcomp f1 g1) (Xcomp f2 g2)).
-*)
-
 Definition xcomp_pair t21 t22 (x2:t21 ->> t22) : 
   forall ta tb tc (x11:ta->>tb) (x12:ta->>tc), (Pair_t tb tc = t21) -> ta ->> t22 := 
     match x2 in t21 ->> t22 return
@@ -356,10 +419,15 @@ Definition xcomp_pair t21 t22 (x2:t21 ->> t22) :
         fun ta tb tc x11 x12 H => xcoerce x11 (eq_refl _) (eq_pair_fst (eq_sym H))
       | Xsnd te tf => 
         fun ta tb tc x11 x12 H => xcoerce x12 (eq_refl _) (eq_pair_snd (eq_sym H))
+      | Xpair u1 u2 u3 x21 x22 => 
+        fun ta tb tc x11 x12 H => 
+          Xpair (Xcomp (Xpair x11 x12) (xcoerce x21 (eq_sym H) (eq_refl _))) 
+                (Xcomp (Xpair x11 x12) (xcoerce x22 (eq_sym H) (eq_refl _)))
       | x2' => 
         fun ta tb tc x11 x12 H => 
           Xcomp (Xpair x11 x12) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_pair [t21 t22 ta tb tc].
 
 (** [xcomp_pair] is correct. *)
 Lemma xcomp_pair_corr t21 t22 (x2:t21->>t22) ta tb tc (x11:ta->>tb) (x12:ta->>tc) H v: 
@@ -389,6 +457,7 @@ Definition xcomp_inl t21 t22 (x2:t21 ->> t22) :
       | x2' => 
         fun ta tb H => Xcomp (Xinl _ _) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_inl [t21 t22 ta tb].
 
 (** [xcomp_inl] is correct *)
 Lemma xcomp_inl_corr t21 t22 (x2:t21->>t22) ta tb (H:Sum_t ta tb = t21) v: 
@@ -418,6 +487,7 @@ Definition xcomp_inr t21 t22 (x2:t21 ->> t22) :
       | x2' => 
         fun ta tb H => Xcomp (Xinr _ _) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_inr [t21 t22 ta tb].
 
 (** [xcomp_inr] is correct. *)
 Lemma xcomp_inr_corr t21 t22 (x2:t21->>t22) ta tb (H:Sum_t ta tb = t21) v: 
@@ -448,6 +518,7 @@ Definition xcomp_map t21 t22 (x2:t21 ->> t22) :
       | x2' => 
           fun ta tb x11 H => Xcomp (Xmap x11) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_map [t21 t22 ta tb].
 
 (** [xcomp_map] is correct. *)
 Lemma xcomp_map_corr t21 t22 (x2:t21->>t22) ta tb (x11:ta->>tb) (H:List_t tb = t21) v : 
@@ -475,6 +546,7 @@ Definition xcomp_empty t21 t22 (x2:t21 ->> t22) :
       | Xmap tc td f => fun ta tb H => Xempty _ _
       | x2' => fun ta tb H => Xcomp (Xempty _ _) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_empty [t21 t22 ta tb].
 
 (** [xcomp_empty] is correct. *)
 Lemma xcomp_empty_corr t21 t22 (x2:t21->>t22) ta tb (H:List_t tb = t21) v : 
@@ -505,6 +577,7 @@ Definition xcomp_cons t21 t22 (x2:t21 ->> t22) :
       | x2' => fun ta tb x11 x21 H => 
         Xcomp (Xcons x11 x21) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_cons [t21 t22 ta tb].
 
 (** [xcomp_cons] is correct. *)
 Lemma xcomp_cons_corr t21 t22 (x2:t21->>t22) ta tb (x11:ta->>tb) (x12:ta->>List_t tb) H v: 
@@ -530,6 +603,7 @@ Definition xcomp_r t21 t22 (x2:t21 ->> t22) : forall t11, t11 ->> t21 -> t11 ->>
     | Xpair t t21 t22 x21 x22 => fun t1 x1 => Xpair (Xcomp x1 x21) (Xcomp x1 x22)
     | x2' => fun t1 x1 => Xcomp x1 x2'
   end.
+Extraction Implicit xcomp_r [t21 t22 t11].
 
 (** [xcomp_r] is correct. *)
 Lemma xcomp_r_corr t21 t22 (x2:t21->>t22) t11 (x1:t11->>t21) v : 
@@ -542,6 +616,7 @@ Qed.
      id o f = f
      zero o f = zero
      (f1 o f2) o f3 = f1 o (f2 o f3)
+     (match f1 f2) o f3 = match (f1 o f3) (f2 o f3)
      plus the reductions in the functions above
 *)
 Fixpoint xcomp t11 t12 (x1:t11 ->> t12) : forall t22, t12 ->> t22 -> t11 ->> t22 := 
@@ -557,8 +632,10 @@ Fixpoint xcomp t11 t12 (x1:t11 ->> t12) : forall t22, t12 ->> t22 -> t11 ->> t22
       | Xmap ta tb x11 => fun t22 x2 => xcomp_map x2 x11 (eq_refl _)
       | Xempty ta tb => fun t22 x2 => xcomp_empty x2 _ (eq_refl _)
       | Xcons ta tb x11 x12 => fun t22 x2 => xcomp_cons x2 x11 x12 (eq_refl _)
+      | Xmatch ta tb tc x11 x12 => fun t22 x2 => Xmatch (xcomp x11 x2) (xcomp x12 x2)
       | x1' => fun t22 x2 => xcomp_r x2 x1'
     end.
+Extraction Implicit xcomp [t11 t12 t22].
 
 (** [xcomp] (cut elimination) is correct. *)
 Lemma xcomp_corr t1 t2 (x1:t1->>t2) t3 (x2:t2->>t3) v : 
@@ -572,7 +649,8 @@ Proof.
   end.
   simpl in *. rewrite <- IHx1_2. rewrite <- IHx1_1. auto.
   apply xcomp_empty_corr. apply xcomp_pair_corr.  apply xcomp_inl_corr.
-  apply xcomp_inr_corr. apply xcomp_cons_corr. apply xcomp_map_corr.
+  apply xcomp_inr_corr. destruct v ; auto. rewrite IHx1_1. auto. rewrite IHx1_2. auto.
+  apply xcomp_cons_corr. apply xcomp_map_corr.
 Qed.
 
 Fixpoint xcomp' tb tc (x2:tb->>tc) : forall ta, ta->>tb -> ta->>tc := 
@@ -581,6 +659,7 @@ Fixpoint xcomp' tb tc (x2:tb->>tc) : forall ta, ta->>tb -> ta->>tc :=
     | Xpair td te tf x21 x22 => fun ta x1 => Xpair (xcomp' x21 x1) (xcomp' x22 x1)
     | x2' => fun ta x1 => xcomp x1 x2'
   end.
+Extraction Implicit xcomp' [tb tc ta].
 
 Lemma xcomp'_corr tb tc (x2:tb->>tc) ta (x1:ta->>tb) v : 
   xinterp (xcomp' x2 x1) v = xinterp (Xcomp x1 x2) v.
@@ -602,6 +681,7 @@ Fixpoint xopt t1 t2 (x:t1 ->> t2) : t1 ->> t2 :=
     | Xmap ta tb x1 => Xmap (xopt x1)
     | x' => x'
   end.
+Extraction Implicit xopt [t1 t2].
 
 (** [xopt] is correct. *)
 Lemma xopt_corr t1 t2 (x:t1 ->> t2) : xinterp (xopt x) = xinterp x.
@@ -619,6 +699,7 @@ Definition OptAlt_r t2 (g2:grammar t2) : forall t1, grammar t1 -> grammar (Sum_t
     | Zero t2 => fun t1 g1 => Xform (Xinl _ _) g1
     | g2' => fun t1 g1 => Alt g1 g2'
   end.
+Extraction Implicit OptAlt_r [t2 t1].
 
 (** 0 ++ g ==> g @ inr *)
 Definition OptAlt_l t1 (g1:grammar t1) : forall t2, grammar t2 -> grammar (Sum_t t1 t2) :=
@@ -626,10 +707,12 @@ Definition OptAlt_l t1 (g1:grammar t1) : forall t2, grammar t2 -> grammar (Sum_t
     | Zero t1 => fun t2 g2 => Xform (Xinr _ _) g2
     | g1' => fun t2 g2 => OptAlt_r g2 g1'
   end.
+Extraction Implicit OptAlt_l [t1 t2].
 
 (** Should reduce (g ++ g) ==> g and perhaps re-order according to some
     total order on the grammars. *)
 Definition OptAlt t1 t2 (g1:grammar t1) (g2:grammar t2) := OptAlt_l g1 g2.
+Extraction Implicit OptAlt [t1 t2].
 
 (** g $ 0 ==> 0 @ zero_to_t
     g $ eps ==> g @ add_unit_r *)
@@ -639,6 +722,7 @@ Definition OptCat_r t2 (g2:grammar t2) : forall t1, grammar t1 -> grammar (Pair_
     | Eps => fun t1 (g1 : grammar t1) => Xform (Xpair (Xid _) (Xunit _)) g1
     | g2' => fun t1 (g1 : grammar t1) => Cat g1 g2'
   end.
+Extraction Implicit OptCat_r [t2 t1].
 
 (** 0 $ g ==> 0 @ zero_to_t
     eps $ g ==> g @ add_unit_l *)
@@ -648,6 +732,7 @@ Definition OptCat t1 (g1:grammar t1) : forall t2, grammar t2 -> grammar (Pair_t 
     | Eps => fun t2 (g2 : grammar t2) => Xform (Xpair (Xunit _) (Xid _)) g2
     | g1' => fun t2 (g2 : grammar t2) => OptCat_r g2 g1'
   end.
+Extraction Implicit OptCat [t1 t2].
 
 (** star (star g) ==> (star g) @ mklist
     star eps ==> eps @ to_empty_list
@@ -660,6 +745,7 @@ Definition OptStar t (g:grammar t) : grammar (List_t t) :=
     | Zero t => Xform (Xempty _ _) Eps
     | g' => Star g'
   end.
+Extraction Implicit OptStar [t].
 
 (** 0 @ f ==> 0
     g @ f1 @ f2 ==> g @ (f1 o f2)
@@ -670,9 +756,11 @@ Definition OptMap' t1 (g:grammar t1) : forall t2, (interp t1 -> interp t2) -> gr
     | Map u1 u2 f' g' => fun t2 f => @Map u1 t2 (fun x => f (f' x)) g'
     | g' => fun t2 f => @Map _ t2 f g'
   end.
+Extraction Implicit OptMap' [t1 t2].
 
 Definition OptMap t1 t2 (f:interp t1 -> interp t2) (g:grammar t1) : grammar t2 := 
   @OptMap' t1 g t2 f.
+Extraction Implicit OptMap [t1 t2].
 
 Definition OptXform' t1 (g:grammar t1) : forall t2, t1->>t2 -> grammar t2 :=
   match g in grammar t1' return forall t2, t1'->>t2 -> grammar t2 with
@@ -680,8 +768,10 @@ Definition OptXform' t1 (g:grammar t1) : forall t2, t1->>t2 -> grammar t2 :=
     | Xform u1 u2 x' g' => fun t2 x => Xform (xcomp x' x) g'
     | g' => fun t2 x => Xform x g'
   end.
+Extraction Implicit OptXform' [t1 t2].
 
 Definition OptXform t1 t2 (x:t1->>t2) (g:grammar t1) := @OptXform' t1 g t2 x.
+Extraction Implicit OptXform [t1 t2].
 
 (** Generic simplification tactic. *)
 Ltac mysimp := 
@@ -818,6 +908,7 @@ Fixpoint null t (g:grammar t) : grammar t :=
     | Xform t1 t2 x g => OptXform x (null g)
     | Star t g => Xform (Xempty _ _) Eps
   end.
+Extraction Implicit null [t].
 
 (** Computes the derivative of [g] with respect to [c]. Denotationally,
     this is { (s,v) | (c::s,v) in_grammar[g] }. *)
@@ -836,6 +927,7 @@ Fixpoint deriv t (g:grammar t) (c:char_p) : grammar t :=
     | Star t g => 
         OptXform (Xcons (Xfst _ _) (Xsnd _ _)) (OptCat (deriv g c) (Star g))
   end.
+Extraction Implicit deriv [t].
 
 (** * AST Grammars *)
 
@@ -894,6 +986,7 @@ Definition fixfn (ag:astgram) (t:type) := interp (astgram_type ag) -> interp t.
 Definition ag_and_fn (t:type) (ag:astgram) (f:fixfn ag t) : { ag : astgram & fixfn ag t } :=
   existT (fun ag => fixfn ag t) ag f.
 Implicit Arguments ag_and_fn [t].
+Extraction Implicit ag_and_fn [t].
 
 (** Split a [grammar] into a simplified [astgram] (with no maps) and a top-level fix-up
     function that can turn the results of the [astgram] back into the user-specified 
@@ -927,6 +1020,7 @@ Fixpoint split_astgram t (g:grammar t) : { ag : astgram & fixfn ag t} :=
       let (ag, f2) := split_astgram g in 
         ag_and_fn ag (fun x => (xinterp f) (f2 x))
   end.
+Extraction Implicit split_astgram [t].
 
 (** Inversion principles for [astgram]s. *)
 Lemma inv_aeps : forall s v, in_astgram aEps s v -> s = nil /\ v = tt.
@@ -1023,6 +1117,7 @@ Qed.
 
 Definition agxf (t:type) (ag:astgram) (f:astgram_type ag ->> t) : 
   {ag : astgram & astgram_type ag ->> t} := existT _ ag f.
+Extraction Implicit agxf [t].
 
 (** Flatten out and right-associate a list of [aAlt]s. *)
 Fixpoint append_alt (ag1:astgram) (ag2:astgram) : 
@@ -1103,6 +1198,7 @@ Definition opt_ag (ag:astgram) : {ag2:astgram & astgram_type ag2 ->> astgram_typ
 Definition cast_interp t1 (v:interp (astgram_type t1)) t2 (H:t1 = t2) : interp (astgram_type t2).
   intros. rewrite <- H. apply v.
 Defined.
+Extraction Implicit cast_interp [t1 t2].
 
 Lemma astar_azero : forall ag cs v (H1:in_astgram ag cs v) (H2:ag = aStar aZero),
   cs = nil /\ @cast_interp ag v _ H2 = nil.
@@ -1145,6 +1241,7 @@ Qed.
 (** Optimize the [astgram] and optimize the resulting [xform]. *)
 Definition opt_agxf (t:type) (ag:astgram) (f:astgram_type ag ->> t) := 
   let (ag', f') := opt_ag ag in agxf ag' (xcomp f' f).
+Extraction Implicit opt_agxf [t].
 
 Lemma opt_agxf_corr1 t ag (f:astgram_type ag ->> t) cs v : 
   in_agxf (existT _ ag f) cs v -> in_agxf (opt_agxf ag f) cs v.
@@ -1557,7 +1654,7 @@ Fixpoint derivs_and_split (ag:astgram) (cs:list char_p) :
     | nil => agxf ag (Xid _)
     | c::cs' => let (ag1, x1) := deriv_and_split ag c in 
                 let (ag2, x2) := derivs_and_split ag1 cs' in 
-                  agxf ag2 (xcomp' x1 x2)
+                  agxf ag2 (xopt (xcomp' x1 x2))
   end.
 
 Lemma derivs_and_split_corr1 cs ag v : 
@@ -1567,9 +1664,10 @@ Proof.
   generalize (deriv_and_split_corr1 H). intros. specialize (H0 _ _ (eq_refl _)).
   unfold in_agxf in *. destruct (deriv_and_split ag a). mysimp. 
   remember (derivs_and_split x cs) as e. destruct e. 
-  unfold agxf. specialize (IHcs _ _ H0). rewrite <- Heqe in IHcs. mysimp. 
+  unfold agxf. 
+  specialize (IHcs _ _ H0). rewrite <- Heqe in IHcs. mysimp. 
   subst. generalize (xcomp'_corr x0 x3 x4). intros.
-  exists x4. split ; auto.
+  exists x4. split ; auto. rewrite xopt_corr. auto.
 Qed.
 
 Lemma derivs_and_split_corr2 cs ag v : 
@@ -1579,7 +1677,8 @@ Proof.
   intros. generalize (deriv_and_split_corr2 ag a). intros.
   remember (deriv_and_split ag a) as e ; destruct e.  
   remember (derivs_and_split x cs) as e2 ; destruct e2. 
-  unfold in_agxf in H. unfold agxf in H. mysimp. eapply H0.
+  unfold in_agxf in H. unfold agxf in H. mysimp. rewrite xopt_corr in H1.
+  eapply H0.
   generalize (xcomp'_corr x0 x2 x3). intros. rewrite H2 in H1. simpl in H1.
   unfold in_agxf in IHcs. specialize (IHcs x). 
   rewrite <- Heqe2 in IHcs. subst. exists (xinterp x2 x3). split ; auto.
@@ -1596,6 +1695,7 @@ Definition parse t (g:grammar t) (cs : list char_p) : list (interp t) :=
   let (ag, fuser) := split_astgram g in 
     let (agfinal, xfinal) := derivs_and_split ag cs in 
     List.map (fun x => fuser (xinterp xfinal x)) (astgram_extract_nil agfinal).
+Extraction Implicit parse [t].
 
 Lemma parse_corr1 : forall t (g:grammar t) cs v, in_grammar g cs v -> In v (parse g cs).
 Proof.
@@ -1634,7 +1734,7 @@ Section DFA.
   Record entry_t(row:nat)(states:states_t) := 
     { next_state : nat ; 
       next_state_lt : next_state < length states ; 
-      next_xform : astgram_type (states.[next_state]) ->> astgram_type (states.[row])
+      next_xform : interp (astgram_type (states.[next_state])) -> interp (astgram_type (states.[row])) 
     }.
 
   Definition row_t(i:nat)(s:states_t) := list (entry_t i s).
@@ -1833,6 +1933,12 @@ Section DFA.
   Definition build_reject_table (s:states_t) : list bool := 
     List.map always_rejects s.
 
+  (** Abstract this development over the derivs_and_split function so we
+      can plug in a different version below. *)
+  Section ABS_DERIVS_AND_SPLIT.
+    Variable derivs : forall (ag:astgram)(cs:list char_p), 
+      {ag2:astgram & astgram_type ag2 ->> astgram_type ag}.
+
   (** Generate the transition matrix row for the state corresponding to the
       astgram [g].  In general, this will add new states. *)
   Section GENROW.
@@ -1849,13 +1955,13 @@ Section DFA.
         match n with 
           | 0 => existT _ nil nil
           | S n' => 
-            let (g',x) := derivs_and_split g (token_id_to_chars tid) in
+            let (g',x) := derivs g (token_id_to_chars tid) in
               let p := find_or_add g' s in 
                 let (s2, row) := gen_row' n' (s ++ (fst p)) (1 + tid) _ _ in 
                   let e : entry_t gpos ((s ++ (fst p)) ++ s2) := 
                     {| next_state := (snd p) ; 
                        next_state_lt := _ ; 
-                       next_xform := (xcoerce x _ _) |} in
+                       next_xform := xinterp (xcoerce x _ _) |} in
                     existT _ ((fst p) ++ s2) _
         end). rewrite nth_lt ; auto. rewrite app_length. omega.
       generalize (find_index_some g' s).
@@ -1879,9 +1985,9 @@ Section DFA.
     refine (
       {| next_state := next_state e ; 
          next_state_lt := app_length_lt s s1 (next_state_lt e) ; 
-         next_xform := xcoerce (next_xform e) _ _
+         next_xform := _ (next_xform e) 
       |}
-    ) ; rewrite app_nth1 ; auto. apply (next_state_lt e). 
+    ). rewrite app_nth1. rewrite nth_lt ; auto. apply (next_state_lt e).
   Defined.
 
   Definition coerce_transitions s1 s (ts:transitions_t s) : transitions_t (s ++ s1) := 
@@ -2064,11 +2170,14 @@ Section DFA.
     intros. rewrite H. auto.
   Qed.
 
+(*
   Definition lookup_trans (d:DFA) (row : nat) (col : nat) : 
-    option { ag : astgram & astgram_type ag ->> astgram_type (dfa_states d .[row]) } := 
+    option { ag : astgram & 
+      interp (astgram_type ag) -> interp (astgram_type (dfa_states d .[row])) } := 
     match nth_error (dfa_transition d) row as x return 
       match x with | Some r => row_num r = row | None => True end ->
-      option { ag : astgram & astgram_type ag ->> astgram_type (dfa_states d .[row])}
+      option { ag : astgram & 
+        interp (astgram_type ag) -> interp (astgram_type (dfa_states d .[row]))}
       with
       | None => fun _ => None
       | Some r => fun H => 
@@ -2079,7 +2188,6 @@ Section DFA.
         end
     end (dfa_transition_r d row).
     
-(*
   Lemma gen_row_is_deriv g gpos n s tid H H1 : 
     match gen_row' n s tid H H1 with 
       | existT s' r => 
@@ -2115,9 +2223,13 @@ Section DFA.
     Variable d : DFA.
     Variable t : type.
 
+    Definition coerce_dom (A A':type) (H:A=A') (B:Type) (f:interp A->B) : interp A' -> B.
+      intros A A' H. rewrite H. apply (fun B (f:interp A'->B) => f).
+    Defined.
+
     Fixpoint table_parse' (i:nat) (ts:list token_id) 
-      (f:astgram_type ((dfa_states d).[i]) ->> t) : 
-      option { a : astgram & ((astgram_type a ->> t) * (list token_id))%type } := 
+      (f:interp (astgram_type ((dfa_states d).[i])) -> interp t) : 
+      option { a:astgram & ((interp (astgram_type a) -> interp t) * (list token_id))%type } := 
         if nth i (dfa_accepts d) false then
           (* we are in an accepting state -- since this is shortest match, stop here *)
           Some (existT _ ((dfa_states d).[i])  (f, ts))
@@ -2143,11 +2255,16 @@ Section DFA.
                            compose the entry [e]'s [xform] with our accumulated
                            [xform]. *)
                         fun H' => table_parse' (next_state e) ts' 
-                          (xcomp (next_xform e) (xcoerce f (table_cast _ _ H) (eq_refl _)))
+                          (fun x => (coerce_dom (table_cast _ _ H) f) ((next_xform e) x))
                     end (eq_refl _)
               end (eq_refl _)
           end.
   End TABLE_PARSE.
+  End ABS_DERIVS_AND_SPLIT.
+
+  Definition coerce_rng (B B':type) (H:B=B') (A:Type) (f:A->interp B) : A->interp B'.
+    intros B B' H. rewrite H. apply (fun A (f:A->interp B') => f).
+  Defined.
 
   (** At the top-level, we take in a [grammar t], split it into an [astgram] [ag], and 
       fix-up function [f] that maps ASTs from [ag] into [t] values.  Then we build the
@@ -2159,21 +2276,70 @@ Section DFA.
   Definition table_parse n t (g:grammar t) (ts:list token_id) : 
     option ((list token_id) * list (interp t)) := 
     let (ag, f) := split_astgram g in 
-    match build_dfa n ag as d return (build_dfa n ag = d) -> _ with 
+    match build_dfa derivs_and_split n ag as d 
+      return (build_dfa derivs_and_split n ag = d) -> _ with 
       | None => fun _ => None
       | Some d => 
         fun H => 
-          match table_parse' d 0 ts (Xid _) with
+          match table_parse' d _ 0 ts (fun x => x) with
             | None => None
             | Some (existT a' (xf, ts')) => 
               let vs := astgram_extract_nil a' in
-                let xf' := xcoerce xf (eq_refl _) (dfa_zero_coerce _ _ H) in 
-                Some (ts', List.map (fun z => f (xinterp xf' z)) vs)
+                let xf' := coerce_rng (dfa_zero_coerce _ _ _ H) xf in 
+                Some (ts', List.map (fun z => f (xf' z)) vs)
           end
     end (eq_refl _).
 
-End DFA.
+  Record instParserState (t:type) := mkPS { 
+    dfa_ps : DFA ; 
+    row_ps : nat ; 
+    fixup_ps : fixfn ((dfa_states dfa_ps).[row_ps]) t
+  }.
 
+  Definition opt_initial_parser_state (n:nat) t (g:grammar t) : option (instParserState t) := 
+    let (ag, f) := split_astgram g in 
+      match build_dfa derivs_and_split n ag as x 
+        return build_dfa derivs_and_split n ag = x -> option (instParserState t) 
+        with 
+        | None => fun H => None
+        | Some d => fun H => 
+          Some (mkPS d 0 (coerce_dom (eq_sym (dfa_zero_coerce derivs_and_split n ag H)) f))
+      end (eq_refl _).  
+
+  Definition parse_token t (ps:instParserState t) (tk:token_id) : 
+    option (instParserState t * list (interp t)).
+  refine (fun t ps tk => 
+    let d := dfa_ps ps in 
+      match nth_error (dfa_transition d) (row_ps ps) as p return
+        (nth_error (dfa_transition d) (row_ps ps) = p) -> _ 
+        with 
+        | None => fun _ => None
+        | Some row => fun H => 
+          match nth_error (row_entries row) tk as q return
+            (nth_error (row_entries row) tk = q) -> _
+            with 
+            | None => fun _ => None
+            | Some e => fun H' => 
+              let f := next_xform e in 
+              let next_i := next_state e in 
+                if nth next_i (dfa_accepts d) false then
+                  let ag' := nth next_i (dfa_states d) aZero in 
+                    let vs := astgram_extract_nil ag' in 
+                      Some (ps, List.map (fun z => (fixup_ps ps) _) vs)
+                else 
+                  Some (mkPS d next_i (fun z => (fixup_ps ps) _), nil)
+          end (eq_refl _)
+      end (eq_refl _)
+  ) ; generalize (dfa_transition_r d (row_ps ps)) ; rewrite H ; intro g ; rewrite <- g ;
+  apply (f z).
+  Defined.
+
+End DFA.
+Extraction Implicit table_parse [t].
+Extraction Implicit opt_initial_parser_state [t].
+Extraction Implicit parse_token [t].
+
+(*
 (** Alas, the overhead of manipulating the types with the [xform]'s 
     makes the approach developed above unworkable.  In particular,
     the time it takes to construct the DFA table is just too long
@@ -2738,27 +2904,10 @@ Definition thunk {A B} (f:A -> B) (x:A) : memo B := Thunk (fun _ => f x).
 
 (** Now build optimizations for [astgram]s paired with [uform]s as done
     above with [xform]s and prove they are equivalent. *)
-(*
-Definition uassoc_left_sum t1 t2 t3 := 
-  Umatch (Uinl t3 (Uinl t2 Uid))
-         (Umatch (Uinl t3 (Uinr t1 Uid)) 
-                 (Uinr (Thunk (fun _ => Sum_t (force t1) (force t2))) Uid)).
-*)
 
 Fixpoint uappend_alt (ag1 ag2:astgram) : astgram * uform := 
   match ag1 with 
     | aZero => (ag2, Uinr (Val Void_t))
-(*
-   Too expensive to do all the time, so omit.  The longer proof of 
-   equivalence is also commented out below. 
-    | aAlt aga agb => 
-      let (agd, xd) := uappend_alt agb ag2 in 
-        let (agc, xc) := uappend_alt aga agd in 
-          (agc, Ucomp xc (Ucomp (Umatch (Uinl (thunk astgram_type (aAlt agb ag2)) Uid)
-                                        (Uinr (thunk astgram_type aga) xd))
-                                (uassoc_left_sum (thunk astgram_type aga)
-                                  (thunk astgram_type agb) (thunk astgram_type ag2))))
-*)
     | ag1' => 
       match ag2 with 
         | aZero => (ag1', Uinl (Val Void_t))
@@ -2777,44 +2926,11 @@ Proof.
   destruct ag1 ; try (simpl ; auto ; fail) ; 
     try (simpl ; destruct ag2 ; simpl ; auto ; fail).
 Qed.
-(*
-  induction ag1 ; try (simpl ; auto ; fail) ; 
-    try (simpl ; destruct ag2 ; simpl ; auto ; fail).
-  intros. simpl. fold astgram_type. specialize (IHag1_2 ag2).
-  remember (append_alt ag1_2 ag2) as e1 ; destruct e1. destruct IHag1_2 ; subst.
-  specialize (IHag1_1 (fst (uappend_alt ag1_2 ag2))). 
-  remember (append_alt ag1_1 (fst (uappend_alt ag1_2 ag2))) as e2 ; destruct e2. 
-  simpl. destruct IHag1_1. subst. remember (uappend_alt ag1_2 ag2) as e3 ; 
-  destruct e3. simpl in *. remember (uappend_alt ag1_1 a) as e4. destruct e4. 
-  split ; auto. simpl in H1. simpl. rewrite H1. rewrite H0. unfold sumbool_rec, 
-  sumbool_rect. 
-  assert (type_dec (astgram_type ag1_1) (astgram_type ag1_1) = left (eq_refl _)).
-  destruct (type_dec (astgram_type ag1_1) (astgram_type ag1_1)) ; 
-  try congruence. rewrite (proof_irrelevance _ e (eq_refl _)). auto. rewrite H.
-  assert (type_dec (astgram_type ag1_2) (astgram_type ag1_2) = left (eq_refl _)). 
-  destruct (type_dec (astgram_type ag1_2) (astgram_type ag1_2)) ; try congruence.
-  rewrite (proof_irrelevance _ e (eq_refl _)). auto. rewrite H2. simpl.
-  assert (type_dec (astgram_type ag2) (astgram_type ag2) = left (eq_refl _)).
-  destruct (type_dec (astgram_type ag2) (astgram_type ag2)) ; try congruence.
-  rewrite (proof_irrelevance _ e (eq_refl _)). auto. rewrite H3. simpl.
-  rewrite H2. simpl. rewrite H3. simpl. rewrite H. simpl. rewrite H2. simpl.
-  rewrite H3. simpl. uc_simp.
-Qed.
-*)
 
 Fixpoint uappend_cat (ag1 ag2:astgram) : astgram * uform := 
   match ag1 with 
     | aZero => (aZero, Uzero (thunk astgram_type (aCat ag1 ag2)))
     | aEps => (ag2, Upair Uunit Uid)
-(*
-   Too expensive to do all the time, so commented out.  The proof of
-   equivalence for this case is also commented out below. 
-    | aCat aga agb => 
-      let (agd, xd) := uappend_cat agb ag2 in 
-        let (agc, xc) := uappend_cat aga agd in 
-          (agc, Ucomp xc (Ucomp (Upair (Ufst Uid) (Usnd xd)) 
-            (Upair (Upair (Ufst Uid) (Usnd (Ufst Uid))) (Usnd (Usnd Uid)))))
-*)
     | ag1' => 
       match ag2 with 
         | aZero => (aZero, Uzero (thunk astgram_type (aCat ag1' ag2)))
@@ -2834,18 +2950,6 @@ Proof.
   destruct ag1 ; try (simpl ; auto ; fail) ; 
     try (destruct ag2 ; simpl ; auto ; fail).
 Qed.
-(*
-  intros ag1. induction ag1; try (simpl ; auto ; fail) ; 
-  try (destruct ag2 ; simpl ; auto ; fail). intros.
-  simpl. fold astgram_type. specialize (IHag1_2 ag2). remember (append_cat ag1_2 ag2) as e1.
-  destruct e1. destruct IHag1_2 ; subst. specialize (IHag1_1 (fst (uappend_cat ag1_2 ag2))).
-  remember (append_cat ag1_1 (fst (uappend_cat ag1_2 ag2))) as e2. destruct e2.
-  simpl in *. destruct IHag1_1 ; subst. simpl in *.
-  remember (uappend_cat ag1_2 ag2) as e3 ; destruct e3. simpl in *.
-  remember (uappend_cat ag1_1 a) as e4 ; destruct e4. simpl in *. split ; auto. 
-  rewrite H1. rewrite H0. simpl. unfold assoc_left_pair. auto.
-Qed.
-*)
 
 (** Optimize an [astgram], producing a new [astgram] and [uform] *)
 Definition uopt_ag (ag:astgram) : astgram * uform := 
@@ -2853,9 +2957,6 @@ Definition uopt_ag (ag:astgram) : astgram * uform :=
     | aAlt ag1 ag2 => uappend_alt ag1 ag2
     | aCat ag1 ag2 => uappend_cat ag1 ag2
     | aStar aZero => (aEps, Uempty (Val Void_t))
-      (*
-    | aStar (aStar ag') => (aStar ag', Ucons Uid (Uempty (thunk astgram_type (aStar ag'))))
-    *)
     | ag' => (ag', Uid)
   end.
 
@@ -3042,7 +3143,7 @@ Fixpoint uderivs_and_split (ag:astgram) (cs:list char_p) : astgram * uform :=
     | c::cs' => 
       let (ag1, x1) := uderiv_and_split ag c in 
         let (ag2, x2) := uderivs_and_split ag1 cs' in 
-          (ag2, ucomp' x1 x2)
+          (ag2, uopt (ucomp' x1 x2))
   end.
 
 Lemma uderivs_and_split_corr cs ag : 
@@ -3060,9 +3161,176 @@ Proof.
   remember (derivs_and_split (fst (uderiv_and_split ag a)) cs) as e2. destruct e2. 
   destruct IHcs. subst. simpl. remember (uderiv_and_split ag a) as e3. destruct e3.
   simpl in *. remember (uderivs_and_split a0 cs) as e4. destruct e4 ; simpl in *.
-  split ; auto. eapply ucomp'_corr ; auto.
-Qed.
+  split ; auto. generalize (ucomp'_corr _ H0 _ H1). intros.
+
+Check uopt_corr. generalize (uopt_corr (xcomp' x0 x1)). intro. rewrite <- H.
+  assert (H2 : ucomp' u u0 = erase (xcomp' x0 x1)) ; [ idtac | rewrite H2 ; auto ].
   
+Check ucomp'_corr.
+  eapply ucomp'_corr ; auto.
+Qed.
+
+Definition untyped_derivs_and_split (ag:astgram) (cs:list char_p) : 
+  {ag2:astgram & astgram_type ag2 ->> astgram_type ag}.
+  refine (
+    fun ag cs => 
+      match uderivs_and_split ag cs as z return 
+        uderivs_and_split ag cs = z -> {ag2:astgram & astgram_type ag2 ->> astgram_type ag}
+        with 
+          | (ag2,u) => 
+            fun H1 => 
+              match decorate (astgram_type ag2) u as d 
+                return (decorate (astgram_type ag2) u = d) ->   
+                {ag2:astgram & astgram_type ag2 ->> astgram_type ag}
+                with 
+                | None => fun H => _
+                | Some (existT t x) => 
+                  fun H => 
+                    existT (fun ag0 => astgram_type ag0 ->> astgram_type ag) ag2 _
+              end (eq_refl (decorate (astgram_type ag2) u))
+      end (eq_refl (uderivs_and_split ag cs))
+      ). 
+  assert (t = astgram_type ag).
+  generalize (uderivs_and_split_corr cs ag). rewrite H1. simpl.
+  destruct (derivs_and_split ag cs). intros. destruct H0.
+  subst. rewrite H in H2. uc_simp. rewrite <- H0. apply x.
+  assert False.
+  generalize (uderivs_and_split_corr cs ag). rewrite H1. simpl.
+  destruct (derivs_and_split ag cs). intros. destruct H0. subst.
+  congruence. contradiction.
+Defined.
+
+Definition cast_memo (m1 m2:memo type) (H:m1=m2) : interp (force m1) -> interp (force m2).
+  intros m1 m2 H. rewrite H. apply (fun x => x).
+Defined.
+
+Definition uinterp (m1:memo type) (u:uform) :
+  option {m2 : memo type & interp (force m1) -> interp (force m2)}.
+refine (fix uinterp (m1:memo type) (u:uform) {struct u} :
+  option {m2 : memo type & interp (force m1) -> interp (force m2)} := 
+  match u with 
+    | Uid => Some (existT _ m1 (fun x => x))
+    | Uzero m => 
+      match (force m1) as t1 return option {m2:memo type & interp t1 -> interp (force m2)}
+        with 
+        | Void_t => Some (existT _ m (fun (x:interp Void_t) => match x with end))
+        | _ => None
+      end
+    | Ucomp u1 u2 => 
+      match uinterp m1 u1 with 
+        | None => None
+        | Some (existT m2 f1) => 
+          match uinterp m2 u2 with 
+            | None => None
+            | Some (existT m3 f2) => 
+              Some
+                (existT
+                   (fun m4 => interp (force m1) -> interp (force m4)) m3
+                   (fun x : interp (force m1) => f2 (f1 x)))
+          end
+      end
+    | Uchar c => 
+      Some (existT (fun m4 => interp (force m1) -> interp (force m4)) 
+        (Val Char_t) (fun x : interp (force m1) => c))
+    | Uunit => 
+      Some (existT (fun m4 => interp (force m1) -> interp (force m4)) 
+        (Val Unit_t) (fun x : interp (force m1) => tt))
+    | Uempty m => 
+      Some (existT (fun m4 => interp (force m1) -> interp (force m4)) 
+        (Thunk (fun _ => List_t (force m))) (fun x : interp (force m1) => nil))
+    | Upair u1 u2 => 
+      match uinterp m1 u1 with 
+        | None => None
+        | Some (existT ma fa) => 
+          match uinterp m1 u2 with 
+            | None => None
+            | Some (existT mb fb) => 
+              Some (existT (fun m4 => interp (force m1) -> interp (force m4))
+                (Thunk (fun _ => Pair_t (force ma) (force mb)))
+                (fun x : interp (force m1) => (fa x, fb x)))
+          end
+      end
+    | Ufst => 
+      match force m1 as t1 return option {m2:memo type & interp t1 -> interp (force m2)}
+        with 
+        | Pair_t ta tb => 
+          Some (existT (fun m4 => interp (Pair_t ta tb) -> interp (force m4))
+            (Val ta) (fun x => fst x))
+        | _ => None
+      end
+    | Usnd => 
+      match force m1 as t1 return option {m2:memo type & interp t1 -> interp (force m2)}
+        with 
+        | Pair_t ta tb => 
+          Some (existT (fun m4 => interp (Pair_t ta tb) -> interp (force m4))
+            (Val tb) (fun x => snd x))
+        | _ => None
+      end
+    | Uinl m => 
+      Some (existT (fun m4 => interp (force m1) -> interp (force m4)) 
+        (Thunk (fun _ => Sum_t (force m1) (force m))) (fun x : interp (force m1) => inl x))
+    | Uinr m => 
+      Some (existT (fun m4 => interp (force m1) -> interp (force m4)) 
+        (Thunk (fun _ => Sum_t (force m) (force m1))) (fun x : interp (force m1) => inr x))
+    | Umatch u1 u2 => 
+      match force m1 as t1 return option {m2:memo type & interp t1 -> interp (force m2)}
+        with 
+        | Sum_t ta tb => 
+          match uinterp (Val ta) u1 with 
+            | None => None
+            | Some (existT t1 f1) => 
+              match uinterp (Val tb) u2 with 
+                | None => None
+                | Some (existT t2 f2) => 
+                  match type_dec (force t1) (force t2) with 
+                    | left H => 
+                      Some (existT (fun m4 => interp (Sum_t ta tb) -> interp (force m4)) 
+                        t1 (fun x : interp (Sum_t ta tb) => 
+                             match x with 
+                               | inl a => f1 a
+                               | inr b => _
+                             end))
+                    | right H => None
+                  end
+              end
+          end
+        | _ => None
+      end
+    | Ucons u1 u2 => 
+      match uinterp m1 u1 with 
+        | None => None
+        | Some (existT t1 f1) => 
+          match uinterp m1 u2 with 
+            | None => None
+            | Some (existT t2 f2) => 
+              match type_dec (List_t (force t1)) (force t2) with 
+                | left H => 
+                  Some (existT (fun m4 => interp (force m1) -> interp (force m4)) 
+                    (Thunk (fun _ => (List_t (force t1))))
+                    (fun x : interp (force m1) => (f1 x) :: _))
+                | right H => None
+              end
+          end
+      end
+    | Umap u' => 
+      match force m1 as t1 return option {m2:memo type & interp t1 -> interp (force m2)}
+        with 
+        | List_t t => 
+          match uinterp (Val t) u' with 
+            | None => None
+            | Some (existT t2 f) => 
+              Some (existT (fun m4 => interp (List_t t) -> interp (force m4)) 
+                (Thunk (fun _ => List_t (force t2)))
+                (fun x : interp (List_t t) => List.map f x))
+          end
+        | _ => None
+      end
+  end
+). rewrite H. apply (f2 b).
+assert (interp (List_t (force t1)) = interp (force t2)).
+rewrite H. auto. simpl in H0. rewrite H0. apply (f2 x).
+Defined.
+
 (** Construction of "untyped" DFA. *)
 Section UDFA.
   Notation "s .[ i ] " := (nth i s aZero) (at level 40).
@@ -3092,9 +3360,10 @@ Section UDFA.
         | 0 => (nil, nil)
         | S n' => 
           let (g', u) := uderivs_and_split g (token_id_to_chars tid) in 
+            let uo := uopt u in 
             let p := find_or_add g' s in 
               let (s2, row) := ugen_row' n' (1 + tid) (s ++ (fst p))  in
-              let e : uentry_t := {| unext_state := (snd p) ; unext_uform := uopt u |} in
+              let e : uentry_t := {| unext_state := (snd p) ; unext_uform := uo |} in
                 ((fst p) ++ s2, e::row)
       end.
     Definition ugen_row (s:states_t) : states_t * urow_t := 
@@ -3178,18 +3447,21 @@ Section UDFA.
         | None => None
         | Some (ag', u, ts') => 
           let vs := astgram_extract_nil ag' in 
-            match decorate (astgram_type ag') u with
+            match uinterp (Thunk (fun _ => astgram_type ag')) u with 
               | None => None
-              | Some (existT t' x) => 
-                match type_dec t' (astgram_type ag) with
+              | Some (existT m' f) => 
+                match type_dec (force m') (astgram_type ag) with 
                   | right _ => None
                   | left H => 
-                    let xf' : xform (astgram_type ag') (astgram_type ag) := 
-                      xcoerce x (eq_refl _) H in
-                      Some (ts', List.map (fun z => xinterp xf' z) vs)
+                    let xf' : interp (astgram_type ag') -> interp (astgram_type ag) := 
+                      (eq_rect (force m')
+                        (fun t : type => interp (astgram_type ag') -> interp t) f 
+                        (astgram_type ag) H)
+                      in 
+                      Some (ts', List.map xf' vs)
                 end
             end
-      end.
+      end. 
   End UTABLE_PARSE. 
 
   (** Given some fuel [n] and a grammar [g] of type [t], splits [g] into 
@@ -3211,7 +3483,6 @@ Section UDFA.
                     end)
         end.
 
-
   Record instParserState (t:type) := mkPS {
     udfa : UDFA;  (* the untyped parser table *)
     agram: astgram; (* the original astgram after spliting *)
@@ -3219,6 +3490,12 @@ Section UDFA.
 
     row : nat;  (* the current astgram *)
     uf : uform (* the untyped transform *)
+  }.
+
+  Record t_instParserState (t:type) := mkt_PS {
+    t_dfa : DFA;  (* the untyped parser table *)
+    t_row : nat;  (* the current astgram *)
+    t_f : interp (astgram_type (nth t_row (dfa_states t_dfa) aZero)) -> interp t
   }.
 
   Definition opt_initial_parser_state n t (g:grammar t)
@@ -3229,6 +3506,49 @@ Section UDFA.
           | Some d => Some (mkPS d f 0 Uid)
         end.
 
+  Definition t_opt_initial_parser_state n t (g:grammar t) : option (t_instParserState t) :=
+    let (ag, f) := split_astgram g in 
+      match build_dfa untyped_derivs_and_split n ag as z 
+        return (build_dfa untyped_derivs_and_split n ag = z) -> _ with 
+        | None => fun H => None
+        | Some d => fun H => 
+          Some (mkt_PS t d 0 
+            (eq_rect_r
+              (fun a => interp (astgram_type a) -> interp t) f
+               (build_dfa_zero untyped_derivs_and_split n ag H)))
+      end (eq_refl _).
+
+  Definition t_parse_token t (ps:t_instParserState t) (tk:token_id) :
+    option (t_instParserState t * list (interp t)).
+  refine (fun t ps tk => 
+    let d := t_dfa ps in 
+      match nth_error (dfa_transition d) (t_row ps) as p return 
+        (nth_error (dfa_transition d) (t_row ps) = p) -> _
+        with
+        | None => fun _ => None
+        | Some row => 
+          fun H => 
+          match nth_error (row_entries row) tk as q return 
+            (nth_error (row_entries row) tk = q) -> _
+            with 
+            | None => fun _ => None
+            | Some e => 
+              fun H' => 
+              let f := next_xform e in
+              let next_i := next_state e in
+                if nth next_i (dfa_accepts d) false then
+                  (* get to an acceptance state *)
+                  let ag' := nth next_i (dfa_states d) aZero in
+                    let vs := astgram_extract_nil ag' in 
+                      Some (ps, List.map (fun z => (t_f ps) _) vs)
+                else
+                  Some (mkt_PS t d next_i (fun z => (t_f ps) _),nil)
+          end (eq_refl _)
+      end (eq_refl _)) ; 
+    generalize (dfa_transition_r d) ; intro g ; specialize (g (t_row ps)) ;
+    rewrite H in g ; rewrite <- g ; apply (f z).
+  Defined.
+  
   Definition parse_token t (ps:instParserState t) (tk:token_id) : 
     option (instParserState t * list (interp t)) := 
     let d := udfa ps in
@@ -3265,5 +3585,6 @@ Section UDFA.
       end.
 
   End UDFA.
-
-End NewParser.
+*)
+(*End NewParser.*)
+(*End X86_BASE_PARSER.*)

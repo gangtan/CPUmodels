@@ -29,7 +29,7 @@ Local Open Scope Z_scope.
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 
-
+(*
 (* a module for generating the parser for x86 instructions *)
 Module X86_PARSER_ARG.
   Require Import X86Syntax.
@@ -120,13 +120,15 @@ Module X86_PARSER_ARG.
   Definition num_tokens : token_id := 256%nat.
   Definition token_id_to_chars : token_id -> list char_p := nat_explode.
 End X86_PARSER_ARG.
+*)
 
 Module X86_PARSER.
-  Module X86_BASE_PARSER := NewParser.NewParser(X86_PARSER_ARG).
+  (*Module X86_BASE_PARSER := NewParser.NewParser(X86_PARSER_ARG).*)
   Require Import X86Syntax.
   Require Import Bits.
+  (*Import X86_BASE_PARSER.*)
   Import X86_PARSER_ARG.
-  Import X86_BASE_PARSER.
+  Import NewParser.
 
   Definition option_t x := User_t (Option_t x).
   Definition int_t := User_t Int_t.
@@ -162,7 +164,33 @@ Module X86_PARSER.
   Definition alt t (p1 p2:grammar t) : grammar t := 
     Map _ (fun (x:interp (Sum_t t t)) => match x with | inl a => a | inr b => b end) 
     (Alt p1 p2).
-  Definition alts t (ps: list (grammar t)) : grammar t := List.fold_right (@alt t) (@never t) ps.
+  Fixpoint alts0 t (ps:list (grammar t)) : grammar t := 
+    match ps with 
+      | nil => @never t
+      | p::nil => p
+      | p::rest => alt p (alts0 rest)
+    end.
+
+  Fixpoint half A (xs ys zs: list A) : (list A) * (list A) := 
+    match xs with 
+      | nil => (ys,zs) 
+      | h::t => half t zs (h::ys)
+    end.
+
+  Fixpoint alts' n t (ps:list (grammar t)) : grammar t := 
+    match n, ps with 
+      | 0, _ => alts0 ps
+      | S n, nil => @never t
+      | S n, p::nil => p
+      | S n, ps => 
+        let (ps1,ps2) := half ps nil nil in 
+          let g1 := alts' n ps1 in 
+            let g2 := alts' n ps2 in 
+              alt g1 g2
+    end.
+
+  Definition alts t (ps:list (grammar t)) : grammar t := alts' 20 ps.
+
   Definition map t1 t2 (p:grammar t1) (f:interp t1 -> interp t2) : grammar t2 := 
     @Map t1 t2 f p.
   Implicit Arguments map [t1 t2].
@@ -212,19 +240,33 @@ Module X86_PARSER.
     bits s $ p @ (@snd _ _).
   Infix "$$" := bitsleft (right associativity, at level 70).
 
-  Definition anybit : grammar Char_t := Any.
+  (* Mapping old definitions to new -- we should substitute these away when
+     we replace Decode.v with NewDecode.v. *)
+  Definition parser := grammar.
+  Definition char_t := Char_t.
+  Definition result_m := interp.
+  Definition result := type.
+  Definition pair_t := Pair_t.
+  Definition list_t := List_t.
+  Definition unit_t := Unit_t.
+  Definition tipe_t := User_t.
+  Definition Any_p := Any.
+  Definition Eps_p := Eps.
+
+  (* These definitions are copied verbatim from the latest version of Decode.v. *)
+  Definition anybit : parser char_t := Any_p.
   Definition field(n:nat) := (field' n) @ (bits2int n).
-  Definition reg := (field 3) @ (Z_to_register : _ -> interp register_t). 
-  Definition fpu_reg := (field 3) @ (@Word.repr 2 :_ -> interp fpu_register_t).
-  Definition mmx_reg := (field 3) @ (Z_to_mmx_register : _ -> interp mmx_register_t).
-  Definition sse_reg := (field 3) @ (Z_to_sse_register : _ -> interp sse_register_t).
-  Definition byte := (field 8) @ (@Word.repr 7 : _ -> interp byte_t).
- (* Definition halfword := (field 16) @ (@Word.repr 15 : _ -> interp half_t).
-  Definition word := (field 32) @ (@Word.repr 31 : _ -> interp word_t). *)
+  Definition reg := (field 3) @ (Z_to_register : _ -> result_m register_t). 
+  Definition fpu_reg := (field 3) @ (@Word.repr 2 :_ -> result_m fpu_register_t).
+  Definition mmx_reg := (field 3) @ (Z_to_mmx_register : _ -> result_m mmx_register_t).
+  Definition sse_reg := (field 3) @ (Z_to_sse_register : _ -> result_m sse_register_t).
+  Definition byte := (field 8) @ (@Word.repr 7 : _ -> result_m byte_t).
+ (* Definition halfword := (field 16) @ (@Word.repr 15 : _ -> result_m half_t).
+  Definition word := (field 32) @ (@Word.repr 31 : _ -> result_m word_t). *)
   Definition halfword := (byte $ byte) @ ((fun p =>
       let b0 := Word.repr (Word.unsigned (fst p)) in
       let b1 := Word.repr (Word.unsigned (snd p)) in
-        Word.or (Word.shl b1 (Word.repr 8)) b0): _ -> interp half_t).
+        Word.or (Word.shl b1 (Word.repr 8)) b0): _ -> result_m half_t).
   Definition word := (byte $ byte $ byte $ byte) @
     ((fun p => 
         let b0 := zero_extend8_32 (fst p) in
@@ -235,10 +277,10 @@ Module X86_PARSER.
          let w2 := Word.shl b2 (Word.repr 16) in
          let w3 := Word.shl b3 (Word.repr 24) in
           Word.or w3 (Word.or w2 (Word.or w1 b0)))
-    : _ -> interp word_t).
+    : _ -> result_m word_t).
 
-  Definition scale_p := (field 2) @ (Z_to_scale : _ -> interp scale_t).
-  Definition tttn := (field 4) @ (Z_to_condition_type : _ -> interp condition_t).
+  Definition scale_p := (field 2) @ (Z_to_scale : _ -> result_m scale_t).
+  Definition tttn := (field 4) @ (Z_to_condition_type : _ -> result_m condition_t).
 
   (* This is used in a strange edge-case for modrm parsing. See the
      footnotes on p37 of the manual in the repo This is a case where I
@@ -248,17 +290,17 @@ Module X86_PARSER.
      so I replaced si, which used this and another pattern for [bits "100"]
      to the simpler case below -- helps to avoid some explosions in the 
      definitions. *)
-  Definition reg_no_esp : grammar register_t :=
+  Definition reg_no_esp : parser register_t :=
      (bits "000" |+| bits "001" |+| bits "010" |+|
      bits "011" |+| (* bits "100" <- this is esp *)  bits "101" |+|
      bits "110" |+| bits "111") @ 
-       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> interp register_t).
+       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> result_m register_t).
 
-  Definition reg_no_ebp : grammar register_t :=
+  Definition reg_no_ebp : parser register_t :=
      (bits "000" |+| bits "001" |+| bits "010" |+|
      bits "011" |+|  bits "100"  (* |+| bits "101" <- this is ebp *) |+|
      bits "110" |+| bits "111") @ 
-       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> interp register_t).
+       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> result_m register_t).
 
   Definition si := 
     (scale_p $ reg) @ (fun p => match snd p with 
@@ -269,7 +311,7 @@ Module X86_PARSER.
   Definition sib := si $ reg.
 
   (* These next 4 parsers are used in the definition of the mod/rm parser *)
-  Definition rm00 : grammar address_t := 
+  Definition rm00 : parser address_t := 
     (     bits "000" 
       |+| bits "001" 
       |+| bits "010" 
@@ -282,19 +324,19 @@ Module X86_PARSER.
           (fun p => match p with
                       | (_,(si,base)) => 
                         (mkAddress (Word.repr 0) (Some base) si)
-                    end : interp address_t)     
+                    end : result_m address_t)     
       |+| bits "100" $ si $ bits "101" $ word @
           (fun p => match p with
                       | (_,(si,(_, disp))) => 
-                        (mkAddress disp (None) si)
-                    end : interp address_t)
+                        (mkAddress disp None si)
+                    end : result_m address_t)
       |+| bits "101" $ word @
           (fun p => match p with 
                       | (_, disp) => 
                         (mkAddress disp None None)
                     end %% address_t).  
 
-  Definition rm01 : grammar address_t := 
+  Definition rm01 : parser address_t := 
     ((    bits "000" 
       |+| bits "001" 
       |+| bits "010" 
@@ -315,7 +357,7 @@ Module X86_PARSER.
                 (mkAddress (sign_extend8_32 disp) (Some base) (si))
             end %% address_t).
 
-  Definition rm10 : grammar address_t := 
+  Definition rm10 : parser address_t := 
     ((    bits "000" 
       |+| bits "001" 
       |+| bits "010" 
@@ -336,82 +378,82 @@ Module X86_PARSER.
             end %% address_t).
 
   (* a general modrm parser for integer, floating-point, sse, mmx instructions *)
-  Definition modrm_gen (res_t: type) 
-    (reg_p : grammar res_t)  (* the parser that parse a register *)
-    (addr_op : address -> interp res_t) (* the constructor that consumes an address *)
-    : grammar (Pair_t res_t res_t) :=
+  Definition modrm_gen (res_t: result) 
+    (reg_p : parser res_t)  (* the parser that parse a register *)
+    (addr_op : address -> result_m res_t) (* the constructor that consumes an address *)
+    : parser (pair_t res_t res_t) :=
     (     ("00" $$ reg_p $ rm00) 
       |+| ("01" $$ reg_p $ rm01)
       |+| ("10" $$ reg_p $ rm10)) @
             (fun p => match p with
                       | (op1, addr) => (op1, addr_op addr)
-                      end %% (Pair_t res_t res_t))
+                      end %% (pair_t res_t res_t))
     |+| ("11" $$ reg_p $ reg_p) @
     (fun p => match p with 
                 | (op1, op2) => (op1, op2)
-              end %% (Pair_t res_t res_t)).
+              end %% (pair_t res_t res_t)).
   Implicit Arguments modrm_gen [res_t].
 
-  Definition reg_op : grammar operand_t := reg @ (fun x => Reg_op x : interp operand_t).
+  Definition reg_op : parser operand_t := reg @ (fun x => Reg_op x : result_m operand_t).
 
-  Definition modrm : grammar (Pair_t operand_t operand_t) := 
+  Definition modrm : parser (pair_t operand_t operand_t) := 
     modrm_gen reg_op Address_op.
 
-  Definition mmx_reg_op := mmx_reg @ (fun r => MMX_Reg_op r : interp mmx_operand_t).
+  Definition mmx_reg_op := mmx_reg @ (fun r => MMX_Reg_op r : result_m mmx_operand_t).
 
-  Definition modrm_mmx : grammar (Pair_t mmx_operand_t mmx_operand_t) := 
+  Definition modrm_mmx : parser (pair_t mmx_operand_t mmx_operand_t) := 
     modrm_gen mmx_reg_op MMX_Addr_op.
 
-  Definition sse_reg_op := sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t).
+  Definition sse_reg_op := sse_reg @ (fun r => SSE_XMM_Reg_op r : result_m sse_operand_t).
 
   (* mod xmmreg r/m in manual*)
-  Definition modrm_xmm : grammar (Pair_t sse_operand_t sse_operand_t) := 
+  Definition modrm_xmm : parser (pair_t sse_operand_t sse_operand_t) := 
     modrm_gen sse_reg_op SSE_Addr_op.
 
   (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
-  Definition modrm_mm : grammar (Pair_t sse_operand_t sse_operand_t) := 
+  Definition modrm_mm : parser (pair_t sse_operand_t sse_operand_t) := 
     modrm_gen 
-      (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t))
+      (mmx_reg @ (fun r => SSE_MM_Reg_op r : result_m sse_operand_t))
       SSE_Addr_op.
 
 
   (* same as modrm_gen but no mod "11" case;
      that is, the second operand must be a mem operand *)
-  Definition modrm_gen_noreg (reg_t res_t: type) 
-    (reg_p : grammar reg_t) 
-    (addr_op : address -> interp res_t)
-    : grammar (Pair_t reg_t res_t) :=
+  Definition modrm_gen_noreg (reg_t res_t: result) 
+    (reg_p : parser reg_t) 
+    (addr_op : address -> result_m res_t)
+    : parser (pair_t reg_t res_t) :=
     (     ("00" $$ reg_p $ rm00) 
       |+| ("01" $$ reg_p $ rm01)
       |+| ("10" $$ reg_p $ rm10)) @
             (fun p => match p with
                       | (op1, addr) => (op1, addr_op addr)
-                      end %% (Pair_t reg_t res_t)).
+                      end %% (pair_t reg_t res_t)).
   Implicit Arguments modrm_gen_noreg [reg_t res_t].
 
-  Definition modrm_noreg : grammar (Pair_t register_t operand_t) := 
-    modrm_gen_noreg reg (Address_op: address -> interp operand_t).
+  Definition modrm_noreg : parser (pair_t register_t operand_t) := 
+    modrm_gen_noreg reg (Address_op: address -> result_m operand_t).
 
-  Definition modrm_xmm_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
-    modrm_gen_noreg sse_reg_op (SSE_Addr_op: address -> interp sse_operand_t).
+  Definition modrm_xmm_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen_noreg sse_reg_op (SSE_Addr_op: address -> result_m sse_operand_t).
 
   (* general-purpose regs used in SSE instructions *)
-  Definition modrm_xmm_gp_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
+  Definition modrm_xmm_gp_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
     modrm_gen_noreg 
-      (reg @ (fun r => SSE_GP_Reg_op r : interp sse_operand_t))
-      (SSE_Addr_op : address -> interp sse_operand_t).
+      (reg @ (fun r => SSE_GP_Reg_op r : result_m sse_operand_t))
+      (SSE_Addr_op : address -> result_m sse_operand_t).
 
-  Definition modrm_mm_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
+  Definition modrm_mm_noreg : parser (pair_t sse_operand_t sse_operand_t) := 
     modrm_gen_noreg
-      (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t))
-      (SSE_Addr_op : address -> interp sse_operand_t).
+      (mmx_reg @ (fun r => SSE_MM_Reg_op r : result_m sse_operand_t))
+      (SSE_Addr_op : address -> result_m sse_operand_t).
 
 
   (* Similar to mod/rm parser except that the register field is fixed to a
    * particular bit-pattern, and the pattern starting with "11" is excluded. *)
-  Definition ext_op_modrm_gen (res_t: type) 
-    (addr_op : address -> interp res_t)
-    (bs:string) : grammar res_t :=
+  Definition ext_op_modrm_gen (res_t: result) 
+    (addr_op : address -> result_m res_t)
+    (bs:string) : parser res_t :=
     (      (bits "00" $ bits bs $ rm00)
      |+|   (bits "01" $ bits bs $ rm01)
      |+|   (bits "10" $ bits bs $ rm10) ) @
@@ -420,37 +462,46 @@ Module X86_PARSER.
                      end %% res_t).
   Implicit Arguments ext_op_modrm_gen [res_t].
 
-  Definition ext_op_modrm : string -> grammar operand_t := 
-    ext_op_modrm_gen (Address_op: address -> interp operand_t).
+  Definition ext_op_modrm : string -> parser operand_t := 
+    ext_op_modrm_gen (Address_op: address -> result_m operand_t).
   
   (*mod^A "bbb" mem in manual for SSE instructions*)
-  Definition ext_op_modrm_sse : string -> grammar sse_operand_t := 
-    ext_op_modrm_gen (SSE_Addr_op: address -> interp sse_operand_t).
+  Definition ext_op_modrm_sse : string -> parser sse_operand_t := 
+    ext_op_modrm_gen (SSE_Addr_op: address -> result_m sse_operand_t).
     
-  Definition ext_op_modrm_FPM16 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM16_op: address -> interp fp_operand_t).
+  Definition ext_op_modrm_FPM16 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM16_op: address -> result_m fp_operand_t).
 
-  Definition ext_op_modrm_FPM32 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM32_op: address -> interp fp_operand_t).
+  Definition ext_op_modrm_FPM32 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM32_op: address -> result_m fp_operand_t).
 
-  Definition ext_op_modrm_FPM64 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM64_op: address -> interp fp_operand_t).
+  Definition ext_op_modrm_FPM64 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM64_op: address -> result_m fp_operand_t).
 
-  Definition ext_op_modrm_FPM80 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM80_op: address -> interp fp_operand_t).
-    
+  Definition ext_op_modrm_FPM80 : string -> parser fp_operand_t := 
+    ext_op_modrm_gen (FPM80_op: address -> result_m fp_operand_t).
 
-  Definition ext_op_modrm2(bs:string) : grammar operand_t :=
-    (     ("00" $$ bits bs $ rm00) 
-      |+| ("01" $$ bits bs $ rm01)
-      |+| ("10" $$ bits bs $ rm10)) @
-            (fun p => match p with
-                      | (_,addr) => Address_op addr
-                      end %% operand_t)
-   |+| ("11" $$ bits bs $ reg_op) @ 
-          (fun p => match p with 
-                      | (_, op) => op
-                    end %% operand_t).
+  (* Similar to mod/rm parser except that the register field is fixed to a
+   * particular bit-pattern*)
+  Definition ext_op_modrm2_gen (res_t: result) 
+    (reg_p: parser res_t)
+    (addr_op: address -> result_m res_t)
+    (bs:string) : parser res_t :=
+    (      (bits "00" $ bits bs $ rm00)
+     |+|   (bits "01" $ bits bs $ rm01)
+     |+|   (bits "10" $ bits bs $ rm10) ) @
+           (fun p => match p with 
+                       | (_,(_,addr)) => addr_op addr
+                     end %% res_t)
+     |+|   ("11" $$ bits bs $ reg_p) @ 
+           (fun p => match p with 
+                       | (_, op) => op
+                     end %% res_t).
+  Implicit Arguments ext_op_modrm2_gen [res_t].
+
+  Definition ext_op_modrm2 :=
+    ext_op_modrm2_gen reg_op Address_op.
+
 
   (* Parsers for the individual instructions *)
   Definition AAA_p := bits "00110111" @ (fun _ => AAA %% instruction_t).
@@ -460,7 +511,7 @@ Module X86_PARSER.
 
   (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
 
-  Definition imm_op (opsize_override: bool) : grammar operand_t :=
+  Definition imm_op (opsize_override: bool) : parser operand_t :=
     match opsize_override with
       | false => word @ (fun w => Imm_op w %% operand_t)
       | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t)
@@ -471,7 +522,7 @@ Module X86_PARSER.
     (op2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
                       that determine the opcode *)
     (InstCon : bool->operand->operand->instr) (* instruction constructor *)
-    : grammar instruction_t
+    : parser instruction_t
     :=
   (* register/memory to register and vice versa -- the d bit specifies
    * the direction. *)
@@ -812,10 +863,10 @@ Module X86_PARSER.
   
   Definition MOVCR_p := 
     "0000" $$ "1111" $$ "0010" $$ "0010" $$ "11" $$ control_reg_p $ reg @ 
-    (fun p => MOVCR false (fst p) (snd p) %% instruction_t)
+    (fun p => MOVCR true (fst p) (snd p) %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "0010" $$ "0000" $$ "11" $$ control_reg_p $ reg @ 
-    (fun p => MOVCR true (fst p) (snd p) %% instruction_t).
+    (fun p => MOVCR false (fst p) (snd p) %% instruction_t).
 
   (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
    * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
@@ -832,10 +883,10 @@ Module X86_PARSER.
 
   Definition MOVDR_p := 
     "0000" $$ "1111" $$ "0010" $$ "0011" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR false (fst p) (snd p) %% instruction_t)
+    (fun p => MOVDR true (fst p) (snd p) %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "0010" $$ "0001" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR true (fst p) (snd p) %% instruction_t).
+    (fun p => MOVDR false (fst p) (snd p) %% instruction_t).
 
   Definition segment_reg_p := 
       bits "000" @ (fun _ => ES %% segment_register_t) 
@@ -845,21 +896,21 @@ Module X86_PARSER.
   |+| bits "100" @ (fun _ => FS %% segment_register_t) 
   |+| bits "101" @ (fun _ => GS %% segment_register_t).
 
-  Definition seg_modrm : grammar (Pair_t segment_register_t operand_t) := 
+  Definition seg_modrm : parser (pair_t segment_register_t operand_t) := 
     (     ("00" $$ segment_reg_p $ rm00) 
       |+| ("01" $$ segment_reg_p $ rm01)
       |+| ("10" $$ segment_reg_p $ rm10)) @
             (fun p => match p with
                       | (sr, addr) => (sr, Address_op addr)
-                      end %% (Pair_t segment_register_t operand_t))
+                      end %% (pair_t segment_register_t operand_t))
    |+| ("11" $$ segment_reg_p $ reg_op).
 
   Definition MOVSR_p := 
     "1000" $$ "1110" $$ seg_modrm @ 
-      (fun p => MOVSR false (fst p) (snd p) %% instruction_t)
+      (fun p => MOVSR true (fst p) (snd p) %% instruction_t)
   |+|
     "1000" $$ "1100" $$ seg_modrm @ 
-     (fun p => MOVSR true (fst p) (snd p) %% instruction_t).
+     (fun p => MOVSR false (fst p) (snd p) %% instruction_t).
 
   Definition MOVBE_p := 
     "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0000" $$ modrm @
@@ -884,13 +935,12 @@ Module X86_PARSER.
   "1111" $$ "011" $$ anybit $ ext_op_modrm2 "011" @ 
     (fun p => NEG (fst p) (snd p) %% instruction_t).
 
-  (*
   Definition NOP_p := 
+  (* The following is the same as the encoding of "XCHG EAX, EAX"
     "1001" $$ bits "0000" @ (fun _ => NOP None %% instruction_t)
-  |+|
+  |+| *)
     "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm "000" @ 
-    (fun op => NOP (Some op) %% instruction_t).
-  *)
+    (fun op => NOP op %% instruction_t).
 
   Definition NOT_p := 
     "1111" $$ "011" $$ anybit $ ext_op_modrm2 "010" @ 
@@ -1048,7 +1098,8 @@ Module X86_PARSER.
   Definition STI_p := "1111" $$ bits "1011" @ (fun _ => STI %% instruction_t).
   Definition STOS_p := "1010" $$ "101" $$ anybit @ 
     (fun x => STOS x %% instruction_t).
-  Definition STR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001" @ 
+  Definition STR_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "001" @ 
     (fun x => STR x %% instruction_t).
 
   Definition TEST_p (opsize_override: bool) := 
@@ -1784,30 +1835,30 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   (* Now glue all of the individual instruction parsers together into 
      one big parser.  *)
   
-  Fixpoint list2Pair_t (l: list type) :=
+  Fixpoint list2pair_t (l: list result) :=
     match l with
-      | nil => Unit_t
-      | r::r'::nil => Pair_t r r'
-      | r::l' => Pair_t r (list2Pair_t l')
+      | nil => unit_t
+      | r::r'::nil => pair_t r r'
+      | r::l' => pair_t r (list2pair_t l')
     end.
  
-  Definition lock_p : grammar lock_or_rep_t :=
+  Definition lock_p : parser lock_or_rep_t :=
     "1111" $$ bits "0000" @ (fun _ => lock %% lock_or_rep_t).
 
-  Definition rep_or_repn_p : grammar lock_or_rep_t :=
+  Definition rep_or_repn_p : parser lock_or_rep_t :=
     "1111" $$ bits "0010" @ (fun _ => repn %% lock_or_rep_t)
   |+|
     "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
 
-  Definition rep_p : grammar lock_or_rep_t :=
+  Definition rep_p : parser lock_or_rep_t :=
     "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
 
-  Definition lock_or_rep_p : grammar lock_or_rep_t :=
+  Definition lock_or_rep_p : parser lock_or_rep_t :=
     ("1111" $$ ( bits "0000" @ (fun _ => lock %% lock_or_rep_t)
                  |+| bits "0010" @ (fun _ => repn %% lock_or_rep_t)
                  |+| bits "0011" @ (fun _ => rep  %% lock_or_rep_t))).
 
-  Definition segment_override_p : grammar segment_register_t :=
+  Definition segment_override_p : parser segment_register_t :=
   ("0010" $$ bits "1110" @ (fun _ => CS %% segment_register_t)
     |+| "0011" $$ bits "0110" @ (fun _ => SS %% segment_register_t)
     |+| "0011" $$ bits "1110" @ (fun _ => DS %% segment_register_t)
@@ -1815,33 +1866,33 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     |+| "0110" $$ bits "0100" @ (fun _ => FS %% segment_register_t)
     |+| "0110" $$ bits "0101" @ (fun _ => GS %% segment_register_t)).
 
-  Definition op_override_p : grammar bool_t :=
+  Definition op_override_p : parser bool_t :=
     "0110" $$ bits "0110" @ (fun _ => true %% bool_t).
-  Definition addr_override_p : grammar bool_t :=
+  Definition addr_override_p : parser bool_t :=
     "0110" $$ bits "0111" @ (fun _ => true %% bool_t).
 
   (* Ok, now I want all permutations of the above four parsers. 
      I make a little perm2 combinator that takes two parsers and gives you
      p1 $ p2 |+| p2 $ p1, making sure to swap the results in the second case *)
   
-  Definition perm2 t1 t2 (p1: grammar t1) (p2: grammar t2) : grammar (Pair_t t1 t2) :=
+  Definition perm2 t1 t2 (p1: parser t1) (p2: parser t2) : parser (pair_t t1 t2) :=
       p1 $ p2 |+|
-      p2 $ p1 @ (fun p => match p with (a, b) => (b, a) %% Pair_t t1 t2 end).
+      p2 $ p1 @ (fun p => match p with (a, b) => (b, a) %% pair_t t1 t2 end).
 
   (* Then I build that up into a perm3 and perm4. One could make a recursive
      function to do this, but I didn't want to bother with the necessary
      proofs and type-system juggling.*) 
 
-  Definition perm3 t1 t2 t3 (p1: grammar t1) (p2: grammar t2) (p3: grammar t3)
-    : grammar (Pair_t t1 (Pair_t t2 t3)) :=
-    let r_t := Pair_t t1 (Pair_t t2 t3) in
+  Definition perm3 t1 t2 t3 (p1: parser t1) (p2: parser t2) (p3: parser t3)
+    : parser (pair_t t1 (pair_t t2 t3)) :=
+    let r_t := pair_t t1 (pair_t t2 t3) in
        p1 $ (perm2 p2 p3)
    |+| p2 $ (perm2 p1 p3) @ (fun p => match p with (b, (a, c)) => (a, (b, c)) %% r_t end)
    |+| p3 $ (perm2 p1 p2) @ (fun p => match p with (c, (a, b)) => (a, (b, c)) %% r_t end).
 
-  Definition perm4 t1 t2 t3 t4 (p1: grammar t1) (p2: grammar t2) (p3: grammar t3)
-    (p4: grammar t4) : grammar (Pair_t t1 (Pair_t t2 (Pair_t t3 t4))) :=
-    let r_t := Pair_t t1 (Pair_t t2 (Pair_t t3 t4)) in
+  Definition perm4 t1 t2 t3 t4 (p1: parser t1) (p2: parser t2) (p3: parser t3)
+    (p4: parser t4) : parser (pair_t t1 (pair_t t2 (pair_t t3 t4))) :=
+    let r_t := pair_t t1 (pair_t t2 (pair_t t3 t4)) in
        p1 $ (perm3 p2 p3 p4)
    |+| p2 $ (perm3 p1 p3 p4) @ 
          (fun p => match p with (b, (a, (c, d))) => (a, (b, (c, d))) %% r_t end)
@@ -1858,10 +1909,10 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      Instead we have a different combinator, called option_perm, that 
      handles this without introducing extra ambiguity *)
 
-  Definition option_perm t1 (p1: grammar (User_t t1)) 
-     : grammar (option_t t1) :=
+  Definition option_perm t1 (p1: parser (tipe_t t1)) 
+     : parser (option_t t1) :=
      let r_t := option_t t1 in 
-         Eps @ (fun p => None %% r_t)  
+         Eps_p @ (fun p => None %% r_t)  
      |+| p1 @ (fun p => (Some p) %% r_t ).
 
 
@@ -1870,19 +1921,19 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      Parser at the moment) we can't just have a signature like parser
      t1 -> parser t2 -> parser (option_t t1) (option_t t2)) *)
     
-  Definition option_perm2 t1 t2 (p1: grammar (User_t t1)) (p2: grammar (User_t t2)) 
-     : grammar (Pair_t (option_t t1) (option_t t2)) :=
-     let r_t := Pair_t (option_t t1) (option_t t2) in 
-         Eps @ (fun p => (None, None) %% r_t)  
+  Definition option_perm2 t1 t2 (p1: parser (tipe_t t1)) (p2: parser (tipe_t t2)) 
+     : parser (pair_t (option_t t1) (option_t t2)) :=
+     let r_t := pair_t (option_t t1) (option_t t2) in 
+         Eps_p @ (fun p => (None, None) %% r_t)  
      |+| p1 @ (fun p => (Some p, None) %% r_t ) 
      |+| p2 @ (fun p => (None, Some p) %% r_t) 
      |+| perm2 p1 p2 @ (fun p => match p with (a, b) => (Some a, Some b) %%r_t end). 
 
-  Definition option_perm3 t1 t2 t3 (p1:grammar(User_t t1)) (p2:grammar(User_t t2))
-    (p3:grammar(User_t t3)): grammar(Pair_t(option_t t1)(Pair_t(option_t t2) (option_t t3)))
+  Definition option_perm3 t1 t2 t3 (p1:parser(tipe_t t1)) (p2:parser(tipe_t t2))
+    (p3:parser(tipe_t t3)): parser(pair_t(option_t t1)(pair_t(option_t t2) (option_t t3)))
     :=
-    let r_t := Pair_t(option_t t1)(Pair_t(option_t t2) (option_t t3))  in
-        Eps @ (fun p => (None, (None, None)) %% r_t)
+    let r_t := pair_t(option_t t1)(pair_t(option_t t2) (option_t t3))  in
+        Eps_p @ (fun p => (None, (None, None)) %% r_t)
     |+| p1 @ (fun p => (Some p, (None, None)) %% r_t)
     |+| p2 @ (fun p => (None, (Some p, None)) %% r_t)
     |+| p3 @ (fun p => (None, (None, Some p)) %% r_t)
@@ -1893,18 +1944,18 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
                                     => (Some a, (Some b, Some c)) %%r_t end).
 
   (* t1 is optional, but t2 is a must *)
-  Definition option_perm2_variation t1 t2 (p1: grammar (User_t t1))
-    (p2: grammar (User_t t2)) 
-     : grammar (Pair_t (option_t t1) (User_t t2)) :=
-     let r_t := Pair_t (option_t t1) (User_t t2) in 
+  Definition option_perm2_variation t1 t2 (p1: parser (tipe_t t1))
+    (p2: parser (tipe_t t2)) 
+     : parser (pair_t (option_t t1) (tipe_t t2)) :=
+     let r_t := pair_t (option_t t1) (tipe_t t2) in 
          p2 @ (fun p => (None, p) %% r_t) 
      |+| perm2 p1 p2 @ (fun p => match p with (a, b) => (Some a, b) %%r_t end). 
 
   (* in this def, t1 and t2 are optional, but t3 is a must *)
-  Definition option_perm3_variation t1 t2 t3 (p1:grammar(User_t t1)) (p2:grammar(User_t t2))
-    (p3:grammar(User_t t3)): grammar(Pair_t(option_t t1)(Pair_t(option_t t2) (User_t t3)))
+  Definition option_perm3_variation t1 t2 t3 (p1:parser(tipe_t t1)) (p2:parser(tipe_t t2))
+    (p3:parser(tipe_t t3)): parser(pair_t(option_t t1)(pair_t(option_t t2) (tipe_t t3)))
     :=
-    let r_t := Pair_t(option_t t1)(Pair_t(option_t t2) (User_t t3))  in
+    let r_t := pair_t(option_t t1)(pair_t(option_t t2) (tipe_t t3))  in
         p3 @ (fun p => (None, (None, p)) %% r_t)
     |+| perm2 p1 p3 @(fun p => match p with (a, c) => (Some a, (None, c)) %%r_t end)
     |+| perm2 p2 p3 @(fun p => match p with (b, c) => (None, (Some b, c)) %%r_t end)
@@ -1913,13 +1964,13 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
 
   (* This is beginning to get quite nasty. Someone should write a form for arbitrary
      n and prove it's correct :) *)
-  Definition option_perm4 t1 t2 t3 t4 (p1:grammar(User_t t1)) (p2: grammar(User_t t2))
-    (p3: grammar(User_t t3)) (p4: grammar(User_t t4)) :
-      grammar(Pair_t(option_t t1) (Pair_t(option_t t2) (Pair_t(option_t t3) (option_t t4))))
+  Definition option_perm4 t1 t2 t3 t4 (p1:parser(tipe_t t1)) (p2: parser(tipe_t t2))
+    (p3: parser(tipe_t t3)) (p4: parser(tipe_t t4)) :
+      parser(pair_t(option_t t1) (pair_t(option_t t2) (pair_t(option_t t3) (option_t t4))))
       := 
-    let r_t := Pair_t(option_t t1) (Pair_t(option_t t2)
-      (Pair_t(option_t t3)(option_t t4))) in
-        Eps @ (fun p => (None, (None, (None, None))) %% r_t)
+    let r_t := pair_t(option_t t1) (pair_t(option_t t2)
+      (pair_t(option_t t3)(option_t t4))) in
+        Eps_p @ (fun p => (None, (None, (None, None))) %% r_t)
     |+| p1 @ (fun p => (Some p, (None, (None, None))) %% r_t)
     |+| p2 @ (fun p => (None, (Some p, (None, None))) %% r_t)
     |+| p3 @ (fun p => (None, (None, (Some p, None))) %% r_t)
@@ -2025,10 +2076,9 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      that is, it cannot take a lock_or_rep prefix, but can
      optionally take segment or op override prefix *)
   Definition instr_parsers_seg_op_override := 
-    CMOVcc_p :: ROL_p :: ROR_p ::
-    SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: 
-    MOVSX_p :: MOVZX_p :: DIV_p :: IDIV_p :: 
-    CDQ_p :: CWDE_p :: MUL_p :: nil.
+    CDQ_p :: CMOVcc_p :: CWDE_p :: DIV_p :: IDIV_p :: 
+    MOVSX_p :: MOVZX_p :: MUL_p :: NOP_p :: 
+    ROL_p :: ROR_p :: SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: nil.
 
   Definition prefix_parser_seg_override :=
     option_perm segment_override_p @
@@ -2038,11 +2088,11 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition instr_parsers_seg_override := 
     AAA_p :: AAD_p :: AAM_p :: AAS_p :: CMP_p false ::
     ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p :: 
-    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CMC_p :: CPUID_p :: DAA_p :: 
+    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CLTS_p :: CMC_p :: CPUID_p :: DAA_p :: DAS_p ::
     HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: 
     LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: 
     LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
-    MOVSR_p :: MOVBE_p :: (* NOP_p :: *)  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
+    MOVSR_p :: MOVBE_p ::  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
     PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
     RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
     STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: F2XM1_p ::
@@ -2063,38 +2113,36 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
 
 
   Definition instruction_parser_list := 
-    (List.map (fun (p:grammar instruction_t) => prefix_parser_rep $ p)
+    (List.map (fun (p:parser instruction_t) => prefix_parser_rep $ p)
       instr_parsers_rep) ++
-    (List.map (fun (p:grammar instruction_t) => prefix_parser_rep_or_repn $ p)
+    (List.map (fun (p:parser instruction_t) => prefix_parser_rep_or_repn $ p)
       instr_parsers_rep_or_repn) ++
-    (List.map (fun (p:grammar instruction_t)
+    (List.map (fun (p:parser instruction_t)
                 => prefix_parser_lock_with_op_override $ p)
       instr_parsers_lock_with_op_override) ++
-    (List.map (fun (p:grammar instruction_t)
+    (List.map (fun (p:parser instruction_t)
                 => prefix_parser_lock_no_op_override $ p)
       instr_parsers_lock_no_op_override) ++
-    (List.map (fun (p:grammar instruction_t)
+    (List.map (fun (p:parser instruction_t)
                 => prefix_parser_seg_with_op_override $ p)
       instr_parsers_seg_with_op_override) ++
-    (List.map (fun (p:grammar instruction_t)
+    (List.map (fun (p:parser instruction_t)
                 => prefix_parser_seg_op_override $ p)
       instr_parsers_seg_op_override) ++
-    (List.map (fun (p:grammar instruction_t)
+    (List.map (fun (p:parser instruction_t)
                 => prefix_parser_seg_override $ p)
       instr_parsers_seg_override).
 
   Definition instruction_parser := alts instruction_parser_list.
 
-  Definition build_parser (fuel:nat) := gen_uparser fuel instruction_parser.
-
   Definition opt_initial_decoder_state n := 
     opt_initial_parser_state n instruction_parser.
 
   Definition instParserState := 
-    @X86_BASE_PARSER.instParserState (Pair_t prefix_t instruction_t).
+    @(*X86_BASE_PARSER.*)instParserState (Pair_t prefix_t instruction_t).
 
   Definition parse_token ps tk :
-    option (X86_BASE_PARSER.instParserState _ * list (prefix * instr)) := 
-    @X86_BASE_PARSER.parse_token (Pair_t prefix_t instruction_t) ps tk.
+    option (instParserState * list (prefix * instr)) := 
+    @(*X86_BASE_PARSER.*)parse_token (Pair_t prefix_t instruction_t) ps tk.
 
 End X86_PARSER.
