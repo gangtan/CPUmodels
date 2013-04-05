@@ -320,11 +320,11 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | FCMOVcc (fct1,op1), FCMOVcc (fct2,op2) ->
     fct1 = fct2 && fp_operand_eq_dec op1 op2
 
-  | FDIV (op11,op12), FDIV (op21, op22)
-  | FDIVR (op11,op12), FDIVR (op21, op22)
-  | FSUB (op11,op12), FSUB (op21, op22)
-  | FSUBR (op11,op12), FSUBR (op21, op22) -> 
-    fp_operand_eq_dec op11 op21 && fp_operand_eq_dec op12 op22
+  | FDIV (d1,op12), FDIV (d2, op22)
+  | FDIVR (d1,op12), FDIVR (d2, op22)
+  | FSUB (d1,op12), FSUB (d2, op22)
+  | FSUBR (d1,op12), FSUBR (d2, op22) -> 
+    d1 = d2 && fp_operand_eq_dec op12 op22
 
   | FCOM (opt1), FCOM (opt2)
   | FCOMP (opt1), FCOMP (opt2)
@@ -431,6 +431,32 @@ let dec_fails_count = ref 0
 let enc_dec_fails_count = ref 0
 let enc_fails_count = ref 0
 
+(*let oc() = open_out ".error_log.txt"; *)
+
+let write_enc_dec_to_file pre ins pre' ins' lz = 
+	let file = "./error_log.txt" in
+	let oc = open_out_gen [Open_append] 0o644 file in 
+  let instr = str_of_instr(pre, ins) in
+  let new_instr = str_of_instr(pre', ins') in
+  
+	   Printf.fprintf oc "Encoding-decoding loop fails with instr %s\n" instr;
+	   Printf.fprintf oc "after decoding: %s\n\n"
+
+  (*   output_string ".error_log.txt" *)
+	  (* (str_of_list ~sep:"," str_of_big_int) lz *)
+	   new_instr;
+	
+	close_out oc;;
+
+let write_dec_fails_to_file pre ins = 
+  let file = "./error_log.txt" in
+  let oc = open_out_gen [Open_append] 0o644 file in 
+  let instr = str_of_instr(pre, ins) in
+
+  Printf.fprintf oc "Decoding step fails after encoding %s\n\n" instr;
+
+  close_out oc;; 
+
 
 (****************************************************)
 (* Testing the encode-decode loop on an instruction *)
@@ -447,18 +473,22 @@ let test_encode_decode_instr
     try
       let (pre',ins') = decode_instr prog in
       if (not (pre_instr_eq_dec (pre,ins) (pre',ins'))) then
-	  (F.printf "  Encoding-decoding loop fails with instr %a\n"
-	   pp_prefix_instr (pre,ins);
-           incr enc_dec_fails_count;
-	   F.printf "    after encoding: @[  %a@]\n after decoding: %a\n"
-	   (pp_list ~sep:"," pp_big_int) lz
-	   pp_prefix_instr (pre',ins'))
+	     (F.printf "  Encoding-decoding loop fails with instr %a\n"
+	       pp_prefix_instr (pre,ins);
+         write_enc_dec_to_file pre ins pre' ins' lz; 
+
+         incr enc_dec_fails_count;
+	       F.printf "    after encoding: @[  %a@]\n after decoding: %a\n"
+	      (pp_list ~sep:"," pp_big_int) lz
+	       pp_prefix_instr (pre',ins');
+		   )
       else
 	  (incr succ_count;
 	   F.printf "  Encoding-decoding loop succeeds with instr %a\n"
 	   pp_prefix_instr (pre,ins) )
     with DF_IllegalInstr ->
        (incr dec_fails_count;
+        write_dec_fails_to_file pre ins;
         F.printf "  Decoding step fails after encoding %a\n"
 	pp_prefix_instr (pre,ins);
         F.printf "    after encoding: @[  %a@]\n"

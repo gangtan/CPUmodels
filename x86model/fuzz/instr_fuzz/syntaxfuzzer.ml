@@ -78,15 +78,23 @@ let choose_condition_type() =
 	| _ -> NLE_ct
 	
 let choose_prefix () = 
-	let lr_opt_c = choose_bool() in
+(*	let lr_opt_c = choose_bool() in *)
         let sr_opt_c = choose_bool() in
         let op_c = choose_bool() in
-        let addr_c = choose_bool() in
+    (*    let addr_c = choose_bool() in
 
         let lock_rep = if lr_opt_c then Some (choose_lock_or_rep()) else None in
-        let seg_override = if sr_opt_c then Some (choose_segment_reg()) else None in
+     *)   let seg_override = if sr_opt_c then Some (choose_segment_reg()) else None in
 
-        mkPrefix lock_rep seg_override op_c addr_c 
+        (*generate valid cases for encoder/decoder *)
+        match Random.int 5 with (*Weigh heavily towards latter case *)
+        | 0 -> mkPrefix (Some Coq_rep) seg_override false false
+        | 1 -> mkPrefix (Some Coq_repn) seg_override false false
+        | 2 -> mkPrefix (Some Coq_lock) seg_override true false
+        | 3 -> mkPrefix (Some Coq_lock) seg_override false false
+        | _ -> mkPrefix None seg_override op_c false
+
+       (* mkPrefix lock_rep seg_override op_c addr_c *)
 
 let choose_addr() =
 	let c_base = choose_bool() in
@@ -635,18 +643,18 @@ let choose_FCOMIP() =
 	FCOMIP (op1)
 
 let choose_FDIV() = 
-	let op1 = choose_fp_op() in
+	let d = choose_bool() in
 	let op2 = choose_fp_op() in
-	FDIV (op1, op2)
+	FDIV (d, op2)
 
 let choose_FDIVP() = 
 	let op1 = choose_fp_op() in
 	FDIVP (op1)
 
 let choose_FDIVR() = 
-	let op1 = choose_fp_op() in
+	let d = choose_bool() in
 	let op2 = choose_fp_op() in
-	FDIVR (op1, op2)
+	FDIVR (d, op2)
 
 let choose_FDIVRP() = 
 	let op1 = choose_fp_op() in
@@ -752,14 +760,14 @@ let choose_FSTP() =
 	FSTP (op1)
 
 let choose_FSUB() = 
-	let op1 = choose_fp_op() in
+	let d = choose_bool() in
 	let op2 = choose_fp_op() in
-	FSUB (op1, op2)
+	FSUB (d, op2)
 
 let choose_FSUBR() = 
-	let op1 = choose_fp_op() in
+	let d = choose_bool() in
 	let op2 = choose_fp_op() in
-	FSUBR (op1, op2)
+	FSUBR (d, op2)
 
 let choose_FSUBP() = 
 	let op1 = choose_fp_op() in
@@ -1149,13 +1157,13 @@ let rec fuzz_instr instr_func lb ub n =
 	match n with 
 	| 0 -> ()
 	| x -> 
-	 (*let prefix = choose_prefix() in*)
+	let prefix = (*emptyPrefix*) choose_prefix() in
 	let instr = instr_func lb ub in
 	
 	F.printf "------------\nTesting %a\n"
-    	pp_prefix_instr (emptyPrefix,instr);
+    	pp_prefix_instr (prefix,instr);
      
-     	test_encode_decode_instr (*prefix*) emptyPrefix instr;
+     	test_encode_decode_instr prefix instr;
      	Printf.printf "------------\n";
      	F.print_newline (); (* flush *)
      	fuzz_instr instr_func lb ub (x - 1)

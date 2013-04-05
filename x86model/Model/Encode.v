@@ -1975,7 +1975,421 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
   let ao := if (addr_override pre) then s2bl "01100111" else s2bl "" in
     ret (lr ++ so ++ oo ++ ao).
 
-Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) := 
+  Definition check_pre_rep (pre: X86Syntax.prefix) : bool := 
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | Some rep, _, false, false => true
+    | _, _, _, _ => false
+    end.
+
+  Definition check_pre_rep_or_repn (pre: X86Syntax.prefix) : bool :=
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | Some repn, _, false, false => true
+    | _, _, _, _ => false
+    end.
+
+  Definition check_pre_lock_with_op_override (pre: X86Syntax.prefix) : bool := 
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | Some lock, _, true, false => true
+    | _, _, _, _ => false
+    end.
+
+  Definition check_pre_lock_no_op_override (pre: X86Syntax.prefix) : bool := 
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | Some lock, _, false, false => true
+    | _, _, _, _ => false    
+    end.
+
+
+  (*These last three seem to be overlapping, how to handle? *)
+  Definition check_pre_seg_with_op_override (pre: X86Syntax.prefix) : bool :=
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | None, (Some seg), true, false => true
+    | _, _, _, _ => false
+    end.
+
+  Definition check_pre_seg_op_override (pre: X86Syntax.prefix) : bool := 
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | None, (Some seg), false, false => true
+    | _, _, _, _ => false
+    end.
+
+  Definition check_pre_seg_override (pre: X86Syntax.prefix) : bool := 
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | None, (Some seg), _, false => true
+    | _, _, _, _ => false
+    end.
+
+  Definition check_empty_prefix (pre: X86Syntax.prefix) := 
+    let (lr, seg, op_o, addr_o) := pre in
+    match lr, seg, op_o, addr_o with
+    | None, None, false, false => true
+    | _, _, _, _ => false
+    end.
+
+
+(*Groupings of instructions based on prefixes, as specified by Decode.v *)
+  Definition enc_rep_instr (pre: X86Syntax.prefix) (i : instr) :=
+    match i with 
+    | INS w => enc_INS w
+    | OUTS w => enc_OUTS w
+    | MOVS w => enc_MOVS w
+    | LODS w => enc_LODS w
+    | STOS w => enc_STOS w
+    | RET ss disp => enc_RET ss disp
+    | _ => invalid
+    end.
+
+  Definition enc_rep_or_repn_instr (pre: X86Syntax.prefix) (i : instr) :=
+    match i with 
+    | CMPS w => enc_CMPS w
+    | SCAS w => enc_SCAS w
+    | _ => invalid
+    end.
+
+  Definition enc_lock_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+    match i with 
+    | ADD w op1 op2 => enc_ADD (op_override pre) w op1 op2
+    | ADC w op1 op2 => enc_ADC (op_override pre) w op1 op2
+    | AND w op1 op2 => enc_AND (op_override pre) w op1 op2
+    | NEG w op1 => enc_NEG w op1
+    | NOT w op1 => enc_NOT w op1
+    | OR w op1 op2 => enc_OR (op_override pre) w op1 op2
+    | SBB w op1 op2 => enc_SBB (op_override pre) w op1 op2 
+    | SUB w op1 op2 => enc_SUB (op_override pre) w op1 op2
+    | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
+    | XCHG w op1 op2 => enc_XCHG w op1 op2
+    | _ => invalid
+    end.
+
+  Definition enc_lock_no_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+    match i with 
+    | ADD w op1 op2 => enc_ADD (op_override pre) w op1 op2
+    | ADC w op1 op2 => enc_ADC (op_override pre) w op1 op2
+    | AND w op1 op2 => enc_AND (op_override pre) w op1 op2
+    | BTC op1 op2 => enc_BTC op1 op2
+    | BTR op1 op2 => enc_BTR op1 op2
+    | BTS op1 op2 => enc_BTS op1 op2
+    | CMPXCHG w op1 op2 => enc_CMPXCHG w op1 op2
+    | DEC w op1 => enc_DEC w op1
+    | INC w op1 => enc_INC w op1
+    | NEG w op1 => enc_NEG w op1
+    | NOT w op1 => enc_NOT w op1
+    | OR w op1 op2 => enc_OR (op_override pre) w op1 op2
+    | SBB w op1 op2 => enc_SBB (op_override pre) w op1 op2
+    | SUB w op1 op2 => enc_SUB (op_override pre) w op1 op2
+    | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
+    | XADD w op1 op2 => enc_XADD w op1 op2
+    | XCHG w op1 op2 => enc_XCHG w op1 op2
+    | _ => invalid
+    end.
+
+  (*Covers all instructions that haven't been covered by above definitions *)
+  Definition enc_seg_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+      match i with
+    | AAA => enc_AAA
+    | AAD => enc_AAD
+    | AAM => enc_AAM
+    | AAS => enc_AAS
+    | ARPL op1 op2 => enc_ARPL op1 op2
+    | BOUND op1 op2 => enc_BOUND op1 op2
+    | BSF op1 op2 => enc_BSF op1 op2
+    | BSR op1 op2 => enc_BSR op1 op2
+    | BSWAP r => enc_BSWAP r
+    | BT op1 op2 => enc_BT op1 op2
+    | CALL near abs op1 sel => enc_CALL near abs op1 sel
+    | CLC => enc_CLC
+    | CLD => enc_CLD
+    | CLI => enc_CLI
+    | CLTS => enc_CLTS
+    | CMC => enc_CMC
+    | CMP w op1 op2 => enc_CMP (op_override pre) w op1 op2
+    | CPUID => enc_CPUID
+    | DAA => enc_DAA
+    | DAS => enc_DAS
+
+    | F2XM1 => enc_F2XM1
+    | FABS => enc_FABS
+    | FADD d op1 => enc_FADD d op1
+    | FADDP op1 => enc_FADDP op1
+    | FBLD op1 => enc_FBLD op1
+    | FBSTP op1 => enc_FBSTP op1
+    | FCHS => enc_FCHS
+    | FCMOVcc fct op1 => enc_FCMOVcc fct op1
+    | FCOM op1 => enc_FCOM op1
+    | FCOMP op1 => enc_FCOMP op1
+    | FCOMPP => enc_FCOMPP
+    | FCOMIP op1 => enc_FCOMIP op1
+    | FCOS => enc_FCOS
+    | FDECSTP => enc_FDECSTP
+    | FDIV op1 op2 => enc_FDIV op1 op2
+    | FDIVP op1 => enc_FDIVP op1
+    | FDIVR op1 op2 => enc_FDIVR op1 op2
+    | FDIVRP op1 => enc_FDIVRP op1
+    | FFREE op1 => enc_FFREE op1
+    | FIADD op1 => enc_FIADD op1
+    | FICOM op1 => enc_FICOM op1
+    | FICOMP op1 => enc_FICOMP op1
+    | FIDIV op1 => enc_FIDIV op1
+    | FIDIVR op1 => enc_FIDIVR op1
+    | FILD op1 => enc_FILD op1
+    | FIMUL op1 => enc_FIMUL op1
+    | FINCSTP => enc_FINCSTP
+    | FIST op1 => enc_FIST op1
+    | FISTP op1 => enc_FISTP op1
+    | FISUB op1 => enc_FISUB op1
+    | FISUBR op1 => enc_FISUBR op1
+    | FLD op1 => enc_FLD op1
+    | FLD1 => enc_FLD1
+    | FLDCW op1 => enc_FLDCW op1
+    | FLDENV op1 => enc_FLDENV op1
+    | FLDL2E => enc_FLDL2E
+    | FLDL2T => enc_FLDL2T
+    | FLDLG2 => enc_FLDLG2
+    | FLDLN2 => enc_FLDLN2
+    | FLDPI => enc_FLDPI
+    | FLDZ => enc_FLDZ
+    | FMUL d op1 => enc_FMUL d op1
+    | FMULP op1 => enc_FMULP op1
+    | FNCLEX => enc_FNCLEX
+    | FNINIT => enc_FNINIT
+    | FNOP => enc_FNOP
+    | FNSAVE op1 => enc_FNSAVE op1
+  (*  | FNSTCW op1 => enc_FNSTCW op1 *)
+    | FNSTSW op1 => enc_FNSTSW op1
+    | FPATAN => enc_FPATAN
+    | FPREM => enc_FPREM
+    | FPREM1 => enc_FPREM1
+    | FPTAN => enc_FPTAN 
+    | FRNDINT => enc_FRNDINT
+    | FRSTOR op1 => enc_FRSTOR op1
+    | FSCALE => enc_FSCALE
+    | FSIN => enc_FSIN
+    | FSINCOS => enc_FSINCOS
+    | FSQRT => enc_FSQRT
+    | FST op1 => enc_FST op1
+  (*  | FSTENV op1 => enc_FSTENV op1 *)
+    | FSTP op1 => enc_FSTP op1 
+    | FSUB op1 op2 => enc_FSUB op1 op2
+    | FSUBP op1 => enc_FSUBP op1
+    | FSUBR op1 op2 => enc_FSUBR op1 op2
+    | FSUBRP op1 => enc_FSUBRP op1
+    | FTST => enc_FTST
+    | FUCOM op1 => enc_FUCOM op1
+    | FUCOMP op1 => enc_FUCOMP op1
+    | FUCOMPP => enc_FUCOMPP
+    | FUCOMI op1 => enc_FUCOMI op1
+    | FUCOMIP op1 => enc_FUCOMIP op1
+    | FXAM => enc_FXAM
+    | FXCH op1 => enc_FXCH op1
+    | FXTRACT => enc_FXTRACT
+    | FYL2X => enc_FYL2X
+    | FYL2XP1 => enc_FYL2XP1
+    | FWAIT => enc_FWAIT
+
+    | HLT => enc_HLT
+    | IN w p => enc_IN w p
+
+    | INTn it => enc_INTn it
+    | INT => enc_INT
+    | INTO => enc_INTO
+    | INVD => enc_INVD
+    | INVLPG op1 => enc_INVLPG op1
+    | IRET => enc_IRET
+    | Jcc ct disp => enc_Jcc ct disp
+    | JCXZ b => enc_JCXZ b
+    | JMP near absolute op1 sel => enc_JMP near absolute op1 sel
+    | LAHF => enc_LAHF
+    | LAR op1 op2 => enc_LAR op1 op2
+    | LDS op1 op2 => enc_LDS op1 op2
+    | LEA op1 op2 => enc_LEA op1 op2
+    | LEAVE => enc_LEAVE
+    | LES op1 op2 => enc_LES op1 op2 
+    | LFS op1 op2 => enc_LFS op1 op2 
+    | LGDT op1 => enc_LGDT op1
+    | LGS  op1 op2 => enc_LGS op1 op2
+    | LIDT op1 => enc_LIDT op1
+    | LLDT op1 => enc_LLDT op1
+    | LMSW op1 => enc_LMSW op1 
+    | LOOP disp => enc_LOOP disp
+    | LOOPZ disp => enc_LOOPZ disp
+    | LOOPNZ disp => enc_LOOPNZ disp
+    | LSL op1 op2 => enc_LSL op1 op2
+    | LSS op1 op2 => enc_LSS op1 op2
+    | LTR  op1 => enc_LTR op1
+    | MOVCR d cr r => enc_MOVCR d cr r
+    | MOVDR d dr r => enc_MOVDR d dr r
+    | MOVSR d sr op1 => enc_MOVSR d sr op1
+    | MOVBE op1 op2 => enc_MOVBE op1 op2
+    | OUT w p => enc_OUT w p
+    | POP op1 => enc_POP op1
+    | POPSR sr => enc_POPSR sr
+    | POPA => enc_POPA
+    | POPF => enc_POPF
+    | PUSH w op1 => enc_PUSH w op1
+    | PUSHSR sr => enc_PUSHSR sr
+    | PUSHA => enc_PUSHA
+    | PUSHF => enc_PUSHF
+    | RCL w op1 ri => enc_RCL w op1 ri
+    | RCR w op1 ri => enc_RCR w op1 ri
+    | RDMSR => enc_RDMSR
+    | RDPMC => enc_RDPMC
+    | RDTSC => enc_RDTSC
+    | RDTSCP => enc_RDTSCP
+    | RSM => enc_RSM
+    | SAHF => enc_SAHF
+    | SETcc ct op1 => enc_SETcc ct op1
+    | SGDT op1 => enc_SGDT op1
+    | SIDT op1 => enc_SIDT op1
+    | SLDT op1 => enc_SLDT op1
+    | SMSW op1 => enc_SMSW op1
+    | STC => enc_STC
+    | STD => enc_STD
+    | STI => enc_STI
+    | STR op1 => enc_STR op1
+    | UD2 => enc_UD2
+    | VERR op1 => enc_VERR op1
+    | VERW op1 => enc_VERW op1
+    | WBINVD => enc_WBINVD
+    | WRMSR => enc_WRMSR
+    | XLAT => enc_XLAT
+
+    (*MMX encoding definitions *)
+    | EMMS => enc_EMMS
+    | MOVD op1 op2 => enc_MOVD op1 op2
+    | MOVQ op1 op2 => enc_MOVQ op1 op2
+    | PACKSSDW op1 op2 => enc_PACKSSDW op1 op2
+    | PACKSSWB op1 op2 => enc_PACKSSWB op1 op2
+    | PACKUSWB op1 op2 => enc_PACKUSWB op1 op2
+    | PADD gg op1 op2 => enc_PADD gg op1 op2
+    | PADDS gg op1 op2 => enc_PADDS gg op1 op2
+    | PADDUS gg op1 op2 => enc_PADDUS gg op1 op2
+    | PAND op1 op2 => enc_PAND op1 op2
+    | PANDN op1 op2 => enc_PANDN op1 op2
+    | PCMPEQ gg op1 op2 => enc_PCMPEQ gg op1 op2
+    | PCMPGT gg op1 op2 => enc_PCMPGT gg op1 op2
+    | PMADDWD op1 op2 => enc_PMADDWD op1 op2
+    | PMULHUW op1 op2 => enc_PMULHUW op1 op2
+    | PMULHW op1 op2 => enc_PMULHW op1 op2 
+    | PMULLW op1 op2 => enc_PMULLW op1 op2
+    | POR op1 op2 => enc_POR op1 op2
+    | PSLL gg op1 op2 => enc_PSLL gg op1 op2
+    | PSRA gg op1 op2 => enc_PSRA gg op1 op2
+    | PSRL gg op1 op2 => enc_PSRL gg op1 op2
+    | PSUB gg op1 op2 => enc_PSUB gg op1 op2
+    | PSUBS gg op1 op2 => enc_PSUBS gg op1 op2
+    | PSUBUS gg op1 op2 => enc_PSUBUS gg op1 op2
+    | PUNPCKH gg op1 op2 => enc_PUNPCKH gg op1 op2
+    | PUNPCKL gg op1 op2 => enc_PUNPCKL gg op1 op2
+    | PXOR op1 op2 => enc_PXOR op1 op2
+
+    (*SSE encoding definitions *)
+    | ADDPS op1 op2  => enc_ADDPS op1 op2
+    | ADDSS op1 op2 => enc_ADDSS op1 op2
+    | ANDNPS op1 op2 => enc_ANDNPS op1 op2
+    | ANDPS op1 op2 => enc_ANDPS op1 op2
+    | CMPPS op1 op2 imm => enc_CMPPS op1 op2 imm
+    | CMPSS op1 op2 imm => enc_CMPSS op1 op2 imm
+    | COMISS op1 op2 => enc_COMISS op1 op2
+    | CVTPI2PS op1 op2 => enc_CVTPI2PS op1 op2
+    | CVTPS2PI op1 op2 => enc_CVTPS2PI op1 op2
+    | CVTSI2SS op1 op2 => enc_CVTSI2SS op1 op2
+    | CVTSS2SI op1 op2 => enc_CVTSS2SI op1 op2
+    | CVTTPS2PI op1 op2 => enc_CVTTPS2PI op1 op2
+    | CVTTSS2SI op1 op2 => enc_CVTTSS2SI op1 op2
+    | DIVPS op1 op2 => enc_DIVPS op1 op2
+    | DIVSS op1 op2 => enc_DIVSS op1 op2
+    | LDMXCSR op1 => enc_LDMXCSR op1
+    | MAXPS op1 op2 => enc_MAXPS op1 op2 
+    | MAXSS op1 op2 => enc_MAXSS op1 op2
+    | MINPS op1 op2 => enc_MINPS op1 op2
+    | MINSS op1 op2 => enc_MINSS op1 op2
+    | MOVAPS op1 op2 => enc_MOVAPS op1 op2
+    | MOVHLPS op1 op2 => enc_MOVHLPS op1 op2
+    | MOVHPS op1 op2 => enc_MOVHPS op1 op2
+    | MOVLHPS op1 op2 => enc_MOVLHPS op1 op2
+    | MOVLPS op1 op2 => enc_MOVLPS op1 op2
+    | MOVMSKPS op1 op2 => enc_MOVMSKPS op1 op2
+    | MOVSS op1 op2 => enc_MOVSS op1 op2
+    | MOVUPS op1 op2 => enc_MOVUPS op1 op2
+    | MULPS op1 op2 => enc_MULPS op1 op2
+    | MULSS op1 op2 => enc_MULSS op1 op2
+    | ORPS op1 op2 => enc_ORPS op1 op2
+    | RCPPS op1 op2 => enc_RCPPS op1 op2
+    | RCPSS op1 op2 => enc_RCPSS op1 op2
+    | RSQRTPS op1 op2 => enc_RSQRTPS op1 op2
+    | RSQRTSS op1 op2 => enc_RSQRTSS op1 op2
+    | SHUFPS op1 op2 imm => enc_SHUFPS op1 op2 imm
+    | SQRTPS op1 op2 => enc_SQRTPS op1 op2
+    | SQRTSS op1 op2 => enc_SQRTSS op1 op2
+    | STMXCSR op1 => enc_STMXCSR op1
+    | SUBPS op1 op2 => enc_SUBPS op1 op2
+    | SUBSS op1 op2 => enc_SUBSS op1 op2
+    | UCOMISS op1 op2 => enc_UCOMISS op1 op2
+    | UNPCKHPS op1 op2 => enc_UNPCKHPS op1 op2
+    | UNPCKLPS op1 op2 => enc_UNPCKLPS op1 op2
+    | XORPS op1 op2 => enc_XORPS op1 op2
+    | PAVGB op1 op2 => enc_PAVGB op1 op2
+    | PEXTRW op1 op2 imm => enc_PEXTRW op1 op2 imm
+    | PINSRW op1 op2 imm => enc_PINSRW op1 op2 imm
+    | PMAXSW op1 op2 => enc_PMAXSW op1 op2
+    | PMAXUB op1 op2 => enc_PMAXUB op1 op2
+    | PMINSW op1 op2 => enc_PMINSW op1 op2
+    | PMINUB op1 op2 => enc_PMINUB op1 op2
+    | PMOVMSKB op1 op2 => enc_PMOVMSKB op1 op2
+    (*| PMULHUW op1 op2 => enc_ op1 op2 *)
+    | PSADBW op1 op2 => enc_PSADBW op1 op2
+    | PSHUFW op1 op2 imm => enc_PSHUFW op1 op2 imm
+    | MASKMOVQ op1 op2 => enc_MASKMOVQ op1 op2
+    | MOVNTPS op1 op2 => enc_MOVNTPS op1 op2
+    | MOVNTQ op1 op2 => enc_MOVNTQ op1 op2
+    | PREFETCHT0 op1 => enc_PREFETCHT0 op1
+    | PREFETCHT1 op1 => enc_PREFETCHT1 op1
+    | PREFETCHT2 op1 => enc_PREFETCHT2 op1
+    | PREFETCHNTA op1 => enc_PREFETCHNTA op1
+    | SFENCE => enc_SFENCE
+
+    | _ => invalid
+    end.
+
+
+  Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+    match i with 
+    | IMUL w op1 opopt iopt => enc_IMUL (op_override pre) w op1 opopt iopt
+    | MOV w op1 op2 => enc_MOV (op_override pre) w op1 op2
+    | TEST w op1 op2 => enc_TEST (op_override pre) w op1 op2
+    | _ => enc_seg_override_instr pre i (*Try to find in seg_override in case of false negative*)
+    end.
+
+  Definition enc_seg_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+    match i with 
+    | CDQ => enc_CDQ
+    | CMOVcc ct op1 op2 => enc_CMOVcc ct op1 op2
+    | CWDE => enc_CWDE
+    | DIV w op1 => enc_DIV w op1
+    | IDIV w op1 => enc_IDIV w op1 
+    | MOVSX w op1 op2 => enc_MOVSX w op1 op2 
+    | MOVZX w op1 op2 => enc_MOVZX w op1 op2
+    | MUL w op1 => enc_MUL w op1
+    | NOP opopt => enc_NOP opopt
+    | ROL w op1 ri => enc_ROL w op1 ri
+    | ROR w op1 ri => enc_ROR w op1 ri
+    | SAR w op1 ri => enc_SAR w op1 ri
+    | SHL w op1 ri => enc_SHL w op1 ri
+    | SHLD w op1 ri => enc_SHLD w op1 ri
+    | SHR w op1 ri => enc_SHR w op1 ri
+    | SHRD w op1 ri => enc_SHRD w op1 ri
+    | _ => enc_seg_override_instr pre i (*Try to find in seg override in case of false negative*)
+    end.
+
+(*Handles encoding of all instructions, not paying attention to valid prefixes*)
+Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) := 
   match i with
     | AAA => enc_AAA
     | AAD => enc_AAD
@@ -2284,6 +2698,27 @@ Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
 
     | _ => invalid
     end.
+
+(* Break up encoding of instructions based on prefix constraints *)
+   Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) := 
+    
+    if (check_empty_prefix pre) then
+      enc_all_instr pre i
+    else if (check_pre_rep pre) then 
+      enc_rep_instr pre i
+    else if (check_pre_rep_or_repn pre) then 
+      enc_rep_or_repn_instr pre i
+    else if (check_pre_lock_with_op_override pre) then
+      enc_lock_with_op_override_instr pre i
+    else if (check_pre_lock_no_op_override pre) then
+      enc_lock_no_op_override_instr pre i
+    else if (check_pre_seg_with_op_override pre) then
+      enc_seg_with_op_override_instr pre i
+    else if (check_pre_seg_op_override pre) then
+      enc_seg_op_override_instr pre i
+    else if (check_pre_seg_override pre) then
+      enc_seg_override_instr pre i
+    else invalid.
 
 
 Definition enc_pre_instr pre ins : Enc (list bool) := 

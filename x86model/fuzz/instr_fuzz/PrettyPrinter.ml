@@ -349,11 +349,15 @@ let str_of_instr (prefix, ins) =
     | FCMOVcc (fct,fop) ->  
       P.sprintf "fcmov%s st, %s" (str_of_fp_cond_ty fct) (str_of_fp_operand fop)
     | FDECSTP -> "fdecstp"
-    | FDIV (fop1,fop2) -> 
-      P.sprintf "fdiv %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
+    | FDIV (true,fop2) -> 
+      P.sprintf "fdiv st0, %s" (str_of_fp_operand fop2)
+    | FDIV (false,fop2) -> 
+      P.sprintf "fdiv %s, st0" (str_of_fp_operand fop2)
     | FDIVP fop -> P.sprintf "fdivp %s, st" ((str_of_fp_operand fop))
-    | FDIVR (fop1,fop2) -> 
-      P.sprintf "fdivr %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
+    | FDIVR (true,fop2) -> 
+      P.sprintf "fdivr st0, %s" (str_of_fp_operand fop2)
+    | FDIVR (false,fop2) -> 
+      P.sprintf "fdivr %s, st0" (str_of_fp_operand fop2)
     | FDIVRP fop -> P.sprintf "fdivrp %s, st" (str_of_fp_operand fop)
     | FFREE fop -> P.sprintf "ffree %s" (str_of_fp_operand fop)
     | FIADD fop -> P.sprintf "fiadd %s" (str_of_fp_operand fop)
@@ -400,10 +404,14 @@ let str_of_instr (prefix, ins) =
     | FST fop -> P.sprintf "fst %s" (str_of_fp_operand fop)
     | FSTENV fop -> P.sprintf "fstenv %s" (str_of_fp_operand fop)
     | FSTP fop -> P.sprintf "fstp %s" (str_of_fp_operand fop)
-    | FSUB (fop1,fop2) -> 
-      P.sprintf "fsub %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
-    | FSUBR (fop1,fop2) -> 
-      P.sprintf "fsubr %s, %s" (str_of_fp_operand fop1) (str_of_fp_operand fop2)
+    | FSUB (true,fop2) -> 
+      P.sprintf "fsub st0, %s" (str_of_fp_operand fop2)
+    | FSUB (false,fop2) -> 
+      P.sprintf "fsub %s, st0" (str_of_fp_operand fop2)
+    | FSUBR (true,fop2) -> 
+      P.sprintf "fsubr st0, %s" (str_of_fp_operand fop2)
+    | FSUBR (false,fop2) -> 
+      P.sprintf "fsubr %s, st0" (str_of_fp_operand fop2)
     | FSUBRP fop -> P.sprintf "fsubrp %s, st" (str_of_fp_operand fop)
     | FSUBP fop -> P.sprintf "fsubp %s, st" (str_of_fp_operand fop)
     | FTST -> "ftst"

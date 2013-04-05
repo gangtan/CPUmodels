@@ -1054,9 +1054,9 @@ Module X86_PARSER.
   Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ bits "1011" @ 
     (fun _ => UD2 %% instruction_t).
 
-  Definition VERR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "100" @ 
+  Definition VERR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "100" @ 
     (fun x => VERR x %% instruction_t).
-  Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "101" @ 
+  Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "101" @ 
     (fun x => VERW x %% instruction_t).
   Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1001" @ 
     (fun _ => WBINVD %% instruction_t).
