@@ -273,7 +273,7 @@ Definition enc_modrm_2 (bs:string) op2 : Enc (list bool) :=
  * representing the bits*)
 Definition enc_imm (op_override w: bool) (i1 : int32) : list bool :=
   match op_override, w with
-    | _, false => enc_byte i1
+    | _, false => enc_word i1
     | false, true => enc_word i1
     | true, true => enc_halfword i1
   end.
@@ -338,7 +338,7 @@ end.
 Definition enc_BitScan (op1 op2 : operand) (lb : list bool) : Enc (list bool) :=
   match op1, op2 with 
     | Reg_op r1, Reg_op r2 => ret (lb ++ s2bl "11" ++ enc_reg r1 ++ enc_reg r2)
-    | Address_op a1, Reg_op r1 => l1 <- enc_modrm op2 op1; ret (lb ++ l1)
+    | Address_op a1, Reg_op r1 => l1 <- enc_modrm op1 op2; ret (lb ++ l1)
     | _, _ => invalid
   end.
 
@@ -1977,52 +1977,54 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
 
   Definition check_pre_rep (pre: X86Syntax.prefix) : bool := 
     let (lr, seg, op_o, addr_o) := pre in
-    match lr, seg, op_o, addr_o with
-    | Some rep, _, false, false => true
-    | _, _, _, _ => false
+    match lr, addr_o with
+    | Some rep, false => true
+    | None, false => true
+    | _, _ => false
     end.
 
   Definition check_pre_rep_or_repn (pre: X86Syntax.prefix) : bool :=
     let (lr, seg, op_o, addr_o) := pre in
-    match lr, seg, op_o, addr_o with
-    | Some repn, _, false, false => true
-    | _, _, _, _ => false
+    match lr, addr_o with
+    | Some repn, false => true
+    | None, false => true
+    | _, _  => false
     end.
 
   Definition check_pre_lock_with_op_override (pre: X86Syntax.prefix) : bool := 
     let (lr, seg, op_o, addr_o) := pre in
-    match lr, seg, op_o, addr_o with
-    | Some lock, _, true, false => true
-    | _, _, _, _ => false
+    match lr, op_o, addr_o with
+    | Some lock, true, false => true 
+    | None, _, false => true
+    | _, _, _ => false
     end.
 
   Definition check_pre_lock_no_op_override (pre: X86Syntax.prefix) : bool := 
     let (lr, seg, op_o, addr_o) := pre in
-    match lr, seg, op_o, addr_o with
-    | Some lock, _, false, false => true
-    | _, _, _, _ => false    
+    match lr, op_o, addr_o with
+    | Some lock, false, false => true
+    | None, false, false => true
+    | _, _, _ => false    
     end.
 
-
-  (*These last three seem to be overlapping, how to handle? *)
   Definition check_pre_seg_with_op_override (pre: X86Syntax.prefix) : bool :=
     let (lr, seg, op_o, addr_o) := pre in
-    match lr, seg, op_o, addr_o with
-    | None, (Some seg), true, false => true
-    | _, _, _, _ => false
+    match lr,  op_o, addr_o with
+    | None, true, false => true
+    | _, _, _ => false
     end.
 
   Definition check_pre_seg_op_override (pre: X86Syntax.prefix) : bool := 
     let (lr, seg, op_o, addr_o) := pre in
-    match lr, seg, op_o, addr_o with
-    | None, (Some seg), false, false => true
-    | _, _, _, _ => false
+    match lr, addr_o with
+    | None, false => true
+    | _, _ => false
     end.
 
   Definition check_pre_seg_override (pre: X86Syntax.prefix) : bool := 
     let (lr, seg, op_o, addr_o) := pre in
     match lr, seg, op_o, addr_o with
-    | None, (Some seg), _, false => true
+    | None, (Some seg), false, false => true
     | _, _, _, _ => false
     end.
 
@@ -2036,63 +2038,110 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
 
 (*Groupings of instructions based on prefixes, as specified by Decode.v *)
   Definition enc_rep_instr (pre: X86Syntax.prefix) (i : instr) :=
-    match i with 
-    | INS w => enc_INS w
-    | OUTS w => enc_OUTS w
-    | MOVS w => enc_MOVS w
-    | LODS w => enc_LODS w
-    | STOS w => enc_STOS w
-    | RET ss disp => enc_RET ss disp
-    | _ => invalid
-    end.
+    if(check_pre_rep pre) then
+      match i with 
+      | INS w => enc_INS w
+      | OUTS w => enc_OUTS w
+      | MOVS w => enc_MOVS w
+      | LODS w => enc_LODS w
+      | STOS w => enc_STOS w
+      | RET ss disp => enc_RET ss disp
+      | _ => invalid
+      end
+    else
+      invalid.
 
-  Definition enc_rep_or_repn_instr (pre: X86Syntax.prefix) (i : instr) :=
-    match i with 
-    | CMPS w => enc_CMPS w
-    | SCAS w => enc_SCAS w
-    | _ => invalid
-    end.
+  Definition enc_rep_or_repn_instr (pre: X86Syntax.prefix) (i : instr) :=  
+    if(check_pre_rep_or_repn pre) then
+      match i with 
+      | CMPS w => enc_CMPS w
+      | SCAS w => enc_SCAS w
+      | _ => invalid
+      end
+    else
+      invalid.
 
   Definition enc_lock_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
-    match i with 
-    | ADD w op1 op2 => enc_ADD (op_override pre) w op1 op2
-    | ADC w op1 op2 => enc_ADC (op_override pre) w op1 op2
-    | AND w op1 op2 => enc_AND (op_override pre) w op1 op2
-    | NEG w op1 => enc_NEG w op1
-    | NOT w op1 => enc_NOT w op1
-    | OR w op1 op2 => enc_OR (op_override pre) w op1 op2
-    | SBB w op1 op2 => enc_SBB (op_override pre) w op1 op2 
-    | SUB w op1 op2 => enc_SUB (op_override pre) w op1 op2
-    | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
-    | XCHG w op1 op2 => enc_XCHG w op1 op2
-    | _ => invalid
-    end.
+    if(check_pre_lock_with_op_override pre) then
+      match i with 
+      | ADD w op1 op2 => enc_ADD (op_override pre) w op1 op2
+      | ADC w op1 op2 => enc_ADC (op_override pre) w op1 op2
+      | AND w op1 op2 => enc_AND (op_override pre) w op1 op2
+      | NEG w op1 => enc_NEG w op1
+      | NOT w op1 => enc_NOT w op1
+      | OR w op1 op2 => enc_OR (op_override pre) w op1 op2
+      | SBB w op1 op2 => enc_SBB (op_override pre) w op1 op2 
+      | SUB w op1 op2 => enc_SUB (op_override pre) w op1 op2
+      | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
+      | XCHG w op1 op2 => enc_XCHG w op1 op2
+      | _ => invalid
+      end
+    else
+      invalid.
 
   Definition enc_lock_no_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
-    match i with 
-    | ADD w op1 op2 => enc_ADD (op_override pre) w op1 op2
-    | ADC w op1 op2 => enc_ADC (op_override pre) w op1 op2
-    | AND w op1 op2 => enc_AND (op_override pre) w op1 op2
-    | BTC op1 op2 => enc_BTC op1 op2
-    | BTR op1 op2 => enc_BTR op1 op2
-    | BTS op1 op2 => enc_BTS op1 op2
-    | CMPXCHG w op1 op2 => enc_CMPXCHG w op1 op2
-    | DEC w op1 => enc_DEC w op1
-    | INC w op1 => enc_INC w op1
-    | NEG w op1 => enc_NEG w op1
-    | NOT w op1 => enc_NOT w op1
-    | OR w op1 op2 => enc_OR (op_override pre) w op1 op2
-    | SBB w op1 op2 => enc_SBB (op_override pre) w op1 op2
-    | SUB w op1 op2 => enc_SUB (op_override pre) w op1 op2
-    | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
-    | XADD w op1 op2 => enc_XADD w op1 op2
-    | XCHG w op1 op2 => enc_XCHG w op1 op2
-    | _ => invalid
-    end.
+    if (check_pre_lock_no_op_override pre) then
+      match i with 
+      | ADD w op1 op2 => enc_ADD (op_override pre) w op1 op2
+      | ADC w op1 op2 => enc_ADC (op_override pre) w op1 op2
+      | AND w op1 op2 => enc_AND (op_override pre) w op1 op2
+      | BTC op1 op2 => enc_BTC op1 op2
+      | BTR op1 op2 => enc_BTR op1 op2
+      | BTS op1 op2 => enc_BTS op1 op2
+      | CMPXCHG w op1 op2 => enc_CMPXCHG w op1 op2
+      | DEC w op1 => enc_DEC w op1
+      | INC w op1 => enc_INC w op1
+      | NEG w op1 => enc_NEG w op1
+      | NOT w op1 => enc_NOT w op1
+      | OR w op1 op2 => enc_OR (op_override pre) w op1 op2
+      | SBB w op1 op2 => enc_SBB (op_override pre) w op1 op2
+      | SUB w op1 op2 => enc_SUB (op_override pre) w op1 op2
+      | XOR w op1 op2 => enc_XOR (op_override pre) w op1 op2
+      | XADD w op1 op2 => enc_XADD w op1 op2
+      | XCHG w op1 op2 => enc_XCHG w op1 op2
+      | _ => invalid
+      end
+    else
+      invalid.
 
-  (*Covers all instructions that haven't been covered by above definitions *)
-  Definition enc_seg_override_instr (pre: X86Syntax.prefix) (i : instr) :=
-      match i with
+Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+  if (check_pre_seg_with_op_override pre) then
+    match i with 
+    | IMUL w op1 opopt iopt => enc_IMUL (op_override pre) w op1 opopt iopt
+    | MOV w op1 op2 => enc_MOV (op_override pre) w op1 op2
+    | TEST w op1 op2 => enc_TEST (op_override pre) w op1 op2
+    | _ => invalid
+    end
+  else
+    invalid.
+
+  Definition enc_seg_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+    if (check_pre_seg_op_override pre) then
+      match i with 
+      | CDQ => enc_CDQ
+      | CMOVcc ct op1 op2 => enc_CMOVcc ct op1 op2
+      | CWDE => enc_CWDE
+      | DIV w op1 => enc_DIV w op1
+      | IDIV w op1 => enc_IDIV w op1 
+      | MOVSX w op1 op2 => enc_MOVSX w op1 op2 
+      | MOVZX w op1 op2 => enc_MOVZX w op1 op2
+      | MUL w op1 => enc_MUL w op1
+      | NOP opopt => enc_NOP opopt
+      | ROL w op1 ri => enc_ROL w op1 ri
+      | ROR w op1 ri => enc_ROR w op1 ri
+      | SAR w op1 ri => enc_SAR w op1 ri
+      | SHL w op1 ri => enc_SHL w op1 ri
+      | SHLD w op1 ri => enc_SHLD w op1 ri
+      | SHR w op1 ri => enc_SHR w op1 ri
+      | SHRD w op1 ri => enc_SHRD w op1 ri
+      | _ => invalid
+      end
+    else
+     invalid.
+
+  Definition enc_seg_override_instr pre i :=
+   if (check_pre_seg_override pre) then
+   match i with
     | AAA => enc_AAA
     | AAD => enc_AAD
     | AAM => enc_AAM
@@ -2354,41 +2403,12 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
     | PREFETCHT2 op1 => enc_PREFETCHT2 op1
     | PREFETCHNTA op1 => enc_PREFETCHNTA op1
     | SFENCE => enc_SFENCE
-
     | _ => invalid
-    end.
+   end
+  else
+      invalid.
 
-
-  Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
-    match i with 
-    | IMUL w op1 opopt iopt => enc_IMUL (op_override pre) w op1 opopt iopt
-    | MOV w op1 op2 => enc_MOV (op_override pre) w op1 op2
-    | TEST w op1 op2 => enc_TEST (op_override pre) w op1 op2
-    | _ => enc_seg_override_instr pre i (*Try to find in seg_override in case of false negative*)
-    end.
-
-  Definition enc_seg_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
-    match i with 
-    | CDQ => enc_CDQ
-    | CMOVcc ct op1 op2 => enc_CMOVcc ct op1 op2
-    | CWDE => enc_CWDE
-    | DIV w op1 => enc_DIV w op1
-    | IDIV w op1 => enc_IDIV w op1 
-    | MOVSX w op1 op2 => enc_MOVSX w op1 op2 
-    | MOVZX w op1 op2 => enc_MOVZX w op1 op2
-    | MUL w op1 => enc_MUL w op1
-    | NOP opopt => enc_NOP opopt
-    | ROL w op1 ri => enc_ROL w op1 ri
-    | ROR w op1 ri => enc_ROR w op1 ri
-    | SAR w op1 ri => enc_SAR w op1 ri
-    | SHL w op1 ri => enc_SHL w op1 ri
-    | SHLD w op1 ri => enc_SHLD w op1 ri
-    | SHR w op1 ri => enc_SHR w op1 ri
-    | SHRD w op1 ri => enc_SHRD w op1 ri
-    | _ => enc_seg_override_instr pre i (*Try to find in seg override in case of false negative*)
-    end.
-
-(*Handles encoding of all instructions, not paying attention to valid prefixes*)
+  (*Handles encoding of all instructions, not paying attention to valid prefixes*)
 Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) := 
   match i with
     | AAA => enc_AAA
@@ -2699,27 +2719,81 @@ Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | _ => invalid
     end.
 
-(* Break up encoding of instructions based on prefix constraints *)
-   Definition enc_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) := 
-    
-    if (check_empty_prefix pre) then
+  (*Covers all instructions with specified prefixes *)
+  Definition enc_instr (pre: X86Syntax.prefix) (i : instr) :=
+   if (check_empty_prefix pre) then
       enc_all_instr pre i
-    else if (check_pre_rep pre) then 
-      enc_rep_instr pre i
-    else if (check_pre_rep_or_repn pre) then 
-      enc_rep_or_repn_instr pre i
-    else if (check_pre_lock_with_op_override pre) then
-      enc_lock_with_op_override_instr pre i
-    else if (check_pre_lock_no_op_override pre) then
-      enc_lock_no_op_override_instr pre i
-    else if (check_pre_seg_with_op_override pre) then
-      enc_seg_with_op_override_instr pre i
-    else if (check_pre_seg_op_override pre) then
-      enc_seg_op_override_instr pre i
-    else if (check_pre_seg_override pre) then
-      enc_seg_override_instr pre i
-    else invalid.
+   else
+    match i with
+    (*First type of prefix constraints *)
+    | INS w => enc_rep_instr pre i
+    | OUTS w => enc_rep_instr pre i
+    | MOVS w => enc_rep_instr pre i
+    | LODS w => enc_rep_instr pre i
+    | STOS w => enc_rep_instr pre i
+    | RET ss disp => enc_rep_instr pre i
 
+    (*Second type *)
+    | CMPS w => enc_rep_or_repn_instr pre i
+    | SCAS w => enc_rep_or_repn_instr pre i
+
+    (*Third type *)
+    | ADD true op1 op2 => enc_lock_with_op_override_instr pre i
+    | ADC true op1 op2 =>enc_lock_with_op_override_instr pre i
+    | AND true op1 op2 => enc_lock_with_op_override_instr pre i
+    | NEG true op1 => enc_lock_with_op_override_instr pre i
+    | NOT true op1 => enc_lock_with_op_override_instr pre i
+    | OR true op1 op2 => enc_lock_with_op_override_instr pre i
+    | SBB true op1 op2 =>  enc_lock_with_op_override_instr pre i
+    | SUB true op1 op2 => enc_lock_with_op_override_instr pre i
+    | XOR true op1 op2 => enc_lock_with_op_override_instr pre i
+    | XCHG true op1 op2 => enc_lock_with_op_override_instr pre i
+
+    (*Fourth type*)
+    | ADD false op1 op2 => enc_lock_no_op_override_instr pre i
+    | ADC false op1 op2 => enc_lock_no_op_override_instr pre i
+    | AND false op1 op2 => enc_lock_no_op_override_instr pre i
+    | BTC op1 op2 => enc_lock_no_op_override_instr pre i
+    | BTR op1 op2 => enc_lock_no_op_override_instr pre i
+    | BTS op1 op2 => enc_lock_no_op_override_instr pre i
+    | CMPXCHG w op1 op2 => enc_lock_no_op_override_instr pre i
+    | DEC false op1 => enc_lock_no_op_override_instr pre i
+    | INC false op1 => enc_lock_no_op_override_instr pre i
+    | NEG false op1 => enc_lock_no_op_override_instr pre i
+    | NOT false op1 => enc_lock_no_op_override_instr pre i
+    | OR false op1 op2 => enc_lock_no_op_override_instr pre i
+    | SBB false op1 op2 => enc_lock_no_op_override_instr pre i
+    | SUB false op1 op2 => enc_lock_no_op_override_instr pre i
+    | XOR false op1 op2 => enc_lock_no_op_override_instr pre i
+    | XADD false op1 op2 => enc_lock_no_op_override_instr pre i
+    | XCHG false op1 op2 => enc_lock_no_op_override_instr pre i
+
+    (*Fifth type *)
+    | IMUL w op1 opopt iopt => enc_seg_with_op_override_instr pre i
+    | MOV w op1 op2 => enc_seg_with_op_override_instr pre i
+    | TEST w op1 op2 => enc_seg_with_op_override_instr pre i
+
+    (*Sixth type *)
+    | CDQ => enc_seg_op_override_instr pre i
+    | CMOVcc ct op1 op2 => enc_seg_op_override_instr pre i
+    | CWDE => enc_seg_op_override_instr pre i
+    | DIV w op1 => enc_seg_op_override_instr pre i
+    | IDIV w op1 => enc_seg_op_override_instr pre i
+    | MOVSX w op1 op2 => enc_seg_op_override_instr pre i
+    | MOVZX w op1 op2 => enc_seg_op_override_instr pre i
+    | MUL w op1 => enc_seg_op_override_instr pre i
+    | NOP opopt => enc_seg_op_override_instr pre i
+    | ROL w op1 ri => enc_seg_op_override_instr pre i
+    | ROR w op1 ri => enc_seg_op_override_instr pre i
+    | SAR w op1 ri => enc_seg_op_override_instr pre i
+    | SHL w op1 ri => enc_seg_op_override_instr pre i
+    | SHLD w op1 ri => enc_seg_op_override_instr pre i
+    | SHR w op1 ri => enc_seg_op_override_instr pre i
+    | SHRD w op1 ri => enc_seg_op_override_instr pre i
+
+    (*Final type *)
+    | _ => enc_seg_override_instr pre i
+    end.
 
 Definition enc_pre_instr pre ins : Enc (list bool) := 
   l1 <- enc_prefix pre;
