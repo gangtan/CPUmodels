@@ -87,7 +87,7 @@ let choose_prefix () =
      *)   let seg_override = if sr_opt_c then Some (choose_segment_reg()) else None in
 
         (*generate valid cases for encoder/decoder *)
-        match Random.int 5 with (*Weigh heavily towards latter case *)
+        match Random.int 5 with 
         | 0 -> mkPrefix (Some Coq_rep) seg_override false false
         | 1 -> mkPrefix (Some Coq_repn) seg_override false false
         | 2 -> mkPrefix (Some Coq_lock) seg_override true false
@@ -1157,7 +1157,7 @@ let rec fuzz_instr instr_func lb ub n =
 	match n with 
 	| 0 -> ()
 	| x -> 
-	let prefix = (*emptyPrefix*) choose_prefix() in
+	let prefix = emptyPrefix (*choose_prefix()*) in
 	let instr = instr_func lb ub in
 	
 	F.printf "------------\nTesting %a\n"
