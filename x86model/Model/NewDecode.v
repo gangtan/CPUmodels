@@ -2141,8 +2141,8 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Definition instParserState := 
     @(*X86_BASE_PARSER.*)instParserState (Pair_t prefix_t instruction_t).
 
-  Definition parse_token ps tk :
-    option (instParserState * list (prefix * instr)) := 
-    @(*X86_BASE_PARSER.*)parse_token (Pair_t prefix_t instruction_t) ps tk.
+  Definition parse_token ps tk (H:tk < num_tokens) :
+    instParserState * list (prefix * instr) := 
+    @(*X86_BASE_PARSER.*)parse_token (Pair_t prefix_t instruction_t) ps tk H.
 
 End X86_PARSER.

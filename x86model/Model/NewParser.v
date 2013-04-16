@@ -1793,7 +1793,9 @@ Section DFA.
     row_num : nat ; 
     row_num_lt : row_num < length s ;
     (** what are the transition entries *)
-    row_entries : list (entry_t row_num s)
+    row_entries : list (entry_t row_num s) ; 
+    (** have an entry for each token *)
+    row_entries_len : length row_entries = num_tokens
   }.
 
   (** The transition matrix is then a list of rows *)
@@ -1817,7 +1819,7 @@ Section DFA.
     dfa_accepts_len : length dfa_accepts = dfa_num_states ; 
     (** which states are failure states *)
     dfa_rejects : list bool ;
-    dfa_rejects_len : length dfa_rejects = dfa_num_states 
+    dfa_rejects_len : length dfa_rejects = dfa_num_states
   }.
   
   (** Instead of working directly in terms of lists of [char_p]'s, we instead
@@ -1987,13 +1989,13 @@ Section DFA.
 
     Definition gen_row' 
       (n:nat) (s:states_t) (tid:token_id) (H:s.[gpos] = g) (H1:gpos < length s): 
-      { s' : states_t & row_t gpos (s ++ s') }.
+      { s' : states_t & { r : row_t gpos (s ++ s') & length r = n }}.
       refine (
         fix gen_row' (n:nat) (s:states_t) (tid:token_id) 
                 (H:s.[gpos] = g) (H1:gpos < length s) : 
-                { s' : states_t & row_t gpos (s ++ s') } := 
+                { s' : states_t & { r : row_t gpos (s ++ s') & length r = n }} := 
         match n with 
-          | 0 => existT _ nil nil
+          | 0 => existT _ nil (existT _ nil _)
           | S n' => 
             let (g',x) := derivs_and_split g (token_id_to_chars tid) in
               let p := find_or_add g' s in 
@@ -2003,14 +2005,16 @@ Section DFA.
                        next_state_lt := _ ; 
                        next_xform := xinterp (xcoerce x _ _) |} in
                     existT _ ((fst p) ++ s2) _
-        end). rewrite nth_lt ; auto. rewrite app_length. omega.
+        end) ; auto.
+      rewrite nth_lt ; auto. rewrite app_length. omega.
       generalize (find_index_some g' s).
       unfold find_or_add in p. intros. destruct (find_index g' s).  simpl.
       specialize (H0 n0 (eq_refl _)). rewrite <- app_nil_end. rewrite app_length.
       omega. simpl. rewrite app_length. rewrite app_length. simpl. omega.
       generalize (find_or_add_app g' s s2). intro. rewrite H0. clear H0. 
       rewrite app_ass. auto.  rewrite <- H. rewrite app_ass. 
-      rewrite nth_lt ; auto. rewrite <- app_ass. apply (e::row).
+      rewrite nth_lt ; auto. rewrite <- app_ass. 
+      destruct row as [row e']. refine (existT _ (e::row) _). simpl. rewrite e'. auto.
     Defined.
 
     Definition gen_row (s:states_t) (H:s.[gpos] = g) (H1: gpos < length s) :=
@@ -2034,7 +2038,11 @@ Section DFA.
     List.map (fun (t:transition_t s) => 
       {| row_num := row_num t ; 
          row_num_lt := app_length_lt s s1 (row_num_lt t) ;
-         row_entries := List.map (coerce_entry _ (row_num_lt t)) (row_entries t) |}) ts.
+         row_entries := List.map (coerce_entry _ (row_num_lt t)) (row_entries t) ; 
+         row_entries_len := eq_ind_r (fun n : nat => n = num_tokens)
+                        (row_entries_len t)
+                        (list_length_map (coerce_entry s1 (row_num_lt t))
+                           (row_entries t)) |}) ts.
 
   (** Build a transition table by closing off the reachable states.  The invariant
      is that we've closed the table up to the [next_state] and have generated the
@@ -2063,11 +2071,13 @@ Section DFA.
           | None => fun H => Some (existT _ s rows)
           | Some r => 
             fun H => 
-              let (s1, row) := @gen_row r next_state s (nth_error_some _ _ H)
-                                 (nth_error_some_lt _ _ H) in 
+              let (s1, row_ex) := @gen_row r next_state s (nth_error_some _ _ H)
+                                   (nth_error_some_lt _ _ H) in 
+              let (row, row_len) := row_ex in                                  
               let t := {| row_num := next_state ; 
                           row_num_lt := app_length_lt _ _ (nth_error_some_lt _ _ H) ; 
-                                row_entries := row |} in
+                          row_entries := row ; 
+                          row_entries_len := row_len |} in
                 @build_table n' (s++s1) ((coerce_transitions _ rows)++[t]) (1 + next_state)
               end (eq_refl _)
         end.
@@ -2084,7 +2094,7 @@ Section DFA.
     induction n ; simpl ; intros. discriminate. generalize H. clear H.
     generalize (nth_error_some i s). generalize (nth_error_some_lt i s).
     remember (nth_error s i) as popt. destruct popt. intros.
-    remember (gen_row s (e a eq_refl) (l a eq_refl)) as r. destruct r. 
+    remember (gen_row s (e a eq_refl) (l a eq_refl)) as r. destruct r. destruct s0.
     apply (IHn _ _ _ _ _ H). simpl. unfold coerce_transitions. 
     rewrite app_length. rewrite map_length. rewrite H0. simpl. omega. 
     assert (i < length s). eapply (nth_error_some_lt i s). eauto. rewrite app_length. 
@@ -2117,7 +2127,7 @@ Section DFA.
     remember (nth_error s i) as popt. destruct popt. intros.
     remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0. 
     assert (length t = length (coerce_transitions x t)). unfold coerce_transitions.
-    rewrite map_length. auto.
+    rewrite map_length. auto. destruct s0.
     apply (IHn _ _ _ _ _ H) ;  clear IHn. rewrite app_length. simpl. omega. intros.
     assert (j0 < length t \/ j0 >= length t). omega. destruct H3.
     specialize (H1 j0). rewrite nth_error_lt_app ; auto. unfold coerce_transitions.
@@ -2178,7 +2188,7 @@ Section DFA.
     generalize (nth_error_some i s) (nth_error_some_lt i s). 
     remember (nth_error s i). destruct e. Focus 2. intros. injection H ; intros ; subst.
     mysimp. intros. remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0.
-    specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
+    destruct s0. specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
     apply IHn. congruence.
   Qed.
 
@@ -2208,6 +2218,30 @@ Section DFA.
     astgram_type (dfa_states d .[x]) = astgram_type (dfa_states d .[y]).
   Proof.
     intros. rewrite H. auto.
+  Qed.
+
+  Lemma build_table_at_least_one n s r i s' t' : 
+    @build_table n s r i = Some (existT _ s' t') -> s <> nil -> s' <> nil.
+  Proof.
+    induction n ; simpl. intros. discriminate. intros s r i s' t'.
+    generalize (nth_error_some i s) (nth_error_some_lt i s).
+    remember (nth_error s i). destruct e. intros. 
+    remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0. destruct s0.
+    specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
+    apply IHn. congruence. intros. injection H ; subst. intros ; subst. auto.
+  Qed.
+
+  Lemma dfa_at_least_one : 
+    forall n ag d, build_dfa n ag = Some d -> 
+      0 < dfa_num_states d.
+  Proof.
+    intros n ag d. unfold build_dfa. 
+    generalize (build_trans_len n ag) (build_trans_r n ag). 
+    remember (build_transition_table n ag) as p.
+    intros. destruct p ; try congruence. destruct s.
+    generalize (build_table_at_least_one _ _ _ (eq_sym Heqp)). 
+    injection H ; intros ; subst ; simpl. clear H e y. destruct x.
+    contradiction H1. congruence. auto. simpl. auto with arith.
   Qed.
 
   (** Here's one table-based parser, which stops on the first match.
@@ -2296,6 +2330,7 @@ Section DFA.
   Record instParserState (t:type) := mkPS { 
     dfa_ps : DFA ; 
     row_ps : nat ; 
+    row_ps_lt : row_ps < dfa_num_states (dfa_ps) ;
     fixup_ps : fixfn ((dfa_states dfa_ps).[row_ps]) t
   }.
 
@@ -2305,14 +2340,15 @@ Section DFA.
       and splitting it into an [astgram] and a fix-up function.  We then generate
       the [DFA] from this [astgram].  Finally, we start off in the initial state
       of the [DFA], which is 0. *)
-  Definition opt_initial_parser_state (n:nat) t (g:grammar t) : option(instParserState t) := 
+  Definition opt_initial_parser_state (n:nat) t (g:grammar t) : option(instParserState t) :=
     let (ag, f) := split_astgram g in 
       match build_dfa n ag as x 
         return build_dfa n ag = x -> option (instParserState t) 
         with 
         | None => fun H => None
         | Some d => fun H => 
-          Some (mkPS d 0 (coerce_dom (eq_sym (dfa_zero_coerce n ag H)) f))
+          Some (@mkPS _ d 0 (dfa_at_least_one _ _ H)
+                  (coerce_dom (eq_sym (dfa_zero_coerce n ag H)) f))
       end (eq_refl _).  
 
   (** Given an [instParserState] and a token, advance the parser.  We first
@@ -2332,38 +2368,53 @@ Section DFA.
      time (and in fact, should be.)  Then we wouldn't even need the accepting
      state test, because if it's not accepting, we would get back an empty list.
   *)
-  Definition parse_token t (ps:instParserState t) (tk:token_id) : 
-    option (instParserState t * list (interp t)).
-  refine (fun t ps tk => 
+  Definition parse_token t (ps:instParserState t) (tk:token_id) (tk_lt:tk < num_tokens) : 
+    instParserState t * list (interp t).
+  refine (fun t ps tk tk_lt => 
     let d := dfa_ps ps in 
       match nth_error (dfa_transition d) (row_ps ps) as p return
         (nth_error (dfa_transition d) (row_ps ps) = p) -> _ 
         with 
-        | None => fun _ => None
+        | None => fun H => _
         | Some row => fun H => 
           match nth_error (row_entries row) tk as q return
             (nth_error (row_entries row) tk = q) -> _
             with 
-            | None => fun _ => None
+            | None => fun H' => _
             | Some e => fun H' => 
               let f := next_xform e in 
               let next_i := next_state e in 
-                if nth next_i (dfa_accepts d) false then
+              let g := fun z => (fixup_ps ps) _ in
+              let vs' := 
+                (if nth next_i (dfa_accepts d) false then 
                   let ag' := nth next_i (dfa_states d) aZero in 
-                    let vs := astgram_extract_nil ag' in 
-                      Some (ps, List.map (fun z => (fixup_ps ps) _) vs)
+                  let vs := astgram_extract_nil ag' in 
+                    List.map g vs 
                 else 
-                  Some (mkPS d next_i (fun z => (fixup_ps ps) _), nil)
+                  nil) in
+                (@mkPS _ d next_i _ g, vs')
           end (eq_refl _)
       end (eq_refl _)
-  ) ; generalize (dfa_transition_r d (row_ps ps)) ; rewrite H ; intro g ; rewrite <- g ;
+  ). 
+  generalize (dfa_transition_r d (row_ps ps)) ; rewrite H ; intro g ; rewrite <- g ;
   apply (f z).
+  assert (next_state e < dfa_num_states d) ; auto.
+  destruct e ; destruct d ; simpl in *. rewrite <- dfa_states_len0. auto.
+  destruct row. destruct d. simpl in *. rewrite <- row_entries_len0 in tk_lt.
+  generalize (nth_error_none _ _ H'). intro. assert False. omega. contradiction.
+  generalize (nth_error_none _ _ H). intros. assert False ; [ idtac | contradiction ].
+  generalize (row_ps_lt ps). intro. 
+  generalize (dfa_transition_len (dfa_ps ps)). intro.
+  rewrite <- H2 in H1. assert (row_ps ps >= length (dfa_transition (dfa_ps ps))). auto.
+  omega.
   Defined.
 
 End DFA.
+
 Extraction Implicit table_parse [t].
 Extraction Implicit opt_initial_parser_state [t].
 Extraction Implicit parse_token [t].
+Recursive Extraction parse_token.
 
 (** [to_string] takes a grammar [a] and an abstract syntax value [v] of
     type [astgram_type a] and produces an optional string [s] with the property
@@ -2402,7 +2453,7 @@ Fixpoint to_string (a:astgram) : interp (astgram_type a) -> option (list char_p)
           end) (Some nil) v
   end.
 
-Lemma to_string_corr : forall a (v:interp (astgram_type a)) s, 
+Lemma to_string_corr1 : forall a (v:interp (astgram_type a)) s, 
   to_string a v = Some s -> in_astgram a s v.
 Proof.
   Ltac myinj :=     
@@ -2425,5 +2476,14 @@ Proof.
    end. myinj. specialize (IHa _ _ (eq_sym Heqsopt1)).
    eapply InaStar_cons ; eauto ; congruence.
 Defined.
+
+Lemma to_string_corr2 : forall a (s:list char_p) (v:interp (astgram_type a)),
+  in_astgram a s v -> to_string a v = Some s.
+Proof.
+  induction 1 ; subst ; simpl ; mysimp ; try congruence ; 
+  try (rewrite IHin_astgram1 ; try rewrite IHin_astgram2 ; auto).
+  destruct s1 ; try congruence. auto.
+Qed.
+
 (*End NewParser.*)
 (*End X86_BASE_PARSER.*)
