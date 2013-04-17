@@ -485,7 +485,7 @@ let str_of_instr (prefix, ins) =
     | LSS (a,b) -> P.sprintf "lss %s" (pp_two_ops (true,a,b))
     | LTR (op) -> P.sprintf "ltr %s" (pp_one_op (true, op))    
 
-    | MOV (w,a,b) -> P.sprintf "mov %s" (pp_two_ops (true,a,b))
+    | MOV (w,a,b) -> P.sprintf "mov %s" (pp_two_ops (w,a,b))
     | MOVCR (d, cr, reg) ->
       if d then 
 	P.sprintf "movcr %s, %s" (str_of_reg OpSize32 reg) (str_of_controlreg cr)

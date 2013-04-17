@@ -47,11 +47,6 @@ Fixpoint lb2bits (lb : list bool) : string :=
       end
   end.
 
-(* testing if a signed 32-bit immediate can be represented in a byte;
-   that is, if it's within [-128,127] *)
-Definition repr_in_signed_byte (imm:int32) :=
-  andb (Word.lt imm (Word.repr 128)) (Word.lt (Word.repr (-129)) imm).
-
 (* Definition matches a register with a list of booleans that 
  * represents its bit encoding. *)
 Definition enc_reg r : list bool :=
@@ -184,17 +179,43 @@ Definition int_explode (sz:nat) (i:Word.int sz) (n:nat) : list bool :=
     in int_explode_aux n.
 Implicit Arguments int_explode [sz].
 
-Definition enc_byte (sz:nat) (i:Word.int sz) : list bool :=
+(* Definition enc_byte (sz:nat) (i:Word.int sz) : list bool := *)
+(*   int_explode i 8. *)
+(* Implicit Arguments enc_byte [sz]. *)
+
+Definition enc_byte (i: int8) : list bool :=
   int_explode i 8.
-Implicit Arguments enc_byte [sz].
+
+(* testing if a signed 32-bit immediate can be represented in a byte;
+   that is, if it's within [-128,127] *)
+Definition repr_in_signed_byte (imm:int32) :=
+  andb (Word.lt imm (Word.repr 128)) (Word.lt (Word.repr (-129)) imm).
+
+(* encode a byte from an int32;  
+   return invliad if i isn't a valid byte: not between (-128,127) *)
+Definition enc_byte_i32  (i: int32) : Enc (list bool) :=
+  if (repr_in_signed_byte i) then ret (int_explode i 8)
+  else invalid.
 
 (* little endian encoding of half word *)
-Definition enc_halfword (sz:nat) (i:Word.int sz) : list bool :=
-  let b0 := Word.and (Word.shru i (Word.repr 8)) (Word.repr 255) in
-  let b1 := Word.and i (Word.repr 255) in
-  let hw := Word.or (Word.shl b1 (Word.repr 8)) b0 in
-    int_explode hw 16.
-Implicit Arguments enc_halfword [sz].
+Definition enc_halfword (i: int16) : list bool :=
+    let b0 := Word.and (Word.shru i (Word.repr 8)) (Word.repr 255) in
+    let b1 := Word.and i (Word.repr 255) in
+    let hw := Word.or (Word.shl b1 (Word.repr 8)) b0 in
+      int_explode hw 16.
+
+(* testing if a signed 32-bit immediate can be represented in a 16-bit half word;
+   that is, if it's within [-65536,65535] *)
+Definition repr_in_signed_halfword (imm:int32) :=
+  andb (Word.lt imm (Word.repr 65536)) (Word.lt (Word.repr (-65537)) imm).
+
+Definition enc_halfword_i32 (i: int32) : Enc (list bool) :=
+  if (repr_in_signed_halfword i) then
+    let b0 := Word.and (Word.shru i (Word.repr 8)) (Word.repr 255) in
+    let b1 := Word.and i (Word.repr 255) in
+    let hw := Word.or (Word.shl b1 (Word.repr 8)) b0 in
+      ret (int_explode hw 16)
+  else invalid.
 
 Definition enc_word (sz:nat) (i:Word.int sz) : list bool :=
   let b3 := Word.and i (Word.repr 255) in
@@ -227,7 +248,8 @@ Definition enc_address (opb: list bool) (addr: address): Enc (list bool) :=
            use the encoding of disp32[reg] *)
         let enc_disp_idxopt := 
           if (repr_in_signed_byte disp) then
-            ret (s2bl "01" ++ opb ++ r_or_m ++ enc_byte disp)
+            d <- enc_byte_i32 disp;
+            ret (s2bl "01" ++ opb ++ r_or_m ++ d)
             else ret (s2bl "10" ++ opb ++ r_or_m ++ enc_word disp)
         in
         match bs with
@@ -239,13 +261,13 @@ Definition enc_address (opb: list bool) (addr: address): Enc (list bool) :=
         end
 
     | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some(sc,idx) |} =>
-      (* special case: disp32[index*scale] *)
+      (* special case: disp32[index*scale]; the mod bits in mod/rm must be 00 *)
       si <- enc_si sc idx;
-      ret (s2bl "10" ++ opb ++ s2bl "100" ++ si ++ s2bl "101" ++ enc_word disp)
+      ret (s2bl "00" ++ opb ++ s2bl "100" ++ si ++ s2bl "101" ++ enc_word disp)
+
   end.
 
   
-
 (* encoding the modrm byte given the encoding of the reg field *)
 Definition enc_modrm_gen (opb: list bool) (op2 : operand): Enc (list bool) := 
   match op2 with
@@ -269,13 +291,14 @@ Definition enc_modrm (op1 op2: operand): Enc (list bool) :=
 Definition enc_modrm_2 (bs:string) op2 : Enc (list bool) :=
   enc_modrm_gen (s2bl bs) op2.
 
+
 (* Definition encodes an immediate operand to a list of booleans 
  * representing the bits*)
-Definition enc_imm (op_override w: bool) (i1 : int32) : list bool :=
+Definition enc_imm (op_override w: bool) (i1 : int32) : Enc (list bool) :=
   match op_override, w with
-    | _, false => enc_word i1
-    | false, true => enc_word i1
-    | true, true => enc_halfword i1
+    | _, false => enc_byte_i32 i1
+    | false, true => ret (enc_word i1)
+    | true, true => enc_halfword_i32 i1
   end.
 
 (* Definition encodes the w/s operand as a list of booleans representing its bit. *)
@@ -309,26 +332,32 @@ match op1, op2 with
     ret (s2bl lb1 ++  s2bl "0" ++ enc_dbit false ++ enc_bit w ++ l1)
   | Reg_op EAX, Imm_op i1 => 
     (* alternate encoding possible; see the case of _, Immop i1 *)
-    ret (s2bl lb1 ++ s2bl "10" ++ enc_bit w ++ enc_imm op_override w i1)
+    l1 <- enc_imm op_override w i1;
+    ret (s2bl lb1 ++ s2bl "10" ++ enc_bit w ++ l1)
   | _, Imm_op i1 =>
     match op_override, w with
       | _ , false => 
         l1 <- enc_modrm_2 lb2 op1;
-        ret (s2bl "10000000" ++ l1 ++ enc_byte i1)
+        l_i1 <- enc_byte_i32 i1;
+        ret (s2bl "10000000" ++ l1 ++ l_i1)
       | false, true => 
         (* alternate encoding: even if i1 can be in a byte, 
            we can encode it as imm32 *)
         l1 <- enc_modrm_2 lb2 op1;
         if (repr_in_signed_byte i1) then
-          ret (s2bl "10000011" ++ l1 ++ enc_byte i1)
+          l_i1 <- enc_byte_i32 i1;
+          ret (s2bl "10000011" ++ l1 ++ l_i1)
           else ret (s2bl "10000001" ++ l1 ++ enc_word i1)
       | true, true => 
         (* alternate encoding: even if i1 can be in a byte, 
            we can encode it as imm32 *)
         l1 <- enc_modrm_2 lb2 op1;
         if (repr_in_signed_byte i1) then
-          ret (s2bl "10000011" ++ l1 ++ enc_byte i1)
-          else ret (s2bl "10000001" ++ l1 ++ enc_halfword i1)
+          l_i1 <- enc_byte_i32 i1;
+          ret (s2bl "10000011" ++ l1 ++ l_i1)
+        else 
+          l_i1 <- enc_halfword_i32 i1;
+          ret (s2bl "10000001" ++ l1 ++ l_i1)
     end
   | _, _ => invalid
 end.
@@ -349,7 +378,8 @@ Definition enc_bit_test (lb1 lb2 : string)
   match op1, op2  with
     | _, Imm_op i1 =>
       l1 <- enc_modrm_2 lb1 op1;
-      ret (s2bl "0000111110111010" ++ l1 ++ enc_imm false false i1)
+      l_i1 <- enc_imm false false i1;
+      ret (s2bl "0000111110111010" ++ l1 ++ l_i1)
     | _, _ => 
       l1 <- enc_modrm op2 op1; 
       ret (s2bl "00001111"  ++ s2bl "101" ++ s2bl lb2 ++ s2bl "011" ++ l1)
@@ -488,10 +518,12 @@ Definition enc_IMUL (op_override:bool)
          we can use the case of 32-bit immediates *)
       if (repr_in_signed_byte imm3) then 
         l1 <- enc_modrm op1 op2; 
-        ret (s2bl "01101011" ++ l1 ++ enc_imm false false imm3)
+        l_imm3 <- enc_imm false false imm3;
+        ret (s2bl "01101011" ++ l1 ++ l_imm3)
       else
         l1 <- enc_modrm op1 op2; 
-        ret (s2bl "01101001" ++ l1 ++ enc_imm op_override true imm3)
+        l_imm3 <- enc_imm op_override true imm3;
+        ret (s2bl "01101001" ++ l1 ++ l_imm3)
     | _ , _ => invalid
   end.
 
@@ -530,7 +562,8 @@ Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
         | Imm_op i1 => 
           if (repr_in_signed_byte i1) then
             (* alternate encoding: can always use the word case to encode i1 *)
-            ret (s2bl "11101011" ++ enc_byte i1)
+            l_i1 <- enc_byte_i32 i1;
+            ret (s2bl "11101011" ++ l_i1)
           else ret (s2bl "11101001" ++ enc_word i1)
         | _ => invalid
       end
@@ -601,7 +634,8 @@ Definition enc_MOV (op_override w:bool) (op1 op2:operand) : Enc (list bool) :=
       l1 <- enc_modrm op1 op2; ret (s2bl "1000101" ++ enc_bit w ++ l1)
     | Reg_op r1, Imm_op i1 => 
       (* alternate encoding: C6/C7 /0 *)
-      ret (s2bl "1011" ++ enc_bit w ++ enc_reg r1 ++ enc_imm op_override w i1)
+      l_i1 <- enc_imm op_override w i1;
+      ret (s2bl "1011" ++ enc_bit w ++ enc_reg r1 ++ l_i1)
     | Reg_op EAX, Offset_op o1 => 
       ret (s2bl "1010000" ++ enc_bit w ++ enc_word o1)
     | Address_op _, Reg_op _ => 
@@ -610,7 +644,8 @@ Definition enc_MOV (op_override w:bool) (op1 op2:operand) : Enc (list bool) :=
       ret (s2bl "1010001" ++ enc_bit w ++ enc_word o1)
     | Address_op a1, Imm_op i1 => 
       l1 <- enc_modrm_2 "000" op1; 
-      ret (s2bl "1100011" ++ enc_bit w ++ l1 ++ enc_imm op_override w i1)
+      l_i1 <- enc_imm op_override w i1;
+      ret (s2bl "1100011" ++ enc_bit w ++ l1 ++ l_i1)
     | _, _ => invalid
   end.
 
@@ -687,12 +722,14 @@ Definition enc_PUSH (w:bool)(op1:operand) : Enc (list bool) :=
         | Address_op a1 => 
           l1 <- enc_modrm_2 "110" op1; ret (s2bl "11111111"  ++ l1)
         | Imm_op i1 => 
-          ret (s2bl "01101000" ++ enc_imm false true i1)
+          ret (s2bl "01101000" ++ enc_word i1)
         | _ => invalid
       end
     | false => 
       match op1 with 
-        | Imm_op i1 => ret (s2bl "01101010" ++ enc_imm false false i1)
+        | Imm_op i1 => 
+          l_i1 <- enc_imm false false i1;
+          ret (s2bl "01101010" ++ l_i1)
         | _ => invalid
       end
   end.
@@ -776,12 +813,14 @@ Definition enc_TEST (op_override w:bool)
   match op1, op2 with
     | Reg_op EAX, Imm_op i
     | Imm_op i, Reg_op EAX =>
-      ret (s2bl "1010100" ++ enc_bit w ++ enc_imm op_override w i)
+      l_i <- enc_imm op_override w i;
+      ret (s2bl "1010100" ++ enc_bit w ++ l_i)
 
     | op, Imm_op i
     | Imm_op i, op =>
       l1 <- enc_modrm_2 "000" op; 
-      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ enc_imm op_override w i)
+      l_i <- enc_imm op_override w i;
+      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ l_i)
 
     | Reg_op r, op
     | op, Reg_op r =>
@@ -1340,7 +1379,10 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | MMX_16, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl     "00001111111100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
-    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r) ++ (enc_byte imm))
+    | b, MMX_Reg_op r, MMX_Imm_op imm => 
+      l_imm <- enc_byte_i32 imm;
+      ret (s2bl "00001111111100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r)
+        ++ l_imm)
     | _, _, _ => invalid
     end.
 
@@ -1350,7 +1392,10 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | MMX_64, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111111000" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
-    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111111000" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r) ++ (enc_byte imm))
+    | b, MMX_Reg_op r, MMX_Imm_op imm => 
+      l_imm <- enc_byte_i32 imm;
+      ret (s2bl "00001111111000" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r)
+        ++ l_imm)
     | _, _, _ => invalid
     end.
 
@@ -1360,7 +1405,10 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     | MMX_16, _, _ => invalid
     | b, MMX_Addr_op mem, MMX_Reg_op mmx => 
         l1 <- enc_mmx_modrm op2 op1; ret (s2bl   "00001111110100" ++ (enc_gg b) ++ (s2bl "11") ++ l1)
-    | b, MMX_Reg_op r, MMX_Imm_op imm => ret (s2bl "00001111110100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r) ++ (enc_byte imm))
+    | b, MMX_Reg_op r, MMX_Imm_op imm => 
+      l_imm <- enc_byte_i32 imm;
+      ret (s2bl "00001111110100" ++ (enc_gg b) ++ (s2bl "11110") ++ (enc_mmx_reg r)
+        ++ l_imm)
     | _, _, _ => invalid
     end.
 
@@ -1522,14 +1570,18 @@ Definition enc_ANDPS (op1 op2: sse_operand):=
 Definition enc_CMPPS (op1 op2 imm: sse_operand) := 
   match op1, op2, imm with
   | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
-    l1 <- enc_xmm_modrm op1 op2; ret (s2bl "0000111101010100" ++ l1 ++ enc_byte i) 
+    l1 <- enc_xmm_modrm op1 op2; 
+    l_i <- enc_byte_i32 i;
+    ret (s2bl "0000111101010100" ++ l1 ++ l_i) 
   | _, _, _  => invalid
   end.
 
 Definition enc_CMPSS (op1 op2 imm: sse_operand) := 
   match op1, op2, imm with
   | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
-    l1 <- enc_xmm_modrm op1 op2; ret (s2bl "111100110000111111000010" ++ l1 ++ enc_byte i) 
+    l1 <- enc_xmm_modrm op1 op2; 
+    l_i <- enc_byte_i32 i;
+    ret (s2bl "111100110000111111000010" ++ l1 ++ l_i) 
   | _, _, _  => invalid
   end.
 
@@ -1757,7 +1809,9 @@ Definition enc_RSQRTSS (op1 op2: sse_operand):=
 Definition enc_SHUFPS (op1 op2 imm: sse_operand) :=
   match op1, op2, imm with
   | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
-    l1 <- enc_xmm_modrm op1 op2; ret (s2bl "0000111111000110" ++ l1 ++ enc_byte i) 
+    l1 <- enc_xmm_modrm op1 op2; 
+    l_i <- enc_byte_i32 i;
+    ret (s2bl "0000111111000110" ++ l1 ++ l_i) 
   | _, _, _  => invalid
   end.
 
@@ -1837,17 +1891,20 @@ Definition enc_PAVGB (op1 op2: sse_operand):=
 Definition enc_PEXTRW (op1 op2 imm: sse_operand):=
   match op1, op2, imm with
   | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
-    ret (s2bl "000011111100010111" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ enc_byte i) 
+    l_i <- enc_byte_i32 i;
+    ret (s2bl "000011111100010111" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ l_i) 
   | _, _, _  => invalid
   end.
 
 Definition enc_PINSRW (op1 op2 imm: sse_operand):=
   match op1, op2, imm with
   | SSE_MM_Reg_op xmm, SSE_GP_Reg_op r32, SSE_Imm_op i => 
-    ret (s2bl "000011111100010011" ++ (enc_mmx_reg xmm) ++(enc_reg r32) ++ enc_byte i) 
+    l_i <- enc_byte_i32 i;
+    ret (s2bl "000011111100010011" ++ (enc_mmx_reg xmm) ++(enc_reg r32) ++ l_i) 
   | SSE_MM_Reg_op mm, SSE_Addr_op a, SSE_Imm_op i =>
     l1 <- enc_mm_modrm_noreg (enc_mmx_reg mm) op2; 
-    ret (s2bl "0000111111000100" ++ l1 ++ enc_byte i) 
+    l_i <- enc_byte_i32 i;
+    ret (s2bl "0000111111000100" ++ l1 ++ l_i) 
   | _, _, _  => invalid
   end.
 
@@ -1896,7 +1953,8 @@ Definition enc_PSADBW (op1 op2: sse_operand):=
 Definition enc_PSHUFW (op1 op2 imm: sse_operand) :=
   match op1, op2, imm with
   | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
-    ret (s2bl "0000111101110000" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ enc_byte i) 
+    l_i <- enc_byte_i32 i;
+    ret (s2bl "0000111101110000" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ l_i) 
   | _, _, _  => invalid
   end.
 
