@@ -663,7 +663,7 @@ Module X86_PARSER.
     (fun _ => INVD %% instruction_t).
 
   Definition INVLPG_p := 
-    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "111" @ 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "111" @ 
     (fun x => INVLPG x %% instruction_t).
 
   Definition IRET_p := "1100" $$ bits "1111" @ (fun _ => IRET %% instruction_t).
@@ -709,11 +709,11 @@ Module X86_PARSER.
     (fun p => LES (fst p) (snd p) %% instruction_t).
   Definition LFS_p := "0000" $$ "1111" $$ "1011" $$ "0100" $$ modrm @ 
     (fun p => LFS (fst p) (snd p) %% instruction_t).
-  Definition LGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "010" @ 
+  Definition LGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "010" @ 
     (fun x => LGDT x %% instruction_t).
   Definition LGS_p := "0000" $$ "1111" $$ "1011" $$ "0101" $$ modrm @ 
     (fun p => LGS (fst p) (snd p) %% instruction_t).
-  Definition LIDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "011" @ 
+  Definition LIDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "011" @ 
     (fun x => LIDT x %% instruction_t).
   Definition LLDT_p := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ "11" $$ "010" $$ reg @ 
@@ -740,7 +740,7 @@ Module X86_PARSER.
     (fun p => LSL (fst p) (snd p) %% instruction_t).
   Definition LSS_p := "0000" $$ "1111" $$ "1011" $$ "0010" $$ modrm @ 
     (fun p => LSS (fst p) (snd p) %% instruction_t).
-  Definition LTR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "011" @ 
+  Definition LTR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "011" @ 
     (fun x => LTR x %% instruction_t).
 
   (* This may not be right. Need to test this thoroughly. 
@@ -847,10 +847,10 @@ Module X86_PARSER.
      (fun p => MOVSR false (fst p) (snd p) %% instruction_t).
 
   Definition MOVBE_p := 
-    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0000" $$ modrm @
+    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0001" $$ modrm @
     (fun p => MOVBE (snd p) (fst p) %% instruction_t)
   |+|
-    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0001" $$ modrm @ 
+    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0000" $$ modrm @ 
     (fun p => MOVBE (fst p) (snd p) %% instruction_t).
 
   Definition MOVS_p := "1010" $$ "010" $$ anybit @ (fun x => MOVS x %% instruction_t).
@@ -873,7 +873,7 @@ Module X86_PARSER.
   (* The following is the same as the encoding of "XCHG EAX, EAX"
     "1001" $$ bits "0000" @ (fun _ => NOP None %% instruction_t)
   |+| *)
-    "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm "000" @ 
+    "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm2 "000" @ 
     (fun op => NOP op %% instruction_t).
 
   Definition NOT_p := 
@@ -1001,7 +1001,7 @@ Module X86_PARSER.
   Definition SETcc_p := 
   "0000" $$ "1111" $$ "1001" $$ tttn $ modrm @ 
     (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
-  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "000" @ 
+  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "000" @ 
     (fun x => SGDT x %% instruction_t).
   Definition SHL_p := rotate_p "100" SHL.
 
@@ -1021,11 +1021,13 @@ Module X86_PARSER.
   Definition SHLD_p := shiftdouble_p "01" SHLD.
   Definition SHR_p := rotate_p "101" SHR.
   Definition SHRD_p := shiftdouble_p "11" SHRD.
-  Definition SIDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "001" @ 
+  Definition SIDT_p := ("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "001") @ 
     (fun x => SIDT x %% instruction_t).
-  Definition SLDT_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "000" @ 
+
+  Definition SLDT_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "000" @ 
     (fun x => SLDT x %% instruction_t).
-  Definition SMSW_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "100" @ 
+
+  Definition SMSW_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "100" @ 
     (fun x => SMSW x %% instruction_t).
   Definition STC_p := "1111" $$ bits "1001" @ (fun _ => STC %% instruction_t).
   Definition STD_p := "1111" $$ bits "1101" @ (fun _ => STD %% instruction_t).
@@ -1067,7 +1069,7 @@ Module X86_PARSER.
     (fun p => match p with | (w,(op1,op2)) => XADD w op2 op1 end %% instruction_t).
   Definition XCHG_p := 
     "1000" $$ "011" $$ anybit $ modrm @ 
-    (fun p => match p with | (w,(op1,op2)) => XCHG w op1 op2 end %% instruction_t)
+    (fun p => match p with | (w,(op1,op2)) => XCHG w op2 op1 end %% instruction_t)
   |+|
     "1001" $$ "0" $$ reg @ (fun r => XCHG true (Reg_op EAX) (Reg_op r) %% instruction_t).
 

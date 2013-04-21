@@ -192,7 +192,7 @@ Definition repr_in_signed_byte (imm:int32) :=
   andb (Word.lt imm (Word.repr 128)) (Word.lt (Word.repr (-129)) imm).
 
 (* encode a byte from an int32;  
-   return invliad if i isn't a valid byte: not between (-128,127) *)
+   return invalid if i isn't a valid byte: not between (-128,127) *)
 Definition enc_byte_i32  (i: int32) : Enc (list bool) :=
   if (repr_in_signed_byte i) then ret (int_explode i 8)
   else invalid.
@@ -812,18 +812,18 @@ Definition enc_TEST (op_override w:bool)
   (op1 op2:operand) : Enc (list bool) :=
   match op1, op2 with
     | Reg_op EAX, Imm_op i
-    | Imm_op i, Reg_op EAX =>
+    | Imm_op i, Reg_op EAX  =>
       l_i <- enc_imm op_override w i;
       ret (s2bl "1010100" ++ enc_bit w ++ l_i)
 
     | op, Imm_op i
-    | Imm_op i, op =>
+   (* | Imm_op i, op *) =>
       l1 <- enc_modrm_2 "000" op; 
       l_i <- enc_imm op_override w i;
-      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ l_i)
+      ret (s2bl "1111011" ++ enc_bit w ++ l_i ++ l1)
 
     | Reg_op r, op
-    | op, Reg_op r =>
+  (*  | op, Reg_op r *) =>
       l1 <- enc_modrm (Reg_op r) op; ret (s2bl "1000010"  ++ enc_bit w ++ l1)
 
     | _, _ => invalid

@@ -296,7 +296,7 @@ let choose_INS () =
 	INS (choose_bool())
 
 let choose_INTn() = 
-	let it = choose_word_int() in
+	let it = choose_int8() in
 	INTn it
 
 let choose_INVLPG () = 

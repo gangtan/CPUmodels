@@ -479,7 +479,7 @@ let test_encode_decode_instr
 
          incr enc_dec_fails_count;
 	       F.printf "    after encoding: @[  %a@]\n after decoding: %a\n"
-	      (pp_list ~sep:"," pp_big_int) lz
+	      (pp_list ~sep:"," pp_big_int) 
 	       pp_prefix_instr (pre',ins');
 		   )
       else
