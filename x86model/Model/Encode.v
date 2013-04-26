@@ -451,7 +451,11 @@ Definition enc_CALL (near absolute : bool) (op1 : operand) (sel : option selecto
         | _ => invalid
       end
     | true, true => 
-      l1 <- enc_modrm_2 "010" op1; ret (s2bl "11111111" ++ l1)
+      match sel, op1 with 
+      | None, _ =>
+        l1 <- enc_modrm_2 "010" op1; ret (s2bl "11111111" ++ l1)
+      | _, _ => invalid
+      end
     | false, true => 
       match sel, op1 with
         | Some sel, Imm_op i1 =>
@@ -545,7 +549,11 @@ Definition enc_INTn (it:interrupt_type) := ret (s2bl "11001101" ++ enc_byte it).
 Definition enc_INTO := ret (s2bl "11001110").
 Definition enc_INVD := ret (s2bl "0000111100001000").
 Definition enc_INVLPG (op1:operand) : Enc (list bool) := 
-  l1 <- enc_modrm (Reg_op EDI) op1; ret (s2bl "0000111100000001" ++ l1).
+  match op1 with
+    | Address_op a =>
+      l1 <- enc_modrm (Reg_op EDI) op1; ret (s2bl "0000111100000001" ++ l1)
+    | _ => invalid
+  end.
 Definition enc_IRET := ret (s2bl "11001111").
 
 
@@ -568,7 +576,11 @@ Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
         | _ => invalid
       end
     | true, true => 
-      l1 <- enc_modrm_2 "100" op1; ret (s2bl "11111111" ++ l1)
+      match sel, op1 with
+      | None, _ =>
+       l1 <- enc_modrm_2 "100" op1; ret (s2bl "11111111" ++ l1)
+      | _, _ => invalid
+      end
     | false, true => 
       match sel, op1 with
         | Some sel, Imm_op i1 =>
@@ -593,11 +605,17 @@ Definition enc_LES (op1 op2:operand) : Enc (list bool) :=
 Definition enc_LFS (op1 op2:operand) : Enc (list bool) := 
   l1 <- enc_modrm op1 op2; ret (s2bl "000011110110100" ++ l1).
 Definition enc_LGDT (op1:operand) : Enc (list bool) := 
-  l1 <- enc_modrm (Reg_op EDX) op1; ret (s2bl "0000111100000001" ++ l1).
+  match op1 with 
+  | Address_op a1 => l1 <- enc_modrm (Reg_op EDX) op1; ret (s2bl "0000111100000001" ++ l1)
+  | _ => invalid
+  end.
 Definition enc_LGS (op1 op2:operand) : Enc (list bool) := 
   l1 <- enc_modrm op1 op2; ret (s2bl"0000111110110101" ++ l1).
 Definition enc_LIDT (op1:operand) : Enc (list bool) := 
-  l1 <- enc_modrm (Reg_op EBX) op1; ret (s2bl "0000111100000001" ++ l1).
+  match op1 with
+  | Address_op a1 => l1 <- enc_modrm (Reg_op EBX) op1; ret (s2bl "0000111100000001" ++ l1)
+  | _ => invalid
+  end.
 Definition enc_LLDT (op1 : operand) : Enc (list bool) := 
   match op1 with
     | Reg_op r1 => ret (s2bl "000011110000000011010"  ++ enc_reg r1)
@@ -775,7 +793,10 @@ Definition enc_SCAS (w : bool) := ret (s2bl "1010111" ++ enc_bit w).
 Definition enc_SETcc (ct:condition_type)(op1:operand) : Enc (list bool) :=
   l1 <- enc_modrm (Reg_op EAX) op1; ret (s2bl "000011111001" ++ enc_condition_type ct ++ l1).
 Definition enc_SGDT (op1:operand) : Enc (list bool) := 
-  l1 <- enc_modrm (Reg_op EAX) op1; ret (s2bl "0000111100000001" ++ l1).
+  match op1 with
+  | Address_op a1 => l1 <- enc_modrm (Reg_op EAX) op1; ret (s2bl "0000111100000001" ++ l1)
+  | _ => invalid
+  end.
 Definition enc_SHL (w:bool)(op1:operand)(ri:reg_or_immed) : Enc (list bool) :=
   enc_Rotate w op1 ri ESP.
 Definition enc_SHLD (op1:operand)(r:register)(ri:reg_or_immed) : Enc (list bool) :=
@@ -795,7 +816,10 @@ Definition enc_SHRD (op1:operand)(r:register)(ri:reg_or_immed) : Enc (list bool)
     | _ => invalid
   end.
 Definition enc_SIDT (op1:operand) : Enc (list bool) := 
-  l1 <- enc_modrm (Reg_op ECX) op1; ret (s2bl "0000111100000001" ++ l1).
+  match op1 with
+  | Address_op a1 => l1 <- enc_modrm (Reg_op ECX) op1; ret (s2bl "0000111100000001" ++ l1)
+  | _ => invalid
+  end.
 Definition enc_SLDT (op1:operand) : Enc (list bool) := 
   l1 <- enc_modrm (Reg_op EAX) op1; ret (s2bl "0000111100000000" ++ l1).
 Definition enc_SMSW (op1:operand) : Enc (list bool) := 
@@ -845,12 +869,12 @@ Definition enc_XADD (w:bool)(op1 op2:operand) : Enc (list bool) :=
   l1 <- enc_modrm op2 op1; ret (s2bl "000011111100000" ++ enc_bit w ++ l1).
 Definition enc_XCHG (w:bool)(op1 op2:operand) : Enc (list bool) :=
   match op1, op2 with
-    | Reg_op EAX, Reg_op r2 => ret (s2bl "10010" ++ enc_reg r2)
-    | Reg_op r1, Reg_op EAX => ret (s2bl "10010" ++ enc_reg r1)
+  (*  | Reg_op EAX, Reg_op r2 => ret (s2bl "10010" ++ enc_reg r2) *)
+    | Reg_op r1, Reg_op EAX => ret (s2bl "10010" ++ enc_reg r1) 
     | Reg_op r1, Reg_op r2 => 
-      ret (s2bl "1000011" ++ enc_bit w ++ s2bl "11" ++ enc_reg r2 ++ enc_reg r1)
-    | Reg_op r1, Address_op a2 => l1 <- enc_modrm op1 op2; ret (s2bl "1000011" ++ enc_bit w ++ l1)
-    | Address_op a1, Reg_op r2 => l1 <- enc_modrm op2 op1; ret (s2bl "1000011" ++ enc_bit w ++ l1)
+      ret (s2bl "1000011" ++ enc_bit w ++ s2bl "11" ++ enc_reg r1 ++ enc_reg r2)
+    | Reg_op r1, Address_op a2 => l1 <- enc_modrm op1 op2; ret (s2bl "1000011" ++ enc_bit true ++ l1) 
+    | Address_op a1, Reg_op r2 => l1 <- enc_modrm op2 op1; ret (s2bl "1000011" ++ enc_bit false ++ l1) 
     |  _, _ => invalid
   end.
 Definition enc_XLAT := ret (s2bl "11010111").

@@ -176,6 +176,32 @@ let choose_gmmx_ops() =
 	let ops = choose_two_mmx_ops() in 
 	g, ops
 
+(**SSE operands **)
+
+let choose_sse_reg() = 
+	match (Random.int 8) with
+	| 0 -> XMM0
+	| 1 -> XMM1
+	| 2 -> XMM2
+	| 3 -> XMM3
+	| 4 -> XMM4
+	| 5 -> XMM5
+	| 6 -> XMM6
+	| _ -> XMM7
+
+let choose_sse_op() = 
+	match (Random.int 5) with
+	| 0 -> let sse_reg = choose_sse_reg() in SSE_XMM_Reg_op sse_reg
+	| 1 -> let mm_reg = choose_mmx_reg() in SSE_MM_Reg_op mm_reg
+	| 2 -> let addr = choose_addr() in SSE_Addr_op addr
+	| 3 -> let reg = choose_reg() in SSE_GP_Reg_op reg
+	| _ -> let imm = choose_word_int() in SSE_Imm_op imm
+
+let choose_two_sse_ops() = 
+	let op1 = choose_sse_op() in
+	let op2 = choose_sse_op() in
+	op1, op2
+
 (**General purpose fuzz functions **)
 
 let choose_ADC () = 
@@ -902,6 +928,263 @@ let choose_PUNPCKL() =
 let choose_PXOR() = 
 	let op1, op2 = choose_two_mmx_ops() in
 	PXOR(op1, op2)
+
+(**SSE fuzz instuctions **)
+
+let choose_ADDPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	ADDPS(op1, op2)
+
+let choose_ADDSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	ADDSS(op1, op2)
+
+let choose_ANDNPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	ANDNPS(op1, op2)
+
+let choose_ANDPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	ANDPS(op1, op2)
+
+let choose_CMPPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	let imm = choose_word_int() in
+	CMPPS((SSE_Imm_op imm), op1, op2)
+
+let choose_CMPSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	let imm = choose_word_int() in
+	CMPSS((SSE_Imm_op imm), op1, op2)
+
+let choose_COMISS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	COMISS(op1, op2)
+
+let choose_CVTPI2PS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	CVTPI2PS(op1, op2)
+
+let choose_CVTPS2PI() = 
+	let op1, op2 = choose_two_sse_ops() in
+	CVTPS2PI(op1, op2)
+
+let choose_CVTSI2SS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	CVTSI2SS(op1, op2)
+
+let choose_CVTSS2SI() = 
+	let op1, op2 = choose_two_sse_ops() in
+	CVTSS2SI(op1, op2)
+
+let choose_CVTTPS2PI() = 
+	let op1, op2 = choose_two_sse_ops() in
+	CVTTPS2PI(op1, op2)
+
+let choose_CVTTSS2SI() = 
+	let op1, op2 = choose_two_sse_ops() in
+	CVTTSS2SI(op1, op2)
+
+let choose_DIVPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	DIVPS(op1, op2)
+
+let choose_DIVSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	DIVSS(op1, op2)
+
+let choose_LDMXCSR() =
+	let op1 = choose_sse_op() in
+	LDMXCSR op1
+
+let choose_MAXPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MAXPS(op1, op2)
+
+let choose_MAXSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MAXSS(op1, op2)
+
+let choose_MINPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MINPS(op1, op2)
+
+let choose_MINSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MINSS(op1, op2)
+
+let choose_MOVAPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVAPS(op1, op2)
+
+let choose_MOVHLPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVHLPS(op1, op2)
+
+let choose_MOVHPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVHPS(op1, op2)
+
+let choose_MOVLHPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVLHPS(op1, op2)
+
+let choose_MOVLPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVLPS(op1, op2)
+
+let choose_MOVMSKPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVMSKPS(op1, op2)
+
+let choose_MOVSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVSS(op1, op2)
+
+let choose_MOVUPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVUPS(op1, op2)
+
+let choose_MULPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MULPS(op1, op2)
+
+let choose_MULSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MULSS(op1, op2)
+
+let choose_ORPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	ORPS(op1, op2)
+
+let choose_RCPPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	RCPPS(op1, op2)
+
+let choose_RCPSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	RCPSS(op1, op2)
+
+let choose_RSQRTPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	RSQRTPS(op1, op2)
+
+let choose_RSQRTSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	RSQRTSS(op1, op2)
+
+let choose_SHUFPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	let imm = choose_word_int() in
+	SHUFPS((SSE_Imm_op imm), op1, op2)
+
+let choose_SQRTPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	SQRTPS(op1, op2)
+
+let choose_SQRTSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	SQRTSS(op1, op2)
+
+let choose_STMXCSR() = 
+	let op1 = choose_sse_op() in 
+	STMXCSR op1
+
+let choose_SUBPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	SUBPS(op1, op2)
+
+let choose_SUBSS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	SUBSS(op1, op2)
+
+let choose_UCOMISS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	UCOMISS(op1, op2)
+
+let choose_UNPCKHPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	UNPCKHPS(op1, op2)
+
+let choose_UNPCKLPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	UNPCKLPS(op1, op2)
+
+let choose_XORPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	XORPS(op1, op2)
+
+let choose_PAVGB() = 
+	let op1, op2 = choose_two_sse_ops() in
+	PAVGB(op1, op2)
+
+let choose_PEXTRW() = 
+	let op1, op2 = choose_two_sse_ops() in
+	let imm = choose_word_int() in
+	PEXTRW((SSE_Imm_op imm), op1, op2)
+
+let choose_PINSRW() = 
+	let op1, op2 = choose_two_sse_ops() in
+	let imm = choose_word_int() in
+	PINSRW((SSE_Imm_op imm), op1, op2)
+
+let choose_PMAXSW() = 
+	let op1, op2 = choose_two_sse_ops() in
+	PMAXSW(op1, op2)
+
+let choose_PMAXUB() = 
+	let op1, op2 = choose_two_sse_ops() in
+	PMAXUB(op1, op2)
+
+let choose_PMINSW() = 
+	let op1, op2 = choose_two_sse_ops() in
+	PMINSW(op1, op2)
+
+let choose_PMINUB() = 
+	let op1, op2 = choose_two_sse_ops() in
+	PMINUB(op1, op2)
+
+let choose_PMOVMSKB() = 
+	let op1, op2 = choose_two_sse_ops() in
+	PMOVMSKB(op1, op2)
+
+let choose_PSADBW() = 
+	let op1, op2 = choose_two_sse_ops() in
+	PSADBW(op1, op2)
+
+let choose_PSHUFW() = 
+	let op1, op2 = choose_two_sse_ops() in
+	let imm = choose_word_int() in
+	PSHUFW((SSE_Imm_op imm), op1, op2)
+
+let choose_MASKMOVQ() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MASKMOVQ(op1, op2)
+
+let choose_MOVNTPS() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVNTPS(op1, op2)
+
+let choose_MOVNTQ() = 
+	let op1, op2 = choose_two_sse_ops() in
+	MOVNTQ(op1, op2)
+
+let choose_PREFETCHT0() = 
+	let op1 = choose_sse_op() in
+	PREFETCHT0(op1)
+
+let choose_PREFETCHT1() = 
+	let op1 = choose_sse_op() in
+	PREFETCHT1(op1)
+
+let choose_PREFETCHT2() = 
+	let op1 = choose_sse_op() in
+	PREFETCHT2(op1)
+
+let choose_PREFETCHNTA() = 
+	let op1 = choose_sse_op() in
+	PREFETCHNTA(op1)
+
 
 (** returns a random gp instruction  **)
 let choose_gp_instr lb ub  = 
