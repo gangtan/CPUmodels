@@ -559,7 +559,7 @@ Module X86_PARSER.
     (fun op => CALL true true op None %% instruction_t)
   |+| 
     "1001" $$ "1010" $$ halfword $ word @ 
-    (fun p => CALL false true (Imm_op (snd p)) (Some (fst p)) %% instruction_t)
+    (fun p => CALL false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
   |+|
     "1111" $$ "1111" $$ ext_op_modrm2 "011" @ 
     (fun op => CALL false true op None %% instruction_t).
@@ -688,7 +688,7 @@ Module X86_PARSER.
     (fun op => JMP true true op None %% instruction_t)
   |+|
     "1110" $$ "1010" $$ halfword $ word @ 
-      (fun p => JMP false true (Imm_op (snd p)) (Some (fst p)) %% instruction_t)
+      (fun p => JMP false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
   |+|
     "1111" $$ "1111" $$ ext_op_modrm2 "101" @ 
     (fun op => JMP false true op None %% instruction_t).

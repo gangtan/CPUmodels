@@ -844,7 +844,7 @@ Definition enc_TEST (op_override w:bool)
    (* | Imm_op i, op *) =>
       l1 <- enc_modrm_2 "000" op; 
       l_i <- enc_imm op_override w i;
-      ret (s2bl "1111011" ++ enc_bit w ++ l_i ++ l1)
+      ret (s2bl "1111011" ++ enc_bit w ++ l1 ++ l_i)
 
     | Reg_op r, op
   (*  | op, Reg_op r *) =>
