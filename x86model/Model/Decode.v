@@ -615,7 +615,7 @@ Module X86_PARSER.
     (fun p => let (w,op1) := p in IMUL w op1 None None %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "1010" $$ "1111" $$ modrm @
-    (fun p => let (op1,op2) := p in IMUL true op1 (Some op2) None %% instruction_t)
+    (fun p => let (op1,op2) := p in IMUL false op1 (Some op2) None %% instruction_t)
   |+|
     "0110" $$ "1011" $$ modrm $ byte @
     (fun p => match p with 
@@ -634,7 +634,7 @@ Module X86_PARSER.
           "0110" $$ "1001" $$ modrm $ halfword @
            (fun p => match p with 
                 | ((op1,op2),imm) => 
-                  IMUL true op1 (Some op2) (Some (sign_extend16_32 imm))
+                  IMUL false op1 (Some op2) (Some (sign_extend16_32 imm))
               end  %% instruction_t)
     end.
 
@@ -1051,7 +1051,7 @@ Module X86_PARSER.
     "1010" $$ "1001" $$ imm_op opsize_override @ (fun w => TEST true w (Reg_op EAX) %% instruction_t)
   |+|
     "1010" $$ "1000" $$ byte @ 
-    (fun b => TEST true (Imm_op (zero_extend8_32 b)) (Reg_op EAX) %% instruction_t).
+    (fun b => TEST true (Reg_op EAX) (Imm_op (zero_extend8_32 b)) %% instruction_t).
   
   Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ bits "1011" @ 
     (fun _ => UD2 %% instruction_t).
@@ -1069,8 +1069,7 @@ Module X86_PARSER.
     (fun p => match p with | (w,(op1,op2)) => XADD w op2 op1 end %% instruction_t).
   Definition XCHG_p := 
     "1000" $$ "011" $$ anybit $ modrm @ 
-    (fun p => match p with | (true,(op1,op2)) => XCHG true op1 op2
-                           | (false, (op1,op2)) => XCHG false op2 op1 end %% instruction_t )
+    (fun p => match p with | (w,(op1,op2)) => XCHG w op2 op1 end %% instruction_t)
   |+|
     "1001" $$ "0" $$ reg @ (fun r => XCHG false (Reg_op EAX) (Reg_op r) %% instruction_t).
 

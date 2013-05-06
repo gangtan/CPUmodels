@@ -255,6 +255,14 @@ let str_of_mmx_operand mmx =
   | MMX_Reg_op m -> Printf.sprintf "%s" (str_of_mmx_register m)
   | MMX_Imm_op n -> Printf.sprintf "%s" (unsigned32_to_hex n)
 
+let str_of_sse_operand sse =
+  match sse with
+  | SSE_XMM_Reg_op r -> Printf.sprintf "%s" (str_of_sse_register r)
+  | SSE_MM_Reg_op r -> Printf.sprintf "%s" (str_of_mmx_register r)
+  | SSE_Addr_op addr -> Printf.sprintf "%s" (str_of_addr addr)
+  | SSE_GP_Reg_op r -> Printf.sprintf "%s" (str_of_reg OpSize32 r)
+  | SSE_Imm_op n -> Printf.sprintf "%s" (unsigned32_to_hex n)
+
 (** Pretty printing an instruction *)
 let str_of_instr (prefix, ins) = 
   let pp_one_op (w, op) = 
@@ -272,6 +280,15 @@ let str_of_instr (prefix, ins) =
 
   let pp_gmmx_ops (gg, op1, op2) = 
     F.sprintf "%s, %s, %s" (str_of_gg gg) (str_of_mmx_operand op1) (str_of_mmx_operand op2) in
+
+  let pp_sse_op op1 = 
+    F.sprintf "%s" (str_of_sse_operand op1) in
+
+  let pp_two_sse_ops (op1, op2) = 
+    F.sprintf "%s, %s" (str_of_sse_operand op1) (str_of_sse_operand op2) in
+
+  let pp_immtwo_sse_ops (op1, op2, imm) = 
+    F.sprintf "%s, %s, %s" (str_of_sse_operand op1) (str_of_sse_operand op2) (str_of_sse_operand imm) in
   (* the sizes function for movsx and movzx *)
   let movx_sizes prefix w = 
     match prefix.op_override, w with
@@ -640,6 +657,72 @@ let str_of_instr (prefix, ins) =
     | PUNPCKH (g, op1, op2) -> P.sprintf "punpckh %s" (pp_gmmx_ops (g, op1, op2))
     | PUNPCKL (g, op1, op2) -> P.sprintf "punpckl %s" (pp_gmmx_ops (g, op1, op2))
     | PXOR (op1, op2) -> P.sprintf "pxor %s" (pp_two_mmx_ops (op1, op2))
+
+    (*SSE Pretty-Printing *)
+    | ADDPS (op1, op2) -> P.sprintf "addps %s" (pp_two_sse_ops(op1, op2))
+    | ADDSS (op1, op2) -> P.sprintf "addss %s" (pp_two_sse_ops(op1, op2))
+    | ANDNPS (op1, op2) -> P.sprintf "andnps %s" (pp_two_sse_ops(op1, op2))
+    | ANDPS (op1, op2) -> P.sprintf "andps %s" (pp_two_sse_ops(op1, op2))
+    | CMPPS (op1, op2, imm) -> P.sprintf "cmpps %s" (pp_immtwo_sse_ops(op1, op2, imm))
+    | CMPSS (op1, op2, imm) -> P.sprintf "cmpss %s" (pp_immtwo_sse_ops(op1, op2, imm))
+    | COMISS (op1, op2) -> P.sprintf "comiss %s" (pp_two_sse_ops(op1, op2))
+    | CVTPI2PS (op1, op2) -> P.sprintf "cvtpi2ps %s" (pp_two_sse_ops(op1, op2))
+    | CVTPS2PI (op1, op2) -> P.sprintf "cvtps2pi %s" (pp_two_sse_ops(op1, op2))
+    | CVTSI2SS (op1, op2) -> P.sprintf "cvtsi2ss %s" (pp_two_sse_ops(op1, op2))
+    | CVTSS2SI (op1, op2) -> P.sprintf "cvtss2si %s" (pp_two_sse_ops(op1, op2))
+    | CVTTPS2PI (op1, op2) -> P.sprintf "cvttps2pi %s" (pp_two_sse_ops(op1, op2))
+    | CVTTSS2SI (op1, op2) -> P.sprintf "cvttss2si %s" (pp_two_sse_ops(op1, op2))
+    | DIVPS (op1, op2) -> P.sprintf "divps %s" (pp_two_sse_ops(op1, op2))
+    | DIVSS (op1, op2) -> P.sprintf "divss %s" (pp_two_sse_ops(op1, op2))
+    | LDMXCSR op1 -> P.sprintf "ldmxcsr %s" (pp_sse_op op1)
+    | MAXPS (op1, op2) -> P.sprintf "maxps %s" (pp_two_sse_ops(op1, op2))
+    | MAXSS (op1, op2) -> P.sprintf "maxss %s" (pp_two_sse_ops(op1, op2))
+    | MINPS (op1, op2) -> P.sprintf "minps %s" (pp_two_sse_ops(op1, op2))
+    | MINSS (op1, op2) -> P.sprintf "minss %s" (pp_two_sse_ops(op1, op2))
+    | MOVAPS (op1, op2) -> P.sprintf "movaps %s" (pp_two_sse_ops(op1, op2))
+    | MOVHLPS (op1, op2) -> P.sprintf "movhlps %s" (pp_two_sse_ops(op1, op2))
+    | MOVHPS (op1, op2) -> P.sprintf "movhps %s" (pp_two_sse_ops(op1, op2))
+    | MOVLHPS (op1, op2) -> P.sprintf "movlhps %s" (pp_two_sse_ops(op1, op2))
+    | MOVLPS (op1, op2) -> P.sprintf "movlps %s" (pp_two_sse_ops(op1, op2))
+    | MOVMSKPS (op1, op2) -> P.sprintf "movmskps %s" (pp_two_sse_ops(op1, op2))
+    | MOVSS (op1, op2) -> P.sprintf "movss %s" (pp_two_sse_ops(op1, op2))
+    | MOVUPS (op1, op2) -> P.sprintf "movups %s" (pp_two_sse_ops(op1, op2))
+    | MULPS (op1, op2) -> P.sprintf "mulps %s" (pp_two_sse_ops(op1, op2))
+    | MULSS (op1, op2) -> P.sprintf "mulss %s" (pp_two_sse_ops(op1, op2))
+    | ORPS (op1, op2) -> P.sprintf "orps %s" (pp_two_sse_ops(op1, op2))
+    | RCPPS (op1, op2) -> P.sprintf "rcpps %s" (pp_two_sse_ops(op1, op2))
+    | RCPSS (op1, op2) -> P.sprintf "rcpss %s" (pp_two_sse_ops(op1, op2))
+    | RSQRTPS (op1, op2) -> P.sprintf "rsqrtps %s" (pp_two_sse_ops(op1, op2))
+    | RSQRTSS (op1, op2) -> P.sprintf "rsqrtss %s" (pp_two_sse_ops(op1, op2))
+    | SHUFPS (op1, op2, imm) -> P.sprintf "shufps %s" (pp_immtwo_sse_ops(op1, op2, imm))
+    | SQRTPS (op1, op2) -> P.sprintf "sqrtps %s" (pp_two_sse_ops(op1, op2))
+    | SQRTSS (op1, op2) -> P.sprintf "sqrtss %s" (pp_two_sse_ops(op1, op2))
+    | STMXCSR op1 -> P.sprintf "stmxcsr %s" (pp_sse_op op1)
+    | SUBPS (op1, op2) -> P.sprintf "subps %s" (pp_two_sse_ops(op1, op2))
+    | SUBSS (op1, op2) -> P.sprintf "subss %s" (pp_two_sse_ops(op1, op2))
+    | UCOMISS (op1, op2) -> P.sprintf "ucomiss %s" (pp_two_sse_ops(op1, op2))
+    | UNPCKHPS (op1, op2) -> P.sprintf "unpckhps %s" (pp_two_sse_ops(op1, op2))
+    | UNPCKLPS (op1, op2) -> P.sprintf "unpcklps %s" (pp_two_sse_ops(op1, op2))
+    | XORPS (op1, op2) -> P.sprintf "xorps %s" (pp_two_sse_ops(op1, op2))
+    | PAVGB (op1, op2) -> P.sprintf "pavgb %s" (pp_two_sse_ops(op1, op2))
+    | PEXTRW (op1, op2, imm) -> P.sprintf "pextrw %s" (pp_immtwo_sse_ops(op1, op2, imm))
+    | PINSRW (op1, op2, imm) -> P.sprintf "pinsrw %s" (pp_immtwo_sse_ops(op1, op2, imm))
+    | PMAXSW (op1, op2) -> P.sprintf "pmaxsw %s" (pp_two_sse_ops(op1, op2))
+    | PMAXUB (op1, op2) -> P.sprintf "pmaxub %s" (pp_two_sse_ops(op1, op2))
+    | PMINSW (op1, op2) -> P.sprintf "pminsw %s" (pp_two_sse_ops(op1, op2))
+    | PMINUB (op1, op2) -> P.sprintf "pminub %s" (pp_two_sse_ops(op1, op2))
+    | PMOVMSKB (op1, op2) -> P.sprintf "pmovmskb %s" (pp_two_sse_ops(op1, op2))
+    (*| PMULHUW : forall (op1 op2: sse_operand), instr *)
+    | PSADBW (op1, op2) -> P.sprintf "psadbw %s" (pp_two_sse_ops(op1, op2))
+    | PSHUFW (op1, op2, imm) -> P.sprintf "pshufw %s" (pp_immtwo_sse_ops(op1, op2, imm))
+    | MASKMOVQ (op1, op2) -> P.sprintf "maskmovq %s" (pp_two_sse_ops(op1, op2))
+    | MOVNTPS (op1, op2) -> P.sprintf "movntps %s" (pp_two_sse_ops(op1, op2))
+    | MOVNTQ (op1, op2) -> P.sprintf "movntq %s" (pp_two_sse_ops(op1, op2))
+    | PREFETCHT0 op1 -> P.sprintf "prefetcht0 %s" (pp_sse_op op1)
+    | PREFETCHT1 op1 -> P.sprintf "prefetcht1 %s" (pp_sse_op op1)
+    | PREFETCHT2 op1 -> P.sprintf "prefetcht2 %s" (pp_sse_op op1)
+    | PREFETCHNTA op1 -> P.sprintf "prefetchnta %s" (pp_sse_op op1)
+    | SFENCE -> P.sprintf "sfence"
     | _ -> P.sprintf "???"
 
 

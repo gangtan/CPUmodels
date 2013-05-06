@@ -1436,6 +1436,74 @@ let choose_mmx_instr lb ub =
 	| 26 -> choose_PXOR()
 	| _ -> EMMS
 
+let choose_sse_instr lb ub = 
+	let diff = ub - lb in
+    match (lb + Random.int diff) with 
+	| 0 -> choose_ADDPS()
+	| 1 -> choose_ADDSS()
+	| 2 -> choose_ANDNPS()
+	| 3 -> choose_ANDPS()
+	| 4 -> choose_CMPPS()
+	| 5 -> choose_CMPSS()
+	| 6 -> choose_COMISS()
+	| 7 -> choose_CVTPI2PS()
+	| 8 -> choose_CVTPS2PI()
+	| 9 -> choose_CVTSI2SS()
+	| 10 -> choose_CVTSS2SI()
+	| 11 -> choose_CVTTPS2PI()
+	| 12 -> choose_CVTTSS2SI()
+	| 13 -> choose_DIVPS()
+	| 14 -> choose_DIVSS()
+	| 15 -> choose_LDMXCSR()
+	| 16 -> choose_MAXPS()
+	| 17 -> choose_MAXSS()
+	| 18 -> choose_MINPS()
+	| 19 -> choose_MINSS()
+	| 20 -> choose_MOVAPS()
+	| 21 -> choose_MOVHLPS()
+	| 22 -> choose_MOVHPS()
+	| 23 -> choose_MOVLHPS()
+	| 24 -> choose_MOVLPS()
+	| 25 -> choose_MOVMSKPS()
+	| 26 -> choose_MOVSS()
+	| 27 -> choose_MOVUPS()
+	| 28 -> choose_MULPS()
+	| 29 -> choose_MULSS()
+	| 30 -> choose_ORPS()
+	| 31 -> choose_RCPPS()
+	| 32 -> choose_RCPSS()
+	| 33 -> choose_RSQRTPS()
+	| 34 -> choose_RSQRTSS()
+	| 35 -> choose_SHUFPS()
+	| 36 -> choose_SQRTPS()
+	| 37 -> choose_SQRTSS()
+	| 38 -> choose_STMXCSR()
+	| 39 -> choose_SUBPS()
+	| 40 -> choose_SUBSS()
+	| 41 -> choose_UCOMISS()
+	| 42 -> choose_UNPCKHPS()
+	| 43 -> choose_UNPCKLPS()
+	| 44 -> choose_XORPS()
+	| 45 -> choose_PAVGB()
+	| 46 -> choose_PEXTRW()
+	| 47 -> choose_PINSRW()
+	| 48 -> choose_PMAXSW()
+	| 49 -> choose_PMAXUB()
+	| 50 -> choose_PMINSW()
+	| 51 -> choose_PMINUB()
+	| 52 -> choose_PMOVMSKB()
+	| 53 -> choose_PSADBW()
+	| 54 -> choose_PSHUFW()
+	| 55 -> choose_MASKMOVQ()
+	| 56 -> choose_MOVNTPS()
+	| 57 -> choose_MOVNTQ()
+	| 58 -> choose_PREFETCHT0()
+	| 59 -> choose_PREFETCHT1()
+	| 60 -> choose_PREFETCHT2()
+	| 61 -> choose_PREFETCHNTA()
+	| _ -> SFENCE
+
+
 let rec fuzz_instr instr_func lb ub n = 
 	match n with 
 	| 0 -> ()
@@ -1476,7 +1544,8 @@ let start_instr_type() =
 	match !some_type with 
 	| "gp" -> fuzz_instr choose_gp_instr !some_lb !some_ub !some_n
 	| "fp" -> fuzz_instr choose_fp_instr !some_lb !some_ub !some_n
-	| _ -> fuzz_instr choose_mmx_instr !some_lb !some_ub !some_n
+	| "mmx" -> fuzz_instr choose_mmx_instr !some_lb !some_ub !some_n
+	| _ -> fuzz_instr choose_sse_instr !some_lb !some_ub !some_n
 
 let main () = 
   print_string("running syntaxfuzzer:\n");

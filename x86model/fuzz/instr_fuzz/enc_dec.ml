@@ -101,15 +101,6 @@ let fp_operand_eq_dec op1 op2 =
     -> address_eq_dec a1 a2
   | _, _ -> false
 
-let sse_operand_eq_dec sop1 sop2 : bool = 
-  match sop1, sop2 with
-  | SSE_XMM_Reg_op sr1, SSE_XMM_Reg_op sr2 -> sr1 = sr2
-  | SSE_MM_Reg_op mr1, SSE_MM_Reg_op mr2 -> mr1 = mr2
-  | SSE_Addr_op a1, SSE_Addr_op a2 -> address_eq_dec a1 a2
-  | SSE_GP_Reg_op r1, SSE_GP_Reg_op r2 -> r1 = r2
-  | SSE_Imm_op i1, SSE_Imm_op i2 -> Big_int.eq_big_int i1 i2
-  | _,_ -> false
-
 let mmx_operand_eq_dec mop1 mop2 = 
   match mop1, mop2 with
   | GP_Reg_op r1, GP_Reg_op r2 -> r1 = r2
@@ -117,6 +108,15 @@ let mmx_operand_eq_dec mop1 mop2 =
   | MMX_Reg_op m1, MMX_Reg_op m2 -> m1 = m2
   | MMX_Imm_op i1, MMX_Imm_op i2 -> Big_int.eq_big_int i1 i2
   | _, _ -> false
+
+let sse_operand_eq_dec sop1 sop2 = 
+  match sop1, sop2 with
+  | SSE_XMM_Reg_op sr1, SSE_XMM_Reg_op sr2 -> sr1 = sr2
+  | SSE_MM_Reg_op mr1, SSE_MM_Reg_op mr2 -> mr1 = mr2
+  | SSE_Addr_op a1, SSE_Addr_op a2 -> address_eq_dec a1 a2
+  | SSE_GP_Reg_op r1, SSE_GP_Reg_op r2 -> r1 = r2
+  | SSE_Imm_op i1, SSE_Imm_op i2 -> Big_int.eq_big_int i1 i2
+  | _,_ -> false
 
 (* todo: make it complete for all instructions *)
 let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
@@ -239,6 +239,8 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | WBINVD, WBINVD
   | WRMSR, WRMSR
   | XLAT, XLAT
+
+  | SFENCE, SFENCE
     -> true
 
   | MOVCR (d1, cr1, r1), MOVCR (d2, cr2, r2) 
@@ -384,9 +386,6 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | SHRD (op1,r1,ri1), SHRD(op2, r2, ri2) ->
     operand_eq_dec op1 op2 && r1=r2 && reg_or_immed_eq_dec ri1 ri2
 
-  | STMXCSR sop1, STMXCSR sop2 -> 
-    sse_operand_eq_dec sop1 sop2
-
   | MOVD (op11, op12), MOVD (op21, op22) 
   | MOVQ (op11, op12), MOVQ (op21, op22) 
   | PACKSSDW (op11, op12), PACKSSDW (op21, op22) 
@@ -417,6 +416,74 @@ let instr_eq_dec (ins1:instr) (ins2:instr) : bool =
   | PUNPCKL (g1, op11, op12), PUNPCKL (g2, op21, op22) ->
     g1 = g2 && mmx_operand_eq_dec op11 op21 && mmx_operand_eq_dec op12 op22
 
+  | LDMXCSR sop1, LDMXCSR sop2
+  | STMXCSR sop1, STMXCSR sop2 
+  | PREFETCHT0 sop1, PREFETCHT0 sop2 
+  | PREFETCHT1 sop1, PREFETCHT1 sop2 
+  | PREFETCHT2 sop1, PREFETCHT2 sop2 
+  | PREFETCHNTA sop1, PREFETCHNTA sop2 
+  -> sse_operand_eq_dec sop1 sop2
+
+  | ADDPS (op11, op12), ADDPS (op21, op22)
+  | ADDSS (op11, op12), ADDSS (op21, op22)
+  | ANDNPS (op11, op12), ANDNPS (op21, op22)
+  | ANDPS (op11, op12), ANDPS (op21, op22)
+  | COMISS (op11, op12), COMISS (op21, op22)
+  | CVTPI2PS (op11, op12), CVTPI2PS (op21, op22)
+  | CVTPS2PI (op11, op12), CVTPS2PI (op21, op22)
+  | CVTSI2SS (op11, op12), CVTSI2SS (op21, op22)
+  | CVTSS2SI (op11, op12), CVTSS2SI (op21, op22)
+  | CVTTPS2PI (op11, op12), CVTTPS2PI (op21, op22)
+  | CVTTSS2SI (op11, op12), CVTTSS2SI (op21, op22)
+  | DIVPS (op11, op12), DIVPS (op21, op22)
+  | DIVSS (op11, op12), DIVSS (op21, op22)
+  | MAXPS (op11, op12), MAXPS (op21, op22)
+  | MAXSS (op11, op12), MAXSS (op21, op22)
+  | MINPS (op11, op12), MINPS (op21, op22)
+  | MINSS (op11, op12), MINSS (op21, op22)
+  | MOVAPS (op11, op12), MOVAPS (op21, op22)
+  | MOVHLPS (op11, op12), MOVHLPS (op21, op22)
+  | MOVHPS (op11, op12), MOVHPS (op21, op22)
+  | MOVLHPS (op11, op12), MOVLHPS (op21, op22)
+  | MOVLPS (op11, op12), MOVLPS (op21, op22)
+  | MOVMSKPS (op11, op12), MOVMSKPS (op21, op22)
+  | MOVSS (op11, op12), MOVSS (op21, op22)
+  | MOVUPS (op11, op12), MOVUPS (op21, op22)
+  | MULPS (op11, op12), MULPS (op21, op22)
+  | MULSS (op11, op12), MULSS (op21, op22)
+  | ORPS (op11, op12), ORPS (op21, op22)
+  | RCPPS (op11, op12), RCPPS (op21, op22)
+  | RCPSS (op11, op12), RCPSS (op21, op22)
+  | RSQRTPS (op11, op12), RSQRTPS (op21, op22)
+  | RSQRTSS (op11, op12), RSQRTSS (op21, op22)
+  | SQRTPS (op11, op12), SQRTPS (op21, op22)
+  | SQRTSS (op11, op12), SQRTSS (op21, op22)
+  | SUBPS (op11, op12), SUBPS (op21, op22)
+  | SUBSS (op11, op12), SUBSS (op21, op22)
+  | UCOMISS (op11, op12), UCOMISS (op21, op22)
+  | UNPCKHPS (op11, op12), UNPCKHPS (op21, op22)
+  | UNPCKLPS (op11, op12), UNPCKLPS (op21, op22)
+  | XORPS (op11, op12), XORPS (op21, op22)
+  | PAVGB (op11, op12), PAVGB (op21, op22)
+  | PMAXSW (op11, op12), PMAXSW (op21, op22)
+  | PMAXUB (op11, op12), PMAXUB (op21, op22)
+  | PMINSW (op11, op12), PMINSW (op21, op22)
+  | PMINUB (op11, op12), PMINUB (op21, op22)
+  | PMOVMSKB (op11, op12), PMOVMSKB (op21, op22)
+  | PSADBW (op11, op12), PSADBW (op21, op22)
+  | MASKMOVQ (op11, op12), MASKMOVQ (op21, op22)
+  | MOVNTPS (op11, op12), MOVNTPS (op21, op22)
+  | MOVNTQ (op11, op12), MOVNTQ (op21, op22)
+    -> sse_operand_eq_dec op11 op21 && sse_operand_eq_dec op12 op22
+
+  | CMPPS (op11, op12, imm1), CMPPS (op21, op22, imm2)
+  | CMPSS (op11, op12, imm1), CMPSS (op21, op22, imm2)
+  | SHUFPS (op11, op12, imm1), SHUFPS (op21, op22, imm2)
+  | PEXTRW (op11, op12, imm1), PEXTRW (op21, op22, imm2)
+  | PINSRW (op11, op12, imm1), PINSRW (op21, op22, imm2)
+  | PSHUFW (op11, op12, imm1), PSHUFW (op21, op22, imm2)
+    -> sse_operand_eq_dec op11 op21 && sse_operand_eq_dec op12 op22 
+                                       && sse_operand_eq_dec imm1 imm2
 
   | _ -> false
 

@@ -446,9 +446,9 @@ Definition enc_CALL (near absolute : bool) (op1 : operand) (sel : option selecto
   : Enc (list bool) :=
   match near, absolute with
     | true, false => 
-      match op1 with
-        | Imm_op i1 => ret (s2bl "11101000" ++ enc_word i1)
-        | _ => invalid
+      match sel, op1 with
+        | None, Imm_op i1 => ret (s2bl "11101000" ++ enc_word i1)
+        | _, _ => invalid
       end
     | true, true => 
       match sel, op1 with 
@@ -522,11 +522,11 @@ Definition enc_IMUL (op_override:bool)
          we can use the case of 32-bit immediates *)
       if (repr_in_signed_byte imm3) then 
         l1 <- enc_modrm op1 op2; 
-        l_imm3 <- enc_imm false false imm3;
+        l_imm3 <- enc_imm op_override true imm3;
         ret (s2bl "01101011" ++ l1 ++ l_imm3)
       else
         l1 <- enc_modrm op1 op2; 
-        l_imm3 <- enc_imm op_override true imm3;
+        l_imm3 <- enc_imm op_override false imm3;
         ret (s2bl "01101001" ++ l1 ++ l_imm3)
     | _ , _ => invalid
   end.
@@ -566,14 +566,14 @@ Definition enc_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
   : Enc (list bool) :=
   match near, absolute with
     | true, false => 
-      match op1 with
-        | Imm_op i1 => 
+      match sel, op1 with
+        | None, Imm_op i1 => 
           if (repr_in_signed_byte i1) then
             (* alternate encoding: can always use the word case to encode i1 *)
             l_i1 <- enc_byte_i32 i1;
             ret (s2bl "11101011" ++ l_i1)
           else ret (s2bl "11101001" ++ enc_word i1)
-        | _ => invalid
+        | _, _ => invalid
       end
     | true, true => 
       match sel, op1 with
@@ -869,12 +869,14 @@ Definition enc_XADD (w:bool)(op1 op2:operand) : Enc (list bool) :=
   l1 <- enc_modrm op2 op1; ret (s2bl "000011111100000" ++ enc_bit w ++ l1).
 Definition enc_XCHG (w:bool)(op1 op2:operand) : Enc (list bool) :=
   match op1, op2 with
-  (*  | Reg_op EAX, Reg_op r2 => ret (s2bl "10010" ++ enc_reg r2) *)
-    | Reg_op r1, Reg_op EAX => ret (s2bl "10010" ++ enc_reg r1) 
+    | Reg_op EAX, Reg_op r2 => 
+       if w then invalid else ret (s2bl "10010" ++ enc_bit w ++ enc_reg r2)
+    | Reg_op r1, Reg_op EAX =>
+       if w then invalid else ret (s2bl "10010" ++ enc_bit w ++ enc_reg r1)
     | Reg_op r1, Reg_op r2 => 
-      ret (s2bl "1000011" ++ enc_bit w ++ s2bl "11" ++ enc_reg r1 ++ enc_reg r2)
-    | Reg_op r1, Address_op a2 => l1 <- enc_modrm op1 op2; ret (s2bl "1000011" ++ enc_bit true ++ l1) 
-    | Address_op a1, Reg_op r2 => l1 <- enc_modrm op2 op1; ret (s2bl "1000011" ++ enc_bit false ++ l1) 
+      ret (s2bl "1000011" ++ enc_bit w ++ s2bl "11" ++ enc_reg r2 ++ enc_reg r1)
+  (*  | Reg_op r1, Address_op a2 => l1 <- enc_modrm op1 op2; ret (s2bl "1000011" ++ enc_bit w ++ l1) *)
+    | Address_op a1, Reg_op r2 => l1 <- enc_modrm op2 op1; ret (s2bl "1000011" ++ enc_bit w ++ l1) 
     |  _, _ => invalid
   end.
 Definition enc_XLAT := ret (s2bl "11010111").
