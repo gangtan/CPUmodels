@@ -1722,15 +1722,16 @@ Qed.
     transform [xfinal] to map them back to values of the type of the original
     [astgram], and then apply the split out user-level function to get back a 
     list of [t] results. *)
-Definition parse t (g:grammar t) (cs : list char_p) : list (interp t) := 
+Definition naive_parse t (g:grammar t) (cs : list char_p) : list (interp t) := 
   let (ag, fuser) := split_astgram g in 
     let (agfinal, xfinal) := derivs_and_split ag cs in 
     List.map (fun x => fuser (xinterp xfinal x)) (astgram_extract_nil agfinal).
-Extraction Implicit parse [t].
+Extraction Implicit naive_parse [t].
 
-Lemma parse_corr1 : forall t (g:grammar t) cs v, in_grammar g cs v -> In v (parse g cs).
+Lemma naive_parse_corr1 : forall t (g:grammar t) cs v, in_grammar g cs v -> 
+                                                       In v (naive_parse g cs).
 Proof.
-  intros. unfold parse. 
+  intros. unfold naive_parse. 
   generalize (split_astgram_corr2 g). intros.
   remember (split_astgram g). destruct s. specialize (H0 _ _ H). mysimp. subst.
   generalize (@derivs_and_split_corr1 cs x). unfold in_agxf. 
@@ -1739,9 +1740,10 @@ Proof.
   apply (in_map (fun x => f (xinterp x2 x)) (astgram_extract_nil x1) _ H2).
 Qed.
 
-Lemma parse_corr2 : forall t (g:grammar t) cs v, In v (parse g cs) -> in_grammar g cs v.
+Lemma naive_parse_corr2 : forall t (g:grammar t) cs v, In v (naive_parse g cs) -> 
+                                                 in_grammar g cs v.
 Proof.
-  unfold parse. intros. remember (split_astgram g) as s. destruct s.
+  unfold naive_parse. intros. remember (split_astgram g) as s. destruct s.
   remember (derivs_and_split x cs) as e ; destruct e. 
   generalize (astgram_extract_nil_corr2 x0).
   assert (exists z, v = f (xinterp x1 z) /\ In z (astgram_extract_nil x0)). 
@@ -1771,7 +1773,6 @@ Section DFA.
      [rejects] row records which states are failing states.  
      *)
   (* Todo:  should use something more efficient than lists for this stuff. *)
-
   Definition states_t := list astgram.
   Notation "s .[ i ] " := (nth i s aZero) (at level 40).
 
@@ -1779,6 +1780,7 @@ Section DFA.
   Record entry_t(row:nat)(states:states_t) := 
     { (** which state do we go to next *)
       next_state : nat ; 
+      (** the [next_state] is in bounds with respect to the number of states *)
       next_state_lt : next_state < length states ; 
       (** how do we transform ASTs from the next state back to this state *)
       next_xform : 
@@ -1788,14 +1790,34 @@ Section DFA.
   (** Rows in the transition matrix -- an entry for each token *)  
   Definition row_t(i:nat)(s:states_t) := list (entry_t i s).
 
+  (** This predicate captures the fact that the ith entry in a row holds
+      the derivative of that row's corresponding [astgram] with respect
+      to the ith token. *)
+  Definition row_wf(gpos:nat)(s:states_t)(r:row_t gpos s)(i:nat)(t:token_id) :=
+    match nth_error r i with 
+      | Some e => 
+        exists x, derivs_and_split (s.[gpos]) (token_id_to_chars t) = 
+                  existT _ (s.[next_state e]) x /\ 
+                  xinterp x = (next_xform e)
+      | None => True
+    end.
+
   Record transition_t(s:states_t) := {
     (** which row are we talking about *)
     row_num : nat ; 
+    (** the row's index is in range for the number of states we have *)
     row_num_lt : row_num < length s ;
     (** what are the transition entries *)
-    row_entries : list (entry_t row_num s) ; 
-    (** have an entry for each token *)
-    row_entries_len : length row_entries = num_tokens
+    row_entries : list (entry_t row_num s) ;
+    (** the list of values we get from this state when it is an accepting state *)
+    row_nils : list (interp (astgram_type (s.[row_num]))) ; 
+    (** have an entry in the row for each token *)
+    row_entries_len : length row_entries = num_tokens ;
+    (** each entry is the appropriate derivative *)
+    row_entries_wf: forall i, row_wf row_entries i i ;
+    (** the row_nils are what you get when you run [astgram_extract_nil] on the
+        row's [astgram]. *)
+    row_nils_wf : row_nils = astgram_extract_nil (s.[row_num])
   }.
 
   (** The transition matrix is then a list of rows *)
@@ -1807,17 +1829,19 @@ Section DFA.
     (** the list of [astgram]s for the states *)
     dfa_states : states_t ; 
     dfa_states_len : length dfa_states = dfa_num_states ; 
-    (** the transition matrix for the DFA. *)
+    (** the transition matrix for the DFA -- see above. *)
     dfa_transition : transitions_t dfa_states ; 
+    (** the number of states equals the number of rows. *)
     dfa_transition_len : length dfa_transition = dfa_num_states ; 
+    (** the [row_num] of the ith row should be i *)
     dfa_transition_r : forall i, match nth_error dfa_transition i with 
                                    | Some r => row_num r = i
                                    | None => True
                                  end ;
-    (** which states are accepting states *)
+    (** which states are accepting states -- no longer used *)
     dfa_accepts : list bool ; 
     dfa_accepts_len : length dfa_accepts = dfa_num_states ; 
-    (** which states are failure states *)
+    (** which states are failure states -- no longer used *)
     dfa_rejects : list bool ;
     dfa_rejects_len : length dfa_rejects = dfa_num_states
   }.
@@ -1987,38 +2011,123 @@ Section DFA.
     Variable g : astgram.
     Variable gpos : nat.
 
+    (** Helper lemmas for gen_row -- mostly to get the types to align and
+        discharge bounds checks. *)
+    Lemma gen_row_1 : forall g' s,
+      s.[gpos] = g -> gpos < length s -> 
+      (s ++ fst (find_or_add g' s)).[gpos] = g.
+    Proof.
+      intros. rewrite nth_lt ; auto.
+    Qed.
+
+    Lemma gen_row2 : forall g' s, gpos < length s -> 
+      gpos < length (s ++ fst (find_or_add g' s)).
+    Proof.
+      intros ; rewrite app_length ; omega.
+    Qed.
+
+    Lemma gen_row3 : forall g' s s2, 
+      snd (find_or_add g' s) < length ((s ++ fst (find_or_add g' s)) ++ s2).
+    Proof.
+      intros. generalize (find_index_some g' s).
+      unfold find_or_add. intros. destruct (find_index g' s).  simpl.
+      specialize (H n (eq_refl _)). rewrite <- app_nil_end. rewrite app_length.
+      omega. simpl. rewrite app_length. rewrite app_length. simpl. omega.
+    Qed.
+
+    Lemma gen_row4 : forall g' s s2, 
+      astgram_type g' = 
+      astgram_type (((s ++ fst (find_or_add g' s)) ++ s2).[snd (find_or_add g' s)]).
+    Proof.
+      intros. generalize (find_or_add_app g' s s2). intro. rewrite H at 1. 
+      rewrite app_ass. auto.  
+    Qed.
+
+    Lemma gen_row5 : forall g' s s2, s.[gpos] = g -> gpos < length s -> 
+        astgram_type g = 
+        astgram_type (((s ++ fst (find_or_add g' s)) ++ s2).[gpos]).
+    Proof.
+      intros. rewrite <- H. rewrite app_ass. rewrite nth_lt ; auto. 
+    Qed.
+
+    (** This hideous function is basically calculating the derivative
+         of [s[gpos]] with respect to all tokens from [num_tokens] down to 0,
+         and adding the corresponding entries to the row.  At the same
+         time, it's collecting the new states and adding them to [s].
+         We must carry around a lot of auxiliary information to ensure
+         that [gpos] is in bounds, and to build a well-formed entry. 
+         What we get out is a new set of states, [s'], a new [row_t]
+         for [gpos] with respect to [s ++ s'], and a proof that the 
+         entries in the row are all well-formed (i.e., appropriate derivatives. *)
     Definition gen_row' 
-      (n:nat) (s:states_t) (tid:token_id) (H:s.[gpos] = g) (H1:gpos < length s): 
-      { s' : states_t & { r : row_t gpos (s ++ s') & length r = n }}.
+      (n:nat) (s:states_t) (tid:token_id) (H:s.[gpos] = g) (H1:gpos < length s)
+      (H2: tid = num_tokens - n)(H3:n <= num_tokens) : 
+      { s' : states_t & { r : row_t gpos (s ++ s') & length r = n /\ 
+                              forall i, i >= tid -> row_wf r (i-tid) i }}.
       refine (
         fix gen_row' (n:nat) (s:states_t) (tid:token_id) 
-                (H:s.[gpos] = g) (H1:gpos < length s) : 
-                { s' : states_t & { r : row_t gpos (s ++ s') & length r = n }} := 
-        match n with 
-          | 0 => existT _ nil (existT _ nil _)
+                (H:s.[gpos] = g) (H1:gpos < length s) (H2:tid = num_tokens - n)
+                (H3:n <= num_tokens) : 
+                { s' : states_t & { r : row_t gpos (s ++ s') & length r = n /\ 
+                                        forall i, i >= tid -> row_wf r (i-tid) i }} := 
+        match n as n' return
+              (n' = n) -> 
+              { s' : states_t & { r : row_t gpos (s ++ s') & length r = n' /\
+                                      forall i, i >= tid -> row_wf r (i-tid) i }}
+          with
+          | 0 => fun _ => existT _ nil (existT _ nil _)
           | S n' => 
-            let (g',x) := derivs_and_split g (token_id_to_chars tid) in
-              let p := find_or_add g' s in 
-                let (s2, row) := gen_row' n' (s ++ (fst p)) (1 + tid) _ _ in 
-                  let e : entry_t gpos ((s ++ (fst p)) ++ s2) := 
-                    {| next_state := (snd p) ; 
-                       next_state_lt := _ ; 
-                       next_xform := xinterp (xcoerce x _ _) |} in
-                    existT _ ((fst p) ++ s2) _
-        end) ; auto.
-      rewrite nth_lt ; auto. rewrite app_length. omega.
-      generalize (find_index_some g' s).
-      unfold find_or_add in p. intros. destruct (find_index g' s).  simpl.
-      specialize (H0 n0 (eq_refl _)). rewrite <- app_nil_end. rewrite app_length.
-      omega. simpl. rewrite app_length. rewrite app_length. simpl. omega.
-      generalize (find_or_add_app g' s s2). intro. rewrite H0. clear H0. 
-      rewrite app_ass. auto.  rewrite <- H. rewrite app_ass. 
-      rewrite nth_lt ; auto. rewrite <- app_ass. 
-      destruct row as [row e']. refine (existT _ (e::row) _). simpl. rewrite e'. auto.
+            fun Hn => 
+            match derivs_and_split g (token_id_to_chars tid) as z 
+               return (z = derivs_and_split g (token_id_to_chars tid)) -> _ with
+              | existT g' x =>
+              fun Hz => 
+                match find_or_add g' s as p return (p = find_or_add g' s) -> _ with
+                    | p => 
+                      fun Hq => 
+                        let (s2, row) := 
+                            gen_row' n' (s ++ (fst p)) (1 + tid) 
+                                     (gen_row_1 g' s H H1) (gen_row2 g' s H1) _ _ in 
+                        let e : entry_t gpos ((s ++ (fst p)) ++ s2) := 
+                            {| next_state := snd p ; 
+                               next_state_lt := gen_row3 g' s s2 ; 
+                               next_xform := xinterp (xcoerce x (gen_row4 g' s s2) 
+                                                              (gen_row5 g' s s2 H H1)) |} in
+                        let (r, e') := row in
+                        existT _ ((fst p) ++ s2) _
+                end (eq_refl _)
+            end (eq_refl _)
+      end (eq_refl _)) ; clear gen_row'.
+      split ; auto. intros. unfold row_wf. remember (i - tid) as q. destruct q ; simpl ; auto.
+      rewrite H2. rewrite <- Hn. rewrite minus_Sn_m. auto. omega. omega.
+      rewrite <- app_ass. refine (existT _ (e::r) _). 
+      destruct e'. Opaque derivs_and_split. split. simpl. rewrite H0 ; auto. 
+      clear row. intros. remember (i - tid) as z. destruct z. clear H4. unfold row_wf. 
+      simpl. clear e. assert (i = tid). omega. rewrite H4.
+      assert (((s ++ fst (find_or_add g' s)) ++ s2) .[gpos] = g).
+      rewrite app_ass. rewrite nth_lt ; auto. 
+      generalize (gen_row4 g' s s2) (gen_row5 g' s s2 H H1).
+      rewrite H6. intros. 
+      assert (g' = (((s ++ fst (find_or_add g' s)) ++ s2).[snd (find_or_add g' s)])).
+      rewrite app_ass. apply (find_or_add_app g' s s2). generalize e ; clear e.
+      rewrite <- H7. intro. rewrite (proof_irrelevance _ e (eq_refl _)).
+      rewrite (proof_irrelevance _ e0 (eq_refl _)). econstructor ; eauto.
+      unfold row_wf ; simpl. clear e. assert (z = i - (1 + tid)). clear H4. destruct i. 
+      simpl in Heqz. congruence. omega. rewrite H6. apply H4. omega.
     Defined.
 
-    Definition gen_row (s:states_t) (H:s.[gpos] = g) (H1: gpos < length s) :=
-      gen_row' num_tokens s 0 H H1.
+    (** Kick off the row generation starting with [num_tokens.] *)
+    Definition gen_row (s:states_t) (H:s.[gpos] = g) (H1: gpos < length s) : 
+      { s' : states_t & {r : row_t gpos (s ++ s') & length r = num_tokens /\ 
+                             forall i, row_wf r i i }}.
+      refine (fun s H H1 => 
+                match @gen_row' num_tokens s 0 H H1 (eq_sym (minus_diag _)) (le_refl _) with 
+                  | existT s' (existT r (conj P1 P2)) => 
+                    (existT _ s' (existT _ r (conj P1 (fun i => _))))
+              end).
+      specialize (P2 i).
+      rewrite NPeano.Nat.sub_0_r in P2. apply P2. auto with arith.
+    Defined.
   End GENROW.
 
   (** We build some entries in the transition matrix before we've discovered
@@ -2034,7 +2143,63 @@ Section DFA.
     ). rewrite app_nth1. rewrite nth_lt ; auto. apply (next_state_lt e).
   Defined.
 
-  Definition coerce_transitions s1 s (ts:transitions_t s) : transitions_t (s ++ s1) := 
+  (** Similarly, we have to coerce the pre-computed [astgram_extract_nil] values
+      for previous rows. *)
+  Definition coerce_nils s1 s2 i (H: i < length s1) (v:interp (astgram_type (s1.[i]))) : 
+    interp (astgram_type ((s1 ++ s2).[i])).
+    intros. rewrite app_nth1 ; auto.
+  Defined.
+
+  (** Helper lemmas for coercing previous transition rows once we've added in
+      some new states. *)
+   Lemma coerce_transitions1 s1 s t : 
+     forall i, 
+       match nth_error (map (coerce_entry s1 (row_num_lt t)) (row_entries t)) i
+         with 
+         | Some e => 
+           exists x, derivs_and_split ((s ++ s1).[row_num t])(token_id_to_chars i) = 
+             existT _ ((s ++ s1).[next_state e]) x /\ xinterp x = next_xform e
+         | None => True
+       end.
+   Proof.
+     intros. generalize (row_entries_wf t i). rewrite list_map_nth. unfold row_wf.
+     remember (nth_error (row_entries t) i) as e.  destruct e ; auto.
+     intros. destruct H. unfold option_map. 
+     assert (s.[next_state e] = (s++s1).[next_state (coerce_entry s1 (row_num_lt t) e)]).
+     destruct e ; simpl. rewrite app_nth1. auto. auto. 
+     assert (astgram_type (s.[row_num t]) = astgram_type ((s ++ s1).[row_num t])).   
+     rewrite app_nth1 ; auto. destruct t ; auto.
+     assert (astgram_type (s.[next_state e]) = 
+       astgram_type ((s ++ s1).[next_state (coerce_entry s1 (row_num_lt t) e)])). 
+     rewrite H0. auto.
+     exists (xcoerce x H2 H1).
+     assert ((s ++ s1).[row_num t] = s.[row_num t]). 
+     rewrite app_nth1 ; auto. destruct t ; auto. generalize H2 H1 H ; clear H2 H1 H. 
+     destruct t. destruct e. Opaque derivs_and_split. simpl in *.
+     unfold eq_rect_r. unfold eq_rect. 
+     generalize (eq_sym (app_nth1 s s1 aZero next_state_lt0)).
+     generalize (eq_sym (nth_lt s s1 row_num_lt0)). clear H0 H3.
+     clear row_nils0 row_entries_len0 row_entries_wf0 row_nils_wf0.
+     intros e e0. generalize next_xform0 x Heqe. clear next_xform0 x Heqe.
+     rewrite <- e. rewrite <- e0. intros. rewrite (proof_irrelevance _ H2 eq_refl).
+     rewrite (proof_irrelevance _ H1 eq_refl). mysimp.
+  Qed.
+
+   Lemma coerce_transitions2 s1 s t : 
+     map (coerce_nils s s1 (row_num_lt t)) (row_nils t) = 
+     astgram_extract_nil ((s ++ s1).[row_num t]).
+   Proof.
+     destruct t. simpl. rewrite row_nils_wf0.
+     assert ((s ++ s1).[row_num0] = s.[row_num0]). rewrite app_nth1 ; auto.
+     clear row_entries_wf0 row_entries_len0 row_entries0. clear row_nils_wf0.
+     clear row_nils0. unfold coerce_nils. unfold eq_rect_r. unfold eq_rect.
+     generalize (eq_sym (app_nth1 s s1 aZero row_num_lt0)). rewrite H. intro.
+     rewrite (proof_irrelevance _ e eq_refl). apply map_id. 
+   Qed.
+
+  (** Used to coerce previous rows so that instead of being indexed by the
+      original set of states [s], they are now indexed by [s ++ s1]. *)
+  Definition coerce_transitions s1 s (ts:transitions_t s) : transitions_t (s ++ s1) :=
     List.map (fun (t:transition_t s) => 
       {| row_num := row_num t ; 
          row_num_lt := app_length_lt s s1 (row_num_lt t) ;
@@ -2042,7 +2207,11 @@ Section DFA.
          row_entries_len := eq_ind_r (fun n : nat => n = num_tokens)
                         (row_entries_len t)
                         (list_length_map (coerce_entry s1 (row_num_lt t))
-                           (row_entries t)) |}) ts.
+                           (row_entries t)) ;
+         row_nils := List.map (@coerce_nils s s1 (row_num t) (row_num_lt t)) (row_nils t) ; 
+         row_entries_wf := coerce_transitions1 s1 t ; 
+         row_nils_wf := coerce_transitions2 s1 t
+      |}) ts.
 
   (** Build a transition table by closing off the reachable states.  The invariant
      is that we've closed the table up to the [next_state] and have generated the
@@ -2071,17 +2240,28 @@ Section DFA.
           | None => fun H => Some (existT _ s rows)
           | Some r => 
             fun H => 
-              let (s1, row_ex) := @gen_row r next_state s (nth_error_some _ _ H)
-                                   (nth_error_some_lt _ _ H) in 
-              let (row, row_len) := row_ex in                                  
-              let t := {| row_num := next_state ; 
-                          row_num_lt := app_length_lt _ _ (nth_error_some_lt _ _ H) ; 
-                          row_entries := row ; 
-                          row_entries_len := row_len |} in
-                @build_table n' (s++s1) ((coerce_transitions _ rows)++[t]) (1 + next_state)
+              match @gen_row r next_state s (nth_error_some _ _ H)
+                                   (nth_error_some_lt _ _ H) as p
+                return (@gen_row r next_state s (nth_error_some _ _ H)
+                                   (nth_error_some_lt _ _ H) = p) -> _
+                with
+                | existT s1 (existT row (conj row_len row_wf)) => 
+                  fun H0 => 
+                    let t := {| 
+                      row_num := next_state ; 
+                      row_num_lt := app_length_lt _ _ (nth_error_some_lt _ _ H) ; 
+                      row_entries := row ;
+                      row_entries_len := row_len ;
+                      row_nils := astgram_extract_nil _ ; 
+                      row_entries_wf := row_wf ; 
+                      row_nils_wf := eq_refl _
+                      |} in
+                    @build_table n' (s++s1) ((coerce_transitions _ rows)++[t]) 
+                      (1 + next_state)
               end (eq_refl _)
-        end.
-
+        end (eq_refl _)
+    end.
+ 
   (** We start with the initial [astgram] in state 0 and then try to close off the table. *)
   Definition build_transition_table n (r:astgram) := @build_table n (r::nil) nil 0.
 
@@ -2095,7 +2275,7 @@ Section DFA.
     generalize (nth_error_some i s). generalize (nth_error_some_lt i s).
     remember (nth_error s i) as popt. destruct popt. intros.
     remember (gen_row s (e a eq_refl) (l a eq_refl)) as r. destruct r. destruct s0.
-    apply (IHn _ _ _ _ _ H). simpl. unfold coerce_transitions. 
+    destruct a0. apply (IHn _ _ _ _ _ H). simpl. unfold coerce_transitions. 
     rewrite app_length. rewrite map_length. rewrite H0. simpl. omega. 
     assert (i < length s). eapply (nth_error_some_lt i s). eauto. rewrite app_length. 
     omega. intros. clear l e. injection H. clear H. intros. subst. mysimp.
@@ -2127,7 +2307,7 @@ Section DFA.
     remember (nth_error s i) as popt. destruct popt. intros.
     remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0. 
     assert (length t = length (coerce_transitions x t)). unfold coerce_transitions.
-    rewrite map_length. auto. destruct s0.
+    rewrite map_length. auto. destruct s0. destruct a0.
     apply (IHn _ _ _ _ _ H) ;  clear IHn. rewrite app_length. simpl. omega. intros.
     assert (j0 < length t \/ j0 >= length t). omega. destruct H3.
     specialize (H1 j0). rewrite nth_error_lt_app ; auto. unfold coerce_transitions.
@@ -2188,7 +2368,8 @@ Section DFA.
     generalize (nth_error_some i s) (nth_error_some_lt i s). 
     remember (nth_error s i). destruct e. Focus 2. intros. injection H ; intros ; subst.
     mysimp. intros. remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0.
-    destruct s0. specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
+    destruct s0. destruct a0. 
+    specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
     apply IHn. congruence.
   Qed.
 
@@ -2226,11 +2407,12 @@ Section DFA.
     induction n ; simpl. intros. discriminate. intros s r i s' t'.
     generalize (nth_error_some i s) (nth_error_some_lt i s).
     remember (nth_error s i). destruct e. intros. 
-    remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0. destruct s0.
+    remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0. destruct s0. destruct a0.
     specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence.
     apply IHn. congruence. intros. injection H ; subst. intros ; subst. auto.
   Qed.
 
+  (** A DFA has at least one state. *)
   Lemma dfa_at_least_one : 
     forall n ag d, build_dfa n ag = Some d -> 
       0 < dfa_num_states d.
@@ -2249,7 +2431,9 @@ Section DFA.
      accumulated [xform] that can map us from the type of the [astgram]
      to the original grammar type [t], and the unconsumed tokens from [ts]. 
      This would be a whole lot faster if we were using a balanced finite
-     map instead of lists.  But this version models arrays pretty well. 
+     map instead of lists.  But this version models arrays pretty well.
+
+     Note -- we don't actually use this now.
   *)
   Section TABLE_PARSE.
     Variable d : DFA.
@@ -2326,7 +2510,9 @@ Section DFA.
       token at a time.  So an [instParserState] encapsulates the intermediate
       state of the parse engine, including the [DFA] and the current 
       state ([row_ps]) as well as the current fix-up function to transform
-      us from the current state's type back to the original grammar type [t]. *)
+      us from the current state's type back to the original grammar type [t]. 
+      We also need a proof that the current [row_ps] is in bounds for the
+      number of states in the [dfa_ps] to avoid a run-time error. *)
   Record instParserState (t:type) := mkPS { 
     dfa_ps : DFA ; 
     row_ps : nat ; 
@@ -2354,67 +2540,353 @@ Section DFA.
   (** Given an [instParserState] and a token, advance the parser.  We first
       lookup the transition row of the current state ([row_ps ps]), and then
       extract the entry in that row corresponding to the token [tk].  These
-      lookups will never fail, but we don't bother to show that here.  
-      We then check to see if this new state [next_i] is an accepting state.  
-      If so, we extract the abstract syntax values [vs] from the current state's
-      [astgram] by calling [astgram_extract_nil].  We then apply the fixup-function
-      to each value in this list, go get out a [t] value, where [t] is the
-      original type of the grammar that was used to build the [DFA] and
-      [instParserState].  If [next_i] is not an accepting state, then we
-      update the fixup-function with the current entry's transform, and
-      build a new [instParserState] where [next_i] becomes the current state. 
-      Note that the caller can restart the parser even upon success. *)
-  (* Todo:  the calculation of [astgram_extract_nil] can be done at DFA-generation
-     time (and in fact, should be.)  Then we wouldn't even need the accepting
-     state test, because if it's not accepting, we would get back an empty list.
+      lookups will never fail (and some of the lemmas below are used to show
+      this.)  
+
+      We then compute the updated fixup-function by composing the current
+      parsing state's [fixup_ps] with the [next_i] entry's [next_xform].
+      We must do various type-casts to get these things to line up.  
+
+      Finally, we grab [next_i]'s [row_nils] which correspond to the semantic
+      values that state [next_i] associates with the empty string and apply
+      the newly-composed fixup-function to each of these values.  We then
+      return the list of these semantic values and a new parser state, 
+      where [next_i] becomes the current row.  Note that if there is no 
+      semantic value associated with [next_i], then we will get an empty
+      list of semantic values, so one should continue parsing tokens using
+      the new [instParserState]. 
+
+      TODO:  we should have some way of signaling that we are in a failure
+      (i.e., Zero) state.  Otherwise, a parsing loop will just consume all
+      of the tokens before realizing that there is never a match.
   *)
+
+  (** Various lemmas needed to help discharge proof obligations in [parse_token.] *)
+  Definition parse_token_help1 (t:type)(ps: instParserState t)
+             (row: transition_t (dfa_states (dfa_ps ps)))
+             (H: nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row) : 
+    fixfn (dfa_states (dfa_ps ps) .[row_ps ps]) t = 
+    (interp (astgram_type (dfa_states (dfa_ps ps) .[row_num row])) -> interp t).
+  Proof.
+    intros ; generalize (dfa_transition_r (dfa_ps ps) (row_ps ps)). rewrite H. intro g ; 
+    rewrite <- g. apply eq_refl.
+  Defined.
+
+  Lemma parse_token_help2 t (ps:instParserState t) (row:transition_t (dfa_states (dfa_ps ps)))
+        (H: nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row)
+        (e:entry_t (row_num row) (dfa_states (dfa_ps ps))) : 
+    next_state e < dfa_num_states (dfa_ps ps).
+  Proof.
+    intros. rewrite <- (dfa_states_len (dfa_ps ps)).
+    destruct ps. simpl in *. destruct dfa_ps0 ; simpl in *. destruct e.
+    simpl in *. subst. auto.
+  Defined.
+
+  Definition lt_and_gte_inconst (x y:nat) : x < y -> x >= y -> void.
+    intros. omega.
+  Defined.
+  Print lt_and_gte_inconst.
+    
+  Definition parse_token_help3 t (ps:instParserState t) (tk:token_id) (tk_lt:tk < num_tokens)
+             (row:transition_t (dfa_states (dfa_ps ps)))
+             (H:nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row)
+             (H':nth_error (row_entries row) tk = None) : void.
+  Proof.
+    intros. generalize (nth_error_none _ _ H').
+    rewrite <- (row_entries_len row) in tk_lt. intros. 
+    destruct (lt_and_gte_inconst tk_lt H0).
+  Defined.
+
+  Definition parse_token_help4 t (ps:instParserState t) 
+             (H:nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = None) : void.
+  Proof.   
+    intros. generalize (nth_error_none _ _ H). generalize (row_ps_lt ps). 
+    intros. generalize (dfa_transition_len (dfa_ps ps)). intros.
+    rewrite H2 in H1. apply (lt_and_gte_inconst H0 H1).
+  Defined.
+
+  Lemma parse_token_help5 (d: DFA) (row : transition_t (dfa_states d))
+        (e : entry_t (row_num row) (dfa_states d))
+        (row' : transition_t (dfa_states d))
+        (H3 : nth_error (dfa_transition d) (next_state e) = Some row') : 
+    row_num row' = next_state e.
+  Proof.
+    intros. generalize (dfa_transition_r d (next_state e)). rewrite H3.
+    auto.
+  Qed.
+
+  Lemma parse_token_help6 (d:DFA) (row : transition_t (dfa_states d))
+        (e : entry_t (row_num row) (dfa_states d))
+        (row' : transition_t (dfa_states d))
+        (H3 : nth_error (dfa_transition d) (next_state e) = Some row') : 
+    list (interp (astgram_type (dfa_states d.[row_num row']))) = 
+    list (interp (astgram_type (dfa_states d.[next_state e]))).
+  Proof.
+    intros. rewrite (parse_token_help5 d row e H3). auto.
+  Qed.
+
+  Definition compose (A B C:Type) (f:A->B) (g:B -> C) : A -> C := 
+    fun z => g (f z).
+
+  Definition coerce (A B:Type) (H:A=B) : A -> B := 
+    match H in (_ = C) return A -> C with 
+      | eq_refl => fun x => x
+    end.
+
   Definition parse_token t (ps:instParserState t) (tk:token_id) (tk_lt:tk < num_tokens) : 
-    instParserState t * list (interp t).
-  refine (fun t ps tk tk_lt => 
+    instParserState t * list (interp t) := 
     let d := dfa_ps ps in 
       match nth_error (dfa_transition d) (row_ps ps) as p return
         (nth_error (dfa_transition d) (row_ps ps) = p) -> _ 
         with 
-        | None => fun H => _
+        | None => fun H => match parse_token_help4 ps H with end (*impossible*)
         | Some row => fun H => 
           match nth_error (row_entries row) tk as q return
             (nth_error (row_entries row) tk = q) -> _
             with 
-            | None => fun H' => _
+            | None => fun H' => match parse_token_help3 ps tk_lt H H' with end (*impossible*)
             | Some e => fun H' => 
               let f := next_xform e in 
               let next_i := next_state e in 
-              let g := fun z => (fixup_ps ps) _ in
-              let vs' := 
-                (if nth next_i (dfa_accepts d) false then 
-                  let ag' := nth next_i (dfa_states d) aZero in 
-                  let vs := astgram_extract_nil ag' in 
-                    List.map g vs 
-                else 
-                  nil) in
-                (@mkPS _ d next_i _ g, vs')
+              let g := compose (next_xform e) 
+                               ((@coerce _ _ (parse_token_help1 ps H)) (fixup_ps ps)) in
+              let vs0 : list (interp (astgram_type (dfa_states d .[next_state e]))) := 
+                  match nth_error (dfa_transition d) next_i as z return
+                     (nth_error (dfa_transition d) next_i = z) -> _
+                  with
+                      | None => fun H3 => nil (* impossible but not worth proving? *)
+                      | Some row' => 
+                        fun H3 => (@coerce _ _ (parse_token_help6 d row e H3) 
+                                           (row_nils row'))
+                  end (eq_refl _) in
+              let vs' := List.map g vs0 in
+                (@mkPS t d next_i (parse_token_help2 ps H e) g, vs')
           end (eq_refl _)
-      end (eq_refl _)
-  ). 
-  generalize (dfa_transition_r d (row_ps ps)) ; rewrite H ; intro g ; rewrite <- g ;
-  apply (f z).
-  assert (next_state e < dfa_num_states d) ; auto.
-  destruct e ; destruct d ; simpl in *. rewrite <- dfa_states_len0. auto.
-  destruct row. destruct d. simpl in *. rewrite <- row_entries_len0 in tk_lt.
-  generalize (nth_error_none _ _ H'). intro. assert False. omega. contradiction.
-  generalize (nth_error_none _ _ H). intros. assert False ; [ idtac | contradiction ].
-  generalize (row_ps_lt ps). intro. 
-  generalize (dfa_transition_len (dfa_ps ps)). intro.
-  rewrite <- H2 in H1. assert (row_ps ps >= length (dfa_transition (dfa_ps ps))). auto.
-  omega.
-  Defined.
+      end (eq_refl _).
 
+  Fixpoint list_all A (P : A -> Prop) (xs:list A) : Prop := 
+    match xs with 
+      | nil => True
+      | h::t => P h /\ list_all P t
+    end.
+
+  (** A first-parse parser -- this consumes the tokens until it gets a successful
+      semantic value. *)
+  Fixpoint parse_tokens t (ps:instParserState t) (tks:list token_id) := 
+    match tks return list_all (fun tk => tk < num_tokens) tks -> 
+                     (list token_id) * (instParserState t) * list (interp t) 
+    with 
+      | nil => fun _ => (nil, ps, nil)
+      | tk::rest => 
+        fun H => 
+          match H with 
+            | conj H1 H2 => 
+              let pair := parse_token ps H1 in 
+              match snd pair with
+                | nil => parse_tokens (fst pair) rest H2
+                | vs => (rest, (fst pair), vs)
+              end
+          end
+    end.
+
+  (** Proof that running [parse_token] is like calculating the derivative of the
+      current [instParserState]'s [astgram] with respect to the given token, and
+      that any semantic values returned are computed from (a) the [astgram_extract_nil]
+      of the new state, and (b) the application of the accumulated fix-up function.
+  *)
+  Lemma parse_token_like_deriv : 
+    forall t (ps1:instParserState t) tk (Htk: tk < num_tokens),
+      match parse_token ps1 Htk with 
+          (ps2,vs2) => 
+          match derivs_and_split (dfa_states (dfa_ps ps1).[row_ps ps1]) 
+                                 (token_id_to_chars tk) 
+          with
+            | existT a x => 
+              (existT (fun a => interp (astgram_type a) -> interp t)
+                      a (compose (xinterp x) (fixup_ps ps1))) = 
+              (existT _ 
+                      (dfa_states (dfa_ps ps2).[row_ps ps2]) (fixup_ps ps2)) /\ 
+              forall v, In v vs2 -> 
+                        exists v', In v' (astgram_extract_nil a) /\ 
+                                   v = (compose (xinterp x) (fixup_ps ps1)) v'
+          end
+      end.
+  Proof.
+    intros. 
+    remember (parse_token ps1 Htk) as e1. destruct e1 as [ps3 vs]. 
+    generalize Heqe1. clear Heqe1. unfold parse_token.
+    generalize (parse_token_help2 ps1) (parse_token_help1 ps1) (parse_token_help3 ps1 Htk)
+               (parse_token_help4 ps1) (parse_token_help6 (dfa_ps ps1)).
+    remember (nth_error (dfa_transition (dfa_ps ps1)) (row_ps ps1)) as e1.
+    destruct e1 ; intros l i v v0 e0. Focus 2. apply (match v0 (eq_refl _) with end).
+    generalize (l t0 eq_refl) (i t0 eq_refl) (v t0 eq_refl) (e0 t0). clear l i v v0 e0.
+    remember (nth_error (row_entries t0) tk) as e2.
+    destruct e2.  Focus 2. intros. apply (match v (eq_refl _) with end).
+    intros l i _ b H. injection H. clear H. intros. subst. simpl.
+    generalize (row_entries_wf t0 tk). unfold row_wf. 
+    rewrite <- Heqe2. intro. destruct H. destruct H.
+    generalize (dfa_transition_r (dfa_ps ps1) (row_ps ps1)).
+    rewrite <- Heqe1. intros. 
+    remember (derivs_and_split 
+                (dfa_states (dfa_ps ps1).[row_ps ps1]) (token_id_to_chars tk)) as e2.
+    destruct e2. 
+    assert (x0 = dfa_states (dfa_ps ps1).[next_state e]).
+    generalize x1 Heqe0 ; clear x1 Heqe0. rewrite <- H1.
+    rewrite H. intros. apply (eq_sigT_fst Heqe0). 
+    rewrite <- H0. subst.
+    assert (compose (xinterp x1) (fixup_ps ps1) = 
+            compose (xinterp x) (coerce i (fixup_ps ps1))).
+    destruct ps1. simpl in *. subst. rewrite (proof_irrelevance _ i (eq_refl _)). 
+    simpl. assert (x1 = x).  rewrite H in Heqe0. mysimp. subst. auto.
+    rewrite H2. split. auto.
+    intros. 
+    generalize (@list_in_map_inv _ _ (compose (xinterp x) (coerce i (fixup_ps ps1))) _ v H3).
+    clear H3. intros. destruct H3. destruct H3. econstructor ; split ; eauto.
+    generalize H4. clear H4.
+    generalize (b e) ; clear b.
+    remember (nth_error (dfa_transition (dfa_ps ps1)) (next_state e)).
+    destruct e0.
+    rewrite (row_nils_wf t1).
+    intro e0. generalize (e0 t1 eq_refl). clear e0.
+    generalize (parse_token_help5 (dfa_ps ps1) t0 e (eq_sym (Heqe3))).
+    intro H5. rewrite H5. intro e0. rewrite (proof_irrelevance _ e0 (eq_refl _)). auto.
+    intros. contradiction H4.
+   Qed.
+
+  (** Proof that in essence, [derivs_and_split a (cs1 ++ cs2) = 
+      derivs_and_split (derivs_and_split a cs) cs2].  This is a little
+      awkward to state due to the fact that [derivs_and_split] returns
+      a dependent pair. *)
+  Lemma derivs_and_split_assoc (cs1 cs2:list char_p) A (ag:astgram)
+        (f:interp (astgram_type ag) -> A) : 
+    (let (a,x) := derivs_and_split ag (cs1 ++ cs2) in 
+     existT _ a (compose (xinterp x) f)) = 
+    (let (a1,x1) := derivs_and_split ag cs1 in 
+     let (a2,x2) := derivs_and_split a1 cs2 in 
+     existT _ a2 (compose (compose (xinterp x2) (xinterp x1)) f)).
+  Proof.
+    Transparent derivs_and_split.
+    induction cs1 ; simpl ; intros. destruct (derivs_and_split ag cs2).
+    assert (compose (xinterp x0) (fun x => x) = xinterp x0). apply extensionality.
+    auto. rewrite H. auto. 
+    destruct (deriv_and_split ag a). specialize (IHcs1 cs2 A x). unfold agxf.
+    remember (derivs_and_split x (cs1 ++ cs2)) as e1.
+    remember (derivs_and_split x cs1) as e2.
+    destruct e1 ; destruct e2. remember (derivs_and_split x3 cs2) as e3.
+    destruct e3. rewrite xopt_corr. rewrite xopt_corr.
+    assert (xinterp (xcomp' x0 x2) = xinterp (Xcomp x2 x0)). apply extensionality.
+    intros. rewrite xcomp'_corr. auto. rewrite H. 
+    assert (compose (xinterp (Xcomp x2 x0)) f = 
+            compose (xinterp x2) (compose (xinterp x0) f)).
+    unfold compose. apply extensionality. auto. rewrite H0.
+    specialize (IHcs1 (compose (xinterp x0) f)). rewrite IHcs1.
+    assert ((compose (compose (xinterp x6) (xinterp x4)) (compose (xinterp x0) f)) = 
+            (compose (compose (xinterp x6) (xinterp (xcomp' x0 x4))) f)).
+    unfold compose. apply extensionality. intro. rewrite xcomp'_corr. auto.
+    rewrite H1. auto.
+  Qed.
+
+   (** Proof that running [parse_tokens] with respect to [tks] is like calculating
+       the derivative of the parsing state's [astgram] with respect to [tks], and
+       that any semantic values returned are appropriate. *)
+   Lemma parse_tokens_like_derivs t
+         tks1 (Htks1:list_all (fun tk => tk < num_tokens) tks1) ps1 : 
+     match parse_tokens ps1 tks1 Htks1 with 
+         | (tks2, ps2, vs2) => 
+           exists tks, tks1 = tks ++ tks2 /\ 
+           match derivs_and_split (dfa_states (dfa_ps ps1).[row_ps ps1]) 
+                                  (flat_map token_id_to_chars tks)
+           with 
+             | existT a x => 
+               (existT (fun a => interp (astgram_type a) -> interp t) a 
+                       (compose (xinterp x) (fixup_ps ps1))) = 
+               (existT _ (dfa_states (dfa_ps ps2).[row_ps ps2]) (fixup_ps ps2)) /\ 
+               forall v, In v vs2 -> 
+                         exists v', In v' (astgram_extract_nil a) /\ 
+                                    v =  compose (xinterp x) (fixup_ps ps1) v'
+           end
+     end.
+   Proof.
+     induction tks1. mysimp. 
+     exists (@nil token_id). split ; auto. Transparent derivs_and_split.
+     simpl. assert (compose (fun x => x) (fixup_ps ps1) = fixup_ps ps1).
+     unfold compose. apply extensionality. auto. rewrite H. tauto.
+     simpl. intros Htks1 ps1. destruct Htks1. remember (parse_token ps1 l) as e.
+     destruct e as [ps3 vs3]. simpl. intros. destruct vs3.
+     specialize (IHtks1 l0 ps3). 
+     remember (parse_tokens ps3 tks1 l0) as pr. destruct pr as [pr2 vs2]. 
+     destruct pr2 as [tks2 ps2].
+     destruct IHtks1. destruct H.
+     subst. exists (a::x). split ; auto. Opaque token_id_to_chars. simpl.
+     generalize (derivs_and_split_assoc (token_id_to_chars a) (flat_map token_id_to_chars x)
+                  (dfa_states (dfa_ps ps1).[row_ps ps1]) (fixup_ps ps1)).
+     remember (derivs_and_split (dfa_states (dfa_ps ps1).[row_ps ps1])
+                (token_id_to_chars a ++ flat_map token_id_to_chars x)) as e.
+     destruct e. intros. rewrite H. 
+     generalize (parse_token_like_deriv ps1 l). rewrite <- Heqe.
+     remember (derivs_and_split (dfa_states (dfa_ps ps1).[row_ps ps1])
+                                (token_id_to_chars a)) as e.
+     destruct e. intros. destruct H1. clear H2.
+     assert (x2 = dfa_states (dfa_ps ps3).[row_ps ps3]).
+     apply (eq_sigT_fst H1). subst. assert (compose (xinterp x3) (fixup_ps ps1) = 
+                                           fixup_ps ps3). mysimp. clear H1.
+     rewrite <- H2 in H0.
+     remember (derivs_and_split (dfa_states (dfa_ps ps3).[row_ps ps3])
+                                (flat_map token_id_to_chars x)) as e.
+     destruct e. destruct H0. split. auto. 
+     assert (x0 = x2). apply (eq_sigT_fst H). subst. mysimp. rewrite H.
+     specialize (H1 v H3). destruct H1. destruct H1. econstructor ; eauto.
+     clear IHtks1.
+     exists ([a]). split ; auto. 
+     generalize (parse_token_like_deriv ps1 l). rewrite <- Heqe. auto.
+  Qed.
+
+  (** Proof that if you build an initial parsing state from a grammar [g],
+      and then run [parse_tokens] on a list of tokens [tks], you'll get back
+      (a) some suffix of [tks], corresponding to the unconsumed tokens, 
+      (b) a list of semantic values [vs], such that for each [v] in [vs],
+      and a guarantee that [v] is is related by [g] and the consumed tokens. *)
+  Definition parse_tokens_corr1 : 
+    forall t n (g:grammar t) ps0, 
+      opt_initial_parser_state n g = Some ps0 -> 
+      forall tks (H:list_all (fun tk => tk < num_tokens) tks),
+        match parse_tokens ps0 tks H with 
+            | (tks2, ps2, vs) => 
+              exists tks1, tks = tks1 ++ tks2 /\ 
+                forall v, In v vs -> in_grammar g (flat_map token_id_to_chars tks1) v
+        end.
+  Proof.
+    intros t n g ps0.
+    unfold opt_initial_parser_state.
+    remember (split_astgram g) as e. destruct e as [ag f].
+    generalize (dfa_at_least_one n ag). generalize (dfa_zero_coerce n ag). 
+    remember (build_dfa n ag) as dopt.
+    destruct dopt ; intros e l H ; try congruence. injection H ; intros ; clear H.
+    generalize (parse_tokens_like_derivs tks H1 ps0).
+    remember (parse_tokens ps0 tks H1) as e1. destruct e1 as [[tks2 ps2] vs2].
+    intro. destruct H as [tks1 H]. destruct H.
+    exists tks1. split. auto. 
+    remember (derivs_and_split (dfa_states (dfa_ps ps0).[row_ps ps0])
+                               (flat_map token_id_to_chars tks1)) as e1.
+    destruct e1. destruct H2. intros. specialize (H3 _ H4). destruct H3. destruct H3.
+    rewrite H5. generalize (split_astgram_corr1 g). rewrite <- Heqe. subst ; simpl in *.
+    unfold compose.
+    intro. specialize (H (flat_map token_id_to_chars tks1)).
+    assert (dfa_states d.[0] = ag).
+    eapply build_dfa_zero. eauto. subst.
+    rewrite (proof_irrelevance _ (eq_sym (e d eq_refl)) (eq_refl _)). 
+    unfold coerce_dom, eq_rect_r, eq_rect. simpl. eapply H. clear H Heqe1.
+    apply derivs_and_split_corr2. unfold in_agxf. rewrite <- Heqe0.
+    econstructor ; split ; eauto.
+    eapply astgram_extract_nil_corr2. auto.
+  Qed.
 End DFA.
 
 Extraction Implicit table_parse [t].
 Extraction Implicit opt_initial_parser_state [t].
 Extraction Implicit parse_token [t].
-Recursive Extraction parse_token.
+Extraction Implicit parse_tokens [t].
+Recursive Extraction parse_tokens.
 
 (** [to_string] takes a grammar [a] and an abstract syntax value [v] of
     type [astgram_type a] and produces an optional string [s] with the property
