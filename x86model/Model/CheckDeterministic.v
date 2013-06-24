@@ -11,7 +11,7 @@
 
    
 (** CheckDeterministic.v:  This file provides some routines to help try to
-    prove that parsers are deterministic.  In particular, there's a function
+    prove that grammars are deterministic.  In particular, there's a function
     [disjoint_p p1 p2] which when it returns true, ensures that there is no
     string of tokens (i.e., bytes) that is accepted by both [p1] and [p2].
     This is achieved by computing the intersection of the two [regexps] 
@@ -43,10 +43,10 @@ Require ExtrOcamlNatBigInt.
 Require ExtrOcamlNatInt.
 Import X86_PARSER_ARG.
 Import X86_PARSER.
-Import X86_BASE_PARSER.
+(*Import X86_BASE_PARSER.*)
 
 (** Our regular expressions with intersection ([And_r]).  We need
-    the support for intersection to test whether two parsers overlap
+    the support for intersection to test whether two grammars overlap
     on strings.  *)
 Inductive rexp : Type := 
 | Any_r : rexp
@@ -79,7 +79,7 @@ Hint Constructors in_rexp.
 Ltac mysimp := 
   simpl in * ; intros ; 
     repeat match goal with 
-             | [ |- context[char_eq ?x ?y] ] => destruct (char_eq x y) ; auto 
+             | [ |- context[char_dec ?x ?y] ] => destruct (char_dec x y) ; auto 
              | [ |- _ /\ _ ] => split
              | [ H : _ /\ _ |- _ ] => destruct H
              | [ |- context[ _ ++ nil ] ] => rewrite <- app_nil_end
@@ -100,7 +100,7 @@ Fixpoint rexp_eq(r1 r2:rexp) : bool :=
   match r1, r2 with 
     | Any_r, Any_r => true
     | Any_r, _ => false
-    | Char_r c1, Char_r c2 => if char_eq c1 c2 then true else false
+    | Char_r c1, Char_r c2 => if char_dec c1 c2 then true else false
     | Char_r _, _ => false
     | Eps_r, Eps_r => true
     | Eps_r, _ => false
@@ -123,8 +123,8 @@ Proof.
   induction r1 ; destruct r2 ; simpl ; try congruence ; unfold andb in * ; 
     repeat
   match goal with 
-    | [ |- context[if char_eq ?c ?c0 then _ else _] ] => 
-      destruct (char_eq c c0) ; subst ; try congruence
+    | [ |- context[if char_dec ?c ?c0 then _ else _] ] => 
+      destruct (char_dec c c0) ; subst ; try congruence
     | [ H : (forall r2, if rexp_eq ?r1 r2 then _ else _) |-
             context[if rexp_eq ?r1 ?r2 then _ else _] ] => 
     generalize (H r2) ; clear H ; intro H ; destruct (rexp_eq r1 r2) ; subst
@@ -301,7 +301,7 @@ Definition OptAnd_r(r1 r2:rexp) : rexp :=
     | r1, Eps_r => null_r r1
     | Any_r, Char_r c => Char_r c
     | Char_r c, Any_r => Char_r c
-    | Char_r c1, Char_r c2 => if char_eq c1 c2 then Char_r c1 else Zero_r
+    | Char_r c1, Char_r c2 => if char_dec c1 c2 then Char_r c1 else Zero_r
     | r1, r2 => if rexp_eq r1 r2 then r1 else And_r r1 r2
   end.
 
@@ -351,48 +351,50 @@ Proof.
     repeat in_inv ; try congruence ; pv_opt.
 Qed.
 
-(** Convert a [parser] to an [rexp]. *)
-Fixpoint parser2rexp t (p:parser t) : rexp := 
+(** Convert a [grammar] to an [rexp]. *)
+Fixpoint grammar2rexp t (p:grammar t) : rexp := 
   match p with 
-    | Any_p => Any_r
-    | Char_p c => Char_r c
-    | Eps_p => Eps_r
-    | Cat_p t1 t2 r1 r2 => OptCat_r (parser2rexp r1) (parser2rexp r2)
-    | Zero_p t => Zero_r
-    | Alt_p t r1 r2 => OptAlt_r (parser2rexp r1) (parser2rexp r2)
-    | Star_p t r => Star_r (parser2rexp r)
-    | Map_p t1 t2 f r => parser2rexp r
+    | Any => Any_r
+    | Char c => Char_r c
+    | Eps => Eps_r
+    | Cat t1 t2 r1 r2 => OptCat_r (grammar2rexp r1) (grammar2rexp r2)
+    | Zero t => Zero_r
+    | Alt t1 t2 r1 r2 => OptAlt_r (grammar2rexp r1) (grammar2rexp r2)
+    | Star t r => Star_r (grammar2rexp r)
+    | Map t1 t2 f r => grammar2rexp r
+    | Xform t1 t2 f r => grammar2rexp r
   end.
 
 (** If [s] and [v] are in the denotation of [p], then [s] is in the denotation of
-    [parser2rexp p]. *)
-Lemma parse2rexp_corr1 t (p:parser t) s v : 
-  in_parser p s v -> in_rexp (parser2rexp p) s.
+    [grammar2rexp p]. *)
+Lemma grammar2rexp_corr1 t (p:grammar t) s v : 
+  in_grammar p s v -> in_rexp (grammar2rexp p) s.
 Proof.
   induction 1 ; subst ; repeat in_inv ; 
     try (apply opt_alt_r_corr ||apply opt_cat_r_corr) ; eauto.
 Qed.
 
-(** If [s] is in the denotation of [parser2rexp p], then there exists some [v],
+(** If [s] is in the denotation of [grammar2rexp p], then there exists some [v],
     such that [s] and [v] are in the denotation of [p]. *)
-Lemma parse2rexp_corr2 t (p:parser t) s : 
-  in_rexp (parser2rexp p) s -> 
-    exists v, in_parser p s v.
+Lemma grammar2rexp_corr2 t (p:grammar t) s : 
+  in_rexp (grammar2rexp p) s -> 
+    exists v, in_grammar p s v.
 Proof.
   induction p ; repeat in_inv ; try (econstructor ; econstructor ; eauto ; fail).
-   generalize (proj2 (opt_cat_r_corr (parser2rexp p1) (parser2rexp p2) s) H).
+   generalize (proj2 (opt_cat_r_corr (grammar2rexp p1) (grammar2rexp p2) s) H).
    repeat in_inv. generalize (IHp1 _ H3). generalize (IHp2 _ H4). s. 
    repeat econstructor ; eauto.
    generalize (proj2 (opt_alt_r_corr _ _ _) H). repeat in_inv. 
    generalize (IHp1 _ H4) ; repeat in_inv. repeat econstructor ; eauto.
-   generalize (IHp2 _ H4) ; repeat in_inv. econstructor. eapply Alt_right_pi. eauto.
+   generalize (IHp2 _ H4) ; repeat in_inv. econstructor. eapply InAlt_r. eauto. eauto.
    Focus 2. generalize (IHp _ H). s. econstructor. econstructor. eauto. eauto.
-   generalize s H IHp. clear s H IHp. generalize (parser2rexp p).
+   Focus 2. generalize (IHp _ H). s. econstructor. econstructor. eauto. eauto.
+   generalize s H IHp. clear s H IHp. generalize (grammar2rexp p).
    intros r s H. remember (Star_r r) as r'. generalize Heqr'. clear Heqr'.
    induction H ; intros ; try congruence ; injection Heqr' ; intros ; subst ; clear
      Heqr'. exists nil. constructor ; auto. generalize (IHin_rexp2 (eq_refl _) IHp).
    clear IHin_rexp1 IHin_rexp2. intros. destruct H2. generalize (IHp _ H0). 
-   intros. destruct H3. econstructor. eapply Star_cat_pi. eauto. eauto. auto.
+   intros. destruct H3. econstructor. eapply InStar_cons. eauto. eauto. auto.
    eauto. auto.
 Qed.
 
@@ -432,7 +434,7 @@ Qed.
 Fixpoint deriv_r (r:rexp) (c:char_p) : rexp := 
   match r with 
     | Any_r => Eps_r
-    | Char_r c' => if char_eq c c' then Eps_r else Zero_r
+    | Char_r c' => if char_dec c c' then Eps_r else Zero_r
     | Eps_r => Zero_r
     | Zero_r => Zero_r
     | Alt_r r1 r2 => OptAlt_r (deriv_r r1 c) (deriv_r r2 c)
@@ -460,7 +462,7 @@ Qed.
 (** Derivative is correct part 2 *)
 Lemma deriv_r_corr2 r c cs : in_rexp (deriv_r r c) cs -> in_rexp r (c::cs).
 Proof.
-  induction r ; repeat in_inv. destruct (char_eq c0 c). subst. in_inv. constructor.
+  induction r ; repeat in_inv. destruct (char_dec c0 c). subst. in_inv. constructor.
   in_inv. generalize (proj2 (opt_alt_r_corr _ _ _) H). clear H ; intro.
   in_inv. generalize (proj2 (opt_cat_r_corr _ _ _) H3). clear H3 ; intro ; 
   in_inv. econstructor ; eauto. generalize (ck_null_corr r1).  destruct (ck_null r1).
@@ -616,12 +618,7 @@ Qed.
 *)
 
 (** Convert a nat representing a byte to a list of bits *)
-Definition n2b(n:nat) : list bool := 
-  let bs := Word.bits_of_Z 8 (Z_of_nat n) in
-    (bs 7)::(bs 6)::(bs 5)::(bs 4)::(bs 3)::(bs 2)::(bs 1)::(bs 0)::nil.
-
-Definition token_id_to_chars := n2b.
-Definition num_tokens := 256%nat.
+Definition n2b(n:nat) : list bool := nat_explode n.
 Opaque token_id_to_chars.
 Opaque num_tokens.
 
@@ -689,19 +686,19 @@ Proof.
   apply H0. mysimp. exists x. apply opt_and_r_corr. auto.
 Qed.
 
-(** Lift [ckdisj_r] to operate on parsers. *)
-Definition ckdisj_p (n:nat) t (p1:parser t) (p2:parser t) := 
-  ckdisj_r n (parser2rexp p1) (parser2rexp p2).
+(** Lift [ckdisj_r] to operate on grammars. *)
+Definition ckdisj_p (n:nat) t (p1:grammar t) (p2:grammar t) := 
+  ckdisj_r n (grammar2rexp p1) (grammar2rexp p2).
 
 (** Correctness of [ckdisj_p] -- here we see that if [p1] and [p2] are disjoint,
     then there is no string [s] and values [v1] and [v2], such that [s] and [v1]
     are in the denotation of [p1], and [s] and [v2] are in the denotation of [p2]. *)
-Lemma ckdisj_p_corr n t (p1 p2:parser t) : 
-  ckdisj_p n p1 p2 = true -> ~(exists s, exists v1, exists v2, in_parser p1 s v1 /\ 
-    in_parser p2 s v2).
+Lemma ckdisj_p_corr n t (p1 p2:grammar t) : 
+  ckdisj_p n p1 p2 = true -> ~(exists s, exists v1, exists v2, in_grammar p1 s v1 /\ 
+    in_grammar p2 s v2).
 Proof.
   unfold ckdisj_p. intros. intro. generalize (ckdisj_r_corr _ H). intros. mysimp.
-  apply H1. exists x. split ; eapply parse2rexp_corr1 ; eauto. 
+  apply H1. exists x. split ; eapply grammar2rexp_corr1 ; eauto. 
 Qed.
 
 (** Multi [OptAlt_r]. *)
@@ -763,9 +760,9 @@ Proof.
   apply H5.
 Qed.
 
-(** Lift [check_all_r] up to parsers. *)
-Definition check_all_p m t (ps:list (parser t)) := 
-  check_all_r m (List.map (@parser2rexp _) ps).
+(** Lift [check_all_r] up to grammars. *)
+Definition check_all_p m t (ps:list (grammar t)) := 
+  check_all_r m (List.map (@grammar2rexp _) ps).
 
 Fixpoint check_all_r' m (rs:list rexp) := 
   match rs with 
@@ -775,14 +772,18 @@ Fixpoint check_all_r' m (rs:list rexp) :=
       ckzeros m m (OptAnd_r (OptCat_r (alts_r rs) (Star_r Any_r)) (OptCat_r r (Star_r Any_r)))
   end.
 
-Definition check_all_p' m t (ps:list (parser t)) := 
-  check_all_r' m (List.map (@parser2rexp _) ps).
+Definition check_all_p' m t (ps:list (grammar t)) := 
+  check_all_r' m (List.map (@grammar2rexp _) ps).
 
+(*
 Lemma all_instructions_check : 
-  check_all_p' 3 instruction_parser_list = true.
+  check_all_p' 3 instruction_grammar_list = true.
 Proof.
   Time vm_compute. auto.
 Qed.
+*)
+Axiom all_instructions_check : 
+  check_all_p' 3 instruction_grammar_list = true.
 
 Lemma star_any_all : forall s, in_rexp (Star_r Any_r) s.
 Proof.
@@ -818,16 +819,136 @@ Proof.
 Qed.
 
 (** Lemma for reasoning about [alts]. *)
-Lemma in_alts t (ps:list (parser t)) s v: 
-  in_parser (alts ps) s v -> in_rexp (alts_r (List.map (@parser2rexp _) ps)) s.
+Lemma in_half' t (p:grammar t) (ps1 ps2 ps3 : list (grammar t)) : 
+  (In p (fst (half ps1 ps2 ps3)) \/ In p (snd (half ps1 ps2 ps3))) -> 
+  (In p ps1 \/ In p ps2 \/ In p ps3).
 Proof.
-  induction ps ; simpl ; intros. unfold never in *. inversion H. 
-  apply opt_alt_r_corr. inversion H ; repeat
-  match goal with 
-    | [ H : existT _ _ _ = existT _ _ _ |- _ ] => 
-      generalize (inj_pairT2 _ _ _ _ _ H) ; clear H ; intros ; subst
-  end. eapply Alt_left_ri. eapply parse2rexp_corr1. eauto.
-  eapply Alt_right_ri. eauto.
+  induction ps1 ;  simpl. tauto. intros. specialize (IHps1 ps3 (a::ps2) H).
+  simpl in *. tauto.
+Qed.
+
+Lemma in_left_half t (p:grammar t) (ps1:list (grammar t)) : 
+  In p (fst (half ps1 nil nil)) -> In p ps1.
+Proof.
+  intros. generalize (in_half' p ps1 nil nil (or_introl H)). simpl. tauto.
+Qed.
+
+Lemma in_right_half t (p:grammar t) (ps1:list (grammar t)) : 
+  In p (snd (half ps1 nil nil)) -> In p ps1.
+Proof.
+  intros. generalize (in_half' p ps1 nil nil (or_intror H)). simpl. tauto.
+Qed.
+
+Lemma half_in' t (p:grammar t) (ps ps1 ps2:list (grammar t)) : 
+  In p ps \/ In p ps1 \/ In p ps2 -> (In p (fst (half ps ps1 ps2)) \/ 
+                                      In p (snd (half ps ps1 ps2))).
+Proof.
+  induction ps ; simpl. tauto. mysimp. subst.
+  eapply (IHps ps2 (p::ps1)). right ; right. simpl. left ; auto.
+  eapply (IHps ps2 (a::ps1)). right ; right. simpl. right ; auto.
+Qed.
+
+Lemma half_in t (p:grammar t) (ps:list (grammar t)) : 
+  In p ps -> (In p (fst (half ps nil nil)) \/ In p (snd (half ps nil nil))).
+Proof.
+  intros. apply (half_in' p ps nil nil). left ; auto.
+Qed.
+
+Lemma in_alts' n t (ps:list (grammar t)) s (v:interp t) : 
+  in_grammar (alts' n ps) s v -> exists p, In p ps /\ in_grammar p s v.
+Proof.
+  induction n ; simpl.
+  induction ps ; simpl; unfold never ; intros. inversion H.
+  destruct ps. exists a. auto. generalize (MapInv H). clear H ; mysimp ; subst.
+  generalize (AltInv H) ; clear H ; mysimp ; subst. exists a ; auto.
+  specialize (IHps s x0 H). destruct IHps as [p [H1 H2]]. exists p ; auto.
+  intros. destruct ps. inversion H. simpl. destruct ps. exists g; auto.
+  remember (half (g::g0::ps) nil nil) as e. destruct e as [ps1 ps2].
+  generalize (MapInv H) ; clear H ; mysimp. subst.
+  generalize (AltInv H)
+    (IHn _ ps1 s match x with | inl a => a | inr b => b end)
+    (IHn _ ps2 s match x with | inl a => a | inr b => b end) ; clear H.
+  intros H H1 H2. mysimp ; subst.
+  specialize (H1 H). destruct H1 as [p [H3 H4]]. exists p. split ; auto.
+  specialize (in_left_half p (g::g0::ps)). simpl. rewrite <-Heqe. simpl. auto.
+  specialize (H2 H). destruct H2 as [p [H3 H4]]. exists p. split ; auto.
+  specialize (in_right_half p (g::g0::ps)). simpl. rewrite <-Heqe. simpl. auto.
+Qed.
+
+Lemma in_subset t (ps1 ps2:list (grammar t)) : 
+  (forall p:grammar t, In p ps1 -> In p ps2) -> 
+  forall s v, in_grammar (fold_right (@alt t) (@never t) ps1) s v -> 
+              in_grammar (fold_right (@alt t) (@never t) ps2) s v.
+Proof.
+  induction ps1. simpl. intros. inversion H0. simpl.
+  intros. generalize (MapInv H0) ; clear H0 ; mysimp. subst.
+  generalize (AltInv H0) ; clear H0 ; mysimp ; subst. 
+  assert (In a ps2). eapply H. left ; auto. clear IHps1 H. generalize H1 ; clear H1.
+  induction ps2 ; simpl ; intros ; try contradiction. destruct H1 ; subst.
+  econstructor ; eauto. econstructor. eapply InAlt_r. eauto. eauto. auto.
+  auto.
+Qed.  
+
+Lemma in_fold_right_alt t (ps:list (grammar t)) s (v:interp t) : 
+  in_grammar (fold_right (@alt t) (@never t) ps) s v -> 
+  exists p, In p ps /\ in_grammar p s v.
+Proof.
+  induction ps ; simpl ; unfold never ; intros. inversion H.
+  generalize (MapInv H) ; clear H ; mysimp. subst. 
+  generalize (AltInv H) ; clear H ; mysimp ; subst.
+  exists a ; auto. specialize (IHps _ _ H). destruct IHps as [p [H1 H2]].
+  exists p ; auto.
+Qed.
+
+Lemma in_alts'_fold n t (ps:list (grammar t)) s (v:interp t) : 
+  in_grammar (alts' n ps) s v <-> in_grammar (List.fold_right (@alt t) (@never t) ps) s v.
+Proof.
+  induction n. simpl.
+  induction ps ; simpl ; intros. tauto.
+  destruct ps. simpl. split. intro. econstructor ; eauto.
+  intros. generalize (MapInv H). clear H ; mysimp. subst. 
+  generalize (AltInv H) ; clear H ; mysimp ; subst. auto. inversion H.
+  split ; intro H ; generalize (MapInv H) ; clear H ; mysimp ; subst ; 
+  generalize (AltInv H)  ; clear H ; mysimp ; subst. econstructor ; eauto.
+  econstructor. eapply InAlt_r. eapply IHps ; eauto. eauto. auto.
+  econstructor ; eauto. econstructor. eapply InAlt_r. eapply IHps ; eauto.
+  eauto. auto. simpl. intros. remember ps as qs. destruct qs ; simpl.
+  tauto. destruct qs ; simpl. split ; intro. econstructor ; eauto.
+  generalize (MapInv H) ; clear H ; mysimp ; subst. 
+  generalize (AltInv H) ; clear H ; mysimp ; subst ; auto. inversion H.
+  remember (half qs (g::nil) (g0::nil)) as e. destruct e as [ps1 ps2].
+  generalize (IHn _ ps1 s v) (IHn _ ps2 s v). clear IHn. intros IHps1 IHps2.
+  assert ((fold_right (@alt t) (@never t) ps) = 
+          (g |+| g0 |+| (fold_right (@alt t) (@never t) qs))).
+  subst. auto. rewrite <- H. clear H.
+  assert ((half qs (g::nil) (g0::nil)) = (half ps nil nil)).
+  subst. auto. rewrite H in Heqe. clear H. clear Heqqs qs g0 g.
+  split. intro. generalize (MapInv H) ; clear H. intros.
+  destruct H. destruct H. generalize (AltInv H). intros.
+  destruct H1 ; destruct H1 as [w [H1 H2]] ; subst. destruct IHps1 as [IHps1 _].
+  specialize (IHps1 H1).
+  eapply (in_subset ps1 ps) ; eauto. intros. eapply in_left_half. rewrite <- Heqe.
+  auto.  destruct IHps2 as [IHps2 _]. specialize (IHps2 H1). 
+  eapply (in_subset ps2 ps) ; eauto. intros. eapply in_right_half. rewrite <- Heqe.
+  auto. intros. destruct IHps1 as [_ IHps1]. destruct IHps2 as [_ IHps2].
+  generalize (in_fold_right_alt _ H). mysimp.
+  generalize (half_in _ _ H0). rewrite <- Heqe. simpl. mysimp.
+  econstructor ; eauto. econstructor. eapply IHps1.
+  eapply (in_subset (x::nil)). simpl ; intros. 
+  destruct H3 ; try contradiction ; subst ; auto. simpl. econstructor ; eauto.
+  eauto. auto.
+  econstructor. eapply InAlt_r. eapply IHps2. eapply (in_subset (x::nil)).
+  simpl ; intros. destruct H3 ; try contradiction; subst ; auto. 
+  simpl ; econstructor ; eauto. eauto. auto.
+Qed.
+
+Lemma in_alts t (ps:list (grammar t)) s v: 
+  in_grammar (alts ps) s v -> in_rexp (alts_r (List.map (@grammar2rexp _) ps)) s.
+Proof.
+  unfold alts. intros. specialize (in_alts' _ _ H). clear H. generalize s v.
+  clear s v. induction ps ; mysimp ; subst ; try contradiction ; apply opt_alt_r_corr.
+  econstructor ; eauto. eapply grammar2rexp_corr1 ; eauto.
+  eapply Alt_right_ri. eapply IHps. econstructor ; eauto.
 Qed.
 
 (** A sort of injection lemma for [List.map] over lists. *)
@@ -845,79 +966,85 @@ Proof.
   exists (a0 :: x). exists x0. exists x1. simpl. auto.
 Qed.
 
-(** Denotation of [alts] is commutative. *)
-Lemma in_alts_comm t (ps1:list (parser t)) (p:parser t) (ps2:list (parser t)) s v : 
-  in_parser (alts (ps1 ++ p :: ps2)) s v -> 
-  in_parser (Alt_p p (alts (ps1 ++ ps2))) s v.
+Lemma in_alts_fold t (ps:list (grammar t)) s (v:interp t) : 
+  in_grammar (alts ps) s v <-> in_grammar (List.fold_right (@alt t) (@never t) ps ) s v.
 Proof.
-  induction ps1. simpl. auto. intros. simpl in *. inversion H ; repeat
-  match goal with 
-    | [ H : existT _ _ _ = existT _ _ _ |- _ ] => 
-      generalize (inj_pairT2 _ _ _ _ _ H) ; clear H ; intros ; subst
-  end.  apply Alt_right_pi. apply Alt_left_pi. auto.
-  specialize (IHps1 p ps2 s v H4). inversion IHps1 ; repeat
-  match goal with 
-    | [ H : existT _ _ _ = existT _ _ _ |- _ ] => 
-      generalize (inj_pairT2 _ _ _ _ _ H) ; clear H ; intros ; subst
-  end. apply Alt_left_pi.   auto. apply Alt_right_pi. apply Alt_right_pi. auto.
+  unfold alts. apply in_alts'_fold.
 Qed.
+
+(** Denotation of [alts] is commutative. *)
+Lemma in_alts_comm t (ps1:list (grammar t)) (p:grammar t) (ps2:list (grammar t)) s v : 
+  in_grammar (alts (ps1 ++ p :: ps2)) s v -> 
+  in_grammar (p |+| (alts (ps1 ++ ps2))) s v.
+Proof.
+  intros. generalize (@in_alts_fold t (ps1 ++ p :: ps2) s v).
+  intro. destruct H0 as [H0 _]. specialize (H0 H). clear H.
+  generalize p ps2 s v H0 ; clear p ps2 s v H0.
+  induction ps1 ; intros. simpl in H0. generalize (MapInv H0) ; clear H0 ; mysimp ; subst.
+  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor ; eauto.
+  econstructor. eapply InAlt_r. eapply in_alts_fold. eauto. eauto. auto.
+  simpl in H0. generalize (MapInv H0) ; clear H0 ; mysimp ; subst. 
+  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor.
+  eapply InAlt_r. eapply in_alts_fold. simpl. econstructor ; eauto. eauto. auto.
+  specialize (IHps1 _ _ _ _ H). clear H. generalize (MapInv IHps1) ; clear IHps1.
+  mysimp. subst. generalize (AltInv H) ; clear H ; mysimp ; subst.
+  econstructor ; eauto. econstructor. eapply InAlt_r. eapply in_alts'_fold.
+  simpl. econstructor. eapply InAlt_r. eapply in_alts_fold. unfold alts in H.
+  eauto. eauto. eauto. eauto. eauto.
+Qed. 
 
 (** [check_all_p] is correct -- if [check_all_p m ps] returns [true], then
    if [s] and [v] are in the denotation of [alts ps], then we know there is 
    a unique [p] in [ps] such that [s] and [v] are in the denotation of [p],
-   but that [s] is not in the denotation of any other parser in [ps]. *)
-Lemma check_all_p_corr m t (ps:list (parser t)) :
+   but that [s] is not in the denotation of any other grammar in [ps]. *)
+Lemma check_all_p_corr m t (ps:list (grammar t)) :
   check_all_p m ps = true -> 
   forall s v, 
-    in_parser (alts ps) s v ->
+    in_grammar (alts ps) s v ->
     (exists ps1, exists p, exists ps2, 
       ps = ps1 ++ p :: ps2 /\
-      in_parser p s v /\
-      ~ exists v' : result_m t, in_parser (alts (ps1 ++ ps2)) s v').
+      in_grammar p s v /\
+      ~ exists v' : interp t, in_grammar (alts (ps1 ++ ps2)) s v').
 Proof.
   unfold check_all_p. intros. generalize (check_all_r_corr m _ H). intros.
   specialize (H1 s (in_alts _ H0)). destruct H1. destruct H1. destruct H1.
-  destruct H1. destruct H2. generalize (map_split (@parser2rexp t) x x0 x1 ps H1).
+  destruct H1. destruct H2. generalize (map_split (@grammar2rexp t) x x0 x1 ps H1).
   intros. mysimp. subst. exists x2. exists x3. exists x4. split. auto.
   generalize (in_alts_comm x2 x3 x4 H0). intros.
-  assert (~ exists v', in_parser (alts (x2 ++ x4)) s v'). intro.
+  assert (~ exists v', in_grammar (alts (x2 ++ x4)) s v'). intro.
   destruct H5. apply H3. generalize (in_alts (x2 ++ x4) H5). rewrite map_app. auto.
-  split ; auto. inversion H4 ; repeat
-  match goal with 
-    | [ H : existT _ _ _ = existT _ _ _ |- _ ] => 
-      generalize (inj_pairT2 _ _ _ _ _ H) ; clear H ; intros ; subst
-  end. auto. contradiction H5. eauto.
+  split ; auto. generalize (MapInv H4) ; clear H4 ; mysimp ; subst.
+  generalize (AltInv H4) ; clear H4 ; mysimp; subst. auto.
+  contradiction H5. exists x0. auto.
 Qed.
 
-Lemma check_all_p'_corr m t (ps:list (parser t)) :
+Lemma check_all_p'_corr m t (ps:list (grammar t)) :
   check_all_p' m ps = true -> 
   forall s v, 
-    in_parser (alts ps) s v ->
+    in_grammar (alts ps) s v ->
     (exists ps1, exists p, exists ps2, 
       ps = ps1 ++ p :: ps2 /\
-      in_parser p s v /\
-      ~ exists s2, exists v' : result_m t, in_parser (alts (ps1 ++ ps2)) (s++s2) v').
+      in_grammar p s v /\
+      ~ exists s2, exists v' : interp t, in_grammar (alts (ps1 ++ ps2)) (s++s2) v').
 Proof.
   unfold check_all_p. intros. generalize (check_all_r'_corr m _ H). intros.
   specialize (H1 s (in_alts _ H0)). destruct H1. destruct H1. destruct H1.
-  destruct H1. destruct H2. generalize (map_split (@parser2rexp t) x x0 x1 ps H1).
+  destruct H1. destruct H2. generalize (map_split (@grammar2rexp t) x x0 x1 ps H1).
   intros. mysimp. subst. exists x2. exists x3. exists x4. split. auto.
   generalize (in_alts_comm x2 x3 x4 H0). intros.
-  assert (~ exists s2, exists v', in_parser (alts (x2 ++ x4)) (s ++ s2) v'). intro.
+  assert (~ exists s2, exists v', in_grammar (alts (x2 ++ x4)) (s ++ s2) v'). intro.
   destruct H5. destruct H5.
   apply H3. exists x. generalize (in_alts (x2 ++ x4) H5). rewrite map_app. auto.
-  split ; auto. inversion H4 ; repeat
-  match goal with 
-    | [ H : existT _ _ _ = existT _ _ _ |- _ ] => 
-      generalize (inj_pairT2 _ _ _ _ _ H) ; clear H ; intros ; subst
-  end. auto. contradiction H5. exists nil. rewrite <- app_nil_end. eauto.
+  split ; auto. generalize (MapInv H4) ; clear H4 ; mysimp ; subst.
+  generalize (AltInv H4) ; clear H4 ; mysimp ; subst ; auto.
+  contradiction H5. exists nil. rewrite <- app_nil_end. exists x0. auto.
 Qed.
 
-(** Check that all of the instruction parsers are mutually disjoint -- if you
+(** Check that all of the instruction grammars are mutually disjoint -- if you
     pass in a number like 3 this should evaluate to true -- but it takes a
     really long time.  So I suggest extracting this function and running it
     in ML. *)
-Definition check_all_instructions m := check_all_p m instruction_parser_list.
+Definition check_all_instructions m := check_all_p m instruction_grammar_list.
 
 Transparent token_id_to_chars.
 Transparent num_tokens.
@@ -925,14 +1052,12 @@ Transparent num_tokens.
     but it should be trivial. *)
 Lemma all_instructions_disjoint : check_all_instructions 3 = true.
 Proof.
-(*Admitted.*)
-
   unfold check_all_instructions.
   vm_compute.
   auto.
 Qed.
 
-Opaque instruction_parser_list.
+Opaque instruction_grammar_list.
 
 Ltac t := repeat
   match goal with 
@@ -945,14 +1070,21 @@ Ltac t := repeat
 
 (** If [s] and [v] are in the denotation of [alts (p::(ps1++ps2))] then
     [s] and [v] are in the denotation of [alts (ps1++p::ps2)]. *)
-Lemma in_alts_comm' : forall t (ps1 ps2:list (parser t)) (p:parser t) s v,
-  in_parser (alts (p :: (ps1 ++ ps2))) s v -> 
-  in_parser (alts (ps1 ++ p :: ps2)) s v.
+Lemma in_alts_comm' : forall t (ps1 ps2:list (grammar t)) (p:grammar t) s v,
+  in_grammar (alts (p :: (ps1 ++ ps2))) s v -> 
+  in_grammar (alts (ps1 ++ p :: ps2)) s v.
 Proof.
-  induction ps1. simpl. auto. intros. simpl in *. inversion H  ; clear H ; t.
-  eapply Alt_right_pi. eapply IHps1. eapply Alt_left_pi. auto.
-  inversion H4  ; clear H4 ; t. eapply Alt_left_pi. auto. 
-  eapply Alt_right_pi. eapply IHps1. eapply Alt_right_pi. auto.
+  intros. generalize (@in_alts_fold t (p::ps1++ps2) s v). intro. destruct H0.
+  specialize (H0 H). clear H1. apply in_alts_fold. clear H.
+  generalize ps2 p s v H0 ; clear ps2 p s v H0.
+  induction ps1. simpl. auto. intros. simpl in *. 
+  generalize (MapInv H0) ; clear H0 ; mysimp ; subst. 
+  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor.
+  eapply InAlt_r. eapply IHps1. econstructor. eauto. eauto. eauto. auto.
+  generalize (MapInv H) ; clear H ; mysimp ; subst.
+  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor ; eauto.
+  econstructor. eapply InAlt_r. eapply IHps1. econstructor. eapply InAlt_r.
+  eauto. eauto. eauto. eauto. auto.
 Qed.
 
 (** If [s] and [v] are in the denotation of [alts (ps1 ++ p :: ps2)], and
@@ -960,68 +1092,83 @@ Qed.
     denotation of [alts (ps1 ++ ps2)], then if we split [ps1++p::ps2] into
     some other [ps1'++p'::ps2'] such that [s] and [v] are in [p'], then
     [ps1=ps1'] and [p=p'] and [ps2=ps2']. *)
-Lemma splits_unique t (ps : list (parser t)) : 
+Lemma splits_unique t (ps : list (grammar t)) : 
   forall s v, 
-    in_parser (alts ps) s v -> 
+    in_grammar (alts ps) s v -> 
     forall ps1 p ps2, 
       ps = ps1 ++ p :: ps2 -> 
-      in_parser p s v /\ (~ exists v', in_parser (alts (ps1 ++ ps2)) s v') -> 
+      in_grammar p s v /\ (~ exists v', in_grammar (alts (ps1 ++ ps2)) s v') -> 
       forall ps1' p' ps2' v', 
-        ps = ps1' ++ p' :: ps2' /\ in_parser p' s v' -> 
+        ps = ps1' ++ p' :: ps2' /\ in_grammar p' s v' -> 
         ps1 = ps1' /\ p = p' /\ ps2 = ps2'.
 Proof.
   induction ps. simpl. intros. destruct ps1 ; simpl in * ; congruence. t.
   destruct ps1. injection H0 ; clear H0 ; intros ; subst.
   destruct ps1'. injection H2 ; clear H2 ; intros ; subst ; auto.
   simpl in *. injection H2 ; clear H2 ; intros ; subst. contradiction H4.
-  exists v'. eapply in_alts_comm'. simpl. eapply Alt_left_pi ; eauto.
+  exists v'. eapply in_alts_comm'. eapply in_alts_fold. simpl. econstructor ; eauto.
   simpl in *. injection H0 ; intros ; subst ; clear H0.
   destruct ps1' ; simpl in *. injection H2 ; intros ; clear H2 ; subst.
-  contradiction H4. exists v'. eapply Alt_left_pi ; eauto. 
-  injection H2. clear H2 ; intros ; subst. inversion H ; t ; clear H.
-  contradiction H4. exists v. eapply Alt_left_pi ; eauto.
-  assert (~ exists v', in_parser (alts (ps1 ++ ps2)) s v').
-  intro. apply H4. t. exists x. eapply Alt_right_pi. eauto.
-  specialize (IHps _ _ H8 ps1 p ps2 (eq_refl _) (conj H1 H) ps1' p' ps2' v' (conj H0 H3)).
+  contradiction H4. exists v'. eapply in_alts_fold. simpl. econstructor ; eauto. 
+  injection H2. clear H2 ; intros ; subst. 
+  generalize (in_alts_fold (g0::ps1 ++ p ::ps2) s v). intro.
+  destruct H2 as [H2 _]. specialize (H2 H). clear H. simpl in H2.
+  generalize (MapInv H2) ; clear H2 ; intro. destruct H. destruct H. subst.
+  generalize (AltInv H) ; clear H ; intro. destruct H. destruct H.
+  contradiction H4. exists x0. destruct H ; subst. eapply in_alts_fold.
+  simpl. econstructor ; eauto.
+  destruct H. destruct H. subst.
+  assert (~ exists v', in_grammar (alts (ps1 ++ ps2)) s v').
+  intro. apply H4. t. exists x. eapply in_alts_fold. simpl. econstructor.
+  eapply InAlt_r. eapply in_alts_fold. eauto. eauto. auto.
+  assert (in_grammar (alts (ps1 ++ p :: ps2)) s x0).
+  apply in_alts_fold ; auto. 
+  specialize (IHps _ _ H5 ps1 p ps2 (eq_refl _) (conj H1 H2) ps1' p' ps2' v' (conj H0 H3)).
   t. subst. auto.
 Qed.
 
 (** If [s] and [v] are in the denotation of [alts ps], then there is 
     some [ps1++p::ps2=ps] such that [s] and [v] are in the denotation of [p]. *)
-Lemma in_alts_split : forall t (ps:list (parser t)) s v, 
-  in_parser (alts ps) s v -> 
+Lemma in_alts_split : forall t (ps:list (grammar t)) s v, 
+  in_grammar (alts ps) s v -> 
   exists ps1, exists p, exists ps2, 
-    ps = ps1 ++ p :: ps2 /\ in_parser p s v.
+    ps = ps1 ++ p :: ps2 /\ in_grammar p s v.
 Proof.
-  induction ps ; simpl. unfold never. intros. inversion H.
-  intros. inversion H ; clear H ; t. exists nil. exists a. exists ps. auto.
-  specialize (IHps s v H4). in_inv. exists (a::x). exists x0. exists x1. auto.
+  intros t ps s v H. assert (in_grammar (fold_right (@alt t) (@never t) ps) s v).
+  apply in_alts_fold ; auto. clear H. generalize s v H0. clear s v H0.
+  induction ps ; simpl. unfold never. intros. inversion H0.
+  intros. generalize (MapInv H0) ; clear H0 ; mysimp ; subst.
+  generalize (AltInv H) ; clear H ; mysimp ; subst ; t.
+  exists nil. exists a. exists ps. auto.
+  specialize (IHps s x0 H). in_inv. exists (a::x). exists x1. exists x2. auto.
 Qed.
 
 (** If [p] is an element of [ps] and [s] and [v] are in the denotation of
     [p], then they are also in the denotation of [alts ps]. *)
-Lemma elt_in_alts : forall t (p:parser t) (ps:list (parser t)) s v,
+Lemma elt_in_alts : forall t (p:grammar t) (ps:list (grammar t)) s v,
   In p ps -> 
-  in_parser p s v -> 
-  in_parser (alts ps) s v.
+  in_grammar p s v -> 
+  in_grammar (alts ps) s v.
 Proof.
+  intros. apply in_alts_fold. generalize s v H H0 ; clear s v H H0.
   induction ps ; simpl ; intros. contradiction H. destruct H. subst. 
-  apply Alt_left_pi. auto. apply Alt_right_pi. auto.
+  econstructor ; eauto. econstructor. eapply InAlt_r. eauto. auto. auto.
 Qed.
   
 (** If [s] and [v] are in the denotation of [alts ps1] and [ps1] is
     a subset of [ps2], then [s] and [v] are also in [alts ps2]. *)
-Lemma subset_in : forall t (ps1 ps2 : list (parser t)) s v,
-  in_parser (alts ps1) s v -> 
+Lemma subset_in : forall t (ps1 ps2 : list (grammar t)) s v,
+  in_grammar (alts ps1) s v -> 
   (forall p, In p ps1 -> In p ps2) -> 
-  in_parser (alts ps2) s v.
+  in_grammar (alts ps2) s v.
 Proof.
-  induction ps1. simpl. intros. unfold never in *. inversion H. simpl.
-  intros. inversion H ; clear H ; repeat
-  match goal with 
-    | [ H : existT _ _ _ = existT _ _ _ |- _ ] => 
-      generalize (inj_pairT2 _ _ _ _ _ H) ; clear H ; intros ; subst
-  end. assert (In a ps2).  apply H0. left ; auto. eapply elt_in_alts ; eauto. auto.
+  intros.
+  assert (in_grammar (fold_right (@alt t) (@never t) ps1) s v). apply in_alts_fold ; auto.
+  clear H. apply in_alts_fold. generalize ps2 s v H1 H0. clear ps2 s v H1 H0.
+  induction ps1. simpl. intros. unfold never in *. inversion H1. simpl.
+  intros. generalize (MapInv H1) ; clear H1 ; mysimp ; subst. 
+  generalize (AltInv H) ; clear H ; mysimp ; subst. assert (In a ps2). apply H0. auto.
+  eapply in_alts_fold. eapply elt_in_alts ; eauto. auto.
 Qed.
 
 Lemma in_splits A (x:A) (xs:list A) :
@@ -1042,14 +1189,14 @@ Qed.
     for each subset [p1s] of [ps], if [s] and [v] are in [alts ps1] then
     they are also in [alts ps] and if [s] and [v'] are in [alts ps] then
     [s] and [v'] are in [alts p1s].  *)
-Lemma parse_split' : 
-  forall t m (ps:list (parser t)), check_all_p m ps = true ->
+Lemma grammar_split' : 
+  forall t m (ps:list (grammar t)), check_all_p m ps = true ->
   forall p1s s v, 
   (forall p, In p p1s -> In p ps) ->
-  in_parser (alts p1s) s v -> 
-  in_parser (alts ps) s v /\ 
-  (forall v', in_parser (alts ps) s v' -> 
-    in_parser (alts p1s) s v').
+  in_grammar (alts p1s) s v -> 
+  in_grammar (alts ps) s v /\ 
+  (forall v', in_grammar (alts ps) s v' -> 
+    in_grammar (alts p1s) s v').
 Proof.
   t. split. generalize (in_alts_split p1s H1). t. subst. eapply subset_in ; eauto.
   t. generalize (check_all_p_corr m _ H H2). clear m H. t.
@@ -1057,24 +1204,25 @@ Proof.
   generalize (H0 _ H7). intros. generalize (@in_splits _ _ _ H8). t.
   generalize (@splits_unique _ _ _ _ H2 _ _ _ H (conj H3 H4) x5 x3 x6 v (conj H9 H6)).
   t. subst. generalize (in_alts_comm _ _ _ H2). intros. inversion H5 ; t.
-  eapply in_alts_comm'. eapply Alt_left_pi. auto. contradiction H4. eauto.
+  eapply in_alts_comm'. eapply in_alts_fold. simpl. econstructor. eauto. 
+  destruct v1 ; eauto.
 Qed.
 
-(** This lemma tells us that if we take a sublist [ps] of the parsers in the list of
-    instruction parsers (e.g., used to build a DFA), and if [ps] accepts some string
-    [s] and produces some value [v], then (a) running the heavyweight parser will also
-    accept [s] and produce [v], and (b) if the heavyweight parser can produce a 
+(** This lemma tells us that if we take a sublist [ps] of the grammars in the list of
+    instruction grammars (e.g., used to build a DFA), and if [ps] accepts some string
+    [s] and produces some value [v], then (a) running the heavyweight grammar will also
+    accept [s] and produce [v], and (b) if the heavyweight grammar can produce a 
     different value [v'] from [s], then [ps] can do that as well.  So if [ps] is
-    deterministic, then running either [ps] or the heavyweight parser will result
+    deterministic, then running either [ps] or the heavyweight grammar will result
     in at most one unique value [v].
 *)
-Lemma parse_split : 
+Lemma grammar_split : 
   forall ps,
-    (forall p, In p ps -> In p instruction_parser_list) ->
+    (forall p, In p ps -> In p instruction_grammar_list) ->
     forall s v,
-      in_parser (alts ps) s v -> 
-        in_parser (alts instruction_parser_list) s v /\ 
-        (forall v', in_parser (alts instruction_parser_list) s v' -> in_parser (alts ps) s v').
+      in_grammar (alts ps) s v -> 
+        in_grammar (alts instruction_grammar_list) s v /\ 
+        (forall v', in_grammar (alts instruction_grammar_list) s v' -> in_grammar (alts ps) s v').
 Proof.
-  intros. apply (parse_split' 3 instruction_parser_list all_instructions_disjoint _ H H0). 
+  intros. apply (grammar_split' 3 instruction_grammar_list all_instructions_disjoint _ H H0). 
 Qed.
