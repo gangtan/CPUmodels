@@ -1,0 +1,66 @@
+Reading symbols from /home/ubuntu/Desktop/objdump_practice/main...done.
+Breakpoint 1 at 0x804848f: file main.c, line 14.
+
+Breakpoint 1, main () at main.c:14
+14		int i = 0, done = 0;
+15		float a = 1.2, b = 3.4;
+
+***step number: 0 
+
+st0: 00000000
+0x080484a4	15		float a = 1.2, b = 3.4;
+
+***step number: 1 
+
+st0: 00000000
+0x080484a8	15		float a = 1.2, b = 3.4;
+
+***step number: 2 
+
+st0: 00000000
+0x080484ad	15		float a = 1.2, b = 3.4;
+
+***step number: 3 
+
+st0: 00000000
+17		printf("product: %f", (a * b));
+
+***step number: 4 
+
+st0: 00000000
+0x080484b5	17		printf("product: %f", (a * b));
+
+***step number: 5 
+
+st0: 00000001
+0x080484b9	17		printf("product: %f", (a * b));
+
+***step number: 6 
+
+st0: 00000004
+0x080484bd	17		printf("product: %f", (a * b));
+
+***step number: 7 
+
+st0: 00000000
+0x080484c4	17		printf("product: %f", (a * b));
+
+***step number: 8 
+
+st0: 00000000
+0x08048300 in printf@plt ()
+
+***step number: 9 
+
+st0: 00000000
+0x08048306 in printf@plt ()
+
+***step number: 10 
+
+st0: 00000000
+0x0804830b in printf@plt ()
+A debugging session is active.
+
+	Inferior 1 [process 3975] will be killed.
+
+Quit anyway? (y or n) [answered Y; input not from terminal]

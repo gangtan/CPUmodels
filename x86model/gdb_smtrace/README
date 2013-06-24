@@ -1,0 +1,6 @@
+Uses gdb macros to step through a test program named main.c and dumps out state of all registers at every step. Macros (a.k.a commands) are stored in gdb_init and are copied over to .gdbinit at compile-time.
+
+To run: make smtrace
+-Results are dumped to gdb.txt
+-Static assembler instructions are objdumped to instrs.txt 
+
