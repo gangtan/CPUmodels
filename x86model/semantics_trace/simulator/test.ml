@@ -9,7 +9,7 @@ open BinInt
 open BinPos
 open Coqlib
 open Specif
-open Zdiv
+(*open Zdiv*)
 open Zpower
 open Big_int
 open Bits
@@ -21,7 +21,7 @@ open Maps
 open ZArith_dec
 open String
 open List0
-open Zdiv
+(*open Zdiv*)
 open X86Syntax
 open RTL
 open X86Semantics
@@ -214,20 +214,21 @@ let init_machine =
     control_regs = (fun c -> Word.zero (bii 31));
     debug_regs =  (fun d -> Word.zero (bii 31));
     pc_reg = pc;
-
+(*
     fpu_regs = (fun fpr -> Word.zero (bii 79));
     fpu_lastOperPtr = (fun x -> Word.zero (bii 63));
     fpu_status = (fun x -> Word.zero (bii 2));
     fpu_control = (fun x -> Word.zero (bii 2));
-    fpu_tags = (fun x -> Word.zero (bii 1));
+    fpu_tags = (fun x -> Word.zero (bii 1)); *)
 
 };;
 
+(*
 let init_rtl_state =
   { rtl_oracle = empty_oracle;
-    rtl_env = empty_env;
-    rtl_mach_state = init_machine;
-    rtl_memory = loaded_mem };;
+  (*  rtl_env = empty_env;  *)
+    rtl_mach_state = init_machine; 
+    rtl_memory = loaded_mem };; *)
 
 
 (* Wrapper for the step function that is extracted from Coq. *)
