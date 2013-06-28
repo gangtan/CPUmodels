@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-/*float test(float a, float b, int done) {
+float test(float a, float b, int done) {
 	float c = a / b;
 	float d = c + c * 2.43414 - a * b;
 	float e = c * d * d;
@@ -23,9 +23,9 @@ int main() {
  
 	return 0;
 }
-*/
 
+/*
 int main() {
 	printf("hello world");
 	return 0;
-}
+} */
