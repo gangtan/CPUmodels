@@ -2585,7 +2585,6 @@ Section DFA.
   Definition lt_and_gte_inconst (x y:nat) : x < y -> x >= y -> void.
     intros. omega.
   Defined.
-  Print lt_and_gte_inconst.
     
   Definition parse_token_help3 t (ps:instParserState t) (tk:token_id) (tk_lt:tk < num_tokens)
              (row:transition_t (dfa_states (dfa_ps ps)))

@@ -376,6 +376,12 @@ Proof.
   rewrite two_power_nat_S. rewrite inj_S. rewrite two_p_S. omega. omega.
 Qed.
 
+Lemma two_power_nat_monotone : 
+  forall n1 n2, (n1 <= n2)%nat -> two_power_nat n1 <= two_power_nat n2.
+Proof. intros. repeat rewrite two_power_nat_two_p.
+  apply two_p_monotone. omega.
+Qed.
+
 (** Properties of [Zmin] and [Zmax] *)
 
 Lemma Zmin_spec:
