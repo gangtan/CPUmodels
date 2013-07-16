@@ -1399,16 +1399,16 @@ Check IN_p.*)
   Definition OUTS_p : wf_bigrammar Char_t := "0110" $$ "111" $$ anybit.
   
 (*Come back to this later.*)
-  (*Definition POPSR_p1 := "000" $$ "00" $$ "111" $$ empty.
+  Definition POPSR_p1 := "000" $$ "00" $$ "111" $$ empty.
   Definition POPSR_p2 := "000" $$ "10" $$ "111" $$ empty.
   Definition POPSR_p3 := "000" $$ "11" $$ "111" $$ empty.
   Definition POPSR_p4 := "0000" $$ "1111" $$ "10" $$ "100" $$ "001" $$ empty.
   Definition POPSR_p5 := "0000" $$ "1111" $$ "10" $$ "101" $$ "001" $$ empty.
 
 Definition POPSR_check := POPSR_p1 |+| POPSR_p2 |+| POPSR_p3 |+| POPSR_p4 |+| POPSR_p5.
-Check POPSR_check.*)
+Check POPSR_check.
   
-  (*Definition POPSR_p : wf_bigrammar segment_register_t.
+  Definition POPSR_p : wf_bigrammar segment_register_t.
   refine ((POPSR_p1 |+| POPSR_p2 |+| POPSR_p3 |+| POPSR_p4 |+| POPSR_p5)
            @ (fun x =>
                match x with
@@ -1425,7 +1425,7 @@ Check POPSR_check.*)
                   | DS => Some (inr (inr (inl tt)))
                   | FS => Some (inr (inr (inr (inl tt))))
                   | GS => Some (inr (inr (inr (inr tt))))
-                  | CS => Some _
+                  | CS => None
                   end)
             & _).
    unfold invertible. split.
@@ -1433,7 +1433,9 @@ Check POPSR_check.*)
    intros. destruct v. sim. unfold in_bigrammar_rng. destruct i; crush.
    destruct i. sim. unfold in_bigrammar_rng. destruct i. crush. 
    unfold in_bigrammar_rng. destruct i. eexists. crush. eexists.
-   destruct i; crush. *)
+   destruct i; crush.
+   
+   intros. destruct v; destruct i; destruct w; crush. Qed.
    
    
 
@@ -1479,18 +1481,11 @@ Check POPSR_check.*)
 
       unfold in_bigrammar_rng.
       intros. sim. eexists.
-      destruct v. destruct i. crush. destruct i. crush. destruct i. crush. crush.
+      destruct v; destruct i; crush. destruct i; crush.
       
-      unfold in_bigrammar_rng. intros. destruct v. destruct i. destruct w. destruct i.
-      destruct i0. crush. reflexivity. destruct i0. crush. crush. destruct i.
-      destruct w. destruct i0. destruct i1. crush. crush. destruct i1. crush. crush.
-      destruct i. destruct i. destruct w. destruct i. destruct i0. crush. crush. destruct i0.
-      crush. crush. destruct w. destruct i0; destruct i1; crush.
+      unfold in_bigrammar_rng. intros.
+      destruct v; destruct w; destruct i; destruct i0; destruct i1; crush.
       Qed.
-   (*I should probably clean up this proof...*)
-      
-      
-     
   
   Definition RSM_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ "1010" $$ empty.
   Definition SAHF_p : wf_bigrammar unit_t := "1001" $$ "1110" $$ empty.
@@ -1596,45 +1591,7 @@ Check POPSR_check.*)
     {"CWDE", unit_t, (fun x => CWDE)} :::
     {"DAA", unit_t, (fun x => DAA)} :::
     {"DAS", unit_t, (fun x => DAS)} :::
-    {"HLT", unit_t, (fun x => HLT)} :::
-    {"IN", pair_t char_t (User_t (Option_t Byte_t)), 
-     (fun v => let (w, opb):= v in IN w opb)} :::
-    {"INS", char_t, (fun x => INS x)} :::
-    {"INTn", byte_t, (fun x => INTn x)} :::
-    {"INT", unit_t, (fun x => INT)} :::
-    {"INTO", unit_t, (fun x => INTO)} :::
-    {"INVD", unit_t, (fun x => INVD)} :::
-    {"IRET", unit_t, (fun x => IRET)} :::
-    {"Jcc", pair_t condition_t word_t,
-     (fun v => let (ct, w):= v in Jcc ct w)} :::
-    {"JCXZ", byte_t, (fun x => JCXZ x)} :::
-    {"LAHF", unit_t, (fun x => LAHF)} :::
-    {"LODS", char_t, (fun x => LODS x)} :::
-    {"LOOP", byte_t, (fun x => LOOP x)} :::
-    {"LOOPZ", byte_t, (fun x => LOOPZ x)} :::
-    {"LOOPNZ", byte_t, (fun x => LOOPNZ x)} :::
-    {"MOVS", char_t, (fun x => MOVS x)} :::
-    {"OUT", pair_t char_t (User_t (Option_t Byte_t)),
-    (fun p => OUT (fst p) (snd p))} :::
-    {"OUTS", char_t, (fun x => OUTS x)} :::
-    {"POPA", unit_t, (fun x => POPA)} :::
-    {"POPF", unit_t, (fun x => POPF)} :::
-    {"PUSHA", unit_t, (fun x => PUSHA)} :::
-    {"PUSHF", unit_t, (fun x => PUSHF)} :::
-    {"RDMSR", unit_t, (fun x => RDMSR)} :::
-    {"RDPMC", unit_t, (fun x => RDPMC)} :::
-    {"RDTSC", unit_t, (fun x => RDTSC)} :::
-    {"RDTSCP", unit_t, (fun x => RDTSCP)} :::
-    {"RET", (pair_t char_t (option_t Half_t)), 
-     (fun x => let (c, h) := x in RET c h)} :::
-    {"RSM", unit_t, (fun x => RSM)} :::
-    {"SAHF", unit_t, (fun x => SAHF)} :::
-    {"SCAS", char_t, (fun x => SCAS x)} :::
-    {"UD2", unit_t, (fun x => UD2)} :::
-    {"WBINVD", unit_t, (fun x => WBINVD)} :::
-    {"WRMSR", unit_t, (fun x => WRMSR)} :::
-    {"XLAT", unit_t, (fun x => XLAT)} :::
-    (*{"F2XM1", unit_t, (fun x => F2XM1)} :::
+    {"F2XM1", unit_t, (fun x => F2XM1)} :::
     {"FABS", unit_t, (fun x => FABS)} :::
     {"FCHS", unit_t, (fun x => FCHS)} :::
     {"FCOMPP", unit_t, (fun x => FCOMPP)} :::
@@ -1645,7 +1602,7 @@ Check POPSR_check.*)
     {"FLDL2T", unit_t, (fun x => FLDL2T)} :::
     {"FLDLG2", unit_t, (fun x => FLDLG2)} :::
     {"FLDLN2", unit_t, (fun x => FLDLN2)} :::
-    {"FLDPI", unit_t, (fun x => FLDLN2)} :::
+    {"FLDPI", unit_t, (fun x => FLDPI)} :::
     {"FLDZ", unit_t, (fun x => FLDZ)} :::
     {"FNCLEX", unit_t, (fun x => FNCLEX)} :::
     {"FNINIT", unit_t, (fun x => FNINIT)} :::
@@ -1667,7 +1624,46 @@ Check POPSR_check.*)
     {"FYL2XP1", unit_t, (fun x => FYL2XP1)} :::
     {"FWAIT", unit_t, (fun x => FWAIT)} :::
     {"EMMS", unit_t, (fun x => EMMS)} :::
-    {"SFENCE", unit_t, (fun x => SFENCE)} :::*)
+    {"SFENCE", unit_t, (fun x => SFENCE)} :::
+    {"HLT", unit_t, (fun x => HLT)} :::
+    {"IN", pair_t char_t (User_t (Option_t Byte_t)), 
+     (fun v => let (w, opb):= v in IN w opb)} :::
+    {"INS", char_t, (fun x => INS x)} :::
+    {"INTn", byte_t, (fun x => INTn x)} :::
+    {"INT", unit_t, (fun x => INT)} :::
+    {"INTO", unit_t, (fun x => INTO)} :::
+    {"INVD", unit_t, (fun x => INVD)} :::
+    {"IRET", unit_t, (fun x => IRET)} :::
+    {"Jcc", pair_t condition_t word_t,
+     (fun v => let (ct, w):= v in Jcc ct w)} :::
+    {"JCXZ", byte_t, (fun x => JCXZ x)} :::
+    {"LAHF", unit_t, (fun x => LAHF)} :::
+    {"LODS", char_t, (fun x => LODS x)} :::
+    {"LOOP", byte_t, (fun x => LOOP x)} :::
+    {"LOOPZ", byte_t, (fun x => LOOPZ x)} :::
+    {"LOOPNZ", byte_t, (fun x => LOOPNZ x)} :::
+    {"MOVS", char_t, (fun x => MOVS x)} :::
+    {"OUT", pair_t char_t (User_t (Option_t Byte_t)),
+    (fun p => OUT (fst p) (snd p))} :::
+    {"OUTS", char_t, (fun x => OUTS x)} :::
+    {"POPSR", segment_register_t, (fun x => POPSR x)} :::
+    {"POPA", unit_t, (fun x => POPA)} :::
+    {"POPF", unit_t, (fun x => POPF)} :::
+    {"PUSHA", unit_t, (fun x => PUSHA)} :::
+    {"PUSHF", unit_t, (fun x => PUSHF)} :::
+    {"RDMSR", unit_t, (fun x => RDMSR)} :::
+    {"RDPMC", unit_t, (fun x => RDPMC)} :::
+    {"RDTSC", unit_t, (fun x => RDTSC)} :::
+    {"RDTSCP", unit_t, (fun x => RDTSCP)} :::
+    {"RET", (pair_t char_t (option_t Half_t)), 
+     (fun x => let (c, h) := x in RET c h)} :::
+    {"RSM", unit_t, (fun x => RSM)} :::
+    {"SAHF", unit_t, (fun x => SAHF)} :::
+    {"SCAS", char_t, (fun x => SCAS x)} :::
+    {"UD2", unit_t, (fun x => UD2)} :::
+    {"WBINVD", unit_t, (fun x => WBINVD)} :::
+    {"WRMSR", unit_t, (fun x => WRMSR)} :::
+    {"XLAT", unit_t, (fun x => XLAT)} :::
     instr_env_nil.
 
   Fixpoint gen_instr_type (ie: Instr_Env) := 
@@ -1684,20 +1680,20 @@ Check POPSR_check.*)
     AAA_p |+| AAD_p |+| AAM_p |+| AAS_p |+| BSWAP_p |+| 
     CDQ_p |+| CLC_p |+| CLD_p |+| CLI_p |+| CLTS_p |+|
     CMC_p |+| CMPS_p |+| CPUID_p |+| CWDE_p |+| DAA_p |+|
-    DAS_p |+| HLT_p |+| IN_p |+| INS_p |+| INTn_p |+|
-    INT_p |+| INTO_p |+| INVD_p |+| IRET_p |+| Jcc_p |+|
-    JCXZ_p |+| LAHF_p |+| LODS_p |+| LOOP_p |+| LOOPZ_p |+|
-    LOOPNZ_p |+| MOVS_p |+| OUT_p |+| OUTS_p |+| POPA_p |+| POPF_p |+|
-    PUSHA_p |+| PUSHF_p |+| RDMSR_p |+| RDPMC_p |+| RDTSC_p |+|
-    RDTSCP_p |+| RET_p |+| RSM_p |+| SAHF_p |+| SCAS_p |+| UD2_p |+|
-    WBINVD_p |+| WRMSR_p |+| XLAT_p (*|+| F2XM1_p |+| FABS_p |+|
+    DAS_p |+| F2XM1_p |+| FABS_p |+|
     FCHS_p |+| FCOMPP_p |+| FCOS_p |+| FDECSTP_p |+| FLD1_p |+|
     FLDL2E_p |+| FLDL2T_p |+| FLDLG2_p |+| FLDLN2_p |+| FLDPI_p |+|
     FLDZ_p |+| FNCLEX_p |+| FNINIT_p |+| FNOP_p |+| FPATAN_p |+| FPREM_p |+|
     FPREM1_p |+| FPTAN_p |+| FRNDINT_p |+| FSCALE_p |+| FSIN_p |+|
     FSINCOS_p |+| FSQRT_p |+| FTST_p |+| FUCOMPP_p |+|
     FXAM_p |+| FXTRACT_p |+| FYL2X_p |+| FYL2XP1_p |+| FWAIT_p |+| EMMS_p |+|
-    SFENCE_p *) |+| (@never Void_t).
+    SFENCE_p |+| HLT_p |+| IN_p |+| INS_p |+| INTn_p |+|
+    INT_p |+| INTO_p |+| INVD_p |+| IRET_p |+| Jcc_p |+|
+    JCXZ_p |+| LAHF_p |+| LODS_p |+| LOOP_p |+| LOOPZ_p |+|
+    LOOPNZ_p |+| MOVS_p |+| OUT_p |+| OUTS_p |+| POPSR_p |+| POPA_p |+| POPF_p |+|
+    PUSHA_p |+| PUSHF_p |+| RDMSR_p |+| RDPMC_p |+| RDTSC_p |+|
+    RDTSCP_p |+| RET_p |+| RSM_p |+| SAHF_p |+| SCAS_p |+| UD2_p |+|
+    WBINVD_p |+| WRMSR_p |+| XLAT_p |+| (@never Void_t).
 
 
   Ltac gen_to_instr instr_env :=
@@ -1792,6 +1788,40 @@ Check POPSR_check.*)
               | CWDE => _
               | DAA => _
               | DAS => _
+              | F2XM1 => _
+              | FABS => _
+              | FCHS => _
+              | FCOMPP => _
+              | FCOS => _
+              | FDECSTP => _
+              | FLD1 => _
+              | FLDL2E => _
+              | FLDL2T => _
+              | FLDLG2 => _
+              | FLDLN2 => _
+              | FLDPI => _
+              | FLDZ => _
+              | FNCLEX => _
+              | FNINIT => _
+              | FNOP => _
+              | FPATAN => _
+              | FPREM => _
+              | FPREM1 => _
+              | FPTAN => _
+              | FRNDINT => _
+              | FSCALE => _
+              | FSIN => _
+              | FSINCOS => _
+              | FSQRT => _
+              | FTST => _
+              | FUCOMPP => _
+              | FXAM => _
+              | FXTRACT => _
+              | FYL2X => _
+              | FYL2XP1 => _
+              | FWAIT => _
+              | EMMS => _
+              | SFENCE => _
               | HLT => _
               | IN w opb => _
               | INS c => _
@@ -1810,6 +1840,7 @@ Check POPSR_check.*)
               | MOVS c => _
               | OUT p1 p2 => _
               | OUTS c => _
+              | POPSR r => _
               | POPA => _
               | POPF => _
               | PUSHA => _
@@ -1826,37 +1857,6 @@ Check POPSR_check.*)
               | WBINVD => _
               | WRMSR => _
               | XLAT => _
-              (*| F2XM1 => _
-              | FABS => _
-              | FCHS => _
-              | FCOMPP => _
-              | FCOS => _
-              | FDECSTP => _
-              | FLD1 => _
-              | FLDL2E => _
-              | FLDL2T => _
-              | FLDLG2 => _
-              | FLDLN2 => _
-              | FLDPI => _
-              | FLDZ => _
-              | FNCLEX => _
-              | FNINIT => _
-              | FNOP => _
-              | FPATAN => _
-              | FRNDINT => _
-              | FSCALE => _
-              | FSIN => _
-              | FSINCOS => _
-              | FSQRT => _
-              | FTST => _
-              | FUCOMPP => _
-              | FXAM => _
-              | FXTRACT => _
-              | FYL2X => _
-              | FYL2XP1 => _
-              | FWAIT => _
-              | EMMS => _
-              | SFENCE => _*)
               | _ => None
             end).
     Local Ltac gen Case arg := 
@@ -1882,6 +1882,40 @@ Check POPSR_check.*)
     Case "CWDE". gen Case tt.
     Case "DAA". gen Case tt.
     Case "DAS". gen Case tt.
+    Case "F2XM1". gen Case tt.
+    Case "FABS". gen Case tt.
+    Case "FCHS". gen Case tt.
+    Case "FCOMPP". gen Case tt.
+    Case "FCOS". gen Case tt.
+    Case "FDECSTP". gen Case tt.
+    Case "FLD1". gen Case tt.
+    Case "FLDL2E". gen Case tt.
+    Case "FLDL2T". gen Case tt.
+    Case "FLDLG2". gen Case tt.
+    Case "FLDLN2". gen Case tt.
+    Case "FLDPI". gen Case tt.
+    Case "FLDZ". gen Case tt.
+    Case "FNCLEX". gen Case tt.
+    Case "FNINIT". gen Case tt.
+    Case "FNOP". gen Case tt.
+    Case "FPATAN". gen Case tt.
+    Case "FPREM". gen Case tt.
+    Case "FPREM1". gen Case tt.
+    Case "FPTAN". gen Case tt.
+    Case "FRNDINT". gen Case tt.
+    Case "FSCALE". gen Case tt.
+    Case "FSIN". gen Case tt.
+    Case "FSINCOS". gen Case tt.
+    Case "FSQRT". gen Case tt.
+    Case "FTST". gen Case tt.
+    Case "FUCOMPP". gen Case tt.
+    Case "FXAM". gen Case tt.
+    Case "FXTRACT". gen Case tt.
+    Case "FYL2X". gen Case tt.
+    Case "FYL2XP1". gen Case tt.
+    Case "FWAIT". gen Case tt.
+    Case "EMMS". gen Case tt.
+    Case "SFENCE". gen Case tt.
     Case "HLT". gen Case tt.
     Case "IN". gen Case (w,opb).
     Case "INS". gen Case c.
@@ -1900,6 +1934,7 @@ Check POPSR_check.*)
     Case "MOVS". gen Case c.
     Case "OUT". gen Case (p1,p2).
     Case "OUTS". gen Case c.
+    Case "POPSR". gen Case r.
     Case "POPA". gen Case tt.
     Case "POPF". gen Case tt.
     Case "PUSHA". gen Case tt.
@@ -1916,37 +1951,6 @@ Check POPSR_check.*)
     Case "WBINVD". gen Case tt.
     Case "WRMSR". gen Case tt.
     Case "XLAT". gen Case tt.
-    (*Case "F2XM1". gen Case tt.
-    Case "FABS". gen Case tt.
-    Case "FCHS". gen Case tt.
-    Case "FCOMPP". gen Case tt.
-    Case "FCOS". gen Case tt.
-    Case "FDECSTP". gen Case tt.
-    Case "FLD1". gen Case tt.
-    Case "FLDL2E". gen Case tt.
-    Case "FLDL2T". gen Case tt.
-    Case "FLDLG2". gen Case tt.
-    Case "FLDLN2". gen Case tt.
-    Case "FLDPI". gen Case tt.
-    Case "FLDZ". gen Case tt.
-    Case "FNCLEX". gen Case tt.
-    Case "FNINIT". gen Case tt.
-    Case "FNOP". gen Case tt.
-    Case "FPATAN". gen Case tt.
-    Case "FRNDINT". gen Case tt.
-    Case "FSCALE". gen Case tt.
-    Case "FSIN". gen Case tt.
-    Case "FSINCOS". gen Case tt.
-    Case "FSQRT". gen Case tt.
-    Case "FTST". gen Case tt.
-    Case "FUCOMPP". gen Case tt.
-    Case "FXAM". gen Case tt.
-    Case "FXTRACT". gen Case tt.
-    Case "FYL2X". gen Case tt.
-    Case "FYL2XP1". gen Case tt.
-    Case "FWAIT". gen Case tt.
-    Case "EMMS". gen Case tt.
-    Case "SFENCE". gen Case tt.*)
   Defined.
 
   Lemma from_instr_to_instr : forall v, from_instr (to_instr v) = Some v.
@@ -1957,7 +1961,7 @@ Check POPSR_check.*)
       | [ H: void |- _ ] => destruct v
       | _ => crush
     end.
-  Qed.
+    Qed.
 
   Lemma to_instr_from_instr : forall i v, from_instr i = Some v -> to_instr v = i.
   Proof. simpl. intros. destruct i; crush.
