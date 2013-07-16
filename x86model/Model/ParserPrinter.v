@@ -165,8 +165,9 @@ Inductive type : Type :=
 (** [type] equality is decidable -- we only use this in proofs, so
     we don't need to worry about efficiency. *)  
 Definition type_dec : forall (t1 t2:type), {t1=t2} + {t1<>t2}.
-  decide equality ; apply user_type_dec.
+  repeat decide equality.
 Defined.
+
 
 (** [void] is an empty type. *)
 Inductive void : Type := .
@@ -255,15 +256,15 @@ Lemma AltInv : forall t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) cs v,
 Proof.
   intros ; inversion H ; subst ; crush; eauto.
 Qed.
-(* Lemma StarInv : forall t (g:bigrammar t) cs v,  *)
-(*   in_bigrammar (Star g) cs v -> (cs = nil /\ v = nil) \/  *)
-(*   (exists cs1, exists v1, exists cs2, exists v2,  *)
-(*     cs1 <> nil /\ in_bigrammar g cs1 v1 /\ in_bigrammar (Star g) cs2 v2 /\  *)
-(*     cs = cs1 ++ cs2 /\ v = v1::v2). *)
-(* Proof. *)
-(*   intros ; inversion H ; clear H ; subst ; mysimp ; right ; exists s1 ; exists v1 ;  *)
-(*   exists s2 ; exists v2 ; auto. *)
-(* Qed. *)
+ (*Lemma StarInv : forall t (g:bigrammar t) cs v,  
+   in_bigrammar (Star g) cs v -> (cs = nil /\ v = nil) \/  
+   (exists cs1, exists v1, exists cs2, exists v2,  
+     cs1 <> nil /\ in_bigrammar g cs1 v1 /\ in_bigrammar (Star g) cs2 v2 /\  
+    cs = cs1 ++ cs2 /\ v = v1::v2).
+ Proof. 
+   intros ; inversion H ; clear H ; subst ; mysimp ; right ; exists s1 ; exists v1 ;  
+   exists s2 ; exists v2 ; auto. 
+ Qed. *)
 Lemma MapInv : forall t1 t2 (f:interp t1 -> interp t2) finv (g:bigrammar t1) cs v,
   in_bigrammar (@Map t1 t2 f finv g) cs v -> exists v', in_bigrammar g cs v' /\ v = f v'.
 Proof.
@@ -369,6 +370,8 @@ Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
     | Map t1 t2 f finv g =>
       fun v => x <- finv v; pretty_print g x
   end.
+
+Locate "<-".
 
 Local Ltac localsimpl := 
   repeat 
@@ -889,6 +892,7 @@ Qed.
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
+
   Definition reg : wf_bigrammar register_t.
     refine (field 3 @ (Z_to_register : _ -> result_m register_t)
               & (fun r => Some (register_to_Z r)) & _).
@@ -1128,6 +1132,33 @@ Qed.
     crush. destruct w; crush.
   Defined.
 
+  Definition AAD_p' : wf_bigrammar instruction_t.
+    refine ("1101010100001010" $$ empty @ (fun x => AAD %% instruction_t)
+              & (fun i => match i with | AAD => Some tt | _ => None end) & _).
+    unfold invertible. split.
+    crush. destruct v. crush.
+    crush. destruct w; crush.
+  Defined.
+
+  Definition AAM_p' : wf_bigrammar instruction_t.
+    refine ("1101010000001010" $$ empty @ (fun x => AAM %% instruction_t)
+              & (fun i => match i with | AAM => Some tt | _ => None end) & _).
+    unfold invertible. split.
+    crush. destruct v. crush.
+    crush. destruct w; crush.
+  Defined.
+
+    Definition AAS_p' : wf_bigrammar instruction_t.
+    refine ("00111111" $$ empty @ (fun x => AAS %% instruction_t)
+              & (fun i => match i with | AAS => Some tt | _ => None end) & _).
+    unfold invertible. split.
+    crush. destruct v. crush.
+    crush. destruct w; crush.
+  Defined.
+
+Print wf_bigrammar.
+Print instruction_t.
+
   Definition BSWAP_p' : wf_bigrammar instruction_t.
     refine ("0000" $$ "1111" $$ "1100" $$ "1" $$ reg
               @ (fun r => BSWAP r %% instruction_t)
@@ -1227,12 +1258,51 @@ Qed.
    *)
 
   Definition AAA_p : wf_bigrammar unit_t := "00110111" $$ empty.
+  Definition AAD_p : wf_bigrammar unit_t := "1101010100001010" $$ empty.
+  Definition AAM_p : wf_bigrammar unit_t := "1101010000001010" $$ empty.
+  Definition AAS_p : wf_bigrammar unit_t := "00111111" $$ empty.
 
   Definition BSWAP_p : wf_bigrammar register_t := 
     "0000" $$ "1111" $$ "1100" $$ "1" $$ reg.
+    
+  Definition CDQ_p : wf_bigrammar unit_t := "1001" $$  "1001" $$ empty.
+  Definition CLC_p : wf_bigrammar unit_t := "1111" $$ "1000" $$ empty.
+  Definition CLD_p : wf_bigrammar unit_t := "1111" $$ "1100" $$ empty.
+  Definition CLI_p : wf_bigrammar unit_t := "1111" $$ "1010" $$ empty.
+  Definition CLTS_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ "0110" $$ empty.
+  Definition CMC_p : wf_bigrammar unit_t := "1111" $$ "0101" $$ empty.
+  Definition CMPS_p : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
+  (*Skipped CMPXCHG_p, requires modrm*)
+  Definition CPUID_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ "0010" $$ empty.
+  Definition CWDE_p : wf_bigrammar unit_t := "1001" $$ "1000" $$ empty.
+  Definition DAA_p : wf_bigrammar unit_t := "0010" $$ "0111" $$ empty.
+  Definition DAS_p : wf_bigrammar unit_t := "0010" $$ "1111" $$ empty.
 
+  Definition DEC_p1  :=
+    "1111" $$ "111" $$ anybit $ "11001" $$ reg.
+  Definition DEC_p2 := "0100" $$ "1" $$ reg.
+  (*Definition DEC_p3 : //Skipped due to ext_op_modrm function*)
+  
+  Definition DIV_p1 : wf_bigrammar (Pair_t Char_t register_t) := 
+  "1111" $$ "011" $$ anybit $ "11110" $$ reg.
+  (*Definition DIV_p2 : //Skipped due to ext_op_modrm function*)
+  
+  Definition HLT_p : wf_bigrammar unit_t := "1111" $$ "0100" $$ empty.
+  
+  Definition IDIV_p1 : wf_bigrammar (Pair_t Char_t register_t)  :=
+ "1111" $$ "011" $$ anybit $ "11111" $$ reg.
+ (*Definition IDIV_p2 : //ext_op_modrm function*)
+ 
+ (*Definition IMUL_p : //ext_op_modrm, modrm*)
+ 
   Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
   Definition IN_p2 := "1110" $$ "010" $$ anybit.
+  
+  (*Definition IN_P : wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))) :=
+  IN_p1 |+| IN_p2.*)
+  
+  (*Definition IN_p := IN_p1 |+| IN_p2.
+Check IN_p.*)
 
   Definition IN_p : wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
     refine ((IN_p1 |+| IN_p2)
@@ -1251,7 +1321,25 @@ Qed.
     destruct v; destruct i; crush.
     destruct w. destruct i0; try discriminate; crush.
   Defined.
-
+  
+  Definition INC_p1 :=  "1111" $$ "111" $$ anybit  $ "11000" $$ reg.
+  Definition INC_p2 := "0100" $$ "0" $$ reg.
+  (*Definition INC_p3 := "1111" $$ "111" $$ anybit $ ext_op_modrm "000".*)
+  
+  Definition INS_p : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
+  
+  Definition INTn_p : wf_bigrammar byte_t := "1100" $$ "1101" $$ byte.
+  
+  Definition INT_p : wf_bigrammar unit_t := "1100" $$ "1100" $$ empty.
+  
+  Definition INTO_p : wf_bigrammar unit_t := "1100" $$ "1110" $$ empty.
+  
+  Definition INVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ "1000" $$ empty.
+  
+  (*Definition INVLPG_p := //ext_op_modrm function*)
+  
+  Definition IRET_p : wf_bigrammar unit_t := "1100" $$ "1111" $$ empty.
+  
   Definition Jcc_p1 := "0111" $$ tttn $ byte.
   Definition Jcc_p2 := "0000" $$ "1111" $$ "1000" $$ tttn $ word.
 
@@ -1268,7 +1356,215 @@ Qed.
     repeat (eapply in_bitsleft_intro; [eapply in_bits_intro | idtac]).
     eapply InCat; (eauto || eapply in_int_n_intro).
   Defined.
+  
+  Definition JCXZ_p : wf_bigrammar byte_t := "1110" $$ "0011" $$ byte.
+  
+  (*JMP //do later*)
+  
+  Definition LAHF_p : wf_bigrammar unit_t := "1001" $$ "1111" $$ empty.
+  
+  (* LAR - LMSW use ext_op_modrm or modrm*)
+  
+  Definition LODS_p : wf_bigrammar Char_t := "1010" $$ "110" $$ anybit.
+  Definition LOOP_p : wf_bigrammar byte_t := "1110" $$ "0010" $$ byte.
+  Definition LOOPZ_p : wf_bigrammar byte_t := "1110" $$ "0001" $$ byte.
+  Definition LOOPNZ_p : wf_bigrammar byte_t := "1110" $$ "0000" $$ byte.
+  (*Definition LSL_p - LTR //uses modrm*)
+  
+  (*Control registers, segment registers, etc*)
+  
+  Definition MOVS_p : wf_bigrammar Char_t := "1010" $$ "010" $$ anybit.
+  
+  Definition OUT_p1 := "1110" $$ "011" $$ anybit $ byte.
+  Definition OUT_p2 := "1110" $$ "111" $$ anybit.
+  
+  Definition OUT_p : wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
+    refine ((OUT_p1 |+| OUT_p2)
+              @ (fun x => 
+                   match x with
+                     | inl (w,b) => (w, Some b)
+                     | inr w => (w, None)
+                   end %% (Pair_t Char_t (User_t (Option_t Byte_t))))
+              & (fun x => 
+                   match x with
+                     | (w, Some b) => Some (inl (w,b))
+                     | (w, None) => Some (inr w)
+                   end)
+              & _).
+    unfold invertible. split.
+    destruct v; destruct i; crush.
+    destruct w. destruct i0; try discriminate; crush.
+  Defined.
+  
+  Definition OUTS_p : wf_bigrammar Char_t := "0110" $$ "111" $$ anybit.
+  
+(*Come back to this later.*)
+  (*Definition POPSR_p1 := "000" $$ "00" $$ "111" $$ empty.
+  Definition POPSR_p2 := "000" $$ "10" $$ "111" $$ empty.
+  Definition POPSR_p3 := "000" $$ "11" $$ "111" $$ empty.
+  Definition POPSR_p4 := "0000" $$ "1111" $$ "10" $$ "100" $$ "001" $$ empty.
+  Definition POPSR_p5 := "0000" $$ "1111" $$ "10" $$ "101" $$ "001" $$ empty.
 
+Definition POPSR_check := POPSR_p1 |+| POPSR_p2 |+| POPSR_p3 |+| POPSR_p4 |+| POPSR_p5.
+Check POPSR_check.*)
+  
+  (*Definition POPSR_p : wf_bigrammar segment_register_t.
+  refine ((POPSR_p1 |+| POPSR_p2 |+| POPSR_p3 |+| POPSR_p4 |+| POPSR_p5)
+           @ (fun x =>
+               match x with
+                  | inl tt => ES
+                  | inr (inl tt) => SS
+                  | inr (inr (inl tt)) => DS
+                  | inr (inr (inr (inl tt))) => FS
+                  | inr (inr (inr (inr tt))) => GS
+                  end %% segment_register_t)
+            & (fun x => 
+                match x with
+                  | ES => Some (inl tt)
+                  | SS => Some (inr (inl tt))
+                  | DS => Some (inr (inr (inl tt)))
+                  | FS => Some (inr (inr (inr (inl tt))))
+                  | GS => Some (inr (inr (inr (inr tt))))
+                  | CS => Some _
+                  end)
+            & _).
+   unfold invertible. split.
+   
+   intros. destruct v. sim. unfold in_bigrammar_rng. destruct i; crush.
+   destruct i. sim. unfold in_bigrammar_rng. destruct i. crush. 
+   unfold in_bigrammar_rng. destruct i. eexists. crush. eexists.
+   destruct i; crush. *)
+   
+   
+
+  Definition POPA_p : wf_bigrammar unit_t := "0110" $$ "0001" $$ empty.
+  Definition POPF_p : wf_bigrammar unit_t := "1001" $$ "1101" $$ empty.
+  
+  Definition PUSHA_p : wf_bigrammar unit_t := "0110" $$ "0000" $$ empty.
+  Definition PUSHF_p : wf_bigrammar unit_t := "1001" $$ "1100" $$ empty.
+  
+  Definition RDMSR_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0011" $$ "0010" $$ empty.
+  Definition RDPMC_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0011" $$ "0011" $$ empty.
+  Definition RDTSC_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0011" $$ "0001" $$ empty.
+  Definition RDTSCP_p : wf_bigrammar unit_t := 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ "1111" $$ "1001" $$ empty.
+  
+  (*Come back to this one too.*)
+  Definition RET_p1 := "1100" $$ "0011" $$ empty.
+  Definition RET_p2 := "1100" $$ "0010" $$ halfword.
+  Definition RET_p3 := "1100" $$ "1011" $$ empty.
+  Definition RET_p4 := "1100" $$ "1010" $$ halfword.
+  
+  Definition RET_c := RET_p1 |+| RET_p2 |+| RET_p3 |+| RET_p4.
+  Check RET_c.
+  
+  Definition RET_p : wf_bigrammar (pair_t char_t (option_t Half_t)).
+     refine((RET_p1 |+| RET_p2 |+| RET_p3 |+| RET_p4)
+        @ (fun x =>
+            match x with
+              | inl tt=> (true, None)
+              | inr (inl c) => (true, Some c)
+              | inr (inr (inl tt)) => (false, None)
+              | inr (inr (inr c)) => (false, Some c)
+              end %% (pair_t char_t (option_t Half_t)))
+        & (fun x =>
+            match x with
+              | (true, None) => Some (inl tt)
+              | (true, Some c) => Some (inr (inl c))
+              | (false, None) => Some (inr (inr (inl tt)))
+              | (false, Some c) => Some (inr (inr (inr c)))
+            end)
+        & _).
+      unfold invertible. split.
+
+      unfold in_bigrammar_rng.
+      intros. sim. eexists.
+      destruct v. destruct i. crush. destruct i. crush. destruct i. crush. crush.
+      
+      unfold in_bigrammar_rng. intros. destruct v. destruct i. destruct w. destruct i.
+      destruct i0. crush. reflexivity. destruct i0. crush. crush. destruct i.
+      destruct w. destruct i0. destruct i1. crush. crush. destruct i1. crush. crush.
+      destruct i. destruct i. destruct w. destruct i. destruct i0. crush. crush. destruct i0.
+      crush. crush. destruct w. destruct i0; destruct i1; crush.
+      Qed.
+   (*I should probably clean up this proof...*)
+      
+      
+     
+  
+  Definition RSM_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ "1010" $$ empty.
+  Definition SAHF_p : wf_bigrammar unit_t := "1001" $$ "1110" $$ empty.
+  
+  Definition SCAS_p : wf_bigrammar Char_t := "1010" $$ "111" $$ anybit.
+  
+  Definition UD2_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ "1011" $$ empty.
+  
+  Definition WBINVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ "1001" $$ empty.
+  
+  Definition WRMSR_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0011" $$ "0000" $$ empty.
+  
+  Definition XLAT_p : wf_bigrammar unit_t := "1101" $$ "0111" $$ empty.
+  
+  Definition F2XM1_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "10000" $$ empty.
+  Definition FABS_p : wf_bigrammar unit_t :=  "11011" $$ "001111" $$ "00001" $$ empty.
+  (*Modrm definitions needed here*)
+  
+  (*Definition FADDP_p : wf_bigrammar fpu_register_t= "11011" $$ "110" $$ "11000" $$ fpu_reg.*)
+  
+  Definition FCHS_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "00000" $$ empty.
+  
+  Definition FCOMPP_p : wf_bigrammar unit_t := "11011" $$ "110" $$ "11011" $$ "001" $$ empty.
+  
+  Definition FCOS_p : wf_bigrammar unit_t := "11011" $$ "001" $$ "111" $$ "11111" $$ empty.
+  
+  Definition FDECSTP_p : wf_bigrammar unit_t := "11011" $$ "001" $$ "111" $$ "10110" $$ empty.
+  
+  Definition FLD1_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "01000" $$ empty.
+  
+  Definition FLDL2E_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "01010" $$ empty.
+  Definition FLDL2T_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "01001" $$ empty.
+  Definition FLDLG2_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "01100" $$ empty.
+  Definition FLDLN2_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "01101" $$ empty.
+  Definition FLDPI_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "01011" $$ empty.
+  Definition FLDZ_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "01110" $$ empty.
+  
+  Definition FNCLEX_p : wf_bigrammar unit_t := "11011" $$ "011111" $$ "00010" $$ empty.
+  Definition FNINIT_p : wf_bigrammar unit_t := "11011" $$ "011111" $$ "00011" $$ empty.
+  Definition FNOP_p : wf_bigrammar unit_t := "11011" $$ "001110" $$ "10000" $$ empty.
+  
+  Definition FPATAN_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "10011" $$ empty.
+  Definition FPREM_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "11000" $$ empty.
+  Definition FPREM1_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "10101" $$ empty.
+  Definition FPTAN_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "10010" $$ empty.
+  Definition FRNDINT_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "11100" $$ empty.
+  
+  Definition FSCALE_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "11101" $$ empty.
+  Definition FSIN_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "11110" $$ empty.
+  Definition FSINCOS_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "11011" $$ empty.
+  Definition FSQRT_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "11010" $$ empty.
+  
+  Definition FTST_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "00100" $$ empty.
+  
+  Definition FUCOMPP_p : wf_bigrammar unit_t := "11011" $$ "010111" $$ "01001" $$ empty.
+
+  Definition FXAM_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "00101" $$ empty.
+  
+  Definition FXTRACT_p : wf_bigrammar unit_t := "11011" $$ "001" $$ "1111" $$ "0100" $$ empty.
+  Definition FYL2X_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "10001" $$ empty.
+  Definition FYL2XP1_p : wf_bigrammar unit_t := "11011" $$ "001111" $$ "11001" $$ empty.
+  Definition FWAIT_p : wf_bigrammar unit_t := "10011011" $$ empty.
+  
+  (*MMX Grammars*)
+  
+  Definition EMMS_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0111" $$ "0111" $$ empty.
+  
+  (*End MMX Grammars*)
+  
+  Definition SFENCE_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$ 
+                                    "1000" $$ empty.
+                                    
+  
+          
   (* An instruction environment type that help produce to_instr and from_instr
      via tactics *)
   Inductive Instr_Env := 
@@ -1285,12 +1581,94 @@ Qed.
      the one in instr_p' *)
   Definition instr_env := 
     {"AAA",  unit_t, (fun x:unit => AAA)} :::
+    {"AAD", unit_t, (fun x:unit => AAD)} :::
+    {"AAM", unit_t, (fun x:unit => AAM)} :::
+    {"AAS", unit_t, (fun x:unit => AAS)} :::
     {"BSWAP", register_t,  (fun r => BSWAP r)} :::
+    {"CDQ", unit_t, (fun x => CDQ)} :::
+    {"CLC", unit_t, (fun x => CLC)} :::
+    {"CLD", unit_t, (fun x => CLD)} :::
+    {"CLI", unit_t, (fun x => CLI)} :::
+    {"CLTS", unit_t, (fun x => CLTS)} :::
+    {"CMC", unit_t, (fun x => CMC)} :::
+    {"CMPS", char_t, (fun x => CMPS x)} :::
+    {"CPUID", unit_t, (fun x => CPUID)} :::
+    {"CWDE", unit_t, (fun x => CWDE)} :::
+    {"DAA", unit_t, (fun x => DAA)} :::
+    {"DAS", unit_t, (fun x => DAS)} :::
+    {"HLT", unit_t, (fun x => HLT)} :::
     {"IN", pair_t char_t (User_t (Option_t Byte_t)), 
      (fun v => let (w, opb):= v in IN w opb)} :::
+    {"INS", char_t, (fun x => INS x)} :::
+    {"INTn", byte_t, (fun x => INTn x)} :::
+    {"INT", unit_t, (fun x => INT)} :::
+    {"INTO", unit_t, (fun x => INTO)} :::
+    {"INVD", unit_t, (fun x => INVD)} :::
+    {"IRET", unit_t, (fun x => IRET)} :::
     {"Jcc", pair_t condition_t word_t,
      (fun v => let (ct, w):= v in Jcc ct w)} :::
-     instr_env_nil.
+    {"JCXZ", byte_t, (fun x => JCXZ x)} :::
+    {"LAHF", unit_t, (fun x => LAHF)} :::
+    {"LODS", char_t, (fun x => LODS x)} :::
+    {"LOOP", byte_t, (fun x => LOOP x)} :::
+    {"LOOPZ", byte_t, (fun x => LOOPZ x)} :::
+    {"LOOPNZ", byte_t, (fun x => LOOPNZ x)} :::
+    {"MOVS", char_t, (fun x => MOVS x)} :::
+    {"OUT", pair_t char_t (User_t (Option_t Byte_t)),
+    (fun p => OUT (fst p) (snd p))} :::
+    {"OUTS", char_t, (fun x => OUTS x)} :::
+    {"POPA", unit_t, (fun x => POPA)} :::
+    {"POPF", unit_t, (fun x => POPF)} :::
+    {"PUSHA", unit_t, (fun x => PUSHA)} :::
+    {"PUSHF", unit_t, (fun x => PUSHF)} :::
+    {"RDMSR", unit_t, (fun x => RDMSR)} :::
+    {"RDPMC", unit_t, (fun x => RDPMC)} :::
+    {"RDTSC", unit_t, (fun x => RDTSC)} :::
+    {"RDTSCP", unit_t, (fun x => RDTSCP)} :::
+    {"RET", (pair_t char_t (option_t Half_t)), 
+     (fun x => let (c, h) := x in RET c h)} :::
+    {"RSM", unit_t, (fun x => RSM)} :::
+    {"SAHF", unit_t, (fun x => SAHF)} :::
+    {"SCAS", char_t, (fun x => SCAS x)} :::
+    {"UD2", unit_t, (fun x => UD2)} :::
+    {"WBINVD", unit_t, (fun x => WBINVD)} :::
+    {"WRMSR", unit_t, (fun x => WRMSR)} :::
+    {"XLAT", unit_t, (fun x => XLAT)} :::
+    (*{"F2XM1", unit_t, (fun x => F2XM1)} :::
+    {"FABS", unit_t, (fun x => FABS)} :::
+    {"FCHS", unit_t, (fun x => FCHS)} :::
+    {"FCOMPP", unit_t, (fun x => FCOMPP)} :::
+    {"FCOS", unit_t, (fun x => FCOS)} :::
+    {"FDECSTP", unit_t, (fun x => FDECSTP)} :::
+    {"FLD1", unit_t, (fun x => FLD1)} :::
+    {"FLDL2E", unit_t, (fun x => FLDL2E)} :::
+    {"FLDL2T", unit_t, (fun x => FLDL2T)} :::
+    {"FLDLG2", unit_t, (fun x => FLDLG2)} :::
+    {"FLDLN2", unit_t, (fun x => FLDLN2)} :::
+    {"FLDPI", unit_t, (fun x => FLDLN2)} :::
+    {"FLDZ", unit_t, (fun x => FLDZ)} :::
+    {"FNCLEX", unit_t, (fun x => FNCLEX)} :::
+    {"FNINIT", unit_t, (fun x => FNINIT)} :::
+    {"FNOP", unit_t, (fun x => FNOP)} :::
+    {"FPATAN", unit_t, (fun x => FPATAN)} :::
+    {"FPREM", unit_t, (fun x => FPREM)} :::
+    {"FPREM1", unit_t, (fun x => FPREM1)} :::
+    {"FPTAN", unit_t, (fun x => FPTAN)} :::
+    {"FRNDINT", unit_t, (fun x => FRNDINT)} :::
+    {"FSCALE", unit_t, (fun x => FSCALE)} :::
+    {"FSIN", unit_t, (fun x => FSIN)} :::
+    {"FSINCOS", unit_t, (fun x => FSINCOS)} :::
+    {"FSQRT", unit_t, (fun x => FSQRT)} :::
+    {"FTST", unit_t, (fun x => FTST)} :::
+    {"FUCOMPP", unit_t, (fun x => FUCOMPP)} :::
+    {"FXAM", unit_t, (fun x => FXAM)} :::
+    {"FXTRACT", unit_t, (fun x => FXTRACT)} :::
+    {"FYL2X", unit_t, (fun x => FYL2X)} :::
+    {"FYL2XP1", unit_t, (fun x => FYL2XP1)} :::
+    {"FWAIT", unit_t, (fun x => FWAIT)} :::
+    {"EMMS", unit_t, (fun x => EMMS)} :::
+    {"SFENCE", unit_t, (fun x => SFENCE)} :::*)
+    instr_env_nil.
 
   Fixpoint gen_instr_type (ie: Instr_Env) := 
     match ie with
@@ -1303,7 +1681,24 @@ Qed.
   (* Eval compute in instr'. *)
 
   Definition instr_p': wf_bigrammar instr' :=
-    AAA_p |+| BSWAP_p |+| IN_p |+| Jcc_p |+| (@never Void_t).
+    AAA_p |+| AAD_p |+| AAM_p |+| AAS_p |+| BSWAP_p |+| 
+    CDQ_p |+| CLC_p |+| CLD_p |+| CLI_p |+| CLTS_p |+|
+    CMC_p |+| CMPS_p |+| CPUID_p |+| CWDE_p |+| DAA_p |+|
+    DAS_p |+| HLT_p |+| IN_p |+| INS_p |+| INTn_p |+|
+    INT_p |+| INTO_p |+| INVD_p |+| IRET_p |+| Jcc_p |+|
+    JCXZ_p |+| LAHF_p |+| LODS_p |+| LOOP_p |+| LOOPZ_p |+|
+    LOOPNZ_p |+| MOVS_p |+| OUT_p |+| OUTS_p |+| POPA_p |+| POPF_p |+|
+    PUSHA_p |+| PUSHF_p |+| RDMSR_p |+| RDPMC_p |+| RDTSC_p |+|
+    RDTSCP_p |+| RET_p |+| RSM_p |+| SAHF_p |+| SCAS_p |+| UD2_p |+|
+    WBINVD_p |+| WRMSR_p |+| XLAT_p (*|+| F2XM1_p |+| FABS_p |+|
+    FCHS_p |+| FCOMPP_p |+| FCOS_p |+| FDECSTP_p |+| FLD1_p |+|
+    FLDL2E_p |+| FLDL2T_p |+| FLDLG2_p |+| FLDLN2_p |+| FLDPI_p |+|
+    FLDZ_p |+| FNCLEX_p |+| FNINIT_p |+| FNOP_p |+| FPATAN_p |+| FPREM_p |+|
+    FPREM1_p |+| FPTAN_p |+| FRNDINT_p |+| FSCALE_p |+| FSIN_p |+|
+    FSINCOS_p |+| FSQRT_p |+| FTST_p |+| FUCOMPP_p |+|
+    FXAM_p |+| FXTRACT_p |+| FYL2X_p |+| FYL2XP1_p |+| FWAIT_p |+| EMMS_p |+|
+    SFENCE_p *) |+| (@never Void_t).
+
 
   Ltac gen_to_instr instr_env :=
     match instr_env with
@@ -1382,9 +1777,86 @@ Qed.
     intro i.
     refine (match i with
               | AAA => _
+              | AAD => _
+              | AAM => _
+              | AAS => _
               | BSWAP r => _
+              | CDQ => _
+              | CLC => _
+              | CLD => _
+              | CLI => _
+              | CLTS => _
+              | CMC => _
+              | CMPS c => _
+              | CPUID => _
+              | CWDE => _
+              | DAA => _
+              | DAS => _
+              | HLT => _
               | IN w opb => _
+              | INS c => _
+              | INTn b => _
+              | INT => _
+              | INTO => _
+              | INVD => _
+              | IRET => _
               | Jcc ct w => _
+              | JCXZ b => _
+              | LAHF => _
+              | LODS c => _
+              | LOOP b => _
+              | LOOPZ b => _
+              | LOOPNZ b => _
+              | MOVS c => _
+              | OUT p1 p2 => _
+              | OUTS c => _
+              | POPA => _
+              | POPF => _
+              | PUSHA => _
+              | PUSHF => _
+              | RDMSR => _
+              | RDPMC => _
+              | RDTSC => _
+              | RDTSCP => _
+              | RET c h => _
+              | RSM => _
+              | SAHF => _
+              | SCAS c => _
+              | UD2 => _
+              | WBINVD => _
+              | WRMSR => _
+              | XLAT => _
+              (*| F2XM1 => _
+              | FABS => _
+              | FCHS => _
+              | FCOMPP => _
+              | FCOS => _
+              | FDECSTP => _
+              | FLD1 => _
+              | FLDL2E => _
+              | FLDL2T => _
+              | FLDLG2 => _
+              | FLDLN2 => _
+              | FLDPI => _
+              | FLDZ => _
+              | FNCLEX => _
+              | FNINIT => _
+              | FNOP => _
+              | FPATAN => _
+              | FRNDINT => _
+              | FSCALE => _
+              | FSIN => _
+              | FSINCOS => _
+              | FSQRT => _
+              | FTST => _
+              | FUCOMPP => _
+              | FXAM => _
+              | FXTRACT => _
+              | FYL2X => _
+              | FYL2XP1 => _
+              | FWAIT => _
+              | EMMS => _
+              | SFENCE => _*)
               | _ => None
             end).
     Local Ltac gen Case arg := 
@@ -1395,9 +1867,86 @@ Qed.
       exact (Some tm).
 
     Case "AAA". gen Case tt.
+    Case "AAD". gen Case tt.
+    Case "AAM". gen Case tt.
+    Case "AAS". gen Case tt.
     Case "BSWAP". gen Case r.
+    Case "CDQ". gen Case tt.
+    Case "CLC". gen Case tt.
+    Case "CLD". gen Case tt.
+    Case "CLI". gen Case tt.
+    Case "CLTS". gen Case tt.
+    Case "CMC". gen Case tt.
+    Case "CMPS". gen Case c.
+    Case "CPUID". gen Case tt.
+    Case "CWDE". gen Case tt.
+    Case "DAA". gen Case tt.
+    Case "DAS". gen Case tt.
+    Case "HLT". gen Case tt.
     Case "IN". gen Case (w,opb).
+    Case "INS". gen Case c.
+    Case "INTn". gen Case b.
+    Case "INT". gen Case tt.
+    Case "INTO". gen Case tt.
+    Case "INVD". gen Case tt.
+    Case "IRET". gen Case tt.
     Case "Jcc". gen Case (ct,w).
+    Case "JCXZ". gen Case b.
+    Case "LAHF". gen Case tt.
+    Case "LODS". gen Case c.
+    Case "LOOP". gen Case b.
+    Case "LOOPZ". gen Case b.
+    Case "LOOPNZ". gen Case b.
+    Case "MOVS". gen Case c.
+    Case "OUT". gen Case (p1,p2).
+    Case "OUTS". gen Case c.
+    Case "POPA". gen Case tt.
+    Case "POPF". gen Case tt.
+    Case "PUSHA". gen Case tt.
+    Case "PUSHF". gen Case tt.
+    Case "RDMSR". gen Case tt.
+    Case "RDPMC". gen Case tt.
+    Case "RDTSC". gen Case tt.
+    Case "RDTSCP". gen Case tt.
+    Case "RET". gen Case (c,h).
+    Case "RSM". gen Case tt.
+    Case "SAHF". gen Case tt.
+    Case "SCAS". gen Case c.
+    Case "UD2". gen Case tt.
+    Case "WBINVD". gen Case tt.
+    Case "WRMSR". gen Case tt.
+    Case "XLAT". gen Case tt.
+    (*Case "F2XM1". gen Case tt.
+    Case "FABS". gen Case tt.
+    Case "FCHS". gen Case tt.
+    Case "FCOMPP". gen Case tt.
+    Case "FCOS". gen Case tt.
+    Case "FDECSTP". gen Case tt.
+    Case "FLD1". gen Case tt.
+    Case "FLDL2E". gen Case tt.
+    Case "FLDL2T". gen Case tt.
+    Case "FLDLG2". gen Case tt.
+    Case "FLDLN2". gen Case tt.
+    Case "FLDPI". gen Case tt.
+    Case "FLDZ". gen Case tt.
+    Case "FNCLEX". gen Case tt.
+    Case "FNINIT". gen Case tt.
+    Case "FNOP". gen Case tt.
+    Case "FPATAN". gen Case tt.
+    Case "FRNDINT". gen Case tt.
+    Case "FSCALE". gen Case tt.
+    Case "FSIN". gen Case tt.
+    Case "FSINCOS". gen Case tt.
+    Case "FSQRT". gen Case tt.
+    Case "FTST". gen Case tt.
+    Case "FUCOMPP". gen Case tt.
+    Case "FXAM". gen Case tt.
+    Case "FXTRACT". gen Case tt.
+    Case "FYL2X". gen Case tt.
+    Case "FYL2XP1". gen Case tt.
+    Case "FWAIT". gen Case tt.
+    Case "EMMS". gen Case tt.
+    Case "SFENCE". gen Case tt.*)
   Defined.
 
   Lemma from_instr_to_instr : forall v, from_instr (to_instr v) = Some v.
