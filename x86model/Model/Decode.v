@@ -2001,7 +2001,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
                   mkPrefix l s (opt2b op false) false %% prefix_t end).
 
    (* this set of instructions can take prefixes in prefix_grammar_repn;
-      that is, in lock_or_rep, only repn can be used *)
+      that is, in lock_or_rep, either rep or repn can be used, but not lock *)
   Definition instr_grammars_rep_or_repn := CMPS_p :: SCAS_p :: nil.
 
   Definition prefix_grammar_lock_with_op_override :=
