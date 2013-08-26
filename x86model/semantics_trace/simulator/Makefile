@@ -1,6 +1,6 @@
 all: test_step 
 
-test_step: ../../Model/X86Semantics.vo 
+test_step: ../../Model/Parser.vo ../../Model/Decode.vo ../../Model/X86Semantics.vo 
 	ocamlbuild -cflag -g -lflag -g test.native -lib unix -lib nums
 
 
@@ -12,15 +12,15 @@ test_step: ../../Model/X86Semantics.vo
 
 extract-nob::
 	coqc extract.v -I "../../Model/"
-	cp Parser.ml_fastarray Parser.ml
-	rm Parser.mli Decode.mli
+	#cp Parser.ml_fastarray Parser.ml
+	#rm Parser.mli Decode.mli
 	cp cZeven.ml Zeven.ml
 
 extraction:: 
 	make -C "../../Model/"
 	coqc extract.v -I "../../Model/"
-	cp Parser.ml_fastarray Parser.ml
-	rm Parser.mli Decode.mli
+	#cp Parser.ml_fastarray Parser.ml
+	#rm Parser.mli Decode.mli
 	cp cZeven.ml Zeven.ml
 
 clean::

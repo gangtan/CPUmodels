@@ -1,3 +1,4 @@
+Require Import Parser.
 Require Import X86Semantics.
 
 (* Flocq defines functions that either return reals or take them as parameters.
@@ -15,4 +16,17 @@ Extract Inlined Constant Fcore_generic_fmt.scaled_mantissa => "fun _ _ _ => asse
 
 Extraction Blacklist String List. 
 
-Recursive Extraction Library X86Semantics.
+Recursive Extraction Library Compare_dec.
+Recursive Extraction Library Peano_dec.
+(* Recursive Extraction User_t. *)
+(*Separate Extraction type User_t.*)
+
+(*Extract Inductive Type => "coq_type" ["coq_type"].*)
+Set Extraction AccessOpaque.
+
+Separate Extraction X86_PARSER_ARG.tipe 
+					X86_PARSER_ARG.user_type 
+					X86_PARSER_ARG.byte_explode 
+					type
+					parse_token 
+					step.

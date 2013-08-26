@@ -214,29 +214,48 @@ let init_machine =
     control_regs = (fun c -> Word.zero (bii 31));
     debug_regs =  (fun d -> Word.zero (bii 31));
     pc_reg = pc;
-(*
-    fpu_regs = (fun fpr -> Word.zero (bii 79));
-    fpu_lastOperPtr = (fun x -> Word.zero (bii 63));
-    fpu_status = (fun x -> Word.zero (bii 2));
-    fpu_control = (fun x -> Word.zero (bii 2));
-    fpu_tags = (fun x -> Word.zero (bii 1)); *)
+  };;
 
+
+(*let init_fpu_machine = 
+{
+  This is not the syntax, just taken from x86semantics
+  { fpu_data_regs : (int3, int80) fmap; fpu_status : 
+                     int16; fpu_control : int16;
+                     fpu_tags : (int3, int2) fmap; fpu_lastInstrPtr : 
+                     int48; fpu_lastDataPtr : int48; fpu_lastOpcode : 
+                     RTL.int }
+};;
+*)
+
+let empty_fpu_machine =
+{
+  fpu_data_regs = (fun fpr -> (Word.repr(bii 2) (Word.zero(bii 79))));
+  fpu_status = Word.zero(bii 15);
+  fpu_control = Word.zero(bii 15);
+  fpu_tags = (fun t -> (Word.repr(bii 2) (Word.zero(bii 1))));
+  fpu_lastInstrPtr = Word.zero(bii 47);
+  fpu_lastDataPtr = Word.zero(bii 47);
+  fpu_lastOpcode = Word.zero(bii 2);
 };;
 
-(*
+let init_full_machine = 
+{  core = init_machine;
+   fpu = empty_fpu_machine;
+}
+
 let init_rtl_state =
   { rtl_oracle = empty_oracle;
-  (*  rtl_env = empty_env;  *)
-    rtl_mach_state = init_machine; 
-    rtl_memory = loaded_mem };; *)
+    rtl_mach_state = init_full_machine; 
+    rtl_memory = loaded_mem 
+  };; 
 
 
 (* Wrapper for the step function that is extracted from Coq. *)
 
 let mstep m = match step m with
   | (Okay_ans tt, m) -> m
-  | (SafeFail_ans, _)  -> raise FailSafe;
-  | (Fail_ans, _) -> raise Fail;;
+  | _ -> raise Fail;;
 
 (* Recursive function that steps the simulated machine repeatedly.
    Checks at each step whether we
@@ -267,7 +286,7 @@ let rec step_total m =
     | FailSafe -> print_string "Machined reached the SafeFail state"
 ;;
 
-print_regs init_machine;;
+print_regs init_full_machine;; 
 print_string "\nStarting to step through machine states...";;
 
 step_total init_rtl_state;; 

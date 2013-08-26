@@ -1,31 +1,32 @@
-
+[ PF SF IF ]
 ***iteration #: 0 
 
-eax            0x1	0x1
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x804849f	<main+25>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    00000001
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486a3
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
@@ -35,36 +36,35 @@ foseg: 00000000
 fooff: 00000000
 fop:   00000000
 
-
-=> 0x804849f <main+25>:	mov    $0x3f99999a,%eax
-
+[ PF SF IF ]
 ***iteration #: 1 
 
-eax            0x3f99999a	0x3f99999a
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484a4	<main+30>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    3f99999a
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486a8
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
@@ -74,36 +74,35 @@ foseg: 00000000
 fooff: 00000000
 fop:   00000000
 
-
-=> 0x80484a4 <main+30>:	mov    %eax,0x18(%esp)
-
+[ PF SF IF ]
 ***iteration #: 2 
 
-eax            0x3f99999a	0x3f99999a
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484a8	<main+34>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    3f99999a
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486ac
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
@@ -113,36 +112,35 @@ foseg: 00000000
 fooff: 00000000
 fop:   00000000
 
-
-=> 0x80484a8 <main+34>:	mov    $0x4059999a,%eax
-
+[ PF SF IF ]
 ***iteration #: 3 
 
-eax            0x4059999a	0x4059999a
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484ad	<main+39>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    4059999a
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486b1
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
@@ -152,36 +150,35 @@ foseg: 00000000
 fooff: 00000000
 fop:   00000000
 
-
-=> 0x80484ad <main+39>:	mov    %eax,0x1c(%esp)
-
+[ PF SF IF ]
 ***iteration #: 4 
 
-eax            0x4059999a	0x4059999a
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484b1	<main+43>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    4059999a
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486b5
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
@@ -191,1378 +188,1409 @@ foseg: 00000000
 fooff: 00000000
 fop:   00000000
 
-
-=> 0x80484b1 <main+43>:	flds   0x18(%esp)
-
+[ PF SF IF ]
 ***iteration #: 5 
 
-eax            0x4059999a	0x4059999a
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484b5	<main+47>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000001
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    4059999a
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486b9
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            3.400000095367431640625	(raw 0x4000d9999a0000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00003800
 ftag:  00003fff
 fiseg: 00000073
-fioff: 080484b1
+fioff: 080486b5
 foseg: 0000007b
-fooff: bffff2c8
+fooff: bffff2b4
 fop:   00000144
 
-
-=> 0x80484b5 <main+47>:	fmuls  0x1c(%esp)
-
+[ PF SF IF ]
 ***iteration #: 6 
 
-eax            0x4059999a	0x4059999a
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484b9	<main+51>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000004
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    4059999a
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486bd
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00003800
 ftag:  00003fff
 fiseg: 00000073
-fioff: 080484b5
+fioff: 080486b9
 foseg: 0000007b
-fooff: bffff2cc
+fooff: bffff2bc
 fop:   0000004c
 
-
-=> 0x80484b9 <main+51>:	mov    $0x8048610,%eax
-
+[ PF SF IF ]
 ***iteration #: 7 
 
-eax            0x8048610	0x8048610
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484be	<main+56>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000004
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+eax:    08048810
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486c2
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0	(raw 0x00000000000000000000)
 fctrl: 0000037f
 fstat: 00003800
 ftag:  00003fff
 fiseg: 00000073
-fioff: 080484b5
+fioff: 080486b9
 foseg: 0000007b
-fooff: bffff2cc
+fooff: bffff2bc
 fop:   0000004c
 
-
-=> 0x80484be <main+56>:	fstpl  0x4(%esp)
-
+[ PF SF IF ]
 ***iteration #: 8 
 
-eax            0x8048610	0x8048610
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484c2	<main+60>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    08048810
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486c6
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 080484be
+fioff: 080486c2
 foseg: 0000007b
-fooff: bffff2b4
+fooff: bffff2a4
 fop:   0000055c
 
-
-=> 0x80484c2 <main+60>:	mov    %eax,(%esp)
-
+[ PF SF IF ]
 ***iteration #: 9 
 
-eax            0x8048610	0x8048610
-ecx            0xbffff374	0xbffff374
-edx            0xbffff304	0xbffff304
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484c5	<main+63>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    08048810
+ecx:    bffff364
+edx:    bffff2f4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486c9
+eflags: 00000286
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 080484be
+fioff: 080486c2
 foseg: 0000007b
-fooff: bffff2b4
+fooff: bffff2a4
 fop:   0000055c
 
-
-=> 0x80484c5 <main+63>:	call   0x8048300 <printf@plt>
-
+[ SF IF ]
 ***iteration #: 10 
 
-eax            0x11	0x11
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484ca	<main+68>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    00000012
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486ce
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x80484ca <main+68>:	mov    0x14(%esp),%eax
-
+[ SF IF ]
 ***iteration #: 11 
 
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484ce	<main+72>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    4059999a
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486d2
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x80484ce <main+72>:	mov    %eax,0x8(%esp)
-
+[ SF IF ]
 ***iteration #: 12 
 
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484d2	<main+76>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    4059999a
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486d6
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x80484d2 <main+76>:	mov    0x1c(%esp),%eax
-
+[ SF IF ]
 ***iteration #: 13 
 
-eax            0x4059999a	0x4059999a
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484d6	<main+80>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    3f99999a
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486da
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x80484d6 <main+80>:	mov    %eax,0x4(%esp)
-
+[ SF IF ]
 ***iteration #: 14 
 
-eax            0x4059999a	0x4059999a
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484da	<main+84>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    3f99999a
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486dd
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00000000
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x80484da <main+84>:	mov    0x18(%esp),%eax
-
+[ SF IF ]
 ***iteration #: 15 
 
-eax            0x3f99999a	0x3f99999a
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484de	<main+88>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    00000c7f
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486e2
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            16.9918346405029296875	(raw 0x400387ef470000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st7            8	(raw 0x40028000000000000000)
 fctrl: 0000037f
-fstat: 00000000
-ftag:  0000ffff
+fstat: 00003820
+ftag:  00003fff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 080485f5
 foseg: 0000007b
-fooff: bfffeb90
-fop:   0000051c
+fooff: bffff274
+fop:   00000145
 
-
-=> 0x80484de <main+88>:	mov    %eax,(%esp)
-
+[ SF IF ]
 ***iteration #: 16 
 
-eax            0x3f99999a	0x3f99999a
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484e1	<main+91>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+eax:    0804881d
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486e7
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            16.9918346405029296875	(raw 0x400387ef470000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st7            8	(raw 0x40028000000000000000)
 fctrl: 0000037f
-fstat: 00000000
-ftag:  0000ffff
+fstat: 00003820
+ftag:  00003fff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 080485f5
 foseg: 0000007b
-fooff: bfffeb90
-fop:   0000051c
+fooff: bffff274
+fop:   00000145
 
-
-=> 0x80484e1 <main+91>:	call   0x80483e4 <test>
-
+[ SF IF ]
 ***iteration #: 17 
 
-eax            0xc7f	0xc7f
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484e6	<main+96>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: fffffffe
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
-fctrl: 0000037f
-fstat: 00003820
-ftag:  00003fff
-fiseg: 00000073
-fioff: 08048481
-foseg: 0000007b
-fooff: bffff2a0
-fop:   0000004d
+eax:    0804881d
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486eb
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-
-=> 0x80484e6 <main+96>:	mov    $0x804861c,%eax
-
-***iteration #: 18 
-
-eax            0x804861c	0x804861c
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484eb	<main+101>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: fffffffe
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
-fctrl: 0000037f
-fstat: 00003820
-ftag:  00003fff
-fiseg: 00000073
-fioff: 08048481
-foseg: 0000007b
-fooff: bffff2a0
-fop:   0000004d
-
-
-=> 0x80484eb <main+101>:	fstpl  0x4(%esp)
-
-***iteration #: 19 
-
-eax            0x804861c	0x804861c
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484ef	<main+105>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: fffffffe
-fctrl: 0000037f
-fstat: 00000220
-ftag:  0000ffff
-fiseg: 00000073
-fioff: 080484eb
-foseg: 0000007b
-fooff: bffff2b4
-fop:   0000055c
-
-
-=> 0x80484ef <main+105>:	mov    %eax,(%esp)
-
-***iteration #: 20 
-
-eax            0x804861c	0x804861c
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484f2	<main+108>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: fffffffe
-fctrl: 0000037f
-fstat: 00000220
-ftag:  0000ffff
-fiseg: 00000073
-fioff: 080484eb
-foseg: 0000007b
-fooff: bffff2b4
-fop:   0000055c
-
-
-=> 0x80484f2 <main+108>:	call   0x8048300 <printf@plt>
-
-***iteration #: 21 
-
-eax            0xf	0xf
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484f7	<main+113>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: fffffffe
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st6            8	(raw 0x40028000000000000000)
+st7            16.9918346405029296875	(raw 0x400387ef470000000000)
 fctrl: 0000037f
 fstat: 00000020
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 080486e7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bffff2a4
+fop:   0000055c
+
+[ SF IF ]
+***iteration #: 18 
+
+
+eax:    0804881d
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486ee
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st6            8	(raw 0x40028000000000000000)
+st7            16.9918346405029296875	(raw 0x400387ef470000000000)
+fctrl: 0000037f
+fstat: 00000020
+ftag:  0000ffff
+fiseg: 00000073
+fioff: 080486e7
+foseg: 0000007b
+fooff: bffff2a4
+fop:   0000055c
+
+[ SF IF ]
+***iteration #: 19 
+
+
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486f3
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st6            8	(raw 0x40028000000000000000)
+st7            16.9918346405029296875	(raw 0x400387ef470000000000)
+fctrl: 0000037f
+fstat: 00000020
+ftag:  0000ffff
+fiseg: 00000073
+fioff: 400962c7
+foseg: 0000007b
+fooff: bfffeb80
 fop:   0000051c
 
+[ SF IF ]
+***iteration #: 20 
 
-=> 0x80484f7 <main+113>:	flds   0x18(%esp)
 
-***iteration #: 22 
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486f7
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-eax            0xf	0xf
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484fb	<main+117>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000001
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+st0            3.400000095367431640625	(raw 0x4000d9999a0000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st7            8	(raw 0x40028000000000000000)
 fctrl: 0000037f
 fstat: 00003820
 ftag:  00003fff
 fiseg: 00000073
-fioff: 080484f7
+fioff: 080486f3
 foseg: 0000007b
-fooff: bffff2c8
+fooff: bffff2b4
 fop:   00000144
 
+[ SF IF ]
+***iteration #: 21 
 
-=> 0x80484fb <main+117>:	fmuls  0x1c(%esp)
 
-***iteration #: 23 
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486fb
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-eax            0xf	0xf
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x80484ff	<main+121>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000004
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+st0            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st7            8	(raw 0x40028000000000000000)
 fctrl: 0000037f
 fstat: 00003820
 ftag:  00003fff
 fiseg: 00000073
-fioff: 080484fb
+fioff: 080486f7
 foseg: 0000007b
-fooff: bffff2cc
+fooff: bffff2bc
 fop:   0000004c
 
+[ SF IF ]
+***iteration #: 22 
 
-=> 0x80484ff <main+121>:	flds   0x18(%esp)
 
-***iteration #: 24 
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    080486ff
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-eax            0xf	0xf
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048503	<main+125>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000001
-st1: 00000004
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+st0            3.400000095367431640625	(raw 0x4000d9999a0000000000)
+st1            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
 fctrl: 0000037f
 fstat: 00003020
 ftag:  00000fff
 fiseg: 00000073
-fioff: 080484ff
+fioff: 080486fb
 foseg: 0000007b
-fooff: bffff2c8
+fooff: bffff2b4
 fop:   00000144
 
+[ SF IF ]
+***iteration #: 23 
 
-=> 0x8048503 <main+125>:	fadds  0x1c(%esp)
 
-***iteration #: 25 
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048703
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-eax            0xf	0xf
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048507	<main+129>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000004
-st1: 00000004
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+st0            4.6000001430511474609375	(raw 0x40019333338000000000)
+st1            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
 fctrl: 0000037f
 fstat: 00003020
 ftag:  00000fff
 fiseg: 00000073
-fioff: 08048503
+fioff: 080486ff
 foseg: 0000007b
-fooff: bffff2cc
+fooff: bffff2bc
 fop:   00000044
 
+[ SF IF ]
+***iteration #: 24 
 
-=> 0x8048507 <main+129>:	fxch   %st(1)
 
-***iteration #: 26 
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048705
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-eax            0xf	0xf
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048509	<main+131>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000004
-st1: 00000004
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
+st0            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
+st1            4.6000001430511474609375	(raw 0x40019333338000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0	(raw 0x00000000000000000000)
+st7            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
 fctrl: 0000037f
 fstat: 00003020
 ftag:  00000fff
 fiseg: 00000073
-fioff: 08048507
+fioff: 08048703
 foseg: 0000007b
-fooff: bffff2cc
+fooff: bffff2bc
 fop:   000001c9
 
-
-=> 0x8048509 <main+131>:	mov    0x14(%esp),%eax
-
-***iteration #: 27 
-
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x804850d	<main+135>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000004
-st1: 00000004
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
-fctrl: 0000037f
-fstat: 00003020
-ftag:  00000fff
-fiseg: 00000073
-fioff: 08048507
-foseg: 0000007b
-fooff: bffff2cc
-fop:   000001c9
+[ SF IF ]
+***iteration #: 25 
 
 
-=> 0x804850d <main+135>:	mov    %eax,0x8(%esp)
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048709
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-***iteration #: 28 
-
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048511	<main+139>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000004
-st1: 00000004
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000000
-fctrl: 0000037f
-fstat: 00003020
-ftag:  00000fff
-fiseg: 00000073
-fioff: 08048507
-foseg: 0000007b
-fooff: bffff2cc
-fop:   000001c9
-
-
-=> 0x8048511 <main+139>:	fstps  0x4(%esp)
-
-***iteration #: 29 
-
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048515	<main+143>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000004
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000000
-st7: 00000004
+st0            4.6000001430511474609375	(raw 0x40019333338000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0	(raw 0x00000000000000000000)
+st6            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st7            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
 fctrl: 0000037f
 fstat: 00003a20
 ftag:  00003fff
 fiseg: 00000073
-fioff: 08048511
+fioff: 08048705
 foseg: 0000007b
-fooff: bffff2b4
+fooff: bffff2a4
 fop:   0000015c
 
+[ SF IF ]
+***iteration #: 26 
 
-=> 0x8048515 <main+143>:	fstps  (%esp)
 
-***iteration #: 30 
+eax:    00000010
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    0804870c
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
 
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048518	<main+146>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
-
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000004
-st7: 00000004
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            0.42352943911271978549848427064716816	(raw 0x3ffdd8d8d9c3c3c40000)
+st6            4.0800002765655563052860088646411896	(raw 0x4001828f5cbd70a40000)
+st7            4.6000001430511474609375	(raw 0x40019333338000000000)
 fctrl: 0000037f
 fstat: 00000220
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 08048515
+fioff: 08048709
 foseg: 0000007b
-fooff: bffff2b0
+fooff: bffff2a0
 fop:   0000011c
 
+[ SF IF ]
+***iteration #: 27 
 
-=> 0x8048518 <main+146>:	call   0x80483e4 <test>
 
+eax:    00000001
+ecx:    bff7eb5e
+edx:    40063ff4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048711
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            5.735240459442138671875	(raw 0x4001b787170000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st6            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st7            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+fctrl: 0000037f
+fstat: 00003c20
+ftag:  00003fff
+fiseg: 00000073
+fioff: 0804868d
+foseg: 0000007b
+fooff: bffff26c
+fop:   00000145
+
+[ SF IF ]
+***iteration #: 28 
+
+
+eax:    08048827
+ecx:    bff7eb5e
+edx:    40063ff4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048716
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            5.735240459442138671875	(raw 0x4001b787170000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            0	(raw 0x00000000000000000000)
+st5            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st6            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st7            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+fctrl: 0000037f
+fstat: 00003c20
+ftag:  00003fff
+fiseg: 00000073
+fioff: 0804868d
+foseg: 0000007b
+fooff: bffff26c
+fop:   00000145
+
+[ SF IF ]
+***iteration #: 29 
+
+
+eax:    08048827
+ecx:    bff7eb5e
+edx:    40063ff4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    0804871a
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
+fctrl: 0000037f
+fstat: 00000420
+ftag:  0000ffff
+fiseg: 00000073
+fioff: 08048716
+foseg: 0000007b
+fooff: bffff2a4
+fop:   0000055c
+
+[ SF IF ]
+***iteration #: 30 
+
+
+eax:    08048827
+ecx:    bff7eb5e
+edx:    40063ff4
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    0804871d
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
+fctrl: 0000037f
+fstat: 00000420
+ftag:  0000ffff
+fiseg: 00000073
+fioff: 08048716
+foseg: 0000007b
+fooff: bffff2a4
+fop:   0000055c
+
+[ SF IF ]
 ***iteration #: 31 
 
-eax            0xc7f	0xc7f
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x804851d	<main+151>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: ffffef97
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000005
-st7: 000000e6
+eax:    00000011
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048722
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00003821
-ftag:  00003fff
+fstat: 00000420
+ftag:  0000ffff
 fiseg: 00000073
-fioff: 08048481
+fioff: 400962c7
 foseg: 0000007b
-fooff: bffff2a0
-fop:   0000004d
+fooff: bfffeb80
+fop:   0000051c
 
-
-=> 0x804851d <main+151>:	mov    $0x8048625,%eax
-
+[ SF IF ]
 ***iteration #: 32 
 
-eax            0x8048625	0x8048625
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048522	<main+156>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: ffffef97
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000000
-st6: 00000005
-st7: 000000e6
+eax:    bffff2b4
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048726
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00003821
-ftag:  00003fff
+fstat: 00000420
+ftag:  0000ffff
 fiseg: 00000073
-fioff: 08048481
+fioff: 400962c7
 foseg: 0000007b
-fooff: bffff2a0
-fop:   0000004d
+fooff: bfffeb80
+fop:   0000051c
 
-
-=> 0x8048522 <main+156>:	fstpl  0x4(%esp)
-
+[ SF IF ]
 ***iteration #: 33 
 
-eax            0x8048625	0x8048625
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048526	<main+160>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000005
-st6: 000000e6
-st7: ffffef97
+eax:    bffff2b4
+ecx:    00000000
+edx:    4059999a
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048728
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00000021
+fstat: 00000420
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 08048522
+fioff: 400962c7
 foseg: 0000007b
-fooff: bffff2b4
-fop:   0000055c
+fooff: bfffeb80
+fop:   0000051c
 
-
-=> 0x8048526 <main+160>:	mov    %eax,(%esp)
-
+[ SF IF ]
 ***iteration #: 34 
 
-eax            0x8048625	0x8048625
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048529	<main+163>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000005
-st6: 000000e6
-st7: ffffef97
+eax:    08048833
+ecx:    00000000
+edx:    4059999a
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    0804872d
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00000021
+fstat: 00000420
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 08048522
+fioff: 400962c7
 foseg: 0000007b
-fooff: bffff2b4
-fop:   0000055c
+fooff: bfffeb80
+fop:   0000051c
 
-
-=> 0x8048529 <main+163>:	call   0x8048300 <printf@plt>
-
+[ SF IF ]
 ***iteration #: 35 
 
-eax            0x14	0x14
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x804852e	<main+168>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000005
-st6: 000000e6
-st7: ffffef97
+eax:    08048833
+ecx:    00000000
+edx:    4059999a
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048731
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00000021
+fstat: 00000420
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x804852e <main+168>:	mov    $0x0,%eax
-
+[ SF IF ]
 ***iteration #: 36 
 
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2b0	
-ebp            0xbffff2d8	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048533	<main+173>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000005
-st6: 000000e6
-st7: ffffef97
+eax:    08048833
+ecx:    00000000
+edx:    4059999a
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048734
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00000021
+fstat: 00000420
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x8048533 <main+173>:	leave  
-
+[ SF IF ]
 ***iteration #: 37 
 
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2dc	
-ebp            0x0	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x8048534	<main+174>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000005
-st6: 000000e6
-st7: ffffef97
+eax:    0000001b
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    08048739
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00000021
+fstat: 00000420
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x8048534 <main+174>:	ret    
-
+[ SF IF ]
 ***iteration #: 38 
 
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2e0	
-ebp            0x0	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x400524d3	<__libc_start_main+243>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000005
-st6: 000000e6
-st7: ffffef97
+eax:    00000000
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2a0
+ebp:    bffff2c8
+esi:    00000000
+edi:    00000000
+eip:    0804873e
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00000021
+fstat: 00000420
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x400524d3 <__libc_start_main+243>:	mov    %eax,(%esp)
-
+[ SF IF ]
 ***iteration #: 39 
 
-eax            0x0	0x0
-ecx            0x0	0x0
-edx            0x0	0x0
-ebx            0x401deff4	0x401deff4
-esp            0xbffff2e0	
-ebp            0x0	
-esi            0x0	0x0
-edi            0x0	0x0
-eip            0x400524d6	<__libc_start_main+246>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	0x73
-ss             0x7b	0x7b
-ds             0x7b	0x7b
-es             0x7b	0x7b
-fs             0x0	0x0
-gs             0x33	0x33
 
-st0: 00000000
-st1: 00000000
-st2: 00000000
-st3: 00000000
-st4: 00000000
-st5: 00000005
-st6: 000000e6
-st7: ffffef97
+eax:    00000000
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2cc
+ebp:    00000000
+esi:    00000000
+edi:    00000000
+eip:    0804873f
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
 fctrl: 0000037f
-fstat: 00000021
+fstat: 00000420
 ftag:  0000ffff
 fiseg: 00000073
-fioff: 4006a2c7
+fioff: 400962c7
 foseg: 0000007b
-fooff: bfffeb90
+fooff: bfffeb80
 fop:   0000051c
 
-
-=> 0x400524d6 <__libc_start_main+246>:	call   0x4006bfb0 <exit>
-
+[ SF IF ]
 ***iteration #: 40 
 
-.gdbinit:86: Error in sourced command file:
-The program has no registers now.
 
-Breakpoint 1, main () at main.c:16
-16		int i = 0, done = 0;
+eax:    00000000
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2d0
+ebp:    00000000
+esi:    00000000
+edi:    00000000
+eip:    4007e4d3
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
+fctrl: 0000037f
+fstat: 00000420
+ftag:  0000ffff
+fiseg: 00000073
+fioff: 400962c7
+foseg: 0000007b
+fooff: bfffeb80
+fop:   0000051c
+
+[ SF IF ]
+***iteration #: 41 
+
+
+eax:    00000000
+ecx:    00000000
+edx:    00000000
+ebx:    4020aff4
+esp:    bffff2d0
+ebp:    00000000
+esi:    00000000
+edi:    00000000
+eip:    4007e4d6
+eflags: 00000282
+cs:     00000073
+ss:     0000007b
+ds:     0000007b
+es:     0000007b
+fs:     00000000
+gs:     00000033
+
+st0            0	(raw 0x00000000000000000000)
+st1            0	(raw 0x00000000000000000000)
+st2            0	(raw 0x00000000000000000000)
+st3            0	(raw 0x00000000000000000000)
+st4            3.080000400543212890625	(raw 0x4000c51eba0000000000)
+st5            0.6980682060468860720297591682115268	(raw 0x3ffeb2b499135948abc9)
+st6            1.1975541349521019451884740192326717	(raw 0x3fff9949743267885800)
+st7            5.735240459442138671875	(raw 0x4001b787170000000000)
+fctrl: 0000037f
+fstat: 00000420
+ftag:  0000ffff
+fiseg: 00000073
+fioff: 400962c7
+foseg: 0000007b
+fooff: bfffeb80
+fop:   0000051c
+

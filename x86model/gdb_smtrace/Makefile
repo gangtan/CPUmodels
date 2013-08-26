@@ -1,6 +1,6 @@
 
 smtrace:
-	gcc -g main.c -o main
+	gcc -g main.c -o main -lm
 	rm gdb.txt
 	rm instrs.txt
 	cp gdb_init .gdbinit

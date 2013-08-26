@@ -9,7 +9,7 @@ open BinInt
 open BinPos
 open Coqlib
 open Specif
-open Zdiv
+(*open Zdiv*)
 open Zpower
 open Big_int
 open Bits
@@ -21,8 +21,8 @@ open Maps
 open ZArith_dec
 open String
 open List0
-open Zdiv
-open X86Semantics2
+(*open Zdiv*)
+open X86Semantics
 open X86Syntax
 
 let mem_file = open_in Sys.argv.(1)

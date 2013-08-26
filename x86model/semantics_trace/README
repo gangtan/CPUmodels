@@ -50,7 +50,7 @@ a file called memaddrs.txt which is used by the tracer in an intermediary step.
 
 Now, to load the simulator run
 
-> ./test.native "mem0.txt" "regs.txt" "mem1.txt"
+> ./test.native "mem0.txt" "regs0.txt" "mem1.txt"
 
 These will output the simulator's register values after each instruction (in a
 format similar to regs.txt). If at some point the register values do not match
