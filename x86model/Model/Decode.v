@@ -1392,10 +1392,10 @@ Fixpoint alts0 t (ps:list (grammar t)) : grammar t :=
     "0000" $$ "1111" $$ "0111" $$ "1110" $$ "11" $$ mmx_reg $ reg @ (*reg from mmxreg*)
     (fun p => let (m, r) := p in MOVD (GP_Reg_op r) (MMX_Reg_op m) %% instruction_t)
   |+|
-    "0000" $$ "1111" $$ "0110" $$ "1110" $$ modrm_mmx @ (*mem to mmxreg *)
+    "0000" $$ "1111" $$ "0110" $$ "1110" $$ (@modrm_gen_noreg _ mmx_operand_t mmx_reg_op MMX_Addr_op) @ (*mem to mmxreg *)
     (fun p => let (op1, op2) := p in MOVD op1 op2 %% instruction_t)
   |+|
-    "0000" $$ "1111" $$ "0111" $$ "1110" $$ modrm_mmx @ (*mem from mmxreg *)
+    "0000" $$ "1111" $$ "0111" $$ "1110" $$ (@modrm_gen_noreg _ mmx_operand_t mmx_reg_op MMX_Addr_op) @ (*mem from mmxreg *)
     (fun p => let (mem, mmx) := p in MOVD mmx mem %% instruction_t).
 
   Definition MOVQ_p :=
