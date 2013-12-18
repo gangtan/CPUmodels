@@ -2,7 +2,6 @@
 # just go to that directory and follow the instructions in INSTALL
 
 MODULES := Coqlib Tacs CommonTacs Maps Bits X86Syntax Monad Parser Recognizer Decode Encode RTL FloatingAux X86Semantics ParserPrinter CheckDeterministic
-# X86Semantics ParserPrinter CheckDeterministic
 VS 	:= $(MODULES:%=%.v)
 
 .PHONY: coq clean
