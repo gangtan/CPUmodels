@@ -274,6 +274,7 @@ Ltac simplHyp invOne :=
 
     (** Similar logic to the cases for constructor injectivity above, but specialized to [Some], since the above cases won't deal with polymorphic constructors. *)
     | [ H : Some _ = Some _ |- _ ] => inversion H; clear H
+    | [ H : (_,_) = (_,_) |- _ ] => inversion H; clear H
   end.
 
 Ltac sim := repeat (simplHyp fail).

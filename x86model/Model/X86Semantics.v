@@ -20,8 +20,8 @@ Require Import Decode.
 Require Import String.
 Require Import Monad.
 Require Import Maps.
-Require Import X86Syntax.
-Require Import RTL.
+Require Export X86Syntax.
+Require Export RTL.
 
 Set Implicit Arguments.
 Unset Automatic Introduction.
@@ -534,41 +534,73 @@ Module X86_Compile.
   Definition EMIT(i:rtl_instr) : Conv unit := 
     fun s => (tt,{|c_rev_i := i::(c_rev_i s) |}).
   Notation "'emit' i" := (EMIT i) (at level 75) : monad_scope.
-  (* Definition fresh s (almost_i : pseudo_reg s -> rtl_instr) : Conv (pseudo_reg s) :=  *)
-  (*   fun ts => let r := c_next ts in  *)
-  (*             let ts' := {|c_rev_i := (almost_i (ps_reg s r))::c_rev_i ts ;  *)
-  (*                          c_next := r + 1|} in  *)
-  (*               (ps_reg s r, ts'). *)
-
-  Definition load_Z s (i:Z) := ret (imm_rtl_exp (@Word.repr s i)).
+  
+  (* Begin: a set of basic conversion constructs *)
+  Definition raise_error := emit error_rtl.
+  Definition raise_trap := emit trap_rtl.
+  Definition no_op := ret tt.
+  (* Definition ret_exp s (e:rtl_exp s) := ret e. *)
   Definition load_int s (i:int s) := ret (imm_rtl_exp i).
   Definition arith s b (e1 e2:rtl_exp s) := ret (arith_rtl_exp b e1 e2).
   Definition test s t (e1 e2:rtl_exp s) := ret (test_rtl_exp t e1 e2).
-  Definition load_reg (r:register) := ret (get_loc_rtl_exp (reg_loc r)).
-  Definition set_reg (p:rtl_exp size32) (r:register) := 
-    emit set_loc_rtl p (reg_loc r).
   Definition cast_u s1 s2 (e:rtl_exp s1) := ret (@cast_u_rtl_exp s1 s2 e).
   Definition cast_s s1 s2 (e:rtl_exp s1) := ret (@cast_s_rtl_exp s1 s2 e).
-  Definition get_seg_start (s:segment_register) := 
-    ret (get_loc_rtl_exp (seg_reg_start_loc s)).
-  Definition get_seg_limit (s:segment_register) := 
-    ret (get_loc_rtl_exp (seg_reg_limit_loc s)).
+  Definition read_loc s (l:loc s) := ret (get_loc_rtl_exp l).
+  Definition write_loc s (e:rtl_exp s) (l:loc s)  := emit set_loc_rtl e l.
+  Definition read_array l s (a:array l s) (idx:rtl_exp l) := 
+    ret (get_array_rtl_exp a idx).
+  Definition write_array l s (a:array l s) (idx:rtl_exp l) (v:rtl_exp s) :=
+    emit set_array_rtl a idx v.
+
   Definition read_byte (a:rtl_exp size32) := ret (get_byte_rtl_exp a).
   Definition write_byte (v:rtl_exp size8) (a:rtl_exp size32) := 
     emit set_byte_rtl v a.
-  Definition get_flag fl := ret (get_loc_rtl_exp (flag_loc fl)).
-  Definition set_flag fl (r: rtl_exp size1) := emit set_loc_rtl r (flag_loc fl). 
-
-  Definition get_pc := ret (get_loc_rtl_exp pc_loc).
-  Definition set_pc v := emit set_loc_rtl v pc_loc.
-
   Definition if_exp s g (e1 e2:rtl_exp s) : Conv (rtl_exp s) :=
     ret (if_rtl_exp g e1 e2).
-
-  Definition if_test g (i: rtl_instr) : Conv unit :=
-    emit (if_rtl g i).
-
+  Definition if_trap g : Conv unit := emit (if_rtl g trap_rtl).
+  Definition if_set_loc cond s (e:rtl_exp s) (l:location s) :=
+    emit (if_rtl cond (set_loc_rtl e l)).
   Definition choose s : Conv (rtl_exp s) := ret (@choose_rtl_exp s).
+
+  Definition fcast ew1 mw1 ew2 mw2
+    (hyp1: float_width_hyp ew1 mw1)
+    (hyp2: float_width_hyp ew2 mw2)
+    (rm: rtl_exp size2)
+    (e : rtl_exp (nat_of_P ew1 + nat_of_P mw1))
+    : Conv (rtl_exp  (nat_of_P ew2 + nat_of_P mw2)) :=
+    ret (@fcast_rtl_exp ew1 mw1 ew2 mw2 hyp1 hyp2 rm e).
+
+  Lemma fw_hyp_float32 : float_width_hyp 8 23.
+  Proof. reflexivity. Qed.
+  Lemma fw_hyp_float64 : float_width_hyp 11 52.
+  Proof. reflexivity. Qed.
+  Lemma fw_hyp_float79 : float_width_hyp 15 63.
+  Proof. reflexivity. Qed.
+  
+  Definition farith_float79 (op: float_arith_op) (rm:rtl_exp size2)
+    (e1 e2: rtl_exp size79) := 
+    ret (farith_rtl_exp fw_hyp_float79 op rm e1 e2).
+  (* End: a set of basic conversion constructs.
+     All conversions afterwards should be defined based on the constructs
+     provided above. *)
+
+  Definition load_Z s (z:Z) := load_int (@Word.repr s z).
+
+  Definition load_reg (r:register) := read_loc (reg_loc r).
+  Definition set_reg (p:rtl_exp size32) (r:register) := 
+    write_loc p (reg_loc r).
+
+  Definition get_seg_start (s:segment_register) := 
+    read_loc (seg_reg_start_loc s).
+  Definition get_seg_limit (s:segment_register) := 
+    read_loc (seg_reg_limit_loc s).
+
+  Definition get_flag fl := read_loc (flag_loc fl).
+  Definition set_flag fl (r: rtl_exp size1) := 
+    write_loc r (flag_loc fl).
+
+  Definition get_pc := read_loc pc_loc.
+  Definition set_pc v := write_loc v pc_loc.
 
   Definition not {s} (p: rtl_exp s) : Conv (rtl_exp s) :=
     mask <- load_Z s (Word.max_unsigned s);
@@ -600,7 +632,9 @@ Module X86_Compile.
     arith add_op raised_x y'.
 
 
-  Definition copy_ps s (rs:rtl_exp s) := ret (@cast_u_rtl_exp s s rs).
+  (* used in the old version of the semantics to copy a pseudo register;
+     now it's a no-op *)
+  Definition copy_ps s (rs:rtl_exp s) := cast_u s rs.
 
   Definition scale_to_int32 (s:scale) : int32 :=
     Word.repr match s with | Scale1 => 1 | Scale2 => 2 | Scale4 => 4 | Scale8 => 8 end.
@@ -632,12 +666,11 @@ Module X86_Compile.
      add the specified segment base *)
   Definition add_and_check_segment (seg:segment_register) (a:rtl_exp size32) : 
     Conv (rtl_exp size32) := 
-    p1 <- get_seg_start seg ; 
-    p2 <- arith add_op p1 a ;
-    p3 <- get_seg_limit seg ;
-    guard <- test ltu_op p3 a;
-    emit if_rtl guard trap_rtl;;
-    ret p2.
+    start <- get_seg_start seg ; 
+    limit <- get_seg_limit seg ;
+    guard <- test ltu_op limit a;
+    if_trap guard;;
+    arith add_op start a.
 
   (* load a byte from memory, taking into account the specified segment *)
   Definition lmem (seg:segment_register) (a:rtl_exp size32) : Conv (rtl_exp size8):=
@@ -838,7 +871,7 @@ Module X86_Compile.
   Definition iset_op80 (seg:segment_register) (p:rtl_exp size80) (op:operand) :
     Conv unit := 
     match op with 
-      | Imm_op _ => emit error_rtl
+      | Imm_op _ => raise_error
       | Reg_op r => tmp <- cast_u size32 p;
                     set_reg tmp r
       | Address_op a => addr <- compute_addr a ; tmp <- cast_u size32 p;
@@ -850,7 +883,7 @@ Module X86_Compile.
   Definition iset_op32 (seg:segment_register) (p:rtl_exp size32) (op:operand) :
     Conv unit := 
     match op with 
-      | Imm_op _ => emit error_rtl
+      | Imm_op _ => raise_error
       | Reg_op r => set_reg p r
       | Address_op a => addr <- compute_addr a ; set_mem32 seg p addr
       | Offset_op off => addr <- load_int off;
@@ -860,7 +893,7 @@ Module X86_Compile.
   Definition iset_op16 (seg:segment_register) (p:rtl_exp size16) (op:operand) :
     Conv unit := 
     match op with 
-      | Imm_op _ => emit error_rtl
+      | Imm_op _ => raise_error
       | Reg_op r => tmp <- load_reg r;
                     mask <- load_int (Word.mone size32);
                     sixteen <- load_Z size32 16;
@@ -877,7 +910,7 @@ Module X86_Compile.
   Definition iset_op8 (seg:segment_register) (p:rtl_exp size8) (op:operand) :
     Conv unit := 
     match op with 
-      | Imm_op _ => emit error_rtl
+      | Imm_op _ => raise_error
       | Reg_op r => tmp0 <- load_reg 
                          (match r with
                             | EAX => EAX
@@ -1376,7 +1409,7 @@ Definition conv_SAHF: Conv unit :=
         if e then
           set segdest p2 dest
         else 
-          ret tt.
+          no_op.
 
   Definition conv_CMP (pre: prefix) (w: bool) (op1 op2: operand) :=
     let seg := get_segment_op2 pre DS op1 op2 in
@@ -1459,12 +1492,12 @@ Definition conv_SAHF: Conv unit :=
                       divisor <- iload_op8 seg op;
                       zero <- load_Z _ 0;
                       divide_by_zero <- test eq_op zero divisor;
-                      emit if_rtl divide_by_zero trap_rtl;;
+                      if_trap divide_by_zero;;
                       divisor_ext <- cast_u _ divisor;
                       quotient <- arith divu_op dividend divisor_ext;
                       max_quotient <- load_Z _ 255;
                       div_error <- test ltu_op max_quotient quotient;
-                      emit if_rtl div_error trap_rtl;;
+                      if_trap div_error;;
                       remainder <- arith modu_op dividend divisor_ext;
                       quotient_trunc <- cast_u _ quotient;
                       remainder_trunc <- cast_u _ remainder;
@@ -1480,12 +1513,12 @@ Definition conv_SAHF: Conv unit :=
                        divisor <- iload_op16 seg op;
                        zero <- load_Z _ 0;
                        divide_by_zero <- test eq_op zero divisor;
-                       emit if_rtl divide_by_zero trap_rtl;;
+                       if_trap divide_by_zero;;
                        divisor_ext <- cast_u _ divisor;
                        quotient <- arith divu_op dividend divisor_ext;
                        max_quotient <- load_Z _ 65535;
                        div_error <- test ltu_op max_quotient quotient;
-                       emit if_rtl div_error trap_rtl;;
+                       if_trap div_error;;
                        remainder <- arith modu_op dividend divisor_ext;
                        quotient_trunc <- cast_u _ quotient;
                        remainder_trunc <- cast_u _ remainder;
@@ -1501,12 +1534,12 @@ Definition conv_SAHF: Conv unit :=
                        divisor <- iload_op32 seg op;
                        zero <- load_Z _ 0;
                        divide_by_zero <- test eq_op zero divisor;
-                       emit if_rtl divide_by_zero trap_rtl;;
+                       if_trap divide_by_zero;;
                        divisor_ext <- cast_u _ divisor;
                        quotient <- arith divu_op dividend divisor_ext;
                        max_quotient <- load_Z _ 4294967295;
                        div_error <- test ltu_op max_quotient quotient;
-                       emit if_rtl div_error trap_rtl;;
+                       if_trap div_error;;
                        remainder <- arith modu_op dividend divisor_ext;
                        quotient_trunc <- cast_u _ quotient;
                        remainder_trunc <- cast_u _ remainder;
@@ -1527,7 +1560,7 @@ Definition conv_SAHF: Conv unit :=
                       divisor <- iload_op8 seg op;
                       zero <- load_Z _ 0;
                       divide_by_zero <- test eq_op zero divisor;
-                      emit if_rtl divide_by_zero trap_rtl;;
+                      if_trap divide_by_zero;;
                       divisor_ext <- cast_s _ divisor;
                       quotient <- arith divs_op dividend divisor_ext;
                       max_quotient <- load_Z _ 127;
@@ -1535,7 +1568,7 @@ Definition conv_SAHF: Conv unit :=
                       div_error0 <- test lt_op max_quotient quotient;
                       div_error1 <- test lt_op quotient min_quotient;
                       div_error <- arith or_op div_error0 div_error1;
-                      emit if_rtl div_error trap_rtl;;
+                      if_trap div_error;;
                       remainder <- arith mods_op dividend divisor_ext;
                       quotient_trunc <- cast_s _ quotient;
                       remainder_trunc <- cast_s _ remainder;
@@ -1551,7 +1584,7 @@ Definition conv_SAHF: Conv unit :=
                        divisor <- iload_op16 seg op;
                        zero <- load_Z _ 0;
                        divide_by_zero <- test eq_op zero divisor;
-                       emit if_rtl divide_by_zero trap_rtl;;
+                       if_trap divide_by_zero;;
                        divisor_ext <- cast_s _ divisor;
                        quotient <- arith divs_op dividend divisor_ext;
                        max_quotient <- load_Z _ 32767;
@@ -1559,7 +1592,7 @@ Definition conv_SAHF: Conv unit :=
                        div_error0 <- test lt_op max_quotient quotient;
                        div_error1 <- test lt_op quotient min_quotient;
                        div_error <- arith or_op div_error0 div_error1;
-                       emit if_rtl div_error trap_rtl;;
+                       if_trap div_error;;
                        remainder <- arith mods_op dividend divisor_ext;
                        quotient_trunc <- cast_s _ quotient;
                        remainder_trunc <- cast_s _ remainder;
@@ -1575,7 +1608,7 @@ Definition conv_SAHF: Conv unit :=
                        divisor <- iload_op32 seg op;
                        zero <- load_Z _ 0;
                        divide_by_zero <- test eq_op zero divisor;
-                       emit if_rtl divide_by_zero trap_rtl;;
+                       if_trap divide_by_zero;;
                        divisor_ext <- cast_s _ divisor;
                        quotient <- arith divs_op dividend divisor_ext;
                        max_quotient <- load_Z _ 2147483647;
@@ -1583,7 +1616,7 @@ Definition conv_SAHF: Conv unit :=
                        div_error0 <- test lt_op max_quotient quotient;
                        div_error1 <- test lt_op quotient min_quotient;
                        div_error <- arith or_op div_error0 div_error1;
-                       emit if_rtl div_error trap_rtl;;
+                       if_trap div_error;;
                        remainder <- arith mods_op dividend divisor_ext;
                        quotient_trunc <- cast_s _ quotient;
                        remainder_trunc <- cast_s _ remainder;
@@ -1757,11 +1790,11 @@ Definition conv_SAHF: Conv unit :=
     (match opsize (op_override pre) w with
        | 7  => modmask <- load_Z _ 9;
                p2 <- arith modu_op p2 modmask;
-               ret tt
+               no_op
        | 15 => modmask <- load_Z _ 17;
                p2 <- arith modu_op p2 modmask;
-               ret tt
-       | _  => ret tt
+               no_op
+       | _  => no_op
      end);;
     p2cast <- cast_u ((opsize (op_override pre) w) + 1) p2;
     
@@ -1794,11 +1827,11 @@ Definition conv_SAHF: Conv unit :=
     (match opsize (op_override pre) w with
        | 7  => modmask <- load_Z _ 9;
                p2 <- arith modu_op p2 modmask;
-               ret tt
+               no_op
        | 15 => modmask <- load_Z _ 17;
                p2 <- arith modu_op p2 modmask;
-               ret tt
-       | _  => ret tt
+               no_op
+       | _  => no_op
      end);;
    p2cast <- cast_u ((opsize (op_override pre) w) + 1) p2;
 
@@ -1923,9 +1956,6 @@ Definition conv_SAHF: Conv unit :=
   Definition set_AL v: Conv unit :=
     iset_op8 DS v (Reg_op EAX) 
   .
-
-  (* Definition ifset s cond (rd:rtl_exp s) (rs:rtl_exp s) : Conv unit := *)
-  (*   emit (if_rtl cond (cast_u_rtl_exp rs rd)). *)
 
   Definition conv_AAA_AAS (op1: bit_vector_op) : Conv unit :=
     pnine <- load_Z size8 9;
@@ -2125,7 +2155,7 @@ Definition conv_SAHF: Conv unit :=
         if do_effect then
           set seg p2 op1
         else
-          ret tt.
+          no_op.
   
   Definition conv_AND p w op1 op2 := conv_logical_op true and_op p w op1 op2.
   Definition conv_OR p w op1 op2 := conv_logical_op true or_op p w op1 op2.
@@ -2248,14 +2278,13 @@ Definition conv_PUSHA (pre:prefix) :=
     pushrtl EDI
 .
 
-
 Definition get_and_place T dst pos fl: Conv (rtl_exp T) :=
   fl <- get_flag fl;
   pos <- load_Z _ pos;
   byt <- cast_u _ fl;  
-  tmp <- @arith _ shl_op byt pos;  
-  dst <- @arith _ or_op dst tmp;
-  Return dst.
+  tmp <- arith shl_op byt pos;  
+  arith or_op dst tmp.
+
 (*
 This is not quite right. Plus those more sketchy flags
 are not being modeled yet since they're more systemszy.
@@ -2293,11 +2322,10 @@ Definition conv_POP_pseudo (pre: prefix) :=
                            | false => 4%Z
                          end in
         oldesp <- load_reg ESP;
-        value <- loadmem oldesp;
         offset <- load_Z size32 espoffset;
         newesp <- arith add_op oldesp offset;
         set_reg newesp ESP;;
-        Return value.
+        loadmem oldesp.
 
 Definition extract_and_set T value pos fl: Conv unit :=
   one <- load_Z T 1;
@@ -2347,14 +2375,14 @@ Definition conv_POPF pre :=
         newpc <- arith add_op base disp;
         set_pc newpc
       else
-        emit error_rtl.
+        raise_error.
 
   Definition conv_Jcc (pre: prefix) (ct: condition_type) (disp: int32) : Conv unit :=
     guard <- compute_cc ct;
     oldpc <- get_pc;
     pdisp <- load_int disp;
     newpc <- arith add_op oldpc pdisp;
-    emit if_rtl guard (set_loc_rtl newpc pc_loc).
+    if_set_loc guard newpc pc_loc.
 
   Definition conv_CALL (pre: prefix) (near absolute: bool) (op: operand)
     (sel: option selector) :=
@@ -2381,7 +2409,7 @@ Definition conv_POPF pre :=
          end);;
         set_pc value
       else
-        emit error_rtl.
+        raise_error.
   
   Definition conv_LEAVE pre := 
     ebp_val <- load_reg EBP;
@@ -2418,8 +2446,7 @@ Definition conv_POPF pre :=
        |false => load_Z size32 (-1%Z)
      end);
     eip2 <- arith and_op eip1 eipmask;
-    emit (if_rtl bcond (set_loc_rtl eip2 pc_loc))
-    .
+    if_set_loc bcond eip2 pc_loc.
 
   (************************)
   (* Misc Ops             *)
@@ -2440,8 +2467,7 @@ Definition conv_POPF pre :=
         ps <- arith shru_op op bcount;
         curr_bit <- cast_u size1 ps;
         rec1 <- load_int curr_int;
-        rec <- if_exp curr_bit rec1 rec0;
-        ret rec
+        if_exp curr_bit rec1 rec0
     end.
 
   Definition conv_BS (d: bool) (pre: prefix) (op1 op2: operand) :=
@@ -2469,8 +2495,7 @@ Definition conv_POPF pre :=
     omask <- load_Z s 1;
     shr_pb <- arith shr_op pb poff;
     mask_pb <- arith and_op shr_pb omask;
-    tb <- cast_u size1 mask_pb;
-    ret tb.
+    cast_u size1 mask_pb.
 
   Definition modify_Bit {s} (value: rtl_exp s) (poff: rtl_exp s)
     (bitval: rtl_exp size1): Conv (rtl_exp s) :=
@@ -2512,13 +2537,11 @@ Definition conv_POPF pre :=
   (* id, comp, set, or reset on a single bit, depending on the params*)
   Definition fbit (param1: bool) (param2: bool) (v: rtl_exp size1):
     Conv (rtl_exp size1) :=
-    pone <- load_Z size1 1;
-    pzero <- load_Z size1 0;
     match param1, param2 with
-      | true, true => ret pone
-      | true, false => ret pzero
-      | false, true => ret v
-      | false, false => v1 <- (not v); ret v1
+      | true, true => load_Z size1 1
+      | true, false => load_Z size1 0
+      | false, true => copy_ps v
+      | false, false => not v
     end.
 
   (*tt: set, tf: clear, ft: id, ff: complement*)
@@ -2575,7 +2598,7 @@ Definition conv_POPF pre :=
         newbt <- fbit param1 param2 bt;
         set_Bit_mem pre true op1 newaddr nbitoffset newbt in
     match op1 with
-      | Imm_op _ => emit error_rtl
+      | Imm_op _ => raise_error
       | Reg_op r1 =>
         value <- load (Reg_op r1);
         bitoffset <- arith modu_op rawoffset popsz;
@@ -2732,8 +2755,8 @@ Definition conv_POPF pre :=
     old_reg <- iload_op32 DS (Reg_op reg);
     new_reg1 <- arith add_op old_reg offset;
     new_reg2 <- arith sub_op old_reg offset;
-    emit set_loc_rtl new_reg1 (reg_loc reg);;
-    emit if_rtl df (set_loc_rtl new_reg2 (reg_loc reg)).
+    set_reg new_reg1 reg;;
+    if_set_loc df new_reg2 (reg_loc reg).
 
   (*
   Definition string_op_reg_shift pre w : Conv unit :=
@@ -2753,11 +2776,11 @@ Definition conv_POPF pre :=
     new_edi1 <- arith add_op old_edi offset;
     new_edi2 <- arith sub_op old_edi offset;
    
-    emit set_loc_rtl new_esi1 (reg_loc ESI);;
-    emit if_rtl df (set_loc_rtl new_esi2 (reg_loc ESI));;
+    set_reg new_esi1 ESI;;
+    if_set_loc df new_esi2 (reg_loc ESI);;
 
-    emit set_loc_rtl new_edi1 (reg_loc EDI);;
-    emit if_rtl df (set_loc_rtl new_edi2 (reg_loc EDI)).
+    set_reg new_edi1 EDI;;
+    if_set_loc df new_edi2 (reg_loc EDI).
   *)
 
   (* As usual we assume AddrSize = 32 bits *)
@@ -2795,11 +2818,10 @@ Definition conv_POPF pre :=
         | Address_op a =>
           r <- compute_addr a;
           iset_op32 seg r op1
-        | _ => emit error_rtl
+        | _ => raise_error
       end.
 
-  Definition conv_HLT (pre:prefix) := 
-    emit trap_rtl.
+  Definition conv_HLT (pre:prefix) := raise_trap.
 
   Definition conv_SETcc (pre: prefix) (ct: condition_type) (op: operand) := 
     let seg := get_segment_op pre DS op in
@@ -2811,9 +2833,9 @@ Definition conv_POPF pre :=
      In the future this should go away. *)
   Definition check_prefix (p: prefix) := 
     (match op_override p, addr_override p with
-       | false, false => ret tt
-       | true, false => ret tt
-       | _, _ => emit error_rtl
+       | false, false => no_op
+       | true, false => no_op
+       | _, _ => raise_error
      end).
 
   (*
@@ -2821,19 +2843,19 @@ Definition conv_POPF pre :=
     oldecx <- load_reg ECX;
     one <- load_Z _ 1;
     newecx <- arith sub_op oldecx one;
-    emit set_loc_rtl newecx (reg_loc ECX);;
+    set_reg newecx ECX;;
     zero <- load_Z _ 0;
     oldpc <- load_int oldpc_val;
     op_guard <- test eq_op newecx zero;
     guard <- not op_guard;
-    emit if_rtl guard (set_loc_rtl oldpc pc_loc);;
+    if_set_loc guard oldpc pc_loc;;
     match zfval with
-      | None => ret tt
+      | None => no_op
       | Some z => v <- load_Z _ z;
                   zf <- get_flag ZF;
                   op_guard2 <- test eq_op zf v;
                   guard2 <- not op_guard2;
-                  emit if_rtl guard2 (set_loc_rtl oldpc pc_loc)
+                  if_set_loc guard2 oldpc pc_loc
     end.     
 
   Definition conv_REP := conv_REP_generic None.
@@ -2842,15 +2864,15 @@ Definition conv_POPF pre :=
 
   Definition conv_lock_rep (pre: prefix) (i: instr) :=
       match lock_rep pre with 
-        | Some lock | None => ret tt
+        | Some lock | None => no_op
         | Some rep => match i with
                         | MOVS _ => conv_REP oldpc
                         | LODS _ => conv_REP oldpc
                         | CMPS _ => conv_REPE oldpc
                         | STOS _ => conv_REP oldpc
-                        | _ => emit error_rtl
+                        | _ => raise_error
                       end
-        | _ => emit error_rtl
+        | _ => raise_error
       end.
   *)
 
@@ -2866,7 +2888,7 @@ Definition conv_POPF pre :=
                       -DS segment register used for all memory-related conversions
                       -Values of floating-point constants may be off (had a hard time finding them)
                       -Will include more comprehensive handling of errors and exceptions in next update. For now, 
-                       emit error_rtl is used in most exception cases.
+                       raise_error is used in most exception cases.
 
     By : Mark Kogan (mak215@lehigh.edu) and Gang Tan
 *)
@@ -2955,66 +2977,58 @@ Section X86FloatSemantics.
      end)%Z.
 
   Definition get_stktop : Conv (rtl_exp size3) := 
-    ret (get_loc_rtl_exp fpu_stktop_loc).
-
+    read_loc fpu_stktop_loc.
   Definition get_fpu_rctrl :=
-    ret (get_loc_rtl_exp fpu_rctrl_loc).
-
+    read_loc fpu_rctrl_loc.
   Definition get_fpu_reg (i: rtl_exp size3) : Conv (rtl_exp size80) := 
-    ret (get_array_rtl_exp fpu_datareg i).
-
+    read_array fpu_datareg i.
   Definition get_fpu_tag (i: rtl_exp size3) := 
-    ret (get_array_rtl_exp fpu_tag i).
-
-
+    read_array fpu_tag i.
   Definition set_stktop (t:rtl_exp size3) := 
-    emit set_loc_rtl t fpu_stktop_loc.
+    write_loc t fpu_stktop_loc.
   Definition set_stktop_const (t:Z) := 
     r <- load_Z size3 t; set_stktop r.
-
   Definition set_fpu_flag (fl:fpu_flag) (r: rtl_exp size1) := 
-    emit set_loc_rtl r (fpu_flag_loc fl).
+    write_loc r (fpu_flag_loc fl).
   Definition set_fpu_flag_const (fl:fpu_flag) (bit:Z) := 
     r <- load_Z size1 bit; set_fpu_flag fl r.
-
   Definition set_fpu_ctrl (cf:fpu_ctrl_flag) (r:rtl_exp size1) := 
-    emit set_loc_rtl r (fpu_ctrl_flag_loc cf).
+    write_loc r (fpu_ctrl_flag_loc cf).
   Definition set_fpu_ctrl_const (cf:fpu_ctrl_flag) (bit:Z) := 
     r <- load_Z size1 bit; set_fpu_ctrl cf r.
 
   Definition set_fpu_rctrl (r:rtl_exp size2) :=
-    emit set_loc_rtl r fpu_rctrl_loc.
+    write_loc r fpu_rctrl_loc.
   Definition set_fpu_rctrl_const (rm: mode) :=
     r <- load_Z _ (enc_rounding_mode rm);
     set_fpu_rctrl r.
 
   Definition set_fpu_pctrl (r: rtl_exp size2) :=
-    emit set_loc_rtl r fpu_pctrl_loc.
+    write_loc r fpu_pctrl_loc.
   Definition set_fpu_pctrl_const (pc:fpu_precision_control) :=
     r <- load_Z _ (enc_fpu_precision_control pc);
     set_fpu_pctrl r.
 
   Definition set_fpu_lastInstrPtr (r: rtl_exp size48) := 
-    emit set_loc_rtl r fpu_lastInstrPtr_loc.
+    write_loc r fpu_lastInstrPtr_loc.
   Definition set_fpu_lastInstrPtr_const (v:Z) := 
     r <- load_Z size48 v; set_fpu_lastInstrPtr r.
 
   Definition set_fpu_lastDataPtr (r: rtl_exp size48) := 
-    emit set_loc_rtl r fpu_lastDataPtr_loc.
+    write_loc r fpu_lastDataPtr_loc.
   Definition set_fpu_lastDataPtr_const (v:Z) := 
     r <- load_Z size48 v; set_fpu_lastDataPtr r.
 
   Definition set_fpu_lastOpcode (r: rtl_exp size11) :=
-    emit set_loc_rtl r fpu_lastOpcode_loc.
+    write_loc r fpu_lastOpcode_loc.
   Definition set_fpu_lastOpcode_const (v:Z) :=
     r <- load_Z size11 v; set_fpu_lastOpcode r.
 
-
   Definition set_fpu_reg (i: rtl_exp size3) (v: rtl_exp size80) :=
-    emit set_array_rtl fpu_datareg i v.
+    write_array fpu_datareg i v.
 
   Definition set_fpu_tag (i: rtl_exp size3) (v: rtl_exp size2) := 
-    emit set_array_rtl fpu_tag i v.
+    write_array fpu_tag i v.
   Definition set_fpu_tag_const (loc:Z) (tm:fpu_tag_mode) := 
     i <- load_Z _ loc;
     v <- load_Z _ (enc_fpu_tag_mode tm);
@@ -3219,21 +3233,6 @@ Section X86FloatSemantics.
 
 
 
-  Definition fcast ew1 mw1 ew2 mw2
-    (hyp1: float_width_hyp ew1 mw1)
-    (hyp2: float_width_hyp ew2 mw2)
-    (rm: rtl_exp size2)
-    (e : rtl_exp (nat_of_P ew1 + nat_of_P mw1))
-    : Conv (rtl_exp  (nat_of_P ew2 + nat_of_P mw2)) :=
-    ret (@fcast_rtl_exp ew1 mw1 ew2 mw2 hyp1 hyp2 rm e).
-
-  Lemma fw_hyp_float32 : float_width_hyp 8 23.
-  Proof. reflexivity. Qed.
-  Lemma fw_hyp_float64 : float_width_hyp 11 52.
-  Proof. reflexivity. Qed.
-  Lemma fw_hyp_float79 : float_width_hyp 15 63.
-  Proof. reflexivity. Qed.
-  
   Definition de_float_of_float32 (f: rtl_exp size32) (rm: rtl_exp size2)
     : Conv (rtl_exp size80) := 
     f' <- fcast fw_hyp_float32 fw_hyp_float79 rm f;
@@ -3299,7 +3298,7 @@ Section X86FloatSemantics.
           load_mem80 sr addr
         | FPM16_op _ => 
         (* not possible if loading floats from 16-bit memory *)
-          emit error_rtl;; choose size80
+          raise_error;; choose size80
       end.
   
   Definition conv_FNCLEX :=
@@ -3391,10 +3390,9 @@ Section X86FloatSemantics.
     : Conv (rtl_exp size1) :=
     stk_push f;;
     topp <- get_stktop;
-    notempty <- is_nonempty_tag topp;
     tag <- enc_tag f;
     set_fpu_tag topp tag;;
-    ret notempty.
+    is_nonempty_tag topp.
 
   Definition conv_FLD (pre: prefix) (op: fp_operand) :=
      v <- load_fp_op pre DS op; 
@@ -3435,7 +3433,7 @@ Section X86FloatSemantics.
         fi <- freg_of_offset i;
         set_fpu_reg fi v
 
-      | FPM16_op a => emit error_rtl
+      | FPM16_op a => raise_error
 
       | FPM32_op a =>  (* Copy st(0) to 32-bit memory *)
         addr <- compute_addr a;
@@ -3454,9 +3452,10 @@ Section X86FloatSemantics.
 
     (* Imprecision: in the no-underflow case, C1 should be set
        if result was rounded up; cleared otherwise *)
-    undef_fpu_flag F_C1;;
+    v <- choose size1;
     zero <- load_Z _ 0;
-    if_test underflow (set_loc_rtl zero (fpu_flag_loc F_C1));;
+    c1 <- if_exp underflow zero v;
+    set_fpu_flag F_C1 c1;;
 
     undef_fpu_flag F_C0;;
     undef_fpu_flag F_C2;;
@@ -3481,7 +3480,7 @@ Section X86FloatSemantics.
         fi <- freg_of_offset i;
         set_fpu_reg fi v
 
-      | FPM16_op a => emit error_rtl
+      | FPM16_op a => raise_error
 
       | FPM32_op a =>  (* Copy st(0) to 32-bit memory *)
       addr <- compute_addr a;
@@ -3501,9 +3500,10 @@ Section X86FloatSemantics.
 
     (* Imprecision: in the no-underflow case, C1 should be set
        if result was rounded up; cleared otherwise *)
-    undef_fpu_flag F_C1;;
+    v <- choose size1;
     zero <- load_Z _ 0;
-    if_test underflow (set_loc_rtl zero (fpu_flag_loc F_C1));;
+    c1 <- if_exp underflow zero v;
+    set_fpu_flag F_C1 c1;;
 
     undef_fpu_flag F_C0;;
     undef_fpu_flag F_C2;;
@@ -3582,10 +3582,6 @@ Section X86FloatSemantics.
   Definition conv_FLDLG2 : Conv unit :=conv_load_fpconstant log10_2.
   Definition conv_FLDLN2 : Conv unit := conv_load_fpconstant loge_2.
 
-  Definition farith_float79 (op: float_arith_op) (rm:rtl_exp size2)
-    (e1 e2: rtl_exp size79) := 
-    ret (farith_rtl_exp fw_hyp_float79 op rm e1 e2).
-
   (* floating-point operations of double-extended precision *)
   Definition farith_de (op: float_arith_op) (rm:rtl_exp size2) 
     (e1 e2: rtl_exp size80) :=
@@ -3614,7 +3610,7 @@ Section X86FloatSemantics.
     ires <- float32_of_de_float res rm;
 
     match op with
-      | Imm_op _ => emit error_rtl
+      | Imm_op _ => raise_error
       | Reg_op r => set_reg ires r
       | Address_op a => addr <- compute_addr a ; set_mem32 DS ires addr
       | Offset_op off => addr <- load_int off;
@@ -3624,9 +3620,10 @@ Section X86FloatSemantics.
 
     (* Imprecision: in the no-underflow case, C1 should be set
        if result was rounded up; cleared otherwise *)
-    undef_fpu_flag F_C1;;
+    v <- choose size1;
     zero <- load_Z _ 0;
-    if_test underflow (set_loc_rtl zero (fpu_flag_loc F_C1));;
+    c1 <- if_exp underflow zero v;
+    set_fpu_flag F_C1 c1;;
 
     undef_fpu_flag F_C0;;
     undef_fpu_flag F_C2;;
@@ -3658,15 +3655,16 @@ Section X86FloatSemantics.
         fi <- freg_of_offset i;
         set_fpu_reg fi res
 
-      | _, _ => emit error_rtl
+      | _, _ => raise_error
     end;;
 
 
     (* Imprecision: in the no-underflow case, C1 should be set
        if result was rounded up; cleared otherwise *)
-    undef_fpu_flag F_C1;;
+    v <- choose size1;
     zero <- load_Z _ 0;
-    if_test underflow (set_loc_rtl zero (fpu_flag_loc F_C1));;
+    c1 <- if_exp underflow zero v;
+    set_fpu_flag F_C1 c1;;
 
     undef_fpu_flag F_C0;;
     undef_fpu_flag F_C2;;
@@ -3680,7 +3678,7 @@ Section X86FloatSemantics.
        | FPS_op i => 
          conv_farith fop noreverse pre false op;;
          stk_pop_and_set_tag
-       | _ => emit error_rtl
+       | _ => raise_error
    end.
   
   Definition conv_FADD := conv_farith fadd_op true.
@@ -3722,7 +3720,7 @@ Section X86FloatSemantics.
       | FPS_op _
       | FPM32_op _
       | FPM64_op _ => set_fpu_reg tmp opv
-      | _ => emit error_rtl
+      | _ => raise_error
 
     end.
 *)
@@ -4059,7 +4057,7 @@ End X86FloatSemantics.
          | FYL2X : conv_FYL2X
          | FYL2XP1 : conv_FYL2XP1
          | FWAIT : conv_FWAIT     *)
-         | _ => emit error_rtl 
+         | _ => raise_error 
     end
     ).
 
@@ -4180,7 +4178,7 @@ Definition step : RTL unit :=
   pc <- get_loc pc_loc ; 
   (* check if pc is in the code region; 
      different from the range checks in fetch_instruction; 
-     this check makes sure the machine safely fails when pc is 
+     this check makes sure the machine safely traps when pc is 
      out of bounds so that there is no need to fetch an instruction *)
   pc_in_bounds <- in_seg_bounds CS pc;
   if (pc_in_bounds) then 

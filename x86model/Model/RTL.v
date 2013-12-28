@@ -165,7 +165,7 @@ Module RTL(M : MACHINE_SIG).
       match c rs with
         | (Okay_ans v, rs') => f v rs'
         | (Fail_ans, rs') => (Fail_ans _, rs')
-        | (SafeFail_ans, rs') => (Trap_ans _, rs')
+        | (Trap_ans, rs') => (Trap_ans _, rs')
       end
   }.
   intros ; apply Coqlib.extensionality. auto.
