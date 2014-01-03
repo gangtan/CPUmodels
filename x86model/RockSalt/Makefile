@@ -1,4 +1,4 @@
-MODULES := VerifierDFA DFACorrectness NACLjmp FastVerifier X86Lemmas VerifierCorrectness
+MODULES := VerifierDFA DFACorrectness NACLjmp FastVerifier Int32 X86Lemmas VerifierCorrectness
 # DFACorrectness FastVerifier X86Lemmas VerifierCorrectness
 VS 	:= $(MODULES:%=%.v)
 
