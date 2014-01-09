@@ -560,7 +560,9 @@ Module X86_Compile.
   Definition if_trap g : Conv unit := emit (if_rtl g trap_rtl).
   Definition if_set_loc cond s (e:rtl_exp s) (l:location s) :=
     emit (if_rtl cond (set_loc_rtl e l)).
-  Definition choose s : Conv (rtl_exp s) := ret (@choose_rtl_exp s).
+  Definition choose s : Conv (rtl_exp s) := 
+    emit (advance_oracle_rtl);;
+    ret (@get_random_rtl_exp s).
 
   Definition fcast ew1 mw1 ew2 mw2
     (hyp1: float_width_hyp ew1 mw1)
@@ -3979,11 +3981,12 @@ End X86FloatSemantics.
          | LOOPNZ disp => conv_LOOP pre true false disp
          | NOP _ => ret tt
 
-         (*Floating-point conversions*)
+         (*Floating-point conversions; comment out the semantics 
+           of floating-point instruction as it has not been tested. *)
          (* | F2XM1 => conv_F2XM1 pre *)
          (* | FABS => conv_FABS *)
-         | FADD d op1 => conv_FADD pre d op1
-         | FADDP op1 => conv_FADDP pre op1
+         (* | FADD d op1 => conv_FADD pre d op1 *)
+         (* | FADDP op1 => conv_FADDP pre op1 *)
          (* | FBLD op1 => conv_FBLD pre op1 *)
          (* | FBSTP op1 => conv_FBSTP pre op1 *)
          (* | FCHS => conv_FCHS  *)
@@ -3992,37 +3995,36 @@ End X86FloatSemantics.
          (* | FCOMPP => conv_FCOMPP *)
          (* | FCOMIP op1 => conv_FCOMIP pre op1 *)
          (* | FCOS => conv_FCOS      *)
-         | FDECSTP => conv_FDECSTP
-           (* gtan: comment out FDIV case for now as I have changed the syntax of FDIV *)
-         | FDIV d op => conv_FDIV pre d op
-         | FDIVP op => conv_FDIVP pre op
-         | FDIVR d op => conv_FDIVR pre d op
-         | FDIVRP op => conv_FDIVRP pre op
+         (* | FDECSTP => conv_FDECSTP *)
+         (* | FDIV d op => conv_FDIV pre d op *)
+         (* | FDIVP op => conv_FDIVP pre op *)
+         (* | FDIVR d op => conv_FDIVR pre d op *)
+         (* | FDIVRP op => conv_FDIVRP pre op *)
          (* | FFREE : conv_FFREE pre op1 *)
 (*         | FIADD d op1 => conv_FIADD pre op1 *)
          (* | FICOM : conv_FICOM pre op1 *)
          (* | FICOMP : conv_FICOMP pre op1 *)
          (* | FILD : conv_FILD pre op1 *)
          (* | FIMUL : conv_FIMUL pre op1 *)
-         | FINCSTP => conv_FINCSTP
+         (* | FINCSTP => conv_FINCSTP *)
          (* | FIST : conv_FIST *)
          (* | FISTP : conv_FISTP *)
          (* | FISUB : conv_FISUB *)
          (* | FISUBR : conv_FISUBR *)
-         | FLD op => conv_FLD pre op
+         (* | FLD op => conv_FLD pre op *)
          (* | FLD1 => conv_FLD1 *)
          (*  | FLDCW : conv_FLDCW
          | FLDENV : conv_FLDENV  *)
-         | FLDL2E => conv_FLDL2E
-         | FLDL2T => conv_FLDL2T
-         | FLDLG2 => conv_FLDLG2
-         | FLDLN2 => conv_FLDLN2
-         | FLDPI => conv_FLDPI
-         | FLDZ => conv_FLDZ
-         | FMUL d op1 => conv_FMUL pre d op1
-         | FMULP op1 => conv_FMULP pre op1
-         | FNCLEX => conv_FNCLEX 
-         | FNINIT => conv_FNINIT
+         (* | FLDL2E => conv_FLDL2E *)
+         (* | FLDL2T => conv_FLDL2T *)
+         (* | FLDLG2 => conv_FLDLG2 *)
+         (* | FLDLN2 => conv_FLDLN2 *)
+         (* | FLDPI => conv_FLDPI *)
+         (* | FLDZ => conv_FLDZ *)
+         (* | FMUL d op1 => conv_FMUL pre d op1 *)
+         (* | FMULP op1 => conv_FMULP pre op1 *)
+         (* | FNCLEX => conv_FNCLEX  *)
+         (* | FNINIT => conv_FNINIT *)
        (*  | FNOP : conv_FNOP
          | FNSTCW => conv_FNSTCW
          | FPATAN : conv_FPATAN
@@ -4036,15 +4038,15 @@ End X86FloatSemantics.
          | FSIN : conv_FSIN
          | FSINCOS : conv_FSINCOS
          | FSQRT : conv_FSQRT *)
-         | FST op1 => conv_FST pre op1
+         (* | FST op1 => conv_FST pre op1 *)
         (* | FSTCW : conv_FSTCW pre op1
          | FSTENV : conv_FSTENV pre op1 *)
-         | FSTP op1 => conv_FSTP pre op1
+         (* | FSTP op1 => conv_FSTP pre op1 *)
        (* | FSTSW : conv_FSTSW pre op1     *)
-         | FSUB d op1 => conv_FSUB pre d op1
-         | FSUBP op1 => conv_FSUBP pre op1
-         | FSUBR d op => conv_FSUBR pre d op
-         | FSUBRP op => conv_FSUBRP pre op
+         (* | FSUB d op1 => conv_FSUB pre d op1 *)
+         (* | FSUBP op1 => conv_FSUBP pre op1 *)
+         (* | FSUBR d op => conv_FSUBR pre d op *)
+         (* | FSUBRP op => conv_FSUBRP pre op *)
 (*         | FTST : conv_FTST
          | FUCOM : conv_FUCOM pre op1
          | FUCOMP : conv_FUCOMP pre op1

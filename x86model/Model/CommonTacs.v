@@ -13,7 +13,7 @@
    RockSalt directory depend on the older version, which is why I opened
    a new file; should do some migration at some point *)
 
-Require Bool.
+Require Import Bool.
 Require Import ZArith.
 Require Import Eqdep List.
 
@@ -22,15 +22,17 @@ Set Implicit Arguments.
 Ltac bool_intro_tac :=
   repeat match goal with
            | [ |- andb ?b1 ?b2 = true ] =>
-            apply Bool.andb_true_iff; split
+            apply andb_true_iff; split
          end.
 
 Ltac bool_elim_tac :=
   repeat match goal with
+           | [ H: negb ?b = true |- _ ] => 
+             apply negb_true_iff in H
            | [ H: andb ?b1 ?b2 = true |- _ ] => 
              apply andb_prop in H; destruct H
            | [ H: orb ?b1 ?b2 = true |- _ ] =>
-             apply Bool.orb_true_iff in H; destruct H
+             apply orb_true_iff in H; destruct H
          end.
 
 (* Make a duplicate of the hypothesis *)

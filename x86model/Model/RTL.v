@@ -114,18 +114,17 @@ Module RTL(M : MACHINE_SIG).
   | get_loc_rtl_exp : forall s (l:location s), rtl_exp s
   | get_array_rtl_exp : forall l s, array l s -> rtl_exp l -> rtl_exp s
   | get_byte_rtl_exp : forall (addr:rtl_exp size_addr),  rtl_exp size8
-  | choose_rtl_exp : forall s, rtl_exp s
+  | get_random_rtl_exp : forall s, rtl_exp s
     (* a float has one sign bit, ew bit of exponent, and mw bits of mantissa *)
   | farith_rtl_exp : (* floating-point arithmetics *)
-    forall (ew mw: positive),
+    forall (ew mw: positive) (hyp: float_width_hyp ew mw)
+      (fop: float_arith_op) (rounding: rtl_exp size2),
       let len := (nat_of_P ew + nat_of_P mw)%nat in
-        float_width_hyp ew mw ->
-        float_arith_op -> rtl_exp size2 (* rounding mode *) ->
         rtl_exp len -> rtl_exp len -> rtl_exp len
   | fcast_rtl_exp : (* cast between floats of different precisions *)
-    forall (ew1 mw1 ew2 mw2:positive),
-      float_width_hyp ew1 mw1 -> float_width_hyp ew2 mw2 -> 
-      rtl_exp size2 (* rounding mode *) ->
+    forall (ew1 mw1 ew2 mw2:positive)
+      (hyp1: float_width_hyp ew1 mw1) (hyp2: float_width_hyp ew2 mw2)
+      (rounding: rtl_exp size2),
       rtl_exp (nat_of_P ew1 + nat_of_P mw1)%nat ->
       rtl_exp (nat_of_P ew2 + nat_of_P mw2)%nat.
 
@@ -134,6 +133,9 @@ Module RTL(M : MACHINE_SIG).
   | set_loc_rtl : forall s (e:rtl_exp s) (l:location s), rtl_instr
   | set_array_rtl : forall l s, array l s -> rtl_exp l -> rtl_exp s -> rtl_instr
   | set_byte_rtl: forall (e:rtl_exp size8)(addr:rtl_exp size_addr), rtl_instr
+  (** advance the clock of the oracle so that the next get_random_rtl_exp returns
+      a new random bitvalue *)
+  | advance_oracle_rtl : rtl_instr 
   | if_rtl : rtl_exp size1 -> rtl_instr -> rtl_instr
   | error_rtl : rtl_instr
   | trap_rtl : rtl_instr.
@@ -189,6 +191,14 @@ Module RTL(M : MACHINE_SIG).
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
                            rtl_mach_state := rtl_mach_state rs ;
                            rtl_memory := AddrMap.set addr v (rtl_memory rs) |}).
+  Definition advance_oracle : RTL unit :=
+    fun rs =>
+      let o := rtl_oracle rs in
+      let o' := {| oracle_bits := oracle_bits o; oracle_offset := oracle_offset o + 1 |} in
+        (Okay_ans tt,
+          {| rtl_oracle := o' ;
+             rtl_mach_state := rtl_mach_state rs ;
+             rtl_memory := rtl_memory rs |}).
 
   Definition get_loc s (l:location s) : RTL (int s) :=
     fun rs => (Okay_ans (get_location l (rtl_mach_state rs)), rs).
@@ -196,15 +206,9 @@ Module RTL(M : MACHINE_SIG).
     fun rs => (Okay_ans (array_sub a i (rtl_mach_state rs)), rs).
   Definition get_byte (addr:int size_addr) : RTL (int size8) := 
     fun rs => (Okay_ans (AddrMap.get addr (rtl_memory rs)), rs).
-
-  Definition choose_bits (s:nat) : RTL (int s) :=
-    fun rs =>
-      let o := rtl_oracle rs in
-      let o' := {| oracle_bits := oracle_bits o; oracle_offset := oracle_offset o + 1 |} in
-        (Okay_ans (oracle_bits o s (oracle_offset o)),
-          {| rtl_oracle := o' ;
-             rtl_mach_state := rtl_mach_state rs ;
-             rtl_memory := rtl_memory rs |}).
+  Definition get_random (s:nat) : RTL (int s) := 
+    fun rs => let oracle := rtl_oracle rs in
+              (Okay_ans (oracle_bits oracle s (oracle_offset oracle)), rs).
 
   Definition interp_arith s (b:bit_vector_op)(v1 v2:int s) : int s := 
     match b with 
@@ -290,48 +294,55 @@ Module RTL(M : MACHINE_SIG).
 
   Local Open Scope monad_scope.
 
-  Fixpoint interp_rtl_exp s (e:rtl_exp s) : RTL (int s) := 
+  Fixpoint interp_rtl_exp s (e:rtl_exp s) (rs:rtl_state) : int s := 
     match e with 
       | arith_rtl_exp _ b e1 e2 =>
-        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; ret (interp_arith b v1 v2)
+        let v1 := interp_rtl_exp e1 rs in 
+        let v2 := interp_rtl_exp e2 rs in interp_arith b v1 v2
       | test_rtl_exp _ t e1 e2 => 
-        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; ret (interp_test t v1 v2)
+        let v1 := interp_rtl_exp e1 rs in
+        let v2 := interp_rtl_exp e2 rs in interp_test t v1 v2
       | if_rtl_exp _ cd e1 e2 =>
-        v <- interp_rtl_exp cd;
-        if (Word.eq v Word.one) then interp_rtl_exp e1
-          else interp_rtl_exp e2
+        let v := interp_rtl_exp cd rs in
+        if (Word.eq v Word.one) then interp_rtl_exp e1 rs
+        else interp_rtl_exp e2 rs
       | cast_s_rtl_exp _ _ e =>
-        v <- interp_rtl_exp e; ret (Word.repr (Word.signed v))
+        let v := interp_rtl_exp e rs in Word.repr (Word.signed v)
       | cast_u_rtl_exp _ _ e => 
-        v <- interp_rtl_exp e; ret (Word.repr (Word.unsigned v))
-      | imm_rtl_exp _ v => ret v
-      | get_loc_rtl_exp _ l => get_loc l
+        let v := interp_rtl_exp e rs in Word.repr (Word.unsigned v)
+      | imm_rtl_exp _ v => v
+      | get_loc_rtl_exp _ l => get_location l (rtl_mach_state rs)
       | get_array_rtl_exp _ _ a e => 
-        i <- interp_rtl_exp e; get_array a i
+        let i := interp_rtl_exp e rs in array_sub a i (rtl_mach_state rs)
       | get_byte_rtl_exp addr => 
-        v <- interp_rtl_exp addr; get_byte v
+        let v := interp_rtl_exp addr rs in AddrMap.get v (rtl_memory rs)
       | farith_rtl_exp _ _ hyp fop rm e1 e2 =>
-        v1 <- interp_rtl_exp e1; v2 <- interp_rtl_exp e2; 
-        vrm <- interp_rtl_exp rm;
-        ret (interp_farith hyp fop vrm v1 v2)
+        let v1 := interp_rtl_exp e1 rs in let v2 := interp_rtl_exp e2 rs in
+        let vrm := interp_rtl_exp rm rs in
+        interp_farith hyp fop vrm v1 v2
       | fcast_rtl_exp _ _ _ _ hyp1 hyp2 rm e =>
-        v <- interp_rtl_exp e; 
-        vrm <- interp_rtl_exp rm;
-        ret (interp_fcast hyp1 hyp2 vrm v)
-      | choose_rtl_exp _ => choose_bits _
+        let v := interp_rtl_exp e rs in
+        let vrm := interp_rtl_exp rm rs in
+        interp_fcast hyp1 hyp2 vrm v
+      | get_random_rtl_exp _ => 
+        let oracle := rtl_oracle rs in
+        oracle_bits oracle _ (oracle_offset oracle)
     end.
 
+  Definition interp_rtl_exp_comp s (e:rtl_exp s): RTL (int s) := 
+    fun rs => (Okay_ans (interp_rtl_exp e rs), rs).
 
   Fixpoint interp_rtl (instr:rtl_instr) : RTL unit := 
     match instr with 
       | set_loc_rtl _ e l => 
-        v <- interp_rtl_exp e; set_loc l v
+        v <- interp_rtl_exp_comp e; set_loc l v
       | set_array_rtl _ _ a e1 e2 =>
-        i <- interp_rtl_exp e1; v <- interp_rtl_exp e2; set_array a i v
+        i <- interp_rtl_exp_comp e1; v <- interp_rtl_exp_comp e2; set_array a i v
       | set_byte_rtl e addr => 
-        v <- interp_rtl_exp e; a <- interp_rtl_exp addr; set_byte a v
+        v <- interp_rtl_exp_comp e; a <- interp_rtl_exp_comp addr; set_byte a v
+      | advance_oracle_rtl => advance_oracle
       | if_rtl r i => 
-        v <- interp_rtl_exp r ; if (Word.eq v Word.one) then interp_rtl i else ret tt
+        v <- interp_rtl_exp_comp r ; if (Word.eq v Word.one) then interp_rtl i else ret tt
       | error_rtl => Fail unit
       | trap_rtl => Trap unit
     end.

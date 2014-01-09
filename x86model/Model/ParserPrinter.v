@@ -1156,8 +1156,8 @@ Qed.
     crush. destruct w; crush.
   Defined.
 
-Print wf_bigrammar.
-Print instruction_t.
+(* Print wf_bigrammar. *)
+(* Print instruction_t. *)
 
   Definition BSWAP_p' : wf_bigrammar instruction_t.
     refine ("0000" $$ "1111" $$ "1100" $$ "1" $$ reg

@@ -11,6 +11,10 @@
 
 (** X86Lemmas.v. This file holds lemmas about X86 instructions *)
 
+(* plan: 
+   (1) add negb case to CommonTacs
+   (2) turn on implicit arguments on everything *)
+
 (* Require Import Tacs. *)
 Require Import CommonTacs.
 Require Import ZArith.
@@ -50,6 +54,435 @@ Notation EStart s := (seg_regs_starts (get_core_state s) ES).
 Notation ELimit s := (seg_regs_limits (get_core_state s) ES).
 
 
+(** * Reification of RTL conversions 
+
+   It converts rtl conversions in higher-order syntax to first-order terms
+   with variables indexed by types of those variables so that we can write
+   coq functions on rtl conversions. Unfortunately, this mechanism is not
+   used in the following code because it turns of this reflection-based
+   proof is slower than the tacticis-based approach. I left the code
+   here as an interesting example of how to reify high-order Coq terms
+   to first-order syntax.
+*)
+Section REIFIED_RTL_CONV.
+  Local Set Implicit Arguments.
+
+  (** Types of return values of rtl conversions; cover only unit and the
+     rtl_exp types. *)
+  Inductive ty : Set :=
+  | ct_unit : ty     (* unit type *)
+  | ct_rtl_exp : forall s:nat, ty.  (* [rtl_exp s] type *)
+
+  Definition ty_denote (t:ty) :=
+    match t with
+      | ct_unit => unit
+      | ct_rtl_exp s => rtl_exp s
+    end.
+
+  (** The reified syntax of rtl conversions is parameterized by a type
+   environment, which remembers tye types of free varialbes. Types of
+   variables are of the form "rtl_exp n"; we remember only those natural
+   numbers. *)
+  Definition tyenv := list nat.
+
+  Fixpoint tyenv_denote (te: tyenv) := 
+    match te with
+      | nil => unit
+      | n :: te' => (rtl_exp n * tyenv_denote te')%type
+    end.
+
+  Inductive member (n:nat) : tyenv -> Type := 
+  | lfirst : forall te, member n (n :: te)
+  | lnext : forall te n', member n te -> member n (n' :: te).
+
+  Section REIFIED_RTL_EXP.
+
+    Variable te: tyenv.
+
+    (** RTL expressions with unbound variables, indexed by the type of the
+        expression. *)
+    Inductive open_rtl_exp : nat -> Type := 
+    (* variables *)
+    | ore_var n (m: member n te) :  open_rtl_exp n
+    | ore_arith n (b:bit_vector_op) (oe1 oe2:open_rtl_exp n) : open_rtl_exp n
+    | ore_test n (top:test_op) (oe1 oe2:open_rtl_exp n) : open_rtl_exp size1
+    | ore_if n (cond: open_rtl_exp size1) (oe1 oe2: open_rtl_exp n) :
+          open_rtl_exp n
+    | ore_cast_s n1 n2 (oe: open_rtl_exp n1) : open_rtl_exp n2
+    | ore_cast_u n1 n2 (oe: open_rtl_exp n1) : open_rtl_exp n2
+    | ore_imm n : int n -> open_rtl_exp n
+    | ore_get_loc n (l:location n) : open_rtl_exp n
+    | ore_get_array l n (a:array l n) (idx: open_rtl_exp l) : open_rtl_exp n
+    | ore_get_byte (addr: open_rtl_exp size_addr) : open_rtl_exp size8
+    | ore_choose n : open_rtl_exp n
+    | ore_farith (ew mw: positive) (hyp: float_width_hyp ew mw)
+                 (fop: float_arith_op) (rounding: open_rtl_exp size2) :
+          let len := (nat_of_P ew + nat_of_P mw)%nat in
+          open_rtl_exp len -> open_rtl_exp len -> open_rtl_exp len
+    | ore_fcast (ew1 mw1 ew2 mw2:positive) 
+          (hyp1: float_width_hyp ew1 mw1) (hyp2: float_width_hyp ew2 mw2)
+          (rounding: open_rtl_exp size2) :
+          open_rtl_exp (nat_of_P ew1 + nat_of_P mw1)%nat ->
+          open_rtl_exp (nat_of_P ew2 + nat_of_P mw2)%nat.
+
+  End REIFIED_RTL_EXP.
+
+  (* Tricky to get this right, fighting the type checker all the time;
+     illustrate all the pain of doing dependent types in Coq:( *)
+  Fixpoint get_from_env te n : 
+    tyenv_denote te -> member n te -> ty_denote (ct_rtl_exp n) :=
+    match te return tyenv_denote te -> member n te
+                    -> ty_denote (ct_rtl_exp n) with
+      | nil => fun env mem => 
+        match mem in member _ te' return (match te' with
+                                            | nil => ty_denote (ct_rtl_exp n)
+                                            | _ => unit
+                                          end) with
+          | lfirst _ => tt
+          | lnext _ _ _ => tt
+        end
+      | n' :: te' => 
+        fun env mem =>
+          match mem in member _ te1 return (match te1 with
+                                              | nil => Empty_set
+                                              | n'' :: te'' =>
+                                                tyenv_denote (n'' :: te'')
+                                                -> (tyenv_denote te''
+                                                    -> member n te''
+                                                    -> ty_denote 
+                                                         (ct_rtl_exp n))
+                                                -> ty_denote (ct_rtl_exp n)
+                                            end) with
+          | lfirst _ => fun env _ => fst env
+          | lnext x ts2 mem' => fun env get_ty' => 
+                                get_ty' (snd env) mem'
+        end env (@get_from_env te' n)
+    end.
+
+  (** Denotation of [open_rtl_exp] *)
+  Fixpoint ore_denote (te: tyenv) n (env: tyenv_denote te)
+             (oe: open_rtl_exp te n) : ty_denote (ct_rtl_exp n) :=
+    match oe with
+      | ore_var n mem => get_from_env env mem
+      | ore_arith _ b oe1 oe2 => 
+        arith_rtl_exp b (ore_denote env oe1) (ore_denote env oe2)
+      | ore_test _ top oe1 oe2 =>
+        test_rtl_exp top (ore_denote env oe1) (ore_denote env oe2)
+      | ore_if _ cond oe1 oe2 =>
+        if_rtl_exp (ore_denote env cond)
+                   (ore_denote env oe1) (ore_denote env oe2)
+      | ore_cast_s _ n2 oe =>
+        cast_s_rtl_exp n2 (ore_denote env oe)
+      | ore_cast_u _ n2 oe =>
+        cast_u_rtl_exp n2 (ore_denote env oe)
+      | ore_imm _ i => imm_rtl_exp i
+      | ore_get_loc _ l => get_loc_rtl_exp l
+      | ore_get_array _ _ a idx => get_array_rtl_exp a (ore_denote env idx)
+      | ore_get_byte addr => get_byte_rtl_exp (ore_denote env addr)
+      | ore_choose n => choose_rtl_exp n
+      | ore_farith _ _ hyp fop rounding oe1 oe2 =>
+        farith_rtl_exp hyp fop (ore_denote env rounding)
+                       (ore_denote env oe1) (ore_denote env oe2)
+      | ore_fcast _ _ _ _ hyp1 hyp2 rounding oe1 => 
+        fcast_rtl_exp hyp1 hyp2 (ore_denote env rounding)
+                       (ore_denote env oe1)
+    end.
+
+  (** Reified syntax of rtl conversions, indexed by the types of
+     free variables and the return type *)
+  Inductive open_conv (te: tyenv) : ty -> Type := 
+    (* oc_seq is a special kind of bind in which oc1 returns unit *)
+  | oc_seq t (oc1: open_conv te ct_unit) (oc2: open_conv te t) :
+      open_conv te t
+  | oc_bind_exp n t (oc:open_conv te (ct_rtl_exp n)) 
+                (f:open_conv (n::te) t) : open_conv te t
+  | oc_ret n (oe: open_rtl_exp te n) : open_conv te (ct_rtl_exp n)
+  | oc_no_op : open_conv te ct_unit
+  | oc_write_loc n (oe: open_rtl_exp te n) (l:loc n) : open_conv te ct_unit
+  | oc_write_array l n (a:array l n) (idx: open_rtl_exp te l)
+      (v: open_rtl_exp te n) : open_conv te ct_unit
+  | oc_write_byte (v: open_rtl_exp te size8) (a: open_rtl_exp te size32) :
+    open_conv te ct_unit
+  | oc_if_trap (g: open_rtl_exp te size1) : open_conv te ct_unit
+  | oc_if_set_loc (cond: open_rtl_exp te size1) n (oe: open_rtl_exp te n)
+                  (l:loc n) : open_conv te ct_unit
+  | oc_error : open_conv te ct_unit
+  | oc_trap : open_conv te ct_unit
+  | oc_load_op (pre:prefix) (w:bool) (seg:segment_register) (op:operand) :
+      open_conv te (ct_rtl_exp (opsize (op_override pre) w))
+  | oc_set_op (pre:prefix) (w:bool) (seg:segment_register) 
+              (v: open_rtl_exp te (opsize (op_override pre) w))
+              (op:operand) : open_conv te ct_unit
+  | oc_iload_op8 (seg:segment_register) (op:operand) : 
+      open_conv te (ct_rtl_exp size8)
+  | oc_iset_op8 (seg:segment_register) (p: open_rtl_exp te size8)
+                (op:operand) : open_conv te ct_unit
+  (* compute_parity_aux *)
+  | oc_cp_aux s (oe1: open_rtl_exp te s) (oe2: open_rtl_exp te size1) 
+              (n:nat) : open_conv te (ct_rtl_exp size1)
+  (* a catch-call clause; for debugging *)
+  | oc_any t (c:tyenv_denote te -> Conv (ty_denote t)) : open_conv te t.
+   
+  (** Denotation of open_conv_denote *)
+  Fixpoint oc_denote (te:tyenv) (t:ty) (env:tyenv_denote te)
+           (oc:open_conv te t) : Conv (ty_denote t) := 
+    match oc in open_conv _ t' return Conv (ty_denote t') with
+      | oc_seq _ oc1 oc2 => 
+        Bind _ (oc_denote env oc1) (fun _ => oc_denote env oc2)
+      | oc_bind_exp n _ oc1 ocf =>
+        Bind _ (oc_denote env oc1) 
+             (fun x => @oc_denote (n::te) _ (x,env) ocf)
+      | oc_ret _ oe => ret (ore_denote env oe)
+      | oc_no_op => ret tt
+      | oc_write_loc n oe l => write_loc (ore_denote env oe) l
+      | oc_write_array _ _ arr idx v => 
+        write_array arr (ore_denote env idx) (ore_denote env v)
+      | oc_write_byte v addr => 
+        write_byte (ore_denote env v) (ore_denote env addr)
+      | oc_if_trap g => if_trap (ore_denote env g)
+      | oc_if_set_loc cond _ oe l => 
+        if_set_loc (ore_denote env cond) (ore_denote env oe) l
+      | oc_error => raise_error
+      | oc_trap => raise_trap
+      | oc_load_op pre w seg op => load_op pre w seg op
+      | oc_set_op pre w seg ov op => 
+        set_op pre w seg (ore_denote env ov) op
+      | oc_iload_op8 seg op => iload_op8 seg op
+      | oc_iset_op8 seg p op => iset_op8 seg (ore_denote env p) op
+      | oc_cp_aux _ oe1 oe2 n => 
+        compute_parity_aux (ore_denote env oe1) (ore_denote env oe2) n
+      | oc_any _ c => c env
+    end.
+
+End REIFIED_RTL_CONV.
+
+(** ** Tactics for converting RTL conversions to terms in open_conv syntax
+*)
+
+Ltac ty_reify tp := 
+  match tp with 
+    | unit => ct_unit
+    | rtl_exp ?s => constr:(ct_rtl_exp s)
+    | _ => fail "ty_reify failed!"
+  end.
+
+Ltac member_pf ts fe := 
+  match ts with
+    | ?t' :: ?ts' =>
+      match fe with
+        | fun env => env => constr:(lfirst t' ts')
+        | fun env => snd (@?fe' env) => 
+          let mem := member_pf ts' fe' in
+          constr:(lnext t' mem)
+      end
+    | _ => fail "member_pf failed!"
+  end.
+
+(** Reify higher-order rtl expressions to first-order syntax. All
+   expressions of the form [fun env => ...], where env is the value
+   environment and of type [tyenv_denote te]. [fst env] is converted
+   [ore_var lfirst]; [fst (snd env)] is converted to [ore_var (lnext
+   lfirst)]; [fst (snd (snd env))] is converted to [ore_var (lnext (lnext
+   lfirst))] *)
+Ltac reify_rtl_exp te e := 
+  match e with
+    | fun env:_ => fst (@?FE env)=> 
+      let mem := member_pf te FE in
+      constr:(ore_var mem)
+    | fun env => imm_rtl_exp ?I =>
+      constr:(ore_imm te I)
+    | fun env => arith_rtl_exp ?Bop (@?E1 env) (@?E2 env) =>
+      let oe1 := reify_rtl_exp te E1 in
+      let oe2 := reify_rtl_exp te E2 in
+      constr:(ore_arith Bop oe1 oe2)
+    | fun env => test_rtl_exp ?Top (@?E1 env) (@?E2 env) =>
+      let oe1 := reify_rtl_exp te E1 in
+      let oe2 := reify_rtl_exp te E2 in
+      constr:(ore_test Top oe1 oe2)
+    | fun env => if_rtl_exp (@?C env) (@?E1 env) (@?E2 env) =>
+      let oc := reify_rtl_exp te C in
+      let oe1 := reify_rtl_exp te E1 in
+      let oe2 := reify_rtl_exp te E2 in
+      constr:(ore_if oc oe1 oe2)
+    | fun env => cast_s_rtl_exp ?N2 (@?E env) =>
+      let oe := reify_rtl_exp te E in
+      constr:(ore_cast_s N2 oe)
+    | fun env => cast_u_rtl_exp ?N2 (@?E env) =>
+      let oe := reify_rtl_exp te E in
+      constr:(ore_cast_u N2 oe)
+    | fun env => get_loc_rtl_exp ?L => constr:(ore_get_loc te L)
+    | fun env => get_array_rtl_exp ?A (@?Idx env) =>
+      let oi := reify_rtl_exp te Idx in
+      constr:(ore_get_array A oi)
+    | fun env => get_byte_rtl_exp (@?Addr env) =>
+      let oa := reify_rtl_exp te Addr in
+      constr:(ore_get_byte oa)
+    | fun env => choose_rtl_exp ?N => constr:(ore_choose te N)
+    | fun env => farith_rtl_exp ?Hyp ?Fop (@?R env) (@?E1 env) (@?E2 env)  => 
+      let or := reify_rtl_exp te R in
+      let oe1 := reify_rtl_exp te E1 in
+      let oe2 := reify_rtl_exp te E2 in
+      constr:(ore_farith Hyp Fop or oe1 oe2)
+    | fun env => fcast_rtl_exp ?Hyp1 ?Hyp2 (@?R env) (@?E env) => 
+      let or := reify_rtl_exp te R in
+      let oe := reify_rtl_exp te E in
+      constr:(ore_fcast Hyp1 Hyp2 or oe)
+  end.
+
+(* Goal False. *)
+(* Unset Ltac Debug. *)
+(* let s := reify_rtl_exp (size8 :: size8 :: nil) *)
+(*           (fun env: (rtl_exp size8)*(rtl_exp size8*unit) => *)
+(*              arith_rtl_exp and_op (fst env) (fst (snd env))) *)
+(* in pose s. *)
+
+(** Reify higher-order rtl conversions to first-order syntax; te is the type
+   enviroment (list of types of free variables in conversion cv) *)
+Ltac reify_rtl_conv te cv := 
+  match eval cbv beta iota zeta in cv with
+    | fun (env: ?T) => Bind _ (@?C env) (fun (y:?S) => @?F env y) =>
+      let oc := reify_rtl_conv te C in
+      let t:= ty_reify S in
+      match t with
+        | ct_unit =>
+          let of := reify_rtl_conv te (fun p:T => F p tt) in
+          constr:(oc_seq oc of)
+        | ct_rtl_exp ?N=> 
+          let of := 
+              reify_rtl_conv (N::te) (fun p:S*T => F (snd p) (fst p)) in
+          constr:(oc_bind_exp oc of)
+      end
+        
+    | fun (env: ?T) => Return (@?E env) =>
+      let oe := reify_rtl_exp te E in
+      constr:(oc_ret oe)
+
+    | fun (env: ?T) => no_op =>
+      constr:(oc_no_op te)
+
+    | fun (env: ?T) => write_loc (@?E env) ?L =>
+      let oe := reify_rtl_exp te E in
+      constr:(oc_write_loc oe L)
+
+    | fun (env: ?T) => raise_error =>
+      constr:(oc_error te)
+
+    | fun (env: ?T) => load_op ?Pre ?W ?Seg ?Op =>
+      constr:(oc_load_op te Pre W Seg Op)
+
+    | fun (env: ?T) => set_op ?Pre ?W ?Seg (@?V env) ?Op =>
+      let ov := reify_rtl_exp te V in
+      constr:(oc_set_op Pre W Seg ov Op)
+
+    | fun (env: ?T) => iload_op8 ?Seg ?Op =>
+      constr:(oc_iload_op8 te Seg Op)
+
+    | fun (env: ?T) => iset_op8 ?Seg (@?P env) ?Op =>
+      let p := reify_rtl_exp te P in
+      constr:(oc_iset_op8 Seg p Op)
+
+    | fun (env: ?T) => compute_parity_aux (@?E1 env) (@?E2 env) ?N =>
+      let oe1 := reify_rtl_exp te E1 in
+      let oe2 := reify_rtl_exp te E2 in
+      constr:(oc_cp_aux oe1 oe2 N)
+
+    | fun (env: ?T) => @?C env =>
+      match type of C with
+        | _ -> Conv ?T' =>
+          let t' := ty_reify T' in
+          constr:(oc_any te t' C)
+      end
+  end.
+
+(* testing *)
+(* Set Printing Depth 100. *)
+(* Goal conv_AAA_AAS add_op = conv_AAA_AAS sub_op. *)
+(* Proof. *)
+(*   unfold conv_AAA_AAS, load_Z, undef_flag, get_flag, set_flag, *)
+(*     get_AH, get_AL, copy_ps, set_AL, set_AH, load_int, read_loc, *)
+(*     arith, test, cast_u, cast_s, if_exp, choose. *)
+(*   (* arith, test, copy_ps. *) *)
+(*   Unset Ltac Debug. *)
+(*   Time match goal with *)
+(*           | [|- ?X = ?Y] => *)
+(*             let l:= reify_rtl_conv (@nil nat) (fun _:unit => X) in *)
+(*             let r:= reify_rtl_conv (@nil nat) (fun _:unit => Y) in *)
+(*             change (@oc_denote (@nil nat) _ tt l= *)
+(*                     @oc_denote (@nil nat) _ tt r) *)
+(*        end. *)
+
+(* Goal False. *)
+(* Unset Ltac Debug. *)
+(* let s := reify_rtl_conv (@nil nat) *)
+(*           (fun _:unit => pal <- iload_op8 DS (Reg_op EAX); *)
+(*            ret arith_rtl_exp and_op pal pal) in *)
+(* pose s. *)
+
+(* Goal load_Z size8 9 = load_Z size8 9. *)
+(* Proof.  unfold load_Z, load_int. *)
+(*         Unset Ltac Debug. *)
+(*         match goal with *)
+(*           | [|- ?X = ?Y] => *)
+(*             let l:= reify_rtl_conv (@nil nat) (fun _:unit => X) in *)
+(*             let r:= reify_rtl_conv (@nil nat) (fun _:unit => Y) in *)
+(*             change (@oc_denote (@nil nat) _ tt l=@oc_denote (@nil nat) _ tt r) *)
+(*         end. *)
+
+
+(* TBC *)
+  (* plan: (1) reify basic rtl computations; without reifying the bind construct 
+           (2) reify binds *)
+
+Section REIFY_RTL_COMP.
+
+  Local Set Implicit Arguments.
+
+  Inductive rtl_comp : Type -> Type :=
+  | rc_ret  (T:Type) (a:T) : rtl_comp T
+  | rc_fail (T:Type) : rtl_comp T
+  | rc_trap (T:Type) : rtl_comp T
+  | rc_get_loc n (l:location n) : rtl_comp (int n)
+  | rc_set_loc n (l:location n) (v:int n) : rtl_comp unit
+  | rc_get_array n1 n2 (a:array n1 n2) (i:int n1) : rtl_comp (int n2)
+  | rc_set_array n1 n2 (a:array n1 n2) (i:int n1) (v:int n2) : rtl_comp unit
+  | rc_get_byte (addr:int size_addr) : rtl_comp (int size8)
+  | rc_set_byte (addr:int size_addr) (v:int size8) : rtl_comp unit
+  | rc_choose_bits (n:nat) : rtl_comp (int n)
+  | rc_interp_rtl_exp n (e:rtl_exp n) : rtl_comp (int n).
+
+  Definition  rtl_comp_denote T (c: rtl_comp T) : RTL T := 
+    match c with
+      | rc_ret _ a => ret a
+      | rc_fail _ => Fail _
+      | rc_trap _ => Trap _
+      | rc_get_loc _ l => get_loc l
+      | rc_set_loc _ l v => set_loc l v
+      | rc_get_array _ _ a i => get_array a i
+      | rc_set_array _ _ a i v => set_array a i v
+      | rc_get_byte addr => get_byte addr
+      | rc_set_byte addr v => set_byte addr v
+      | rc_choose_bits n => choose_bits n
+      | rc_interp_rtl_exp _ e => interp_rtl_exp e
+    end.
+
+End REIFY_RTL_COMP.
+
+Ltac reify_rtl_comp c := 
+  match c with
+    | Return ?A => constr:(rc_ret A)
+    | Fail ?T => constr:(rc_fail T)
+    | Trap ?T => constr:(rc_trap T)
+    | get_loc ?L => constr:(rc_get_loc L)
+    | set_loc ?L ?V => constr:(rc_set_loc L V)
+    | get_array ?A ?I => constr:(rc_get_array A I)
+    | set_array ?A ?I ?V => constr:(rc_set_array A I V)
+    | get_byte ?A => constr:(rc_get_byte A)
+    | set_byte ?A ?V => constr:(rc_set_byte A V)
+    | choose_bits ?N => constr:(rc_choose_bits N)
+    | interp_rtl_exp ?E => constr:(rc_interp_rtl_exp E)
+  end.
+
+
 (** * Lemmas and tactics for eliminating and introducing a RTL monad *)
 
 Lemma rtl_bind_okay_elim:
@@ -87,10 +520,9 @@ Proof. intros. unfold Bind, RTL_monad in H.
     crush. right. crush.
 Qed.
 
-(*todo: remove begin ??? *)
-(** Find a (v <- op1; op2) s = (Okay_ans v', s') in the context; break
- ** it using rtl_bind_okay_elim; introduce the intermediate state 
- ** and value into the context; try the input tactic *)
+(** Find a (v <- op1; op2) s = (Okay_ans v', s') in the context; break it
+    using rtl_bind_okay_elim; introduce the intermediate state and value
+    into the context; try the input tactic *)
 Ltac rtl_okay_break := 
   match goal with
     | [H: Bind _ _ _ ?s = (Okay_ans ?v', ?s') |- _]  => 
@@ -100,7 +532,7 @@ Ltac rtl_okay_break :=
   end.
 
 (** Find a (v <- op1; op2) s = Failed in the context; break
- ** it using rtl_bind_fail_elim to destruct the goal into two cases *)
+    it using rtl_bind_fail_elim to destruct the goal into two cases *)
 Ltac rtl_fail_break := 
   match goal with
     | [H: Bind _ _ _ ?s = (Fail_ans _, _) |- _]  => 
@@ -110,9 +542,8 @@ Ltac rtl_fail_break :=
         let H1 := fresh "H" in let s' := fresh "s" in let v' := fresh "v" in 
         destruct H as [s' [v' [H1 H]]]]
   end.
-(*todo: remove end ??? *)
 
-(* Destruct the head in a match clause *)
+(** Destruct the head in a match clause *)
 Ltac extended_destruct_head c := 
   match c with
     | context[if ?X then _ else _] => destruct X
@@ -238,16 +669,14 @@ Hint Rewrite one_plus_rewrite_2 one_plus_rewrite_3
 
 Ltac simpl_rtl := autorewrite with rtl_rewrite_db in *.
 
-(** * Lemmas about basic operations that are used to define
-    * instruction semantics. Conventions used in lemmas are explained
-      below:
-      
-      (1) Lemmas ending with "_equation" are for instructions that
+(** * Lemmas about basic operations of instruction semantics.
+
+      Conventions used in lemmas are explained below:
+      - Lemmas ending with "_equation" are for instructions that
       always suceed and return the identical state when given an
       initial state; * in addtion, the values they return are
       easy to write down.
-      
-      (2) Lemmas ending with "_exists" are for instructions that
+      - Lemmas ending with "_exists" are for instructions that
       always succeed and return the same state. But the return
       values are not easy to write down; so we use an existential
       in the lemmas.
@@ -270,36 +699,36 @@ Lemma fetch_n_exists : forall (n:nat) (pc:int32) (s:rtl_state),
 Proof. unfold fetch_n_rtl. intros. exists (fetch_n n pc s). trivial. Qed.
 *)
 
-Ltac rtl_comp_elim_exist H lm name:=
-  let Ht := fresh "Ht" in
-    destruct lm as [name Ht];
-    unfold Bind at 1 in H; unfold RTL_monad at 1 in H;
-    rewrite Ht in H.
+(* todo: remove *)
+(* Ltac rtl_comp_elim_exist H lm name:= *)
+(*   let Ht := fresh "Ht" in *)
+(*     destruct lm as [name Ht]; *)
+(*     unfold Bind at 1 in H; unfold RTL_monad at 1 in H; *)
+(*     rewrite Ht in H. *)
 
-(* todo: move or revise *)
-(* Ltac rtl_comp_elim_L1 := *)
-(*   let unfold_rtl_monad H :=  *)
-(*     unfold Bind at 1 in H; unfold RTL_monad at 1 in H *)
-(*   in match goal with *)
-(*     | [H: Return ?v ?s = _ |- _] => *)
-(*       compute [Return Bind RTL_monad] in H *)
-(*     | [H: Trap _ _ = _ |- _] => *)
-(*       compute [SafeFail] in H *)
-(*     | [H: Bind _ (get_loc _) _ _ = _ |- _] => *)
-(*       unfold_rtl_monad H; compute [get_loc get_location] in H *)
-(*     | [H: Bind _ (in_seg_bounds _ _) _ _ = _ |- _] => *)
-(*       unfold_rtl_monad H; rewrite in_seg_bounds_equation in H *)
-(*     | [H: Bind _ (in_seg_bounds_rng _ _ _) _ _ = _ |- _] => *)
-(*       unfold_rtl_monad H; rewrite in_seg_bounds_rng_equation in H *)
-(*     | [H: Bind _ flush_env _ _ = _ |- _] => *)
-(*       unfold_rtl_monad H; compute [flush_env] in H *)
-(*     | [H: Bind _ (Return _) _ _ = _ |- _] => *)
-(*       unfold_rtl_monad H; compute [Return Bind RTL_monad] in H *)
-(* (* *)
+Ltac rtl_comp_elim_L1 :=
+  let unfold_rtl_monad H :=
+    unfold Bind at 1 in H; unfold RTL_monad at 1 in H
+  in match goal with
+    | [H: Return ?v ?s = _ |- _] =>
+      compute [Return Bind RTL_monad] in H
+    | [H: Trap _ _ = _ |- _] =>
+      compute [Trap] in H
+    | [H: Bind _ (get_loc _) _ _ = _ |- _] =>
+      unfold_rtl_monad H; compute [get_loc get_location] in H
+    | [H: Bind _ (in_seg_bounds _ _) _ _ = _ |- _] =>
+      unfold_rtl_monad H; rewrite in_seg_bounds_equation in H
+    | [H: Bind _ (in_seg_bounds_rng _ _ _) _ _ = _ |- _] =>
+      unfold_rtl_monad H; rewrite in_seg_bounds_rng_equation in H
+    (* | [H: Bind _ flush_env _ _ = _ |- _] => *)
+    (*   unfold_rtl_monad H; compute [flush_env] in H *)
+    | [H: Bind _ (Return _) _ _ = _ |- _] =>
+      unfold_rtl_monad H; compute [Return Bind RTL_monad] in H
+(* *)
 (*     | [H: Bind _ (fetch_n_rtl ?n ?pc) _ ?s = _ |- _] => *)
 (*       let name := fresh "bytes" in *)
-(*         rtl_comp_elim_exist H (fetch_n_exists n pc s) name *) *)
-(*   end. *)
+(*         rtl_comp_elim_exist H (fetch_n_exists n pc s) name *)
+  end.
 
 (*
 Lemma effective_addr_exists : forall (a:address) (s:mach_state),
@@ -317,8 +746,7 @@ Ltac mach_comp_elim_L2 :=
    end.
 *)
 
-(* todo: revise or delete*)
-(* Ltac rtl_comp_elim :=  rtl_comp_elim_L1. *)
+Ltac rtl_comp_elim :=  rtl_comp_elim_L1.
 
 Ltac rtl_invert := 
   let tac1 H := 
@@ -330,8 +758,7 @@ Ltac rtl_invert :=
     end
   in appHyps tac1.
 
-(* todo: revise or delete*)
-(* Ltac rtl_okay_elim :=  rtl_comp_elim || rtl_invert || rtl_okay_break. *)
+Ltac rtl_okay_elim :=  rtl_comp_elim || rtl_invert || rtl_okay_break.
 
 Ltac removeUnit :=
   repeat (match goal with
@@ -393,45 +820,46 @@ Proof. trivial. Qed.
 
 Hint Rewrite RTL_step_list_app RTL_step_list_cons RTL_step_list_nil : step_list_db.
 
-(** * The following sets up the general framework for proving properties of
-   instruction semantics:
-   (1) Module type RTL_STATE_REL provides the abstraction of a relation 
-       between two RTL states, e.g., the two states have the same segment 
-       registers.
-   (2) Module type RTL_PROP provides the abstraction of a property about
-       RTL computations.
-   (3) Functor RTL_Prop takes a RTL_STATE_REL module and lifts the 
-       relation to a property about RTL compuation.
-   (4) Functor Conv_Prop takes a RTL_Prop module and lifts the 
-       property to a property about conversion.
+(** * A general framework for proving properties of instructions:
+
+   - Module type [RTL_STATE_REL] provides the abstraction of a relation 
+     between two RTL states, e.g., the two states have the same segment 
+     registers.
+   - Module type [RTL_PROP] provides the abstraction of a property about
+     RTL computations.
+   - Functor [RTL_Prop] takes a [RTL_STATE_REL] module and lifts the 
+     relation to a property about RTL compuations.
+   - Functor [Conv_Prop] takes a [RTL_Prop] module and lifts the 
+     property to a property about RTL conversions.
 *)
 
 Module Type RTL_STATE_REL.
-  (* A binary relation that relates two RTL states *)
+  (** A binary relation that relates two RTL states *)
   Parameter brel : rtl_state -> rtl_state -> Prop.
-  (* The relation is reflexive and transitive *)
+  (** The relation is reflexive and transitive *)
   Axiom brel_refl : forall s, brel s s.
   Axiom brel_trans : forall s1 s2 s3, brel s1 s2 -> brel s2 s3 -> brel s1 s3.
 End RTL_STATE_REL.
 
 Module Type RTL_PROP.
-  (* A property about RTL compuation *)
+  (** A property about RTL compuation *)
   Parameter rtl_prop : forall (A:Type), RTL A -> Prop.
-  
+
   Axiom bind_sat_prop : forall (A B:Type) (c1:RTL A) (f:A -> RTL B), 
     rtl_prop _ c1 -> (forall a:A, rtl_prop _ (f a))
       -> rtl_prop _ (Bind _ c1 f).
   Axiom ret_sat_prop : forall (A:Type) (a:A), rtl_prop _ (Return a).
+
 End RTL_PROP.
 
 Module RTL_Prop (R:RTL_STATE_REL) <: RTL_PROP.
 
-  (* Lift the relation to a property on a RTL computation *)
+  (** Lift the relation to a property on a RTL computation *)
   Definition rtl_prop (A:Type) (c:RTL A) := 
     forall s s' v', c s = (Okay_ans v', s') -> R.brel s s'.
   Implicit Arguments rtl_prop [A].
 
-  (* To prove "Bind _ c1 f" satisfies a RTL-computation property, it is
+  (** To prove "Bind _ c1 f" satisfies a RTL-computation property, it is
      sufficient to show c1 satifies it, and f satifies it for any result
      of c1 *)
   Lemma bind_sat_prop : forall (A B:Type) (c1:RTL A) (f:A -> RTL B), 
@@ -453,17 +881,17 @@ Module RTL_Prop (R:RTL_STATE_REL) <: RTL_PROP.
   Lemma trap_sat_prop : forall (A:Type), rtl_prop (Trap A).
   Proof. unfold rtl_prop. intros. inversion H. Qed.
 
-End RTL_Prop.  
+End RTL_Prop.
 
 Module Conv_Prop (RP: RTL_PROP).
   Import RP.
   Implicit Arguments rtl_prop [A].
 
-  (* Lift a property about a RTL computation to a property about conversion from
-   an x86 instruction to a list of RTL instructions. It says that
-   if the computation for the input RTL-instruction list satifies the
-   property, and after conversion the output RTL-instruction list also
-   satisifies the property *)
+  (** Lift a property about a RTL computation to a property about a
+   conversion from an x86 instruction to a list of RTL instructions. It
+   says that if the computation for the input RTL-instruction list satifies
+   the property, and after conversion the output RTL-instruction list also
+   satisifies the property. *)
   Definition conv_prop (A:Type) (cv:Conv A) := 
     forall cs (v:A) cs',
       cv cs = (v, cs')
@@ -521,8 +949,10 @@ Ltac conv_backward :=
       => inv H; simpl in H1; autorewrite with step_list_db in H1;
          repeat rtl_okay_break
   end.
-  
-(** * Lemmas about that instructions that preserve the state *)
+
+(** * Properties about RTL computations *)
+
+(** ** The property that an RTL computation preserves [rtl_state] *)
 
 Module Same_RTL_State_Rel <: RTL_STATE_REL.
   Definition brel (s1 s2 : rtl_state) := s1 = s2.
@@ -541,10 +971,6 @@ Notation same_rtl_state := Same_RTL_State.rtl_prop.
 (* RTL instructions *)
 Hint Unfold same_rtl_state Same_RTL_State_Rel.brel : rtl_prop_unfold_db.
 
-Hint Immediate Same_RTL_State.ret_sat_prop : same_rtl_state_db.
-Hint Immediate Same_RTL_State.fail_sat_prop : same_rtl_state_db.
-Hint Immediate Same_RTL_State.trap_sat_prop : same_rtl_state_db.
-
 (* the ordering of matches is important for the following tactic *)
 Ltac same_rtl_state_tac :=
   repeat (match goal with
@@ -554,8 +980,10 @@ Ltac same_rtl_state_tac :=
             | [|- same_rtl_state _] => auto with same_rtl_state_db
           end).
 
-(** * Lemmas about that instructions that preserve the machine state, *)
-(*    which is the set of registers in x86 *)
+Hint Immediate Same_RTL_State.ret_sat_prop  Same_RTL_State.fail_sat_prop 
+     Same_RTL_State.trap_sat_prop : same_rtl_state_db.
+
+(** ** The property that an RTL computation preserves [rtl_mach_state] *)
 Module Same_Mach_State_Rel <: RTL_STATE_REL.
   Definition brel (s1 s2 : rtl_state) :=
     rtl_mach_state s1 = rtl_mach_state s2.
@@ -581,9 +1009,36 @@ Ltac same_mach_state_tac :=
             | [|- same_mach_state _] => auto with same_mach_state_db
           end).
 
-Hint Immediate Same_Mach_State.ret_sat_prop : same_mach_state_db.
-Hint Immediate Same_Mach_State.fail_sat_prop : same_mach_state_db.
-Hint Immediate Same_Mach_State.trap_sat_prop : same_mach_state_db.
+Local Ltac rtl_prover :=
+  autounfold with rtl_prop_unfold_db ; simpl;
+  unfold set_byte, get_byte, set_loc, get_loc, set_array, get_array, 
+    choose_bits, Fail, Trap;
+  crush.
+
+(** A decision procedure for checking if a RTL computation does not
+    change the machine state *)
+Definition check_same_mach_state T (rc:rtl_comp T) : bool := 
+  match rc with
+    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
+    | rc_get_array _ _ _ _ 
+    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _  => true
+    | _ => false
+  end.
+
+Implicit Arguments check_same_mach_state [T].
+
+Lemma check_same_mach_state_sound : forall T (rc: rtl_comp T),
+  check_same_mach_state rc = true -> same_mach_state (rtl_comp_denote rc).
+Proof. destruct rc; try (discriminate H || rtl_prover; fail). Qed.
+
+(* A reflection based tactic to check if a basic rtl computation satisfies
+   [same_mach_state]. Not stricitly necessary here; alternatively, we can
+   also put in lemmas about those rcl computations into the hint database;
+   but that requires we state those lemmas explicitly.  *)
+Hint Extern 2 (same_mach_state ?C) =>
+  let rc:= reify_rtl_comp C in
+  change (same_mach_state (rtl_comp_denote rc));
+  apply check_same_mach_state_sound; trivial : same_mach_state_db.
 
 Lemma same_rtl_state_same_mach_state : forall (A:Type) (c:RTL A),
   same_rtl_state c -> same_mach_state c.
@@ -593,50 +1048,69 @@ Proof. unfold same_mach_state, Same_Mach_State_Rel.brel.
   trivial.
 Qed.
 
-Local Ltac rtl_prover :=
-  autounfold with rtl_prop_unfold_db ; simpl;
-  unfold set_byte, get_byte, set_loc, get_loc, choose_bits;
-  crush.
+Lemma interp_rtl_exp_same_mach_state : forall s (e: rtl_exp s),
+  same_mach_state (interp_rtl_exp e).
+Proof. induction e;
+  compute [interp_rtl_exp]; fold interp_rtl_exp;
+  same_mach_state_tac.
+Qed.
+Hint Immediate interp_rtl_exp_same_mach_state : same_mach_state_db.
 
-(* todo: remove *)
-(* Lemma flush_env_same_mach_state : same_mach_state flush_env. *)
-(* Proof. rtl_prover. Qed. *)
 
-(* todo: remove *)
-(* Lemma set_ps_same_mach_state : forall s (r:pseudo_reg s) v, *)
-(*   same_mach_state (set_ps r v). *)
-(* Proof. rtl_prover. Qed. *)
+(** ** The property that an RTL computation preserves the core state *)
+Module Same_Core_State_Rel <: RTL_STATE_REL.
+  Definition brel (s1 s2 : rtl_state) :=
+    core (rtl_mach_state s1) = core (rtl_mach_state s2).
 
-Lemma set_byte_same_mach_state : forall addr v,
-  same_mach_state (set_byte addr v).
-Proof. rtl_prover. Qed.
+  Lemma brel_refl : forall s, brel s s.
+  Proof. unfold brel. trivial. Qed.
 
-(* todo: remove *)
-(* Lemma get_ps_same_mach_state : forall s (r:pseudo_reg s), *)
-(*   same_mach_state (get_ps r). *)
-(* Proof. rtl_prover. Qed. *)
+  Lemma brel_trans : forall s1 s2 s3, brel s1 s2 -> brel s2 s3 -> brel s1 s3.
+  Proof. unfold brel. crush. Qed.
+End Same_Core_State_Rel.
 
-Lemma get_loc_same_mach_state : forall s (l:location s),
-  same_mach_state (get_loc l).
-Proof. rtl_prover. Qed.
+Module Same_Core_State := RTL_Prop Same_Core_State_Rel.
+Notation same_core_state := Same_Core_State.rtl_prop.
 
-Lemma get_byte_same_mach_state : forall addr,
-  same_mach_state (get_byte addr).
-Proof. rtl_prover. Qed.
+Hint Unfold same_core_state Same_Core_State_Rel.brel : rtl_prop_unfold_db.
 
-Lemma choose_bits_same_mach_state : forall s,
-  same_mach_state (choose_bits s).
-Proof. rtl_prover. Qed.
+Ltac same_core_state_tac :=
+  compute [interp_rtl]; fold interp_rtl;
+  repeat (match goal with
+            | [|- same_core_state (Bind _ _ _)] =>
+              apply Same_Core_State.bind_sat_prop; [idtac | intros]
+            | [|- same_core_state ?c] => extended_destruct_head c
+            | [|- same_core_state _] => auto with same_core_state_db
+          end).
 
-(* todo: remove *)
-(* Hint Extern 0 (same_mach_state flush_env) *)
-(*   => apply flush_env_same_mach_state : same_mach_state_db. *)
-Hint Immediate 
-  set_byte_same_mach_state get_loc_same_mach_state
-  get_byte_same_mach_state choose_bits_same_mach_state
-  : same_mach_state_db.
+Definition check_same_core_state T (rc:rtl_comp T) : bool := 
+  match rc with
+    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
+    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _
+    | rc_interp_rtl_exp _ _ => true
+    | _ => false
+  end.
 
-(** * Lemmas about when a machine computation does not change seg registers *)
+Implicit Arguments check_same_core_state [T].
+
+Lemma same_mach_state_same_core_state : forall (A:Type) (c:RTL A),
+  same_mach_state c -> same_core_state c.
+Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
+
+Lemma check_same_core_state_sound : forall T (rc: rtl_comp T),
+  check_same_core_state rc = true -> same_core_state (rtl_comp_denote rc).
+Proof. intros; destruct rc; simpl; try (discriminate H || rtl_prover; fail). 
+  destruct a; rtl_prover.  
+  apply same_mach_state_same_core_state; same_mach_state_tac.
+Qed.
+
+Hint Extern 2 (same_core_state ?C) =>
+  let rc:= reify_rtl_comp C in
+  change (same_core_state (rtl_comp_denote rc));
+  apply check_same_core_state_sound; trivial : same_core_state_db.
+
+(** ** Property that an RTL computation preserves values in seg registers *)
 
 Module Same_Seg_Regs_Rel <: RTL_STATE_REL.
   Definition brel (s1 s2 : rtl_state) :=
@@ -667,29 +1141,18 @@ Ltac same_seg_regs_tac :=
   compute [interp_rtl]; fold interp_rtl;
   repeat same_seg_regs_one_tac.
 
-Hint Immediate Same_Seg_Regs.ret_sat_prop : same_seg_regs_db.
-Hint Immediate Same_Seg_Regs.fail_sat_prop : same_seg_regs_db.
-Hint Immediate Same_Seg_Regs.trap_sat_prop : same_seg_regs_db.
+Lemma same_core_state_same_seg_regs : forall (A:Type) (c:RTL A),
+  same_core_state c -> same_seg_regs c.
+Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
 
 Lemma same_mach_state_same_seg_regs : forall (A:Type) (c:RTL A),
   same_mach_state c -> same_seg_regs c.
 Proof. autounfold with rtl_prop_unfold_db. crush_hyp.
 Qed.
 
-(* Try same_mach_state_db *)
-Hint Extern 2 (same_seg_regs _) =>
-  apply same_mach_state_same_seg_regs; auto with same_mach_state_db
-  : same_seg_regs_db.
-
 Lemma same_rtl_state_same_seg_regs : forall (A:Type) (c:RTL A),
   same_rtl_state c -> same_seg_regs c.
 Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
-
-(* Try same_rtl_state_db *)
-Hint Extern 2 (same_seg_regs _) =>
-  apply same_rtl_state_same_seg_regs; auto with same_rtl_state_db
-  : same_seg_regs_db.
-
 
 Definition is_seg_reg_loc (s:nat) (l:loc s) :=
   match l with
@@ -698,15 +1161,44 @@ Definition is_seg_reg_loc (s:nat) (l:loc s) :=
     | _ => false
   end.
 
+Implicit Arguments is_seg_reg_loc [s].
+
 Lemma set_loc_same_seg_regs : forall s (l:location s) v,
-  is_seg_reg_loc _ l = false -> same_seg_regs (set_loc l v).
+  is_seg_reg_loc l = false -> same_seg_regs (set_loc l v).
 Proof. autounfold with rtl_prop_unfold_db.  unfold set_loc.
   intros; destruct l; crush.
 Qed.
 
-Hint Resolve set_loc_same_seg_regs : same_seg_regs_db.
+Definition check_same_seg_regs T (rc:rtl_comp T) : bool := 
+  match rc with
+    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
+    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _
+    | rc_interp_rtl_exp _ _ => true
+    | rc_set_loc _ l _ => negb (is_seg_reg_loc l)
+  end.
 
-(** * Lemmas about when a machine computation does not change the pc reg *)
+Implicit Arguments check_same_seg_regs [T].
+
+
+Lemma check_same_seg_regs_sound : forall T (rc: rtl_comp T),
+  check_same_seg_regs rc = true -> same_seg_regs (rtl_comp_denote rc).
+Proof. destruct rc; intros; try (discriminate H || rtl_prover; fail).
+
+  todo: use bool_elim_tac
+  
+  apply negb_true_iff in H; simpl; auto using set_loc_same_seg_regs.
+  apply same_core_state_same_seg_regs; simpl; auto with same_core_state_db.
+  apply same_mach_state_same_seg_regs; simpl; auto with same_mach_state_db.
+Qed.
+
+(* try the decision procedure on basic rtl computations *)
+Hint Extern 2 (same_seg_regs ?C) =>
+  let rc:= reify_rtl_comp C in
+  change (same_seg_regs (rtl_comp_denote rc));
+  apply check_same_seg_regs_sound; trivial : same_seg_regs_db.
+
+(** ** Property that an RTL computation does not change the pc register *)
 
 Module Same_PC_Rel <: RTL_STATE_REL.
   Definition brel (s1 s2 : rtl_state) := 
@@ -733,24 +1225,23 @@ Ltac same_pc_tac :=
             | [|- same_pc _] => auto with same_pc_db
           end).
 
-Hint Immediate Same_PC.ret_sat_prop : same_pc_db.
-Hint Immediate Same_PC.fail_sat_prop : same_pc_db.
-Hint Immediate Same_PC.trap_sat_prop : same_pc_db.
-
-Lemma same_mach_state_same_pc : forall (A:Type) (c:RTL A), 
-  same_mach_state c -> same_pc c.
-Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
-
-(* Try same_mach_state_db *)
-Hint Extern 2 (same_pc _) =>
-  apply same_mach_state_same_pc; auto with same_mach_state_db
-  : same_pc_db.
-
 Definition is_pc_loc (s:nat) (l:loc s) :=
   match l with
     | pc_loc => true
     | _ => false
   end.
+
+Definition check_same_pc T (rc:rtl_comp T) : bool := 
+  match rc with
+    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
+    | rc_get_array _ _ _ _ 
+    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _ 
+    | rc_interp_rtl_exp _ _ => true
+    | rc_set_loc _ l _ => negb (is_pc_loc _ l)
+    | _ => false
+  end.
+
+Implicit Arguments check_same_pc [T].
 
 Lemma set_loc_same_pc : forall s (l:location s) v,
   is_pc_loc _ l = false -> same_pc (set_loc l v).
@@ -758,488 +1249,24 @@ Proof. autounfold with rtl_prop_unfold_db.  unfold set_loc. intros.
   destruct l; crush.
 Qed.  
 
-Hint Resolve set_loc_same_pc : same_pc_db.
+Lemma same_mach_state_same_pc : forall (A:Type) (c:RTL A), 
+  same_mach_state c -> same_pc c.
+Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
 
-(* todo: exploration *)
-
-(* Lemma nci_same_pc: forall ins pre, *)
-(*   non_cflow_instr pre ins = true *)
-(*     -> same_pc (RTL_step_list (instr_to_rtl pre ins)). *)
-(* (* Admitted. *) *)
-(* Proof. intros. *)
-(*   destruct ins;  *)
-(*   unfold instr_to_rtl, check_prefix in *; *)
-(*     (discriminate H || prove_instr). *)
-(* Qed. *)
-
-  (* (* Begin: a set of basic conversion constructs *) *)
-  (* Definition raise_error := emit error_rtl. *)
-  (* Definition raise_trap := emit trap_rtl. *)
-  (* Definition no_op := ret tt. *)
-  (* (* Definition ret_exp s (e:rtl_exp s) := ret e. *) *)
-  (* Definition arith s b (e1 e2:rtl_exp s) := ret (arith_rtl_exp b e1 e2). *)
-  (* Definition test s t (e1 e2:rtl_exp s) := ret (test_rtl_exp t e1 e2). *)
-  (* Definition cast_u s1 s2 (e:rtl_exp s1) := ret (@cast_u_rtl_exp s1 s2 e). *)
-  (* Definition cast_s s1 s2 (e:rtl_exp s1) := ret (@cast_s_rtl_exp s1 s2 e). *)
-  (* Definition write_loc s (e:rtl_exp s) (l:loc s)  := emit set_loc_rtl e l. *)
-  (* Definition read_array l s (a:array l s) (idx:rtl_exp l) :=  *)
-  (*   ret (get_array_rtl_exp a idx). *)
-  (* Definition write_array l s (a:array l s) (idx:rtl_exp l) (v:rtl_exp s) := *)
-  (*   emit set_array_rtl a idx v. *)
-
-  (* Definition read_byte (a:rtl_exp size32) := ret (get_byte_rtl_exp a). *)
-  (* Definition write_byte (v:rtl_exp size8) (a:rtl_exp size32) :=  *)
-  (*   emit set_byte_rtl v a. *)
-  (* Definition if_exp s g (e1 e2:rtl_exp s) : Conv (rtl_exp s) := *)
-  (*   ret (if_rtl_exp g e1 e2). *)
-  (* Definition if_trap g : Conv unit := emit (if_rtl g trap_rtl). *)
-  (* Definition if_set_loc cond s (e:rtl_exp s) (l:location s) := *)
-  (*   emit (if_rtl cond (set_loc_rtl e l)). *)
-  (* Definition choose s : Conv (rtl_exp s) := ret (@choose_rtl_exp s). *)
-
-(* Reify rtl conversions to some coq inductive type syntax so that we can
-   write coq functions on rtl conversions. *)
-(* assumption: assume all return types are either unit or "rtl_exp sz" *)
-Section RTL_CONV.
-  Local Set Implicit Arguments.
-
-  (* types of expressions in and return values of rtl conversions *)
-  Inductive ty : Set :=
-  (* unit type *)
-  | ct_unit : ty
-  (* 'rtl_exp s' type *)
-  | ct_rtl_exp : forall s:nat, ty.
-
-  Definition ty_denote (t:ty) :=
-    match t with
-      | ct_unit => unit
-      | ct_rtl_exp s => rtl_exp s
-    end.
-
-  Fixpoint tylist_denote (ts:list ty) := 
-    match ts with
-      | nil => unit
-      | t :: ts' => (ty_denote t * tylist_denote ts')%type
-    end.
-
-  Inductive member (t:ty) : list ty -> Type := 
-  | lfirst : forall ts, member t (t :: ts)
-  | lnext : forall ts t', member t ts -> member t (t' :: ts).
-
-  (* Expressions in conversions, indexed by the types of free
-     variables and the type of the expression *)
-  Inductive exp (ts:list ty) : ty -> Set := 
-  | ce_var : forall t, member t ts -> exp ts t.
-
-  (* reified syntax of rtl conversions, indexed by the types of
-     free variables and the return type *)
-  Inductive conv (ts:list ty) : ty -> Type := 
-  | cv_bind (A B:ty) (cv:conv ts B) (f:conv (B::ts) A) :
-      conv ts A
-  | cv_load_int (s:nat) (i:int s) : conv ts (ct_rtl_exp s)
-  | cv_read_loc (s:nat) (l:loc s) : conv ts (ct_rtl_exp s)
-  | cv_write_loc (s:nat) (e:exp ts (ct_rtl_exp s)) (l:loc s) :
-      conv ts ct_unit
-  | cv_arith (s:nat) (b:bit_vector_op) (e1 e2:exp ts (ct_rtl_exp s)) :
-      conv ts (ct_rtl_exp s)
-  | cv_test (s:nat) (top:test_op) (e1 e2:exp ts (ct_rtl_exp s)) :
-      conv ts (ct_rtl_exp size1)
-  | cv_cast_u (s1 s2:nat) (e:exp ts (ct_rtl_exp s1)) :
-      conv ts (ct_rtl_exp s2)
-  | cv_if_exp (s:nat) (g:exp ts (ct_rtl_exp size1))
-      (e1 e2:exp ts (ct_rtl_exp s)) : conv ts (ct_rtl_exp s)                 
-  | cv_choose (s:nat) : conv ts (ct_rtl_exp s)
-  | cv_iload_op8 (seg:segment_register) (op:operand) : 
-      conv ts (ct_rtl_exp size8)
-  | cv_iset_op8 (seg:segment_register) (p:exp ts (ct_rtl_exp size8))
-      (op:operand) : conv ts ct_unit
-  (* a catch-call clause *)
-  | cv_any t (c:tylist_denote ts -> Conv (ty_denote t)) : conv ts t.
-
-  (* Tricky to get this right, fighting the type checker all the time;
-     illustrate all the pain of doing dependent types in Coq:( *)
-  Fixpoint get_ty t ts : 
-    tylist_denote ts -> member t ts -> ty_denote t :=
-    match ts return tylist_denote ts -> member t ts -> ty_denote t with
-      | nil => fun env mem => 
-        match mem in member _ ts' return (match ts' with
-                                            | nil => ty_denote t
-                                            | _ => unit
-                                          end) with
-          | lfirst _ => tt
-          | lnext _ _ _ => tt
-        end
-      | t' :: ts' => fun env mem => 
-        match mem in member _ ts1 return (match ts1 with
-                                          | nil => Empty_set
-                                          | t'' :: ts'' =>
-                                            tylist_denote (t'' :: ts'')
-                                            -> (tylist_denote ts''
-                                                -> member t ts''
-                                                -> ty_denote t)
-                                            -> ty_denote t
-                                        end) with
-          | lfirst _ => fun env _ => fst env
-          | lnext x ts2 mem' => fun env get_ty' => 
-                                get_ty' (snd env) mem'
-        end env (@get_ty t ts')
-    end.
-
-  Definition conv_exp_denote (ts:list ty) (t:ty) (e:exp ts t) 
-             (env:tylist_denote ts) : ty_denote t := 
-    match e with
-      | ce_var t mem => get_ty env mem
-    end.
-
-  Fixpoint conv_denote (ts:list ty) (t:ty) (cv:conv ts t)
-             (env:tylist_denote ts) : Conv (ty_denote t) := 
-    match cv in conv _ t' return Conv (ty_denote t') with
-      | cv_bind _ _ cv f => 
-        let c := conv_denote cv env in
-        Bind _ c (fun x => conv_denote f (x,env))
-      | cv_load_int _ i => load_int i
-      | cv_read_loc _ l => read_loc l
-      | cv_write_loc _ e l => 
-        let re := conv_exp_denote e env in
-        write_loc re l
-      | cv_arith _ op e1 e2 => 
-        let re1 := conv_exp_denote e1 env in
-        let re2 := conv_exp_denote e2 env in
-        arith op re1 re2
-      | cv_test _ top e1 e2 => 
-        let re1 := conv_exp_denote e1 env in
-        let re2 := conv_exp_denote e2 env in
-        test top re1 re2
-      | cv_cast_u _ _ e =>
-        let re := conv_exp_denote e env in
-        cast_u _ re
-      | cv_if_exp _ g e1 e2 =>
-        let rg := conv_exp_denote g env in
-        let re1 := conv_exp_denote e1 env in
-        let re2 := conv_exp_denote e2 env in
-        if_exp rg re1 re2
-      | cv_choose s => choose s
-      | cv_iload_op8 seg op => iload_op8 seg op
-      | cv_iset_op8 seg p op => 
-        let rp := conv_exp_denote p env in
-        iset_op8 seg rp op
-      | cv_any _ c => c env
-    end.
-
-End RTL_CONV.
-
-Ltac ty_reify tp := 
-  match tp with 
-    | unit => ct_unit
-    | rtl_exp ?s => constr:(ct_rtl_exp s)
-    | _ => fail "ty_reify failed!"
-  end.
-
-Ltac member_pf ts fe := 
-  match ts with
-    | ?t' :: ?ts' =>
-      match fe with
-        | fun env => env => constr:(lfirst t' ts')
-        | fun env => snd (@?fe' env) => 
-          let mem := member_pf ts' fe' in
-          constr:(lnext t' mem)
-      end
-    | _ => fail "member_pf failed!"
-  end.
-
-(* (fst env) => ce_var (lfirst t ts')*)
-(* ts = t1 :: t2 :: ts' *)
-(* (fst (snd env)) => ce_var (lnext t2 t1 (t2:: ts') (lfirst t2 ts')) *)
-(* (fst (snd (snd env))) => ce_var (lnext (lnext lfirst)) *)
-(* env is of type "tylist_denote ts" and e is ... *)
-Ltac exp_reify ts e := 
-  match e with
-    | fun env:_ => fst (@?fe env)=> 
-      let mem := member_pf ts fe in
-      constr:(ce_var mem)
-    | _ => fail "exp_reify failed!"
-  end.
-
-  (* Goal False. *)
-  (* Proof. intros. *)
-  (*  let e := exp_reify ((ct_rtl_exp size8) :: ct_unit :: nil) *)
-  (*              (fun env: (rtl_exp size8)*(unit*unit) => fst (snd env)) *)
-  (*  in pose(e). *)
-
-(* reify terms about rtl conversions to the conv syntax; *)
-(* tyenv is the list of types of free variables in e *)
-Ltac rtl_conv_reify tyenv e := 
-  match eval cbv beta iota zeta in e with
-    | fun (x: ?T) => Bind _ (@?C x) (fun (y:?S) => @?F x y) =>
-      let cv_c := rtl_conv_reify tyenv C in
-      let t:= ty_reify S in
-      let cv_f := 
-          rtl_conv_reify (t::tyenv) (fun p:S*T => F (snd p) (fst p)) in
-      constr:(cv_bind cv_c cv_f)
-
-    | fun (x: ?T) => load_int ?I =>
-      constr:(cv_load_int tyenv I)
-
-    | fun (x: ?T) => read_loc ?L =>
-      constr:(cv_read_loc tyenv L)
-
-    | fun (x: ?T) => write_loc (@?RE x) ?L =>
-      let e := exp_reify tyenv RE in
-      constr:(cv_write_loc e L)
-
-    | fun (x: ?T) => arith ?Bop (@?RE1 x) (@?RE2 x) =>
-      let e1 := exp_reify tyenv RE1 in
-      let e2 := exp_reify tyenv RE2 in
-      constr:(cv_arith Bop e1 e2)
-
-    | fun (x: ?T) => test ?Top (@?RE1 x) (@?RE2 x) =>
-      let e1 := exp_reify tyenv RE1 in
-      let e2 := exp_reify tyenv RE2 in
-      constr:(cv_test Top e1 e2)
-
-    | fun (x: ?T) => cast_u ?S2 (@?RE x) =>
-      let e := exp_reify tyenv RE in
-      constr:(cv_cast_u S2 e)
-
-    | fun (x: ?T) => if_exp (@?G x) (@?RE1 x) (@?RE2 x) =>
-      let g := exp_reify tyenv G in
-      let e1 := exp_reify tyenv RE1 in
-      let e2 := exp_reify tyenv RE2 in
-      constr:(cv_if_exp g e1 e2)
-
-    | fun (x: ?T) => choose ?S =>
-      constr:(cv_choose tyenv S)
-
-    | fun (x: ?T) => iload_op8 ?Seg ?Op =>
-      constr:(cv_iload_op8 tyenv Seg Op)
-
-    | fun (x: ?T) => iset_op8 ?Seg (@?P x) ?Op =>
-      let p := exp_reify tyenv P in
-      constr:(cv_iset_op8 Seg p Op)
-
-    | fun (x: ?T) => @?C x =>
-      match type of C with
-        | _ -> Conv ?T' => 
-          let t' := ty_reify T' in 
-          constr:(cv_any tyenv t' C)
-      end
-  end.
-
-(* Goal False. *)
-(* Unset Ltac Debug. *)
-(* let s := rtl_conv_reify (@nil ty) *)
-(*           (fun _:unit => pal <- iload_op8 DS (Reg_op EAX); *)
-(*            arith and_op pal pal) in *)
-(* pose s. *)
-
-(* Set Printing Depth 100. *)
-
-(* testing *)
-(* Goal conv_AAA_AAS add_op = conv_AAA_AAS sub_op. *)
-(* Proof. *)
-(*   unfold conv_AAA_AAS, load_Z, undef_flag, get_flag, set_flag, *)
-(*     get_AH, get_AL, copy_ps, set_AL, set_AH. *)
-(*   (* arith, test, copy_ps. *) *)
-(*   Unset Ltac Debug. *)
-(*   Time match goal with *)
-(*           | [|- ?X = ?Y] => *)
-(*             let l:= rtl_conv_reify (@nil ty) (fun _:unit => X) in *)
-(*             let r:= rtl_conv_reify (@nil ty) (fun _:unit => Y) in *)
-(*             change ((conv_denote l tt)=(conv_denote r tt)) *)
-(*        end. *)
-
-(* Goal load_Z size8 9 = load_Z size8 9. *)
-(* Proof.  unfold load_Z. *)
-(*         match goal with *)
-(*           | [|- ?X = ?Y] => *)
-(*             let l:= rtl_conv_reify (@nil ty) (fun _:unit => X) in *)
-(*             let r:= rtl_conv_reify (@nil ty) (fun _:unit => Y) in *)
-(*             change ((conv_denote l tt)=(conv_denote r tt)) *)
-(*         end. *)
-
-(** * An unfolding database for proving properties of conversions *)
-
-(* todo *)
-(* Hint Unfold load_Z load_int arith test load_reg set_reg cast_u cast_s *)
-(*   get_seg_start get_seg_limit read_byte write_byte get_flag set_flag *)
-(*   get_pc set_pc copy_ps : conv_unfold_db. *)
-
-(** * Lemmas about a conversion preserves the property of same_pc *)
-
-Module Conv_Same_PC := Conv_Prop Same_PC.
-Notation conv_same_pc := Conv_Same_PC.conv_prop.
-
-(* todo: remove *)
-Hint Extern 1 (conv_same_pc (emit _)) => 
-  apply Conv_Same_PC.emit_sat_conv_prop; same_pc_tac : conv_same_pc_db.
-
-(* todo: remove *)
-(* Hint Extern 1 (conv_same_pc (fresh _)) =>  *)
-(*   apply Conv_Same_PC.fresh_sat_conv_prop; intros; same_pc_tac : *)
-(*   conv_same_pc_db. *)
-
-Hint Resolve Conv_Same_PC.ret_sat_conv_prop 
-  : conv_same_pc_db.
-
-Ltac conv_same_pc_tac := 
-  repeat autounfold with conv_unfold_db;
-  repeat (match goal with
-            | [|- conv_same_pc (Bind _ _ _)] => 
-              apply Conv_Same_PC.bind_sat_conv_prop; [idtac | intros]
-            (* | [|- conv_same_pc ?c] => extended_destruct_head c *)
-            | [|- conv_same_pc _] => auto with conv_same_pc_db
-          end).
-
-Lemma conv_same_pc_e : forall (A:Type) (cv:Conv A) cs v cs',
-  cv cs = (v, cs')
-    -> conv_same_pc cv
-    -> same_pc (RTL_step_list (List.rev (c_rev_i cs)))
-    -> same_pc (RTL_step_list (List.rev (c_rev_i cs'))).
-Proof. unfold conv_same_pc. eauto. Qed.
-
-Ltac conv_backward_same_pc :=
-  match goal with
-    [H: ?cv ?cs = (_, ?cs') |- 
-      same_pc (RTL_step_list (rev (c_rev_i ?cs')))]
-    => eapply conv_same_pc_e;
-       [eassumption | conv_same_pc_tac | idtac]
-  end.
-
-Fixpoint check_same_pc ts t (cv: conv ts t) := 
-  match cv with
-    | cv_bind _ _ cv1 cvf => 
-      check_same_pc _ _ cv1 && check_same_pc _ _ cvf
-    | cv_write_loc _ _ l =>
-      match l with
-        | pc_loc => false
-        | _ => true
-      end
-    | _ => true
-  end.
-
-Theorem check_same_pc_correct : 
-  forall ts t cv,
-    check_same_pc ts t cv = true -> 
-    forall env:tylist_denote ts, conv_same_pc (conv_denote cv env).
-Proof. 
-  (* intros. induction cv. *)
-  (* Case "cv_bind".     *)
-  (*   simpl in H. *)
-  (*   bool_elim_tac. apply Conv_Same_PC.bind_sat_conv_prop; crush. *)
-  (* Case "cv_load_int". *)
-  (*   simpl. unfold load_int. *)
-  (*   apply Conv_Same_PC.ret_sat_conv_prop.  *)
-  (* Case "cv_read_loc". *)
-  (*   simpl. unfold read_loc. *)
-  (*   apply Conv_Same_PC.ret_sat_conv_prop.  *)
- Admitted. (*todo*)
-
-(* testing *)
-Lemma test: conv_same_pc (conv_AAA_AAS add_op).
-Proof.
-  unfold conv_AAA_AAS, load_Z, undef_flag, get_flag, set_flag,
-  get_AH, get_AL, copy_ps, set_AL, set_AH.
-  Time match goal with
-         | [|- conv_same_pc ?X] =>
-           let l:=rtl_conv_reify (@nil ty) (fun _:unit => X) in
-           change (conv_same_pc (conv_denote l tt))
-       end.
-  apply check_same_pc_correct; trivial.
+Lemma check_same_pc_sound : forall T (rc: rtl_comp T),
+  check_same_pc rc = true -> same_pc (rtl_comp_denote rc).
+Proof. intros; destruct rc; try (discriminate H || rtl_prover; fail). 
+  simpl; apply negb_true_iff in H; auto using set_loc_same_pc.
+  simpl.  apply same_mach_state_same_pc. same_mach_state_tac.
 Qed.
 
+Hint Extern 2 (same_pc ?C) =>
+  let rc:= reify_rtl_comp C in
+  change (same_pc (rtl_comp_denote rc));
+  apply check_same_pc_sound; trivial : same_pc_db.
 
 
-(* to be organized *)
-Lemma load_mem_n_same_pc : forall seg addr n,
-  conv_same_pc (load_mem_n seg addr n).
-Proof. unfold load_mem_n, lmem, add_and_check_segment.
-  induction n. 
-    conv_same_pc_tac.
-    fold load_mem_n in *. conv_same_pc_tac.
-Qed.
-
-Hint Extern 1 (conv_same_pc (load_mem_n _ _ ?X))
-  =>  apply load_mem_n_same_pc with (n:=X) : conv_same_pc_db.
-
-Lemma set_mem_n_same_pc : forall n seg (v:pseudo_reg (8*(n+1)-1)) addr,
-  conv_same_pc (set_mem_n seg v addr).
-Proof. unfold set_mem_n, smem, add_and_check_segment.
-  induction n; intros. 
-    conv_same_pc_tac.
-    fold (@set_mem_n n) in *. conv_same_pc_tac.
-Qed.
-
-Hint Immediate set_mem_n_same_pc : conv_same_pc_db.
-
-Lemma iload_op8_same_pc : forall seg op,
-  conv_same_pc (iload_op8 seg op).
-Proof. unfold iload_op8, load_mem8, compute_addr. intros. 
-  conv_same_pc_tac.
-Qed.  
-
-Lemma iload_op16_same_pc : forall seg op,
-  conv_same_pc (iload_op16 seg op).
-Proof. unfold iload_op16, load_mem16, compute_addr. intros. 
-  conv_same_pc_tac.
-Qed.  
-
-Lemma iload_op32_same_pc : forall seg op,
-  conv_same_pc (iload_op32 seg op).
-Proof. unfold iload_op32, load_mem32, compute_addr. intros. 
-  conv_same_pc_tac.
-Qed.  
-
-Hint Immediate iload_op8_same_pc iload_op16_same_pc
-  iload_op32_same_pc : conv_same_pc_db.
-
-Lemma load_op_same_pc : forall p w rseg op,
-  conv_same_pc (load_op p w rseg op).
-Proof. unfold load_op. intros. conv_same_pc_tac. Qed.
-
-Hint Immediate load_op_same_pc : conv_same_pc_db.
-
-Lemma set_reg_same_pc : forall p r,
-  conv_same_pc (set_reg p r).
-Proof. unfold set_reg. intros. apply Conv_Same_PC.emit_sat_conv_prop.
-  unfold same_pc, Same_PC_Rel.brel. simpl. unfold set_loc. intros.
-  prover.
-Qed.
-
-Hint Immediate set_reg_same_pc : conv_same_pc_db.
-
-Lemma set_op_same_pc : forall p w seg r op,
-  conv_same_pc (set_op p w seg r op).
-Proof. unfold set_op, iset_op32, iset_op16, iset_op8.
-  unfold set_mem32, set_mem16, set_mem8, compute_addr. intros.
-  destruct (op_override p); destruct w;
-  conv_same_pc_tac.
-Qed.
-
-Hint Immediate set_op_same_pc : conv_same_pc_db.
-
-Lemma conv_BS_aux_same_pc : forall s d n (op:pseudo_reg s),
-  conv_same_pc (conv_BS_aux d n op).
-Proof. unfold conv_BS_aux.  
-  induction n; intros; conv_same_pc_tac.
-Qed.
-
-Lemma compute_parity_aux_same_pc : forall s (op1:pseudo_reg s) op2 n,
-  conv_same_pc (compute_parity_aux op1 op2 n).
-Proof. induction n. simpl. conv_same_pc_tac.
-  unfold compute_parity_aux. fold (@compute_parity_aux s).
-  conv_same_pc_tac.
-Qed.
-
-Hint Immediate conv_BS_aux_same_pc compute_parity_aux_same_pc :
-  conv_same_pc_db.
-
-
-
-
-(* end of exploration *)
-
-
-(** * Lemmas about when a machine computation preserves the memory *)
+(** ** Property that an RTL computation preserves the memory *)
 Module Same_Mem_Rel <: RTL_STATE_REL.
   Definition brel (s1 s2 : rtl_state) := rtl_memory s1 = rtl_memory s2.
 
@@ -1247,7 +1274,7 @@ Module Same_Mem_Rel <: RTL_STATE_REL.
   Proof. unfold brel; intros. tauto. Qed.
 
   Lemma brel_trans : forall s1 s2 s3, brel s1 s2 -> brel s2 s3 -> brel s1 s3.
-  Proof. unfold brel. prover. Qed.
+  Proof. unfold brel. crush. Qed.
 End Same_Mem_Rel.
 
 Module Same_Mem := RTL_Prop Same_Mem_Rel.
@@ -1264,53 +1291,41 @@ Ltac same_mem_tac :=
             | [|- same_mem _] => auto with same_mem_db
           end).
 
+Definition check_same_mem T (rc:rtl_comp T) : bool := 
+  match rc with
+    | rc_ret _ _ | rc_fail _ | rc_trap _
+    | rc_get_loc _ _  | rc_set_loc _ _ _
+    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_get_byte _ | rc_choose_bits _  => true
+    | _ => false
+  end.
+
+Implicit Arguments check_same_mem [T].
+
 Lemma same_rtl_state_same_mem : forall (A:Type) (c:RTL A), 
   same_rtl_state c -> same_mem c.
 Proof. autounfold with rtl_prop_unfold_db.
   intros. apply H in H0. subst s'. trivial. 
 Qed.
 
-(* Try same_rtl_state_db *)
-Hint Extern 2 (same_mem _) =>
-  apply same_rtl_state_same_mem; auto with same_rtl_state_db
-  : same_mem_db.
+Lemma check_same_mem_sound : forall T (rc: rtl_comp T),
+  check_same_mem rc = true -> same_mem (rtl_comp_denote rc).
+Proof. intros; destruct rc; try (discriminate H || rtl_prover; fail). Qed.
 
-Lemma flush_env_same_mem : same_mem flush_env.
-Proof. rtl_prover. Qed.
+Hint Extern 2 (same_mem ?C) =>
+  let rc:= reify_rtl_comp C in
+  change (same_mem (rtl_comp_denote rc));
+  apply check_same_mem_sound; trivial : same_mem_db.
 
-Lemma set_ps_same_mem : forall s (r:pseudo_reg s) v,
-  same_mem (set_ps r v).
-Proof. rtl_prover. Qed.
+Lemma interp_rtl_exp_same_mem : forall s (e: rtl_exp s),
+  same_mem (interp_rtl_exp e).
+Proof. induction e;
+  compute [interp_rtl_exp]; fold interp_rtl_exp;
+  same_mem_tac.
+Qed.
+Hint Immediate interp_rtl_exp_same_mem : same_mem_db.
 
-Lemma get_ps_same_mem : forall s (r:pseudo_reg s),
-  same_mem (get_ps r).
-Proof. rtl_prover. Qed.
-
-Lemma get_loc_same_mem : forall s (l:location s),
-  same_mem (get_loc l).
-Proof. rtl_prover. Qed.
-
-Lemma set_loc_same_mem : forall s (l:location s) v,
-  same_mem (set_loc l v).
-Proof. rtl_prover. Qed.
-
-Lemma get_byte_same_mem : forall addr,
-  same_mem (get_byte addr).
-Proof. rtl_prover. Qed.
-
-Lemma choose_bits_same_mem : forall s, 
-  same_mem (choose_bits s).
-Proof. rtl_prover. Qed.
-
-
-Hint Extern 0 (same_mem flush_env)
-  => apply flush_env_same_mem : same_mem_db.
-Hint Immediate set_ps_same_mem
-  get_ps_same_mem get_loc_same_mem set_loc_same_mem
-  get_byte_same_mem choose_bits_same_mem
-  : same_mem_db.
-
-(** * Lemmas about agree_over and agree_outside *)
+(** ** A state relation about agreeing over/outside a memory region *)
 Definition agree_over_addr_region (r:Int32Ensemble) (s s':rtl_state) : Prop :=
   forall l:int32, Ensembles.In _ r l -> 
      AddrMap.get l (rtl_memory s) = AddrMap.get l (rtl_memory s').
@@ -1322,23 +1337,21 @@ Definition agree_outside_addr_region (r:Int32Ensemble) (s s':rtl_state) :=
 Lemma agree_over_addr_region_e : forall r s s' l,
   agree_over_addr_region r s s' -> Ensembles.In _ r l
     -> AddrMap.get l (rtl_memory s) = AddrMap.get l (rtl_memory s').
-Proof. prover. Qed.
+Proof. crush. Qed.
 
 Lemma agree_outsie_addr_region_e : forall r s s' l,
   agree_outside_addr_region r s s' -> ~ Ensembles.In _ r l
     -> AddrMap.get l (rtl_memory s) = AddrMap.get l (rtl_memory s').
-Proof. prover. Qed.
+Proof. crush. Qed.
 
 Lemma agree_over_addr_region_refl : forall r s,
   agree_over_addr_region r s s.
-Proof. prover. Qed.
+Proof. crush. Qed.
 
 Lemma agree_over_addr_region_trans : forall r s1 s2 s3,
   agree_over_addr_region r s1 s2 -> agree_over_addr_region r s2 s3
     -> agree_over_addr_region r s1 s3.
-Proof. unfold agree_over_addr_region. intros.
-  generalize (H l) (H0 l). prover.
-Qed.
+Proof. unfold agree_over_addr_region. intros. crush. Qed.
 
 Lemma agree_over_outside : forall s1 s2 r r',
   Ensembles.Disjoint _ r r' -> agree_outside_addr_region r' s1 s2
@@ -1354,29 +1367,24 @@ Qed.
   
 Lemma agree_outside_addr_region_refl : forall s r,
   agree_outside_addr_region r s s.
-Proof. prover. Qed.
+Proof. crush. Qed.
 
 Lemma agree_outside_addr_region_trans : forall s1 s2 s3 r,
   agree_outside_addr_region r s1 s2
     -> agree_outside_addr_region r s2 s3
     -> agree_outside_addr_region r s1 s3.
-Proof. unfold agree_outside_addr_region. intros.
-  generalize (H l) (H0 l). prover.
-Qed.
+Proof. unfold agree_outside_addr_region. intros. crush. Qed.
 
 Lemma same_mem_agree_outside : forall s s' r,
   rtl_memory s = rtl_memory s' -> agree_outside_addr_region r s s'.
 Proof. intros. unfold agree_outside_addr_region. intros. congruence. Qed.
 
+(** ** Property that an RTL computation preserves memory outside of a segment.
+   This property needs to be parametrized over the segment register. ML's
+   module system, however, can only parametrize over modules.  *)
 
-(** * Lemmas about when a machine computation preserves the memory region 
-   outside of a segment. This property needs to be parametrized over the
-   segment register. ML's module system, however, can only parametrize
-   over modules. 
-*)
 Definition segAddrs (seg:segment_register) (s:rtl_state) : Int32Ensemble :=
-  let m := rtl_mach_state s in
-    addrRegion (seg_regs_starts m seg) (seg_regs_limits m seg).
+  addrRegion (SegStart s seg) (SegLimit s seg).
 
 (* Without the first two conditions, it would no be transitive *)
 Definition agree_outside_seg (seg:segment_register) (A:Type) (c:RTL A) :=
@@ -1395,10 +1403,10 @@ Proof. unfold agree_outside_seg. intros.
   rtl_okay_break.
   apply H in H2. apply H0 in H1.
   assert (segAddrs seg s = segAddrs seg s0) as H10.
-    unfold segAddrs. prover.
+    unfold segAddrs. crush.
   rewrite H10 in *.
-  split. prover. split. prover.
-  eapply agree_outside_addr_region_trans with (s2:= s0); prover.
+  split. crush. split. crush.
+  eapply agree_outside_addr_region_trans with (s2:= s0); crush.
 Qed.
 
 Ltac agree_outside_seg_one_tac := 
@@ -1419,7 +1427,7 @@ Lemma same_mem_agree_outside_seg : forall seg (A:Type) (c:RTL A),
 Proof. unfold same_mem, same_seg_regs, agree_outside_seg.
   unfold Same_Mem_Rel.brel, Same_Seg_Regs_Rel.brel.
   intros. generalize (H _ _ _ H1). generalize (H0 _ _ _ H1).
-  prover.
+  crush.
 Qed.
 
 (* Try same_mem *)
@@ -1474,7 +1482,7 @@ Lemma ADD_agree_outside_data_seg : forall w op1 op2,
 Proof. unfold step_ADD; intros. agree_outside_data_seg_tac. Qed.
 *)
 
-(** * Lemmas about same_regs *)
+(** ** Lemmas about same_regs *)
 (*
 Definition same_regs (A:Type) (c:Mach A) := 
   forall s s' v', c s = Succ (s', v') -> gp_regs s = gp_regs s'.
@@ -1536,7 +1544,7 @@ Proof. unfold next_oracle_bit; intros. same_regs_tac. Qed.
 Hint Resolve set_addr32_same_regs next_oracle_bit_same_regs : same_regs_db.
 *)
 
-(** * Lemmas about same_regs_but *)
+(** ** Lemmas about same_regs_but *)
 
 (** r is not the same as op *)
 Definition reg_eq_operand (r:register) (op:operand) : bool := 
@@ -1661,50 +1669,35 @@ Ltac no_fail_tac :=
   compute [interp_rtl]; fold interp_rtl;
   repeat no_fail_one_tac.
 
-Lemma ret_no_fail : forall (A:Type) (a:A), no_fail (Return a).
-Proof. discriminate. Qed.
 
-Lemma safefail_no_fail : forall (A:Type), no_fail (SafeFail A).
-Proof. discriminate. Qed.
+Definition check_no_fail T (rc:rtl_comp T) : bool := 
+  match rc with
+    | rc_ret _ _ | rc_trap _
+    | rc_get_loc _ _  | rc_set_loc _ _ _
+    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_get_byte _ | rc_set_byte _ _ 
+    | rc_choose_bits _  => true
+    | _ => false
+  end.
 
-Hint Resolve ret_no_fail safefail_no_fail : no_fail_db.
+Implicit Arguments check_no_fail [T].
 
-Lemma flush_env_no_fail : no_fail flush_env.
-Proof. rtl_prover. Qed.
+Lemma check_no_fail_sound : forall T (rc: rtl_comp T),
+  check_no_fail rc = true -> no_fail (rtl_comp_denote rc).
+Proof. intros; destruct rc; try (discriminate || rtl_prover; fail). Qed.
 
-Lemma get_ps_no_fail : forall s (r:pseudo_reg s),
-  no_fail (get_ps r).
-Proof. rtl_prover. Qed.
+Hint Extern 2 (no_fail ?C) =>
+  let rc:= reify_rtl_comp C in
+  change (no_fail (rtl_comp_denote rc));
+  apply check_no_fail_sound; trivial : no_fail_db.
 
-Lemma set_ps_no_fail : forall s (r:pseudo_reg s) v,
-  no_fail (set_ps r v).
-Proof. rtl_prover. Qed.
-
-Lemma get_byte_no_fail : forall addr,
-  no_fail (get_byte addr).
-Proof. rtl_prover. Qed.
-
-Lemma set_byte_no_fail : forall addr v,
-  no_fail (set_byte addr v).
-Proof. rtl_prover. Qed.
-
-Lemma get_loc_no_fail : forall s (l:location s),
-  no_fail (get_loc l).
-Proof. rtl_prover. Qed.
-
-Lemma set_loc_no_fail : forall s (l:location s) v,
-  no_fail (set_loc l v).
-Proof. rtl_prover. Qed.
-
-Lemma choose_bits_no_fail : forall s, 
-  no_fail (choose_bits s).
-Proof. rtl_prover. Qed.
-
-Hint Extern 0 (no_fail flush_env) => apply flush_env_no_fail : no_fail_db.
-Hint Immediate set_ps_no_fail set_byte_no_fail get_ps_no_fail 
-  get_loc_no_fail set_loc_no_fail
-  get_byte_no_fail choose_bits_no_fail
-  : no_fail_db.
+Lemma interp_rtl_exp_no_fail : forall s (e: rtl_exp s),
+  no_fail (interp_rtl_exp e).
+Proof. induction e;
+  compute [interp_rtl_exp]; fold interp_rtl_exp;
+  no_fail_tac.
+Qed.
+Hint Immediate interp_rtl_exp_no_fail : no_fail_db.
 
 (** * Lemmas about inBoundCodeAddr *)
 
@@ -1714,20 +1707,19 @@ Definition inBoundCodeAddr (pc:int32) (s:rtl_state) :=
 Lemma step_fail_pc_inBound : forall s s',
   step s = (Fail_ans unit, s') -> inBoundCodeAddr (PC s) s.
 Proof. unfold step. intros.
-  rtl_comp_elim_L1.
   do 2 rtl_comp_elim_L1.
   remember_destruct_head in H as irng.
-    clear H. unfold inBoundCodeAddr. prover.
+    clear H. unfold inBoundCodeAddr. crush.
     discriminate.
 Qed.
 
 Lemma step_immed_pc_inBound : forall s s',
   s ==> s' -> inBoundCodeAddr (PC s) s.
 Proof. unfold step_immed, step. intros.
-  do 3 rtl_okay_elim.
+  do 2 rtl_okay_elim.
   remember_destruct_head in H as irng.
     clear H.
-    unfold inBoundCodeAddr. prover.
+    unfold inBoundCodeAddr. crush.
     discriminate.
 Qed.
 
@@ -1740,21 +1732,21 @@ Proof. unfold inBoundCodeAddr; intros. destruct H. congruence. Qed.
 (** * Lemmas about fetch_n *)
 Lemma fetch_n_length : forall n pc s,
   length (fetch_n n pc s) = n.
-Proof. induction n; prover. Qed.
+Proof. induction n; crush. Qed.
 
 Lemma fetch_n_sound : forall n pc s bytes k,
   fetch_n n pc s = bytes
     -> (0 <= k < n)%nat
     -> nth k bytes zero = (AddrMap.get (pc +32_n k) (rtl_memory s)).
 Proof. induction n.
-  Case "n=0". prover.
+  Case "n=0". crush.
   Case "S n". intros.
     assert (k = 0 \/ k > 0)%nat as H10.
-      generalize (le_lt_or_eq 0 k); prover.
+      generalize (le_lt_or_eq 0 k); crush.
     simpl in H; subst bytes.
     destruct H10.
     SCase "k=0". 
-      subst k. rewrite add32_zero_r. prover.
+      subst k. rewrite add32_zero_r. crush.
     SCase "k>0".
       assert (0 <= k-1 < n)%nat by omega.
       rewrite cons_nth by assumption.
@@ -1762,7 +1754,7 @@ Proof. induction n.
       unfold "+32". rewrite add_assoc. rewrite add_repr.
       assert (1 + Z_of_nat (k-1) = Z_of_nat k).
         rewrite inj_minus1 by omega. ring.
-      prover.
+      crush.
 Qed.    
 
 (** * upd_get lemmas *)
@@ -1781,90 +1773,102 @@ Qed.
 
 (** * The property that if a conversion returns a pseudo register, its
    index is less than the index of the current conversion state *)
-Definition conv_index_increase (A:Type) (cv:Conv A) :=
-  forall cs v' cs',
-    cv cs = (v', cs') -> c_next cs < c_next cs'.
-Implicit Arguments conv_index_increase [A].
+(* to do: remove *)
+(* Definition conv_index_increase (A:Type) (cv:Conv A) := *)
+(*   forall cs v' cs', *)
+(*     cv cs = (v', cs') -> c_next cs < c_next cs'. *)
+(* Implicit Arguments conv_index_increase [A]. *)
 
-Ltac conv_index_increase_tac := 
-  autounfold with conv_unfold_db;
-  repeat (match goal with
-            | [|- conv_index_increase ?c] => extended_destruct_head c
-            | [|- conv_index_increase _]
-              => auto 10 with conv_index_increase_db
-          end).
+(* Ltac conv_index_increase_tac :=  *)
+(*   autounfold with conv_unfold_db; *)
+(*   repeat (match goal with *)
+(*             | [|- conv_index_increase ?c] => extended_destruct_head c *)
+(*             | [|- conv_index_increase _] *)
+(*               => auto 10 with conv_index_increase_db *)
+(*           end). *)
 
-Lemma bind_conv_index_increase :
-  forall s (A:Type) (c1:Conv A) (f: A -> Conv (pseudo_reg s)),
-    conv_index_increase c1
-      -> (forall a:A, conv_index_increase (f a))
-      -> conv_index_increase (Bind _ c1 f).
-Proof. unfold conv_index_increase. intros.
-  conv_break. eapply H in H2. eapply H0 in H1. omega.
-Qed.
-Hint Extern 1 (conv_index_increase (Bind _ ?c1 ?f)) =>
-  apply (bind_conv_index_increase _ _ c1 f); [idtac | intros]
-    : conv_index_increase_db.
+(* Lemma bind_conv_index_increase : *)
+(*   forall s (A:Type) (c1:Conv A) (f: A -> Conv (pseudo_reg s)), *)
+(*     conv_index_increase c1 *)
+(*       -> (forall a:A, conv_index_increase (f a)) *)
+(*       -> conv_index_increase (Bind _ c1 f). *)
+(* Proof. unfold conv_index_increase. intros. *)
+(*   conv_break. eapply H in H2. eapply H0 in H1. omega. *)
+(* Qed. *)
+(* Hint Extern 1 (conv_index_increase (Bind _ ?c1 ?f)) => *)
+(*   apply (bind_conv_index_increase _ _ c1 f); [idtac | intros] *)
+(*     : conv_index_increase_db. *)
 
-Lemma fresh_conv_index_increase : 
-  forall s (almost_i: pseudo_reg s -> rtl_instr),
-    conv_index_increase (fresh almost_i).
-Proof. unfold conv_index_increase, fresh. prover. Qed.
-Hint Immediate fresh_conv_index_increase : conv_index_increase_db.
+(* Lemma fresh_conv_index_increase :  *)
+(*   forall s (almost_i: pseudo_reg s -> rtl_instr), *)
+(*     conv_index_increase (fresh almost_i). *)
+(* Proof. unfold conv_index_increase, fresh. prover. Qed. *)
+(* Hint Immediate fresh_conv_index_increase : conv_index_increase_db. *)
 
-Lemma compute_parity_aux_index_increase : forall n s (op1:pseudo_reg s) op2,
-  conv_index_increase (compute_parity_aux op1 op2 n).
-Proof. induction n; intros.
-  simpl. conv_index_increase_tac.
-  unfold compute_parity_aux. fold (@compute_parity_aux s).
-  conv_index_increase_tac.
-Qed.
+(* Lemma compute_parity_aux_index_increase : forall n s (op1:pseudo_reg s) op2, *)
+(*   conv_index_increase (compute_parity_aux op1 op2 n). *)
+(* Proof. induction n; intros. *)
+(*   simpl. conv_index_increase_tac. *)
+(*   unfold compute_parity_aux. fold (@compute_parity_aux s). *)
+(*   conv_index_increase_tac. *)
+(* Qed. *)
 
-Definition conv_index_monotone s (cv:Conv (pseudo_reg s)) :=
-  forall cs idx cs',
-    cv cs = (ps_reg s idx, cs') -> idx < c_next cs'.
-Implicit Arguments conv_index_monotone [s].
+(* Definition conv_index_monotone s (cv:Conv (pseudo_reg s)) := *)
+(*   forall cs idx cs', *)
+(*     cv cs = (ps_reg s idx, cs') -> idx < c_next cs'. *)
+(* Implicit Arguments conv_index_monotone [s]. *)
 
-Ltac conv_index_monotone_tac := 
-  autounfold with conv_unfold_db;
-  repeat (match goal with
-            | [|- conv_index_monotone ?c] => extended_destruct_head c
-            | [|- conv_index_monotone _]
-              => auto 10 with conv_index_monotone_db
-          end).
+(* Ltac conv_index_monotone_tac :=  *)
+(*   autounfold with conv_unfold_db; *)
+(*   repeat (match goal with *)
+(*             | [|- conv_index_monotone ?c] => extended_destruct_head c *)
+(*             | [|- conv_index_monotone _] *)
+(*               => auto 10 with conv_index_monotone_db *)
+(*           end). *)
 
-Lemma bind_conv_index_monotone_1 :
-  forall s (A:Type) (c1:Conv A) (f: A -> Conv (pseudo_reg s)),
-    (forall a:A, conv_index_monotone (f a))
-      -> conv_index_monotone (Bind _ c1 f).
-Proof. unfold conv_index_monotone. intros.
-  conv_break. eauto.
-Qed.
-Hint Extern 1 (conv_index_monotone (Bind _ ?c1 ?f)) =>
-  apply (bind_conv_index_monotone_1 _ _ c1 f); intros
-    : conv_index_monotone_db.
+(* Lemma bind_conv_index_monotone_1 : *)
+(*   forall s (A:Type) (c1:Conv A) (f: A -> Conv (pseudo_reg s)), *)
+(*     (forall a:A, conv_index_monotone (f a)) *)
+(*       -> conv_index_monotone (Bind _ c1 f). *)
+(* Proof. unfold conv_index_monotone. intros. *)
+(*   conv_break. eauto. *)
+(* Qed. *)
+(* Hint Extern 1 (conv_index_monotone (Bind _ ?c1 ?f)) => *)
+(*   apply (bind_conv_index_monotone_1 _ _ c1 f); intros *)
+(*     : conv_index_monotone_db. *)
 
-Lemma fresh_conv_index_monotone : 
-  forall s (almost_i: pseudo_reg s -> rtl_instr),
-    conv_index_monotone (fresh almost_i).
-Proof. unfold conv_index_monotone, fresh. prover. Qed.
-Hint Immediate fresh_conv_index_monotone : conv_index_monotone_db.
+(* Lemma fresh_conv_index_monotone :  *)
+(*   forall s (almost_i: pseudo_reg s -> rtl_instr), *)
+(*     conv_index_monotone (fresh almost_i). *)
+(* Proof. unfold conv_index_monotone, fresh. prover. Qed. *)
+(* Hint Immediate fresh_conv_index_monotone : conv_index_monotone_db. *)
 
-Lemma fresh_pr_monotone : forall s (almost_i:pseudo_reg s -> rtl_instr) cs v' cs',
-  fresh almost_i cs = (v', cs') -> c_next cs < c_next cs'.
-Proof. unfold fresh. intros. prover. Qed.
+(* Lemma fresh_pr_monotone : forall s (almost_i:pseudo_reg s -> rtl_instr) cs v' cs', *)
+(*   fresh almost_i cs = (v', cs') -> c_next cs < c_next cs'. *)
+(* Proof. unfold fresh. intros. prover. Qed. *)
 
-(** * Lemmas about a conversion preserves the property of same_seg_regs *)
+(** * Proving properties about RTL conversions *)
 
-Module Conv_Same_Seg_Regs := Conv_Prop (Same_Seg_Regs).
+(** ** An unfolding database for proving properties of RTL conversions *)
+
+Hint Unfold load_Z load_int arith test load_reg set_reg cast_u cast_s
+  get_seg_start get_seg_limit read_byte write_byte get_flag set_flag
+  get_pc set_pc copy_ps read_loc write_loc if_exp raise_error raise_trap 
+  no_op choose if_trap:
+  conv_unfold_db.
+
+(** ** Property that a conversion preserves [same_seg_regs] *)
+
+Module Conv_Same_Seg_Regs := Conv_Prop Same_Seg_Regs.
 Notation conv_same_seg_regs := Conv_Same_Seg_Regs.conv_prop.
 
 Hint Extern 1 (conv_same_seg_regs (emit _)) => 
   apply Conv_Same_Seg_Regs.emit_sat_conv_prop; same_seg_regs_tac : conv_same_seg_regs_db.
 
-Hint Extern 1 (conv_same_seg_regs (fresh _)) => 
-  apply Conv_Same_Seg_Regs.fresh_sat_conv_prop; intros; same_seg_regs_tac :
-  conv_same_seg_regs_db.
+(* todo: remove *)
+(* Hint Extern 1 (conv_same_seg_regs (fresh _)) =>  *)
+(*   apply Conv_Same_Seg_Regs.fresh_sat_conv_prop; intros; same_seg_regs_tac : *)
+(*   conv_same_seg_regs_db. *)
 
 Hint Resolve Conv_Same_Seg_Regs.ret_sat_conv_prop 
   : conv_same_seg_regs_db.
@@ -1878,7 +1882,8 @@ Ltac conv_same_seg_regs_tac :=
             | [|- conv_same_seg_regs _] => auto with conv_same_seg_regs_db
           end).
 
-(** ** Lemmas for many conversion primitives can be proved by simply unfolding
+
+(** Lemmas for many conversion primitives can be proved by simply unfolding
    their definitions and use the above conv_same_seg_regs_tac. However, there
    are two cases when we want to state a separate lemma about a conversion
    primitive and check the lemma into the hint databse:
@@ -1893,9 +1898,18 @@ Ltac conv_same_seg_regs_tac :=
        conv_same_seg_regs (conv_DIV ...) would be an order of magnitiude more.
  *)
 
+(* todo: remove *)
+(* Lemma write_loc_same_seg_regs : forall s (e:rtl_exp s) l, *)
+(*   is_seg_reg_loc l = false -> conv_same_seg_regs (write_loc e l). *)
+(* Proof.  intros. destruct l; *)
+(*     apply Conv_Same_Seg_Regs.emit_sat_conv_prop; *)
+(*     same_seg_regs_tac. *)
+(* Qed. *)
+(* Hint Resolve write_loc_same_seg_regs : conv_same_seg_regs_db. *)
+
 Lemma load_mem_n_same_seg_regs : forall seg addr n,
   conv_same_seg_regs (load_mem_n seg addr n).
-Proof. unfold load_mem_n, lmem, add_and_check_segment.
+Proof. unfold load_mem_n, lmem, add_and_check_segment, if_trap.
   induction n. 
     conv_same_seg_regs_tac.
     fold load_mem_n in *. conv_same_seg_regs_tac.
@@ -1905,9 +1919,9 @@ Hint Extern 1 (conv_same_seg_regs (load_mem_n _ _ ?X))
   =>  apply load_mem_n_same_seg_regs with (n:=X)
   : conv_same_seg_regs_db.
 
-Lemma set_mem_n_same_seg_regs : forall n seg (v:pseudo_reg (8*(n+1)-1)) addr,
+Lemma set_mem_n_same_seg_regs : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
   conv_same_seg_regs (set_mem_n seg v addr).
-Proof. unfold set_mem_n, smem, add_and_check_segment.
+Proof. unfold set_mem_n, smem, add_and_check_segment, if_trap.
   induction n; intros. 
     conv_same_seg_regs_tac.
     fold (@set_mem_n n) in *. conv_same_seg_regs_tac.
@@ -1919,7 +1933,7 @@ Lemma iload_op8_same_seg_regs : forall seg op,
   conv_same_seg_regs (iload_op8 seg op).
 Proof. unfold iload_op8, load_mem8, compute_addr. intros. 
   conv_same_seg_regs_tac.
-Qed.  
+Qed.
 
 Lemma iload_op16_same_seg_regs : forall seg op,
   conv_same_seg_regs (iload_op16 seg op).
@@ -1942,32 +1956,25 @@ Proof. unfold load_op. intros. conv_same_seg_regs_tac. Qed.
 
 Hint Immediate load_op_same_seg_regs : conv_same_seg_regs_db.
 
-Lemma set_reg_same_seg_regs : forall p r,
-  conv_same_seg_regs (set_reg p r).
-Proof. unfold set_reg. intros. apply Conv_Same_Seg_Regs.emit_sat_conv_prop.
-  unfold same_seg_regs, Same_Seg_Regs_Rel.brel. simpl. unfold set_loc. intros.
-  prover.
-Qed.
-
-Hint Immediate set_reg_same_seg_regs : conv_same_seg_regs_db.
 
 Lemma set_op_same_seg_regs : forall p w seg r op,
   conv_same_seg_regs (set_op p w seg r op).
 Proof. unfold set_op, iset_op32, iset_op16, iset_op8.
-  unfold set_mem32, set_mem16, set_mem8, compute_addr. intros.
+  unfold set_mem32, set_mem16, set_mem8, compute_addr, raise_error.
+  intros.
   destruct (op_override p); destruct w;
   conv_same_seg_regs_tac.
 Qed.
 
 Hint Immediate set_op_same_seg_regs : conv_same_seg_regs_db.
 
-Lemma conv_BS_aux_same_seg_regs : forall s d n (op:pseudo_reg s),
+Lemma conv_BS_aux_same_seg_regs : forall s d n (op:rtl_exp s),
   conv_same_seg_regs (conv_BS_aux d n op).
 Proof. unfold conv_BS_aux.  
   induction n; intros; conv_same_seg_regs_tac.
 Qed.
 
-Lemma compute_parity_aux_same_seg_regs : forall s (op1:pseudo_reg s) op2 n,
+Lemma compute_parity_aux_same_seg_regs : forall s (op1:rtl_exp s) op2 n,
   conv_same_seg_regs (compute_parity_aux op1 op2 n).
 Proof. induction n. simpl. conv_same_seg_regs_tac.
   unfold compute_parity_aux. fold (@compute_parity_aux s).
@@ -1977,8 +1984,167 @@ Qed.
 Hint Immediate conv_BS_aux_same_seg_regs compute_parity_aux_same_seg_regs :
   conv_same_seg_regs_db.
 
-(** * Lemmas about a conversion preserves the property of same_mem *)
-(* this property does not seem useful. remove it? *)
+
+(* begin of exploration *)
+
+(* Ltac unfold_instr_conv_tac := *)
+(*   unfold conv_AND, conv_OR, conv_XOR, conv_TEST, conv_logical_op, *)
+(*     conv_XADD, conv_NOT, conv_ADD, conv_MOV, conv_Jcc, conv_JMP, *)
+(*     conv_ADC, conv_CDQ, conv_BSWAP, *)
+(*     conv_CMPXCHG, conv_CMP, conv_CMPS, conv_CMOV, *)
+(*     conv_SUB, conv_NEG, conv_SUB_CMP_generic, conv_CWDE, *)
+(*     conv_DIV, conv_IDIV, conv_MUL, conv_IMUL, conv_INC, conv_LEA, *)
+(*     conv_BSF, conv_BSR, conv_BS, *)
+(*     conv_MOVSX, conv_MOVZX, conv_MOV_extend, conv_XCHG, *)
+(*     conv_LEAVE, conv_POPA, conv_POP, *)
+(*     conv_PUSHA, conv_SAR, conv_SBB, *)
+(*     conv_SETcc, conv_SHL, conv_SHLD, conv_SHR, conv_SHRD, conv_RCL, conv_RCR, *)
+(*     conv_ROL, conv_ROR, conv_shift, *)
+(*     conv_CLD, conv_HLT, conv_STOS, conv_CLC, conv_CMC, *)
+(*     conv_MOVS, conv_BT, conv_LAHF, conv_SAHF, conv_STC, conv_STD, *)
+(*     conv_AAA_AAS, conv_AAD, conv_AAM, conv_DAA_DAS, conv_DEC, *)
+(*     conv_POP_pseudo, *)
+(*     testcarryAdd, testcarrySub, *)
+(*     extract_and_set, get_and_place, *)
+(*     get_AL, get_AH, set_AL, set_AH, if_set_loc, *)
+(*     string_op_reg_shift, get_Bit, fbit, set_Bit, modify_Bit, *)
+(*     compute_parity, undef_flag, *)
+(*     load_mem, load_mem8, load_mem16, load_mem32, set_mem32, *)
+(*     compute_addr, compute_cc, not. *)
+
+
+
+(* Ltac extra_unfold_conv_tac := *)
+(*   unfold conv_CALL, conv_PUSH, conv_PUSH_pseudo, set_Bit_mem, *)
+(*     iset_op8, iset_op16, iset_op32, set_mem, set_mem8, set_mem16, set_mem32; *)
+(*     unfold_instr_conv_tac. *)
+
+(* Ltac no_fail_extra_unfold_tac := *)
+(*   unfold conv_CALL, conv_PUSH, conv_PUSH_pseudo, set_Bit_mem, *)
+(*     set_mem, set_mem8, set_mem16; unfold_instr_conv_tac. *)
+
+(* Ltac prove_instr := *)
+(*   match goal with *)
+(*     | [|- same_seg_regs (RTL_step_list (runConv ?CV))] *)
+(*       => apply Conv_Same_Seg_Regs.conv_to_rtl_prop with (cv:=CV); *)
+(*            unfold_instr_conv_tac; extra_unfold_conv_tac; conv_same_seg_regs_tac *)
+(*   end. *)
+
+(* Lemma nci_same_seg_regs: forall ins pre, *)
+(*   non_cflow_instr pre ins = true *)
+(*     -> same_seg_regs (RTL_step_list (instr_to_rtl pre ins)). *)
+(* (* Admitted. *) *)
+(* Proof. intros. *)
+(*   Time destruct ins; *)
+(*   unfold instr_to_rtl, check_prefix in *; *)
+(*     (discriminate H || (prove_instr; fail) || idtac). *)
+(* Time Qed. *)
+
+(* (* Hint Unfold load_Z load_int arith test load_reg set_reg cast_u cast_s *) *)
+(* (*   get_seg_start get_seg_limit read_byte write_byte get_flag set_flag *) *)
+(* (*   get_pc set_pc copy_ps read_loc : conv_unfold_db. *) *)
+
+(* Fixpoint check_same_seg_regs te t (oc: open_conv te t) :=  *)
+(*   match oc with *)
+(*     | oc_seq _ oc of | oc_bind_exp _ _ oc of =>  *)
+(*       check_same_seg_regs _ _ oc && check_same_seg_regs _ _ of *)
+(*     | oc_write_loc _ _ l | oc_if_set_loc _ _ _ l *)
+(*       => negb (is_seg_reg_loc l) *)
+(*     | oc_any _ _ => false *)
+(*     | _ => true *)
+(*   end. *)
+
+(* Theorem check_same_seg_regs_correct :  *)
+(*   forall te t oc, *)
+(*     check_same_seg_regs te t oc = true ->  *)
+(*     forall env:tyenv_denote te, conv_same_seg_regs (oc_denote env oc). *)
+(* Proof. intros.   *)
+(*   induction oc;  *)
+(*   try (apply Conv_Same_Seg_Regs.emit_sat_conv_prop; same_seg_regs_tac; fail). *)
+(*   Case "oc_seq". *)
+(*     simpl in H. bool_elim_tac. *)
+(*     apply Conv_Same_Seg_Regs.bind_sat_conv_prop; crush. *)
+(*   Case "oc_bind". *)
+(*     simpl in H. bool_elim_tac. *)
+(*     apply Conv_Same_Seg_Regs.bind_sat_conv_prop; crush. *)
+(*   Case "oc_ret". *)
+(*     apply Conv_Same_Seg_Regs.ret_sat_conv_prop. *)
+(*   Case "oc_no_op". *)
+(*     apply Conv_Same_Seg_Regs.ret_sat_conv_prop. *)
+(*   Case "oc_write_loc". *)
+(*     destruct l; *)
+(*     apply Conv_Same_Seg_Regs.emit_sat_conv_prop; *)
+(*     same_seg_regs_tac. *)
+(*   Case "oc_if_set_loc". *)
+(*     destruct l; *)
+(*     apply Conv_Same_Seg_Regs.emit_sat_conv_prop; *)
+(*     same_seg_regs_tac. *)
+(*   Case "oc_load_op". *)
+(*     simpl; conv_same_seg_regs_tac. *)
+(*   Case "oc_set_op". *)
+(*     simpl; conv_same_seg_regs_tac. *)
+(*   Case "oc_iload_op8". *)
+(*     simpl; conv_same_seg_regs_tac. *)
+(*   Case "oc_iset_op8". *)
+(*     simpl; unfold iset_op8, compute_addr, set_mem8; conv_same_seg_regs_tac. *)
+(*   Case "oc_cp_aux". *)
+(*     simpl;  conv_same_seg_regs_tac. *)
+(*   Case "oc_any".  *)
+(*     discriminate H. *)
+(* Qed. *)
+
+(* (* TBC *) *)
+
+(* (* Goal False. *) *)
+(* (* Unset Ltac Debug. *) *)
+(* (* let s := reify_rtl_conv (@nil nat) *) *)
+(* (*           (fun _:unit => no_op;; no_op) in *) *)
+(* (* pose s. *) *)
+
+
+
+(* Ltac conv_same_seg_regs_refl_tac :=  *)
+(*   unfold conv_AAA_AAS, load_Z, undef_flag, get_flag, set_flag, load_reg, set_reg, *)
+(*     get_AH, get_AL, copy_ps, set_AL, set_AH, load_int, read_loc, *)
+(*     arith, test, cast_u, cast_s, if_exp, choose; *)
+(*   repeat (match goal with *)
+(*             | [|- conv_same_seg_regs ?C] => extended_destruct_head C *)
+(*             | [|- conv_same_seg_regs ?C] =>  *)
+(*               let l:= reify_rtl_conv (@nil nat) (fun _:unit => C) in *)
+(*               change (conv_same_seg_regs (@oc_denote (@nil nat) _ tt l)); *)
+(*               apply check_same_seg_regs_correct; trivial *)
+(*           end). *)
+
+(* Ltac prove_instr_refl :=  *)
+(*   match goal with *)
+(*     | [|- same_seg_regs (RTL_step_list (runConv ?CV))] *)
+(*       => apply Conv_Same_Seg_Regs.conv_to_rtl_prop with (cv:=CV); *)
+(*            unfold_instr_conv_tac; extra_unfold_conv_tac; conv_same_seg_regs_refl_tac *)
+(*   end. *)
+
+
+(* Lemma nci_same_seg_regs_ref: forall ins pre, *)
+(*   non_cflow_instr pre ins = true *)
+(*     -> same_seg_regs (RTL_step_list (instr_to_rtl pre ins)). *)
+(* Proof. intros. *)
+(*   Time destruct ins; *)
+(*   unfold instr_to_rtl, check_prefix in *; *)
+(*     (discriminate H || idtac). *)
+(*   prove_instr_refl. *)
+(*   Time prove_instr_refl. *)
+(*   Time prove_instr_refl. *)
+(*   Time prove_instr_refl. *)
+
+(*   destruct (op_override pre); destruct (addr_override pre). *)
+(*   prove_instr_refl. *)
+(*   prove_instr_refl. *)
+(*   prove_instr_refl. *)
+(*   prove_instr_refl. *)
+
+(* end of exploration *)
+
+
+(** ** Property that a conversion preserves [same_mem] *)
 
 Module Conv_Same_Mem := Conv_Prop (Same_Mem).
 Notation conv_same_mem := Conv_Same_Mem.conv_prop.
@@ -1995,9 +2161,10 @@ Ltac conv_same_mem_tac :=
 Hint Extern 1 (conv_same_mem (emit _)) => 
   apply Conv_Same_Mem.emit_sat_conv_prop; same_mem_tac : conv_same_mem_db.
 
-Hint Extern 1 (conv_same_mem (fresh _)) => 
-  apply Conv_Same_Mem.fresh_sat_conv_prop; intros; same_mem_tac :
-  conv_same_mem_db.
+(* todo: remove *)
+(* Hint Extern 1 (conv_same_mem (fresh _)) =>  *)
+(*   apply Conv_Same_Mem.fresh_sat_conv_prop; intros; same_mem_tac : *)
+(*   conv_same_mem_db. *)
 
 Hint Resolve Conv_Same_Mem.ret_sat_conv_prop 
   : conv_same_mem_db.
@@ -2021,8 +2188,7 @@ Qed.
 
 Hint Immediate iload_op32_same_mem : conv_same_mem_db.
 
-(** * Lemmas about a conversion preserves the property of
-   agree_outside_data_seg *)
+(** ** Properthat that a conversion preserves [agree_outside_data_seg] *)
 Definition conv_agree_outside_seg (seg:segment_register) (A:Type) (cv:Conv A) :=
   forall cs (v:A) cs',
     cv cs = (v, cs')
@@ -2041,9 +2207,9 @@ Lemma conv_to_rtl_aos: forall seg cv,
   conv_agree_outside_seg seg cv
     -> agree_outside_seg seg (RTL_step_list (runConv cv)).
 Proof. unfold conv_agree_outside_seg, runConv. intros.
-  remember_rev (cv {| c_rev_i := nil; c_next := 0 |}) as cva.
+  remember_rev (cv {| c_rev_i := nil |}) as cva.
   destruct cva.
-  apply H in Hcva. prover. 
+  apply H in Hcva. crush.
     compute [c_rev_i rev RTL_step_list].
     agree_outside_seg_tac.
 Qed.
@@ -2060,7 +2226,7 @@ Lemma emit_conv_aos : forall seg i,
   agree_outside_seg seg (interp_rtl i)
     -> conv_agree_outside_seg seg (emit i).
 Proof. unfold conv_agree_outside_seg, EMIT. intros.
-  prover. autorewrite with step_list_db.
+  crush. autorewrite with step_list_db.
   agree_outside_seg_tac.
 Qed.
 
@@ -2068,22 +2234,22 @@ Hint Extern 1 (conv_agree_outside_seg _ (emit _)) =>
   apply emit_conv_aos; agree_outside_seg_tac
     : conv_agree_outside_seg_db.
 
-Lemma fresh_conv_aos : 
-  forall seg (s:nat) (almost_i: pseudo_reg s -> rtl_instr),
-    (forall r, agree_outside_seg seg (interp_rtl (almost_i r)))
-      -> conv_agree_outside_seg seg (fresh almost_i).
-Proof. unfold conv_agree_outside_seg, fresh. intros.
-  prover. autorewrite with step_list_db. 
-  agree_outside_seg_tac.
-Qed.
-
-Hint Extern 1 (conv_agree_outside_seg _ (fresh _)) => 
-  apply fresh_conv_aos; intros; agree_outside_seg_tac :
-  conv_agree_outside_seg_db.
+(* todo: remove *)
+(* Lemma fresh_conv_aos :  *)
+(*   forall seg (s:nat) (almost_i: pseudo_reg s -> rtl_instr), *)
+(*     (forall r, agree_outside_seg seg (interp_rtl (almost_i r))) *)
+(*       -> conv_agree_outside_seg seg (fresh almost_i). *)
+(* Proof. unfold conv_agree_outside_seg, fresh. intros. *)
+(*   prover. autorewrite with step_list_db.  *)
+(*   agree_outside_seg_tac. *)
+(* Qed. *)
+(* Hint Extern 1 (conv_agree_outside_seg _ (fresh _)) =>  *)
+(*   apply fresh_conv_aos; intros; agree_outside_seg_tac : *)
+(*   conv_agree_outside_seg_db. *)
 
 Lemma ret_conv_aos : forall seg (A:Type) (r:A), 
   conv_agree_outside_seg seg (ret r).
-Proof. unfold conv_agree_outside_seg. prover. Qed.
+Proof. unfold conv_agree_outside_seg. crush. Qed.
 
 Hint Resolve ret_conv_aos : conv_agree_outside_seg_db.
 
@@ -2121,24 +2287,62 @@ Proof. unfold safe_fail_if. intros.
 Qed.
 *)
 
-Lemma add_and_check_safe : forall seg addr cs r cs' s v' s',
-  add_and_check_segment seg addr cs = (r, cs') 
-    -> addr <> ps_reg RTL.size32 (c_next cs)
-    -> addr <> ps_reg RTL.size32 (c_next cs + 1)
-    -> addr <> ps_reg  RTL.size32 (c_next cs + 2)
+plan:
+  * add advance_oracle and get_random two instructions
+  * change interp_rtl_exp to not be a RTL computation
+
+Lemma add_and_check_safe : forall seg addr cs r cs' s v' s' s'' i,
+  add_and_check_segment seg addr cs = (r, cs')
     -> RTL_step_list (List.rev (c_rev_i cs')) s = (Okay_ans v', s')
-    -> Ensembles.In _ (segAddrs seg s') (rtl_env s' r).
+    -> interp_rtl_exp r s' = (Okay_ans i, s'')
+    -> Ensembles.In _ (segAddrs seg s') i.
 Proof. intros.
-  unfold add_and_check_segment in H. 
-  simpl in H. simpl_rtl.
-  inv H. simpl in H3.
-  autorewrite with step_list_db in H3.
+  unfold add_and_check_segment in H.
+  simpl in H.
+(*  simpl_rtl. *)
+
+  inv H.
+  simpl in H0.
+  autorewrite with step_list_db in H0.
+
   repeat rtl_okay_elim. removeUnit.
-  simpl in H4.
-  remember_destruct_head in H4 as chk.
+
+
+  compute [interp_rtl] in H2.
+  repeat rtl_okay_elim. 
+  remember_destruct_head in H2 as chk.
+  Case "test fails". discriminate.
+  Case "test succeeds".
+    repeat rtl_okay_elim.
+
+
+    compute [interp_rtl_exp] in H0. fold interp_rtl_exp in H0.
+    repeat rtl_okay_elim. 
+    compute [interp_rtl_exp] in H1. fold interp_rtl_exp in H1.
+    repeat rtl_okay_elim. 
+
+    unfold segAddrs.
+    unfold Ensembles.In, addrRegion.
+    
+    exists v0.
+    split.
+
+
+    unfold add. simpl.
+
+
+
+
+ 
+  simpl in H2.
+
+
+  remember_destruct_head in H1 as chk.
+
+
   Case "test succeeds". repeat rtl_okay_elim.
   Case "test fails".
-    unfold segAddrs. 
+    unfold segAddrs.
     simpl in *. repeat rtl_okay_elim. simpl in *. simpl_rtl.
     unfold Ensembles.In, addrRegion.
     exists (rtl_env s0 addr).
@@ -2148,6 +2352,82 @@ Proof. intros.
       remember_destruct_head in Hchk as ltu; try congruence.
       all_to_Z_tac. apply Zge_le. assumption.
 Qed.
+
+(* The original one: *)
+(* Lemma add_and_check_safe : forall seg addr cs r cs' s v' s', *)
+(*   add_and_check_segment seg addr cs = (r, cs')  *)
+(*     -> addr <> ps_reg RTL.size32 (c_next cs) *)
+(*     -> addr <> ps_reg RTL.size32 (c_next cs + 1) *)
+(*     -> addr <> ps_reg  RTL.size32 (c_next cs + 2) *)
+(*     -> RTL_step_list (List.rev (c_rev_i cs')) s = (Okay_ans v', s') *)
+(*     -> Ensembles.In _ (segAddrs seg s') (rtl_env s' r). *)
+(* Proof. intros. *)
+(*   unfold add_and_check_segment in H.  *)
+(*   simpl in H. simpl_rtl. *)
+(*   inv H. simpl in H3. *)
+(*   autorewrite with step_list_db in H3. *)
+(*   repeat rtl_okay_elim. removeUnit. *)
+(*   simpl in H4. *)
+(*   remember_destruct_head in H4 as chk. *)
+(*   Case "test succeeds". repeat rtl_okay_elim. *)
+(*   Case "test fails". *)
+(*     unfold segAddrs.  *)
+(*     simpl in *. repeat rtl_okay_elim. simpl in *. simpl_rtl. *)
+(*     unfold Ensembles.In, addrRegion. *)
+(*     exists (rtl_env s0 addr). *)
+(*     split. trivial. *)
+(*       apply int_eq_false_iff2 in Hchk. *)
+(*       compute [interp_test] in Hchk. *)
+(*       remember_destruct_head in Hchk as ltu; try congruence. *)
+(*       all_to_Z_tac. apply Zge_le. assumption. *)
+(* Qed. *)
+
+(* todo: use conv_agree_outside_seg to wrap this *)
+Lemma smem_agree_outside_seg : forall seg v addr cs r cs',
+  smem seg v addr cs = (r, cs')
+    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs)))
+    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs'))).
+Proof. unfold smem. intros.
+  conv_break.
+  compute [write_byte EMIT] in H.
+  inversion H; subst; clear H.
+  simpl. autorewrite with step_list_db.
+  assert (conv_agree_outside_seg seg (add_and_check_segment seg addr))
+    as H10.
+    unfold add_and_check_segment.
+    conv_agree_outside_seg_tac.
+  unfold agree_outside_seg. intros.
+  repeat rtl_okay_elim. removeUnit.
+
+
+
+  compute [interp_rtl] in H3.
+  repeat rtl_okay_break.
+
+  assert (Ensembles.In _ (segAddrs seg s0) (rtl_env s0 v0)) as H12.
+    eapply add_and_check_safe; eassumption.
+
+
+  apply H10 in H4. apply H4 in H3. apply H3 in H5.
+  assert (segAddrs seg s = segAddrs seg s0) as H14.
+    unfold segAddrs. prover.
+  rewrite <- H14 in H12.
+  assert (SegStart s0 seg = SegStart s1 seg /\
+          SegLimit s0 seg = SegLimit s1 seg).
+    simpl in H6. compute [set_byte] in H6.
+    inversion H6; clear H6. subst s1.
+    prover.
+  assert (agree_outside_addr_region (segAddrs seg s) s0 s1).
+    unfold agree_outside_addr_region; intros.
+    simpl in H6. compute [set_byte] in H6.
+    inversion H6; clear H6; subst s1.
+    simpl in *.
+    rewrite AddrMap.gso by prover. trivial.
+  split. prover. split. prover.
+    apply agree_outside_addr_region_trans with (s2:=s0); prover.
+Qed.
+
+
 
 Lemma smem_agree_outside_seg : forall seg v addr cs r cs',
   smem seg v addr cs = (r, cs')
@@ -2406,6 +2686,201 @@ Qed.
 
 Hint Resolve set_Bit_mem_aos compute_parity_aux_aos conv_BS_aux_aos 
   : conv_agree_outside_seg_db.
+
+
+(** * Lemmas about a conversion preserves the property of same_pc *)
+
+Module Conv_Same_PC := Conv_Prop Same_PC.
+Notation conv_same_pc := Conv_Same_PC.conv_prop.
+
+(* todo: remove *)
+Hint Extern 1 (conv_same_pc (emit _)) => 
+  apply Conv_Same_PC.emit_sat_conv_prop; same_pc_tac : conv_same_pc_db.
+
+(* todo: remove *)
+(* Hint Extern 1 (conv_same_pc (fresh _)) =>  *)
+(*   apply Conv_Same_PC.fresh_sat_conv_prop; intros; same_pc_tac : *)
+(*   conv_same_pc_db. *)
+
+(* todo: remove *)
+Hint Resolve Conv_Same_PC.ret_sat_conv_prop 
+  : conv_same_pc_db.
+
+(* todo: remove *)
+(* Ltac conv_same_pc_tac :=  *)
+(*   repeat autounfold with conv_unfold_db; *)
+(*   repeat (match goal with *)
+(*             | [|- conv_same_pc (Bind _ _ _)] =>  *)
+(*               apply Conv_Same_PC.bind_sat_conv_prop; [idtac | intros] *)
+(*             (* | [|- conv_same_pc ?c] => extended_destruct_head c *) *)
+(*             | [|- conv_same_pc _] => auto with conv_same_pc_db *)
+(*           end). *)
+
+Lemma conv_same_pc_e : forall (A:Type) (cv:Conv A) cs v cs',
+  cv cs = (v, cs')
+    -> conv_same_pc cv
+    -> same_pc (RTL_step_list (List.rev (c_rev_i cs)))
+    -> same_pc (RTL_step_list (List.rev (c_rev_i cs'))).
+Proof. unfold conv_same_pc. eauto. Qed.
+
+(* todo: remove *)
+(* Ltac conv_backward_same_pc := *)
+(*   match goal with *)
+(*     [H: ?cv ?cs = (_, ?cs') |-  *)
+(*       same_pc (RTL_step_list (rev (c_rev_i ?cs')))] *)
+(*     => eapply conv_same_pc_e; *)
+(*        [eassumption | conv_same_pc_tac | idtac] *)
+(*   end. *)
+
+Fixpoint check_same_pc te t (oc: open_conv te t) := 
+  match oc with
+    | oc_seq _ oc of => 
+      check_same_pc _ _ oc && check_same_pc _ _ of
+    | oc_bind_exp _ _ oc of => 
+      check_same_pc _ _ oc && check_same_pc _ _ of
+    | oc_write_loc _ _ l =>
+      match l with
+        | pc_loc => false
+        | _ => true
+      end
+    | oc_any _ _ => false
+    | _ => true
+  end.
+
+Theorem check_same_pc_correct : 
+  forall te t oc,
+    check_same_pc te t oc = true -> 
+    forall env:tyenv_denote te, conv_same_pc (oc_denote env oc).
+Proof. 
+  (* intros. induction cv. *)
+  (* Case "cv_bind".     *)
+  (*   simpl in H. *)
+  (*   bool_elim_tac. apply Conv_Same_PC.bind_sat_conv_prop; crush. *)
+  (* Case "cv_load_int". *)
+  (*   simpl. unfold load_int. *)
+  (*   apply Conv_Same_PC.ret_sat_conv_prop.  *)
+  (* Case "cv_read_loc". *)
+  (*   simpl. unfold read_loc. *)
+  (*   apply Conv_Same_PC.ret_sat_conv_prop.  *)
+ Admitted. (*todo*)
+
+Ltac conv_same_pc_tac := 
+  match goal with
+    | [|- conv_same_pc ?C] =>
+      let oc :=reify_rtl_conv (@nil nat) (fun _:unit => C) in
+      change (conv_same_pc (@oc_denote (@nil nat) _ tt oc))
+  end; apply check_same_pc_correct; trivial.
+
+Unset Ltac Debug.
+Set Printing Depth 500.
+
+(* testing *)
+Goal conv_same_pc (conv_AAA_AAS add_op).
+Proof.
+  unfold conv_AAA_AAS, load_Z, undef_flag, get_flag, set_flag,
+    get_AH, get_AL, copy_ps, set_AL, set_AH, load_int, read_loc,
+    arith, test, cast_u, cast_s, if_exp, choose.
+  Time conv_same_pc_tac.
+Qed.
+
+
+
+
+Goal forall pre w op1 op2, conv_same_pc (conv_ADC pre w op1 op2).
+Proof. intros.
+  unfold conv_ADC, compute_parity, load_Z, undef_flag, get_flag, set_flag,
+    get_AH, get_AL, copy_ps, set_AL, set_AH, load_int, read_loc,
+    arith, test, cast_u, cast_s, if_exp, choose.
+  Time conv_same_pc_tac.
+Qed.
+
+
+
+
+(* to be organized *)
+Lemma load_mem_n_same_pc : forall seg addr n,
+  conv_same_pc (load_mem_n seg addr n).
+Proof. unfold load_mem_n, lmem, add_and_check_segment.
+  induction n. 
+    conv_same_pc_tac.
+    fold load_mem_n in *. conv_same_pc_tac.
+Qed.
+
+Hint Extern 1 (conv_same_pc (load_mem_n _ _ ?X))
+  =>  apply load_mem_n_same_pc with (n:=X) : conv_same_pc_db.
+
+Lemma set_mem_n_same_pc : forall n seg (v:pseudo_reg (8*(n+1)-1)) addr,
+  conv_same_pc (set_mem_n seg v addr).
+Proof. unfold set_mem_n, smem, add_and_check_segment.
+  induction n; intros. 
+    conv_same_pc_tac.
+    fold (@set_mem_n n) in *. conv_same_pc_tac.
+Qed.
+
+Hint Immediate set_mem_n_same_pc : conv_same_pc_db.
+
+Lemma iload_op8_same_pc : forall seg op,
+  conv_same_pc (iload_op8 seg op).
+Proof. unfold iload_op8, load_mem8, compute_addr. intros. 
+  conv_same_pc_tac.
+Qed.  
+
+Lemma iload_op16_same_pc : forall seg op,
+  conv_same_pc (iload_op16 seg op).
+Proof. unfold iload_op16, load_mem16, compute_addr. intros. 
+  conv_same_pc_tac.
+Qed.  
+
+Lemma iload_op32_same_pc : forall seg op,
+  conv_same_pc (iload_op32 seg op).
+Proof. unfold iload_op32, load_mem32, compute_addr. intros. 
+  conv_same_pc_tac.
+Qed.  
+
+Hint Immediate iload_op8_same_pc iload_op16_same_pc
+  iload_op32_same_pc : conv_same_pc_db.
+
+Lemma load_op_same_pc : forall p w rseg op,
+  conv_same_pc (load_op p w rseg op).
+Proof. unfold load_op. intros. conv_same_pc_tac. Qed.
+
+Hint Immediate load_op_same_pc : conv_same_pc_db.
+
+Lemma set_reg_same_pc : forall p r,
+  conv_same_pc (set_reg p r).
+Proof. unfold set_reg. intros. apply Conv_Same_PC.emit_sat_conv_prop.
+  unfold same_pc, Same_PC_Rel.brel. simpl. unfold set_loc. intros.
+  prover.
+Qed.
+
+Hint Immediate set_reg_same_pc : conv_same_pc_db.
+
+Lemma set_op_same_pc : forall p w seg r op,
+  conv_same_pc (set_op p w seg r op).
+Proof. unfold set_op, iset_op32, iset_op16, iset_op8.
+  unfold set_mem32, set_mem16, set_mem8, compute_addr. intros.
+  destruct (op_override p); destruct w;
+  conv_same_pc_tac.
+Qed.
+
+Hint Immediate set_op_same_pc : conv_same_pc_db.
+
+Lemma conv_BS_aux_same_pc : forall s d n (op:pseudo_reg s),
+  conv_same_pc (conv_BS_aux d n op).
+Proof. unfold conv_BS_aux.  
+  induction n; intros; conv_same_pc_tac.
+Qed.
+
+Lemma compute_parity_aux_same_pc : forall s (op1:pseudo_reg s) op2 n,
+  conv_same_pc (compute_parity_aux op1 op2 n).
+Proof. induction n. simpl. conv_same_pc_tac.
+  unfold compute_parity_aux. fold (@compute_parity_aux s).
+  conv_same_pc_tac.
+Qed.
+
+Hint Immediate conv_BS_aux_same_pc compute_parity_aux_same_pc :
+  conv_same_pc_db.
+
 
 (** * Lemmas about a conversion preserves the property of same_pc *)
 
