@@ -13,7 +13,7 @@
 
 open Big_int
 
-type big_int = Big_int.big_int
+ type big_int = Big_int.big_int
     (** The type of big integers. *)
 
 let zero = zero_big_int
