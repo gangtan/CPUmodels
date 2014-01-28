@@ -337,9 +337,11 @@ Module RTL(M : MACHINE_SIG).
       | set_loc_rtl _ e l => 
         v <- interp_rtl_exp_comp e; set_loc l v
       | set_array_rtl _ _ a e1 e2 =>
-        i <- interp_rtl_exp_comp e1; v <- interp_rtl_exp_comp e2; set_array a i v
+        i <- interp_rtl_exp_comp e1; v <- interp_rtl_exp_comp e2; 
+        set_array a i v
       | set_byte_rtl e addr => 
-        v <- interp_rtl_exp_comp e; a <- interp_rtl_exp_comp addr; set_byte a v
+        v <- interp_rtl_exp_comp e; a <- interp_rtl_exp_comp addr; 
+        set_byte a v
       | advance_oracle_rtl => advance_oracle
       | if_rtl r i => 
         v <- interp_rtl_exp_comp r ; if (Word.eq v Word.one) then interp_rtl i else ret tt

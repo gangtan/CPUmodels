@@ -21,12 +21,12 @@ Require Import ZArith.
 Require Import List.
 Require Import Coqlib.
 Require Import Bits.
+Require Import Decode.
 Require Import X86Semantics.
 Require Import Monad.
 Require Import Int32.
 Require Import Eqdep.
 Require Import VerifierDFA.
-Require Import Decode.
 Close Scope char_scope.
 
 Import X86_PARSER.
@@ -114,7 +114,7 @@ Section REIFIED_RTL_CONV.
     | ore_get_loc n (l:location n) : open_rtl_exp n
     | ore_get_array l n (a:array l n) (idx: open_rtl_exp l) : open_rtl_exp n
     | ore_get_byte (addr: open_rtl_exp size_addr) : open_rtl_exp size8
-    | ore_choose n : open_rtl_exp n
+    | ore_get_random n : open_rtl_exp n
     | ore_farith (ew mw: positive) (hyp: float_width_hyp ew mw)
                  (fop: float_arith_op) (rounding: open_rtl_exp size2) :
           let len := (nat_of_P ew + nat_of_P mw)%nat in
@@ -179,7 +179,7 @@ Section REIFIED_RTL_CONV.
       | ore_get_loc _ l => get_loc_rtl_exp l
       | ore_get_array _ _ a idx => get_array_rtl_exp a (ore_denote env idx)
       | ore_get_byte addr => get_byte_rtl_exp (ore_denote env addr)
-      | ore_choose n => choose_rtl_exp n
+      | ore_get_random n => get_random_rtl_exp n
       | ore_farith _ _ hyp fop rounding oe1 oe2 =>
         farith_rtl_exp hyp fop (ore_denote env rounding)
                        (ore_denote env oe1) (ore_denote env oe2)
@@ -317,7 +317,7 @@ Ltac reify_rtl_exp te e :=
     | fun env => get_byte_rtl_exp (@?Addr env) =>
       let oa := reify_rtl_exp te Addr in
       constr:(ore_get_byte oa)
-    | fun env => choose_rtl_exp ?N => constr:(ore_choose te N)
+    | fun env => get_random_rtl_exp ?N => constr:(ore_get_random te N)
     | fun env => farith_rtl_exp ?Hyp ?Fop (@?R env) (@?E1 env) (@?E2 env)  => 
       let or := reify_rtl_exp te R in
       let oe1 := reify_rtl_exp te E1 in
@@ -428,11 +428,6 @@ Ltac reify_rtl_conv te cv :=
 (*             change (@oc_denote (@nil nat) _ tt l=@oc_denote (@nil nat) _ tt r) *)
 (*         end. *)
 
-
-(* TBC *)
-  (* plan: (1) reify basic rtl computations; without reifying the bind construct 
-           (2) reify binds *)
-
 Section REIFY_RTL_COMP.
 
   Local Set Implicit Arguments.
@@ -447,7 +442,8 @@ Section REIFY_RTL_COMP.
   | rc_set_array n1 n2 (a:array n1 n2) (i:int n1) (v:int n2) : rtl_comp unit
   | rc_get_byte (addr:int size_addr) : rtl_comp (int size8)
   | rc_set_byte (addr:int size_addr) (v:int size8) : rtl_comp unit
-  | rc_choose_bits (n:nat) : rtl_comp (int n)
+  | rc_get_random (n:nat) : rtl_comp (int n)
+  | rc_advance_oracle : rtl_comp unit
   | rc_interp_rtl_exp n (e:rtl_exp n) : rtl_comp (int n).
 
   Definition  rtl_comp_denote T (c: rtl_comp T) : RTL T := 
@@ -461,8 +457,9 @@ Section REIFY_RTL_COMP.
       | rc_set_array _ _ a i v => set_array a i v
       | rc_get_byte addr => get_byte addr
       | rc_set_byte addr v => set_byte addr v
-      | rc_choose_bits n => choose_bits n
-      | rc_interp_rtl_exp _ e => interp_rtl_exp e
+      | rc_get_random n => get_random n
+      | rc_advance_oracle => advance_oracle
+      | rc_interp_rtl_exp _ e => interp_rtl_exp_comp e
     end.
 
 End REIFY_RTL_COMP.
@@ -478,10 +475,10 @@ Ltac reify_rtl_comp c :=
     | set_array ?A ?I ?V => constr:(rc_set_array A I V)
     | get_byte ?A => constr:(rc_get_byte A)
     | set_byte ?A ?V => constr:(rc_set_byte A V)
-    | choose_bits ?N => constr:(rc_choose_bits N)
-    | interp_rtl_exp ?E => constr:(rc_interp_rtl_exp E)
+    | get_random ?N => constr:(rc_get_random N)
+    | advance_oracle => constr:(rc_advance_oracle)
+    | interp_rtl_exp_comp ?E => constr:(rc_interp_rtl_exp E)
   end.
-
 
 (** * Lemmas and tactics for eliminating and introducing a RTL monad *)
 
@@ -658,6 +655,7 @@ Ltac extended_destruct_head c :=
 (* Hint Rewrite update_env5 using omega : rtl_rewrite_db. *)
 
 
+(* todo: remove??? *)
 Lemma one_plus_rewrite_2 : forall x, x + 1 + 1 =  x + 2.
 Proof. intros. ring. Qed.
 Lemma one_plus_rewrite_3 : forall x, x + 1 + 1 + 1 = x + 3.
@@ -714,6 +712,17 @@ Ltac rtl_comp_elim_L1 :=
       compute [Return Bind RTL_monad] in H
     | [H: Trap _ _ = _ |- _] =>
       compute [Trap] in H
+    | [H: interp_rtl_exp_comp _ _ = _ |- _] => inv H
+    | [H: interp_rtl ?I _ = _ |- _] => 
+      match I with
+        | set_loc_rtl _ _ _ => compute [interp_rtl] in H
+        | set_array_rtl _ _ _ _ _ => compute [interp_rtl] in H
+        | set_byte_rtl _ _ => compute [interp_rtl] in H
+        | advance_oracle_rtl => compute [interp_rtl] in H
+        | if_rtl _ _ => compute [interp_rtl] in H
+        | error_rtl => compute [interp_rtl] in H
+        | trap_rtl => compute [interp_rtl] in H
+      end
     | [H: Bind _ (get_loc _) _ _ = _ |- _] =>
       unfold_rtl_monad H; compute [get_loc get_location] in H
     | [H: Bind _ (in_seg_bounds _ _) _ _ = _ |- _] =>
@@ -788,13 +797,28 @@ Proof. unfold Bind, Conv_monad. intros.
   destruct_head in H. crush.
 Qed.
 
-Ltac conv_break := 
+(* todo: remove *)
+(* Ltac conv_break :=  *)
+(*   match goal with *)
+(*     | [H: Bind _ _ _ ?cs = (?v', ?cs') |- _]  =>  *)
+(*       apply conv_bind_elim in H; *)
+(*       let H1 := fresh "H" in let cs1 := fresh "cs" in let v1 := fresh "v" in  *)
+(*         destruct H as [cs1 [v1 [H1 H]]] *)
+(*   end. *)
+
+Ltac conv_elim := 
+  unfold write_byte in *;
   match goal with
-    | [H: Bind _ _ _ ?cs = (?v', ?cs') |- _]  => 
-      apply conv_bind_elim in H;
-      let H1 := fresh "H" in let cs1 := fresh "cs" in let v1 := fresh "v" in 
-        destruct H as [cs1 [v1 [H1 H]]]
+      | [H: (emit _ ) ?CS = _ |- _] => 
+        match type of CS with 
+          | conv_state => compute [EMIT] in H; inversion H; subst; clear H
+        end
+      | [H: Bind _ _ _ ?cs = (?v', ?cs') |- _]  => 
+        apply conv_bind_elim in H;
+        let H1 := fresh "H" in let cs1 := fresh "cs" in let v1 := fresh "v" in 
+          destruct H as [cs1 [v1 [H1 H]]]
   end.
+
 
 (** * Lemmas about RTL_step_list *)
 
@@ -910,9 +934,7 @@ Module Conv_Prop (RP: RTL_PROP).
 
   Lemma bind_sat_conv_prop : forall (A B:Type) (cv: Conv A) (f:A -> Conv B),
     conv_prop cv -> (forall a:A, conv_prop (f a)) -> conv_prop (Bind _ cv f).
-  Proof. unfold conv_prop. intros.
-    conv_break. eauto.
-  Qed.
+  Proof. unfold conv_prop. intros. conv_elim. eauto. Qed.
 
   Lemma ret_sat_conv_prop : forall (A:Type) (r:A), 
     conv_prop (ret r).
@@ -971,6 +993,12 @@ Notation same_rtl_state := Same_RTL_State.rtl_prop.
 (* RTL instructions *)
 Hint Unfold same_rtl_state Same_RTL_State_Rel.brel : rtl_prop_unfold_db.
 
+Local Ltac rtl_prop_prover :=
+  autounfold with rtl_prop_unfold_db ; simpl;
+  unfold set_byte, get_byte, set_loc, get_loc, set_array, get_array, 
+    get_random, advance_oracle, interp_rtl_exp_comp, Fail, Trap;
+  crush.
+
 (* the ordering of matches is important for the following tactic *)
 Ltac same_rtl_state_tac :=
   repeat (match goal with
@@ -980,8 +1008,31 @@ Ltac same_rtl_state_tac :=
             | [|- same_rtl_state _] => auto with same_rtl_state_db
           end).
 
-Hint Immediate Same_RTL_State.ret_sat_prop  Same_RTL_State.fail_sat_prop 
-     Same_RTL_State.trap_sat_prop : same_rtl_state_db.
+(** A decision procedure for checking if a RTL computation does not
+    change the rtl state *)
+Definition check_same_rtl_state T (rc:rtl_comp T) : bool := 
+  match rc with
+    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
+    | rc_get_array _ _ _ _ 
+    | rc_get_byte _ | rc_get_random _  
+    | rc_interp_rtl_exp _ _ => true
+    | _ => false
+  end.
+
+Implicit Arguments check_same_rtl_state [T].
+
+Lemma check_same_rtl_state_sound : forall T (rc: rtl_comp T),
+  check_same_rtl_state rc = true -> same_rtl_state (rtl_comp_denote rc).
+Proof. destruct rc; try (discriminate H || rtl_prop_prover; fail). Qed.
+
+(* A reflection based tactic to check if a basic rtl computation satisfies
+   [same_rtl_state]. Not stricitly necessary here; alternatively, we can
+   also put in lemmas about those rcl computations into the hint database;
+   but that requires we state those lemmas explicitly.  *)
+Hint Extern 2 (same_rtl_state ?C) =>
+  let rc:= reify_rtl_comp C in
+  change (same_rtl_state (rtl_comp_denote rc));
+  apply check_same_rtl_state_sound; trivial : same_rtl_state_db.
 
 (** ** The property that an RTL computation preserves [rtl_mach_state] *)
 Module Same_Mach_State_Rel <: RTL_STATE_REL.
@@ -1009,19 +1060,13 @@ Ltac same_mach_state_tac :=
             | [|- same_mach_state _] => auto with same_mach_state_db
           end).
 
-Local Ltac rtl_prover :=
-  autounfold with rtl_prop_unfold_db ; simpl;
-  unfold set_byte, get_byte, set_loc, get_loc, set_array, get_array, 
-    choose_bits, Fail, Trap;
-  crush.
-
-(** A decision procedure for checking if a RTL computation does not
-    change the machine state *)
 Definition check_same_mach_state T (rc:rtl_comp T) : bool := 
   match rc with
     | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
     | rc_get_array _ _ _ _ 
-    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _  => true
+    | rc_get_byte _ | rc_set_byte _ _ | rc_get_random _ 
+    | rc_advance_oracle
+    | rc_interp_rtl_exp _ _ => true
     | _ => false
   end.
 
@@ -1029,12 +1074,8 @@ Implicit Arguments check_same_mach_state [T].
 
 Lemma check_same_mach_state_sound : forall T (rc: rtl_comp T),
   check_same_mach_state rc = true -> same_mach_state (rtl_comp_denote rc).
-Proof. destruct rc; try (discriminate H || rtl_prover; fail). Qed.
+Proof. destruct rc; try (discriminate H || rtl_prop_prover; fail). Qed.
 
-(* A reflection based tactic to check if a basic rtl computation satisfies
-   [same_mach_state]. Not stricitly necessary here; alternatively, we can
-   also put in lemmas about those rcl computations into the hint database;
-   but that requires we state those lemmas explicitly.  *)
 Hint Extern 2 (same_mach_state ?C) =>
   let rc:= reify_rtl_comp C in
   change (same_mach_state (rtl_comp_denote rc));
@@ -1047,15 +1088,6 @@ Proof. unfold same_mach_state, Same_Mach_State_Rel.brel.
   intros. apply H in H0. subst s'.
   trivial.
 Qed.
-
-Lemma interp_rtl_exp_same_mach_state : forall s (e: rtl_exp s),
-  same_mach_state (interp_rtl_exp e).
-Proof. induction e;
-  compute [interp_rtl_exp]; fold interp_rtl_exp;
-  same_mach_state_tac.
-Qed.
-Hint Immediate interp_rtl_exp_same_mach_state : same_mach_state_db.
-
 
 (** ** The property that an RTL computation preserves the core state *)
 Module Same_Core_State_Rel <: RTL_STATE_REL.
@@ -1087,11 +1119,11 @@ Definition check_same_core_state T (rc:rtl_comp T) : bool :=
   match rc with
     | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
     | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
-    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _
+    | rc_get_byte _ | rc_set_byte _ _
+    | rc_get_random _ | rc_advance_oracle
     | rc_interp_rtl_exp _ _ => true
     | _ => false
   end.
-
 Implicit Arguments check_same_core_state [T].
 
 Lemma same_mach_state_same_core_state : forall (A:Type) (c:RTL A),
@@ -1100,9 +1132,9 @@ Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
 
 Lemma check_same_core_state_sound : forall T (rc: rtl_comp T),
   check_same_core_state rc = true -> same_core_state (rtl_comp_denote rc).
-Proof. intros; destruct rc; simpl; try (discriminate H || rtl_prover; fail). 
-  destruct a; rtl_prover.  
-  apply same_mach_state_same_core_state; same_mach_state_tac.
+Proof. 
+  intros; destruct rc; simpl; try (discriminate H || rtl_prop_prover; fail). 
+  destruct a; rtl_prop_prover.  
 Qed.
 
 Hint Extern 2 (same_core_state ?C) =>
@@ -1173,23 +1205,19 @@ Definition check_same_seg_regs T (rc:rtl_comp T) : bool :=
   match rc with
     | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
     | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
-    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _
+    | rc_get_byte _ | rc_set_byte _ _
+    | rc_get_random _ | rc_advance_oracle
     | rc_interp_rtl_exp _ _ => true
     | rc_set_loc _ l _ => negb (is_seg_reg_loc l)
   end.
-
 Implicit Arguments check_same_seg_regs [T].
 
 
 Lemma check_same_seg_regs_sound : forall T (rc: rtl_comp T),
   check_same_seg_regs rc = true -> same_seg_regs (rtl_comp_denote rc).
-Proof. destruct rc; intros; try (discriminate H || rtl_prover; fail).
-
-  todo: use bool_elim_tac
-  
-  apply negb_true_iff in H; simpl; auto using set_loc_same_seg_regs.
+Proof. destruct rc; intros; try (discriminate H || rtl_prop_prover; fail).
+  simpl in H; bool_elim_tac; simpl; auto using set_loc_same_seg_regs.
   apply same_core_state_same_seg_regs; simpl; auto with same_core_state_db.
-  apply same_mach_state_same_seg_regs; simpl; auto with same_mach_state_db.
 Qed.
 
 (* try the decision procedure on basic rtl computations *)
@@ -1235,12 +1263,12 @@ Definition check_same_pc T (rc:rtl_comp T) : bool :=
   match rc with
     | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
     | rc_get_array _ _ _ _ 
-    | rc_get_byte _ | rc_set_byte _ _ | rc_choose_bits _ 
+    | rc_get_byte _ | rc_set_byte _ _
+    | rc_get_random _ | rc_advance_oracle
     | rc_interp_rtl_exp _ _ => true
     | rc_set_loc _ l _ => negb (is_pc_loc _ l)
     | _ => false
   end.
-
 Implicit Arguments check_same_pc [T].
 
 Lemma set_loc_same_pc : forall s (l:location s) v,
@@ -1255,9 +1283,8 @@ Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
 
 Lemma check_same_pc_sound : forall T (rc: rtl_comp T),
   check_same_pc rc = true -> same_pc (rtl_comp_denote rc).
-Proof. intros; destruct rc; try (discriminate H || rtl_prover; fail). 
-  simpl; apply negb_true_iff in H; auto using set_loc_same_pc.
-  simpl.  apply same_mach_state_same_pc. same_mach_state_tac.
+Proof. intros; destruct rc; try (discriminate H || rtl_prop_prover; fail). 
+  simpl in H; bool_elim_tac; simpl; auto using set_loc_same_pc.
 Qed.
 
 Hint Extern 2 (same_pc ?C) =>
@@ -1296,10 +1323,11 @@ Definition check_same_mem T (rc:rtl_comp T) : bool :=
     | rc_ret _ _ | rc_fail _ | rc_trap _
     | rc_get_loc _ _  | rc_set_loc _ _ _
     | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
-    | rc_get_byte _ | rc_choose_bits _  => true
+    | rc_get_byte _ 
+    | rc_get_random _ | rc_advance_oracle
+    | rc_interp_rtl_exp _ _ => true
     | _ => false
   end.
-
 Implicit Arguments check_same_mem [T].
 
 Lemma same_rtl_state_same_mem : forall (A:Type) (c:RTL A), 
@@ -1310,20 +1338,14 @@ Qed.
 
 Lemma check_same_mem_sound : forall T (rc: rtl_comp T),
   check_same_mem rc = true -> same_mem (rtl_comp_denote rc).
-Proof. intros; destruct rc; try (discriminate H || rtl_prover; fail). Qed.
+Proof. 
+  intros; destruct rc; try (discriminate H || rtl_prop_prover; fail). 
+Qed.
 
 Hint Extern 2 (same_mem ?C) =>
   let rc:= reify_rtl_comp C in
   change (same_mem (rtl_comp_denote rc));
   apply check_same_mem_sound; trivial : same_mem_db.
-
-Lemma interp_rtl_exp_same_mem : forall s (e: rtl_exp s),
-  same_mem (interp_rtl_exp e).
-Proof. induction e;
-  compute [interp_rtl_exp]; fold interp_rtl_exp;
-  same_mem_tac.
-Qed.
-Hint Immediate interp_rtl_exp_same_mem : same_mem_db.
 
 (** ** A state relation about agreeing over/outside a memory region *)
 Definition agree_over_addr_region (r:Int32Ensemble) (s s':rtl_state) : Prop :=
@@ -1669,14 +1691,14 @@ Ltac no_fail_tac :=
   compute [interp_rtl]; fold interp_rtl;
   repeat no_fail_one_tac.
 
-
 Definition check_no_fail T (rc:rtl_comp T) : bool := 
   match rc with
     | rc_ret _ _ | rc_trap _
     | rc_get_loc _ _  | rc_set_loc _ _ _
     | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
     | rc_get_byte _ | rc_set_byte _ _ 
-    | rc_choose_bits _  => true
+    | rc_get_random _ | rc_advance_oracle
+    | rc_interp_rtl_exp _ _  => true
     | _ => false
   end.
 
@@ -1684,20 +1706,12 @@ Implicit Arguments check_no_fail [T].
 
 Lemma check_no_fail_sound : forall T (rc: rtl_comp T),
   check_no_fail rc = true -> no_fail (rtl_comp_denote rc).
-Proof. intros; destruct rc; try (discriminate || rtl_prover; fail). Qed.
+Proof. intros; destruct rc; try (discriminate || rtl_prop_prover; fail). Qed.
 
 Hint Extern 2 (no_fail ?C) =>
   let rc:= reify_rtl_comp C in
   change (no_fail (rtl_comp_denote rc));
   apply check_no_fail_sound; trivial : no_fail_db.
-
-Lemma interp_rtl_exp_no_fail : forall s (e: rtl_exp s),
-  no_fail (interp_rtl_exp e).
-Proof. induction e;
-  compute [interp_rtl_exp]; fold interp_rtl_exp;
-  no_fail_tac.
-Qed.
-Hint Immediate interp_rtl_exp_no_fail : no_fail_db.
 
 (** * Lemmas about inBoundCodeAddr *)
 
@@ -2093,8 +2107,6 @@ Hint Immediate conv_BS_aux_same_seg_regs compute_parity_aux_same_seg_regs :
 (*     discriminate H. *)
 (* Qed. *)
 
-(* (* TBC *) *)
-
 (* (* Goal False. *) *)
 (* (* Unset Ltac Debug. *) *)
 (* (* let s := reify_rtl_conv (@nil nat) *) *)
@@ -2218,9 +2230,7 @@ Lemma bind_conv_aos : forall seg (A B:Type) (cv: Conv A) (f:A -> Conv B),
   conv_agree_outside_seg seg cv
     -> (forall a:A, conv_agree_outside_seg seg (f a))
     -> conv_agree_outside_seg seg (Bind _ cv f).
-Proof. unfold conv_agree_outside_seg. intros.
-  conv_break. eauto.
-Qed.
+Proof. unfold conv_agree_outside_seg. intros. conv_elim. eauto. Qed.
 
 Lemma emit_conv_aos : forall seg i,
   agree_outside_seg seg (interp_rtl i)
@@ -2259,7 +2269,7 @@ Ltac conv_agree_outside_seg_one_tac :=
       apply bind_conv_aos; [idtac | intros]
     | [|- conv_agree_outside_seg _ ?c] => extended_destruct_head c
     | [|- conv_agree_outside_seg _ _]
-      => auto with conv_agree_outside_seg_db
+      => eauto with conv_agree_outside_seg_db
   end.
 
 Ltac conv_agree_outside_seg_tac := 
@@ -2287,65 +2297,20 @@ Proof. unfold safe_fail_if. intros.
 Qed.
 *)
 
-plan:
-  * add advance_oracle and get_random two instructions
-  * change interp_rtl_exp to not be a RTL computation
-
-Lemma add_and_check_safe : forall seg addr cs r cs' s v' s' s'' i,
+Lemma add_and_check_safe : forall seg addr cs r cs' s v' s', 
   add_and_check_segment seg addr cs = (r, cs')
     -> RTL_step_list (List.rev (c_rev_i cs')) s = (Okay_ans v', s')
-    -> interp_rtl_exp r s' = (Okay_ans i, s'')
-    -> Ensembles.In _ (segAddrs seg s') i.
+    -> Ensembles.In _ (segAddrs seg s') (interp_rtl_exp r s').
 Proof. intros.
   unfold add_and_check_segment in H.
-  simpl in H.
-(*  simpl_rtl. *)
-
-  inv H.
-  simpl in H0.
-  autorewrite with step_list_db in H0.
-
+  conv_backward.
   repeat rtl_okay_elim. removeUnit.
-
-
-  compute [interp_rtl] in H2.
-  repeat rtl_okay_elim. 
-  remember_destruct_head in H2 as chk.
+  remember_destruct_head in H1 as chk.
   Case "test fails". discriminate.
   Case "test succeeds".
     repeat rtl_okay_elim.
-
-
-    compute [interp_rtl_exp] in H0. fold interp_rtl_exp in H0.
-    repeat rtl_okay_elim. 
-    compute [interp_rtl_exp] in H1. fold interp_rtl_exp in H1.
-    repeat rtl_okay_elim. 
-
-    unfold segAddrs.
-    unfold Ensembles.In, addrRegion.
-    
-    exists v0.
-    split.
-
-
-    unfold add. simpl.
-
-
-
-
- 
-  simpl in H2.
-
-
-  remember_destruct_head in H1 as chk.
-
-
-  Case "test succeeds". repeat rtl_okay_elim.
-  Case "test fails".
-    unfold segAddrs.
-    simpl in *. repeat rtl_okay_elim. simpl in *. simpl_rtl.
-    unfold Ensembles.In, addrRegion.
-    exists (rtl_env s0 addr).
+    unfold segAddrs, Ensembles.In, addrRegion.
+    exists (interp_rtl_exp addr s2).
     split. trivial.
       apply int_eq_false_iff2 in Hchk.
       compute [interp_test] in Hchk.
@@ -2353,130 +2318,50 @@ Proof. intros.
       all_to_Z_tac. apply Zge_le. assumption.
 Qed.
 
-(* The original one: *)
-(* Lemma add_and_check_safe : forall seg addr cs r cs' s v' s', *)
-(*   add_and_check_segment seg addr cs = (r, cs')  *)
-(*     -> addr <> ps_reg RTL.size32 (c_next cs) *)
-(*     -> addr <> ps_reg RTL.size32 (c_next cs + 1) *)
-(*     -> addr <> ps_reg  RTL.size32 (c_next cs + 2) *)
-(*     -> RTL_step_list (List.rev (c_rev_i cs')) s = (Okay_ans v', s') *)
-(*     -> Ensembles.In _ (segAddrs seg s') (rtl_env s' r). *)
-(* Proof. intros. *)
-(*   unfold add_and_check_segment in H.  *)
-(*   simpl in H. simpl_rtl. *)
-(*   inv H. simpl in H3. *)
-(*   autorewrite with step_list_db in H3. *)
-(*   repeat rtl_okay_elim. removeUnit. *)
-(*   simpl in H4. *)
-(*   remember_destruct_head in H4 as chk. *)
-(*   Case "test succeeds". repeat rtl_okay_elim. *)
-(*   Case "test fails". *)
-(*     unfold segAddrs.  *)
-(*     simpl in *. repeat rtl_okay_elim. simpl in *. simpl_rtl. *)
-(*     unfold Ensembles.In, addrRegion. *)
-(*     exists (rtl_env s0 addr). *)
-(*     split. trivial. *)
-(*       apply int_eq_false_iff2 in Hchk. *)
-(*       compute [interp_test] in Hchk. *)
-(*       remember_destruct_head in Hchk as ltu; try congruence. *)
-(*       all_to_Z_tac. apply Zge_le. assumption. *)
+
+Lemma smem_aos : forall seg v addr,
+  conv_agree_outside_seg seg (smem seg v addr).
+Proof. unfold smem, conv_agree_outside_seg. intros.
+  repeat conv_elim.
+  simpl. autorewrite with step_list_db.
+  assert (conv_agree_outside_seg seg (add_and_check_segment seg addr))
+    as H10.
+    unfold add_and_check_segment.
+    conv_agree_outside_seg_tac.
+  unfold agree_outside_seg. intros.
+  repeat rtl_okay_elim. simpl. removeUnit. 
+  unfold conv_agree_outside_seg in H10. 
+  use_lemma H10 by eassumption.
+  unfold agree_outside_seg in H.
+  use_lemma H by eassumption.
+  assert (Ensembles.In _ (segAddrs seg s0) (interp_rtl_exp v1 s0)) as H12.
+    eapply add_and_check_safe; eassumption.
+  assert (segAddrs seg s0 = segAddrs seg s) as H14.
+    unfold segAddrs. 
+    crush.
+  rewrite H14 in H12.
+  assert (SegStart s0 seg = SegStart s1 seg /\
+          SegLimit s0 seg = SegLimit s1 seg).
+    inv H3. simpl. crush.
+  assert (agree_outside_addr_region (segAddrs seg s) s0 s1).
+    unfold agree_outside_addr_region; intros.
+    unfold set_byte in H3. crush.
+    rewrite AddrMap.gso; [trivial | contradict H12; subst; trivial].
+  crush.
+    apply agree_outside_addr_region_trans with (s2:=s0); crush.
+Qed.
+
+Hint Resolve smem_aos : conv_agree_outside_seg_db.
+
+(* todo: remove *)  
+(* Lemma smem_agree_outside_seg_2 : forall seg v addr_id cs r cs', *)
+(*   smem seg v (ps_reg _ addr_id) cs = (r, cs') *)
+(*     -> addr_id < c_next cs *)
+(*     -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs))) *)
+(*     -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs'))). *)
+(* Proof. intros. eapply smem_agree_outside_seg;  *)
+(*   (eassumption || intro H5; inversion H5; omega). *)
 (* Qed. *)
-
-(* todo: use conv_agree_outside_seg to wrap this *)
-Lemma smem_agree_outside_seg : forall seg v addr cs r cs',
-  smem seg v addr cs = (r, cs')
-    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs)))
-    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs'))).
-Proof. unfold smem. intros.
-  conv_break.
-  compute [write_byte EMIT] in H.
-  inversion H; subst; clear H.
-  simpl. autorewrite with step_list_db.
-  assert (conv_agree_outside_seg seg (add_and_check_segment seg addr))
-    as H10.
-    unfold add_and_check_segment.
-    conv_agree_outside_seg_tac.
-  unfold agree_outside_seg. intros.
-  repeat rtl_okay_elim. removeUnit.
-
-
-
-  compute [interp_rtl] in H3.
-  repeat rtl_okay_break.
-
-  assert (Ensembles.In _ (segAddrs seg s0) (rtl_env s0 v0)) as H12.
-    eapply add_and_check_safe; eassumption.
-
-
-  apply H10 in H4. apply H4 in H3. apply H3 in H5.
-  assert (segAddrs seg s = segAddrs seg s0) as H14.
-    unfold segAddrs. prover.
-  rewrite <- H14 in H12.
-  assert (SegStart s0 seg = SegStart s1 seg /\
-          SegLimit s0 seg = SegLimit s1 seg).
-    simpl in H6. compute [set_byte] in H6.
-    inversion H6; clear H6. subst s1.
-    prover.
-  assert (agree_outside_addr_region (segAddrs seg s) s0 s1).
-    unfold agree_outside_addr_region; intros.
-    simpl in H6. compute [set_byte] in H6.
-    inversion H6; clear H6; subst s1.
-    simpl in *.
-    rewrite AddrMap.gso by prover. trivial.
-  split. prover. split. prover.
-    apply agree_outside_addr_region_trans with (s2:=s0); prover.
-Qed.
-
-
-
-Lemma smem_agree_outside_seg : forall seg v addr cs r cs',
-  smem seg v addr cs = (r, cs')
-    -> addr <> ps_reg RTL.size32 (c_next cs)
-    -> addr <> ps_reg RTL.size32 (c_next cs + 1)
-    -> addr <> ps_reg RTL.size32 (c_next cs + 2)
-    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs)))
-    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs'))).
-Proof. unfold smem. intros.
-  conv_break.
-  compute [write_byte EMIT] in H.
-  inversion H; subst; clear H.
-  simpl. autorewrite with step_list_db.
-  assert (conv_agree_outside_seg seg (add_and_check_segment seg addr))
-    as H10.
-    unfold add_and_check_segment.
-    conv_agree_outside_seg_tac.
-  unfold agree_outside_seg. intros.
-  repeat rtl_okay_elim. removeUnit.
-  assert (Ensembles.In _ (segAddrs seg s0) (rtl_env s0 v0)) as H12.
-    eapply add_and_check_safe; eassumption.
-  apply H10 in H4. apply H4 in H3. apply H3 in H5.
-  assert (segAddrs seg s = segAddrs seg s0) as H14.
-    unfold segAddrs. prover.
-  rewrite <- H14 in H12.
-  assert (SegStart s0 seg = SegStart s1 seg /\
-          SegLimit s0 seg = SegLimit s1 seg).
-    simpl in H6. compute [set_byte] in H6.
-    inversion H6; clear H6. subst s1.
-    prover.
-  assert (agree_outside_addr_region (segAddrs seg s) s0 s1).
-    unfold agree_outside_addr_region; intros.
-    simpl in H6. compute [set_byte] in H6. 
-    inversion H6; clear H6; subst s1.
-    simpl in *.
-    rewrite AddrMap.gso by prover. trivial.
-  split. prover. split. prover.
-    apply agree_outside_addr_region_trans with (s2:=s0); prover.
-Qed.
-
-  
-Lemma smem_agree_outside_seg_2 : forall seg v addr_id cs r cs',
-  smem seg v (ps_reg _ addr_id) cs = (r, cs')
-    -> addr_id < c_next cs
-    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs)))
-    -> agree_outside_seg seg (RTL_step_list (List.rev (c_rev_i cs'))).
-Proof. intros. eapply smem_agree_outside_seg; 
-  (eassumption || intro H5; inversion H5; omega).
-Qed.
 
 Ltac conv_backward_aos :=
   match goal with
@@ -2486,6 +2371,18 @@ Ltac conv_backward_aos :=
         [eassumption | conv_agree_outside_seg_tac | idtac]
   end.
 
+Lemma set_mem_n_aos :
+  forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
+    conv_agree_outside_seg seg (@set_mem_n n seg v addr).
+Proof. induction n; intros.
+  Case "n=0". simpl. conv_agree_outside_seg_tac.
+  Case "S n". unfold set_mem_n. fold (@ set_mem_n n).
+    conv_agree_outside_seg_tac.
+Qed.
+Hint Resolve set_mem_n_aos : conv_agree_outside_seg_db.
+
+
+(* todo: remove 
 Lemma set_mem_n_aos :
   forall n seg (v:pseudo_reg (8*(n+1)-1)) addr_id cs r cs',
     set_mem_n seg v (ps_reg _ addr_id) cs = (r, cs')
@@ -2534,43 +2431,34 @@ Proof. unfold conv_agree_outside_seg. intros.
     eauto. eauto.
 Qed.
 
+*)
+
 (** ** a little prover for showing two segment registers are the same *)
 Definition seg_eq (seg1 seg2 : segment_register) := seg1 = seg2.
 
 Lemma seg_eq_refl : forall seg, seg_eq seg seg. 
-Proof. prover. Qed.
+Proof. crush. Qed.
 
 Hint Resolve seg_eq_refl : conv_agree_outside_seg_db.
+
 
 Lemma iset_op32_aos : forall seg1 seg2 pre op,
   seg_eq seg1 seg2 -> conv_agree_outside_seg seg1 (iset_op32 seg2 pre op).
 Proof. unfold seg_eq, iset_op32, compute_addr, set_mem32. 
   intros. subst.
-  destruct op. 
-    conv_agree_outside_seg_tac.
-    conv_agree_outside_seg_tac.
-    apply set_mem_n_aos_2; [conv_index_monotone_tac | conv_agree_outside_seg_tac].
-    apply set_mem_n_aos_2; [conv_index_monotone_tac | conv_agree_outside_seg_tac].
+  destruct op; conv_agree_outside_seg_tac.
 Qed.
 
 Lemma iset_op16_aos : forall seg1 seg2 pre op,
   seg_eq seg1 seg2 -> conv_agree_outside_seg seg1 (iset_op16 seg2 pre op).
-Proof. unfold seg_eq, iset_op16, compute_addr. intros. subst.
-  destruct op.
-    conv_agree_outside_seg_tac.
-    conv_agree_outside_seg_tac.
-    apply set_mem_n_aos_2; [conv_index_monotone_tac | conv_agree_outside_seg_tac].
-    apply set_mem_n_aos_2; [conv_index_monotone_tac | conv_agree_outside_seg_tac].
+Proof. unfold seg_eq, iset_op16, compute_addr, set_mem16. intros. subst.
+  destruct op; conv_agree_outside_seg_tac.
 Qed.
 
 Lemma iset_op8_aos : forall seg1 seg2 pre op,
   seg_eq seg1 seg2 -> conv_agree_outside_seg seg1 (iset_op8 seg2 pre op).
 Proof. unfold seg_eq, iset_op8, compute_addr. intros. subst.
-  destruct op.
-    conv_agree_outside_seg_tac.
-    conv_agree_outside_seg_tac.
-    apply set_mem_n_aos_2; [conv_index_monotone_tac | conv_agree_outside_seg_tac].
-    apply set_mem_n_aos_2; [conv_index_monotone_tac | conv_agree_outside_seg_tac].
+  destruct op; conv_agree_outside_seg_tac.
 Qed.
 
 Hint Resolve iset_op32_aos iset_op16_aos iset_op8_aos
@@ -2666,18 +2554,17 @@ Proof. unfold set_Bit_mem, modify_Bit, set_mem,
          set_mem16, set_mem32. intros.
   unfold seg_eq in *. subst seg.
   do 2 (conv_agree_outside_seg_one_tac; [conv_agree_outside_seg_tac | idtac]).
-  destruct (op_override pre); destruct w;
-    (apply set_mem_n_aos_2; [conv_index_monotone_tac | conv_agree_outside_seg_tac]).
+  destruct (op_override pre); destruct w; conv_agree_outside_seg_tac.
 Qed.
 
-Lemma conv_BS_aux_aos : forall seg s d n (op:pseudo_reg s),
+Lemma conv_BS_aux_aos : forall seg s d n (op:rtl_exp s),
   conv_agree_outside_seg seg (conv_BS_aux d n op).
 Proof. unfold conv_BS_aux.  
   induction n; intros; conv_agree_outside_seg_tac.
 Qed.
 
 Lemma compute_parity_aux_aos : 
-  forall seg s (op1:pseudo_reg s) op2 n,
+  forall seg s (op1:rtl_exp s) op2 n,
     conv_agree_outside_seg seg (compute_parity_aux op1 op2 n).
 Proof. induction n. simpl. conv_agree_outside_seg_tac.
   unfold compute_parity_aux. fold (@compute_parity_aux s).
@@ -2706,15 +2593,14 @@ Hint Extern 1 (conv_same_pc (emit _)) =>
 Hint Resolve Conv_Same_PC.ret_sat_conv_prop 
   : conv_same_pc_db.
 
-(* todo: remove *)
-(* Ltac conv_same_pc_tac :=  *)
-(*   repeat autounfold with conv_unfold_db; *)
-(*   repeat (match goal with *)
-(*             | [|- conv_same_pc (Bind _ _ _)] =>  *)
-(*               apply Conv_Same_PC.bind_sat_conv_prop; [idtac | intros] *)
-(*             (* | [|- conv_same_pc ?c] => extended_destruct_head c *) *)
-(*             | [|- conv_same_pc _] => auto with conv_same_pc_db *)
-(*           end). *)
+Ltac conv_same_pc_tac :=
+  repeat autounfold with conv_unfold_db;
+  repeat (match goal with
+            | [|- conv_same_pc (Bind _ _ _)] =>
+              apply Conv_Same_PC.bind_sat_conv_prop; [idtac | intros]
+            | [|- conv_same_pc ?c] => extended_destruct_head c
+            | [|- conv_same_pc _] => auto with conv_same_pc_db
+          end).
 
 Lemma conv_same_pc_e : forall (A:Type) (cv:Conv A) cs v cs',
   cv cs = (v, cs')
@@ -2732,84 +2618,16 @@ Proof. unfold conv_same_pc. eauto. Qed.
 (*        [eassumption | conv_same_pc_tac | idtac] *)
 (*   end. *)
 
-Fixpoint check_same_pc te t (oc: open_conv te t) := 
-  match oc with
-    | oc_seq _ oc of => 
-      check_same_pc _ _ oc && check_same_pc _ _ of
-    | oc_bind_exp _ _ oc of => 
-      check_same_pc _ _ oc && check_same_pc _ _ of
-    | oc_write_loc _ _ l =>
-      match l with
-        | pc_loc => false
-        | _ => true
-      end
-    | oc_any _ _ => false
-    | _ => true
-  end.
-
-Theorem check_same_pc_correct : 
-  forall te t oc,
-    check_same_pc te t oc = true -> 
-    forall env:tyenv_denote te, conv_same_pc (oc_denote env oc).
-Proof. 
-  (* intros. induction cv. *)
-  (* Case "cv_bind".     *)
-  (*   simpl in H. *)
-  (*   bool_elim_tac. apply Conv_Same_PC.bind_sat_conv_prop; crush. *)
-  (* Case "cv_load_int". *)
-  (*   simpl. unfold load_int. *)
-  (*   apply Conv_Same_PC.ret_sat_conv_prop.  *)
-  (* Case "cv_read_loc". *)
-  (*   simpl. unfold read_loc. *)
-  (*   apply Conv_Same_PC.ret_sat_conv_prop.  *)
- Admitted. (*todo*)
-
-Ltac conv_same_pc_tac := 
-  match goal with
-    | [|- conv_same_pc ?C] =>
-      let oc :=reify_rtl_conv (@nil nat) (fun _:unit => C) in
-      change (conv_same_pc (@oc_denote (@nil nat) _ tt oc))
-  end; apply check_same_pc_correct; trivial.
-
-Unset Ltac Debug.
-Set Printing Depth 500.
-
-(* testing *)
-Goal conv_same_pc (conv_AAA_AAS add_op).
-Proof.
-  unfold conv_AAA_AAS, load_Z, undef_flag, get_flag, set_flag,
-    get_AH, get_AL, copy_ps, set_AL, set_AH, load_int, read_loc,
-    arith, test, cast_u, cast_s, if_exp, choose.
-  Time conv_same_pc_tac.
-Qed.
-
-
-
-
-Goal forall pre w op1 op2, conv_same_pc (conv_ADC pre w op1 op2).
-Proof. intros.
-  unfold conv_ADC, compute_parity, load_Z, undef_flag, get_flag, set_flag,
-    get_AH, get_AL, copy_ps, set_AL, set_AH, load_int, read_loc,
-    arith, test, cast_u, cast_s, if_exp, choose.
-  Time conv_same_pc_tac.
-Qed.
-
-
-
-
-(* to be organized *)
 Lemma load_mem_n_same_pc : forall seg addr n,
   conv_same_pc (load_mem_n seg addr n).
 Proof. unfold load_mem_n, lmem, add_and_check_segment.
-  induction n. 
-    conv_same_pc_tac.
-    fold load_mem_n in *. conv_same_pc_tac.
+  induction n; conv_same_pc_tac.
 Qed.
 
 Hint Extern 1 (conv_same_pc (load_mem_n _ _ ?X))
   =>  apply load_mem_n_same_pc with (n:=X) : conv_same_pc_db.
 
-Lemma set_mem_n_same_pc : forall n seg (v:pseudo_reg (8*(n+1)-1)) addr,
+Lemma set_mem_n_same_pc : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
   conv_same_pc (set_mem_n seg v addr).
 Proof. unfold set_mem_n, smem, add_and_check_segment.
   induction n; intros. 
@@ -2850,7 +2668,7 @@ Lemma set_reg_same_pc : forall p r,
   conv_same_pc (set_reg p r).
 Proof. unfold set_reg. intros. apply Conv_Same_PC.emit_sat_conv_prop.
   unfold same_pc, Same_PC_Rel.brel. simpl. unfold set_loc. intros.
-  prover.
+  crush.
 Qed.
 
 Hint Immediate set_reg_same_pc : conv_same_pc_db.
@@ -2865,13 +2683,13 @@ Qed.
 
 Hint Immediate set_op_same_pc : conv_same_pc_db.
 
-Lemma conv_BS_aux_same_pc : forall s d n (op:pseudo_reg s),
+Lemma conv_BS_aux_same_pc : forall s d n (op:rtl_exp s),
   conv_same_pc (conv_BS_aux d n op).
 Proof. unfold conv_BS_aux.  
   induction n; intros; conv_same_pc_tac.
 Qed.
 
-Lemma compute_parity_aux_same_pc : forall s (op1:pseudo_reg s) op2 n,
+Lemma compute_parity_aux_same_pc : forall s (op1:rtl_exp s) op2 n,
   conv_same_pc (compute_parity_aux op1 op2 n).
 Proof. induction n. simpl. conv_same_pc_tac.
   unfold compute_parity_aux. fold (@compute_parity_aux s).
@@ -2881,128 +2699,6 @@ Qed.
 Hint Immediate conv_BS_aux_same_pc compute_parity_aux_same_pc :
   conv_same_pc_db.
 
-
-(** * Lemmas about a conversion preserves the property of same_pc *)
-
-Module Conv_Same_PC := Conv_Prop (Same_PC).
-Notation conv_same_pc := Conv_Same_PC.conv_prop.
-
-Hint Extern 1 (conv_same_pc (emit _)) => 
-  apply Conv_Same_PC.emit_sat_conv_prop; same_pc_tac : conv_same_pc_db.
-
-Hint Extern 1 (conv_same_pc (fresh _)) => 
-  apply Conv_Same_PC.fresh_sat_conv_prop; intros; same_pc_tac :
-  conv_same_pc_db.
-
-Hint Resolve Conv_Same_PC.ret_sat_conv_prop 
-  : conv_same_pc_db.
-
-Ltac conv_same_pc_tac := 
-  repeat autounfold with conv_unfold_db;
-  repeat (match goal with
-            | [|- conv_same_pc (Bind _ _ _)] => 
-              apply Conv_Same_PC.bind_sat_conv_prop; [idtac | intros]
-            | [|- conv_same_pc ?c] => extended_destruct_head c
-            | [|- conv_same_pc _] => auto with conv_same_pc_db
-          end).
-
-Lemma conv_same_pc_e : forall (A:Type) (cv:Conv A) cs v cs',
-  cv cs = (v, cs')
-    -> conv_same_pc cv
-    -> same_pc (RTL_step_list (List.rev (c_rev_i cs)))
-    -> same_pc (RTL_step_list (List.rev (c_rev_i cs'))).
-Proof. unfold conv_same_pc. eauto. Qed.
-
-Ltac conv_backward_same_pc :=
-  match goal with
-    [H: ?cv ?cs = (_, ?cs') |- 
-      same_pc (RTL_step_list (rev (c_rev_i ?cs')))]
-    => eapply conv_same_pc_e;
-       [eassumption | conv_same_pc_tac | idtac]
-  end.
-
-Lemma load_mem_n_same_pc : forall seg addr n,
-  conv_same_pc (load_mem_n seg addr n).
-Proof. unfold load_mem_n, lmem, add_and_check_segment.
-  induction n. 
-    conv_same_pc_tac.
-    fold load_mem_n in *. conv_same_pc_tac.
-Qed.
-
-Hint Extern 1 (conv_same_pc (load_mem_n _ _ ?X))
-  =>  apply load_mem_n_same_pc with (n:=X) : conv_same_pc_db.
-
-Lemma set_mem_n_same_pc : forall n seg (v:pseudo_reg (8*(n+1)-1)) addr,
-  conv_same_pc (set_mem_n seg v addr).
-Proof. unfold set_mem_n, smem, add_and_check_segment.
-  induction n; intros. 
-    conv_same_pc_tac.
-    fold (@set_mem_n n) in *. conv_same_pc_tac.
-Qed.
-
-Hint Immediate set_mem_n_same_pc : conv_same_pc_db.
-
-Lemma iload_op8_same_pc : forall seg op,
-  conv_same_pc (iload_op8 seg op).
-Proof. unfold iload_op8, load_mem8, compute_addr. intros. 
-  conv_same_pc_tac.
-Qed.  
-
-Lemma iload_op16_same_pc : forall seg op,
-  conv_same_pc (iload_op16 seg op).
-Proof. unfold iload_op16, load_mem16, compute_addr. intros. 
-  conv_same_pc_tac.
-Qed.  
-
-Lemma iload_op32_same_pc : forall seg op,
-  conv_same_pc (iload_op32 seg op).
-Proof. unfold iload_op32, load_mem32, compute_addr. intros. 
-  conv_same_pc_tac.
-Qed.  
-
-Hint Immediate iload_op8_same_pc iload_op16_same_pc
-  iload_op32_same_pc : conv_same_pc_db.
-
-Lemma load_op_same_pc : forall p w rseg op,
-  conv_same_pc (load_op p w rseg op).
-Proof. unfold load_op. intros. conv_same_pc_tac. Qed.
-
-Hint Immediate load_op_same_pc : conv_same_pc_db.
-
-Lemma set_reg_same_pc : forall p r,
-  conv_same_pc (set_reg p r).
-Proof. unfold set_reg. intros. apply Conv_Same_PC.emit_sat_conv_prop.
-  unfold same_pc, Same_PC_Rel.brel. simpl. unfold set_loc. intros.
-  prover.
-Qed.
-
-Hint Immediate set_reg_same_pc : conv_same_pc_db.
-
-Lemma set_op_same_pc : forall p w seg r op,
-  conv_same_pc (set_op p w seg r op).
-Proof. unfold set_op, iset_op32, iset_op16, iset_op8.
-  unfold set_mem32, set_mem16, set_mem8, compute_addr. intros.
-  destruct (op_override p); destruct w;
-  conv_same_pc_tac.
-Qed.
-
-Hint Immediate set_op_same_pc : conv_same_pc_db.
-
-Lemma conv_BS_aux_same_pc : forall s d n (op:pseudo_reg s),
-  conv_same_pc (conv_BS_aux d n op).
-Proof. unfold conv_BS_aux.  
-  induction n; intros; conv_same_pc_tac.
-Qed.
-
-Lemma compute_parity_aux_same_pc : forall s (op1:pseudo_reg s) op2 n,
-  conv_same_pc (compute_parity_aux op1 op2 n).
-Proof. induction n. simpl. conv_same_pc_tac.
-  unfold compute_parity_aux. fold (@compute_parity_aux s).
-  conv_same_pc_tac.
-Qed.
-
-Hint Immediate conv_BS_aux_same_pc compute_parity_aux_same_pc :
-  conv_same_pc_db.
 
 (** * Lemmas about the property that conversions preserve the 
    same_mach_state property *)
@@ -3013,9 +2709,10 @@ Hint Extern 1 (conv_same_mach_state (emit _)) =>
   apply Conv_Same_Mach_State.emit_sat_conv_prop; same_mach_state_tac
     : conv_same_mach_state_db.
 
-Hint Extern 1 (conv_same_mach_state (fresh _)) => 
-  apply Conv_Same_Mach_State.fresh_sat_conv_prop; intros; same_mach_state_tac :
-  conv_same_mach_state_db.
+(* todo: remove *)
+(* Hint Extern 1 (conv_same_mach_state (fresh _)) =>  *)
+(*   apply Conv_Same_Mach_State.fresh_sat_conv_prop; intros; same_mach_state_tac : *)
+(*   conv_same_mach_state_db. *)
 
 Hint Resolve Conv_Same_Mach_State.ret_sat_conv_prop 
   : conv_same_mach_state_db.
@@ -3044,7 +2741,7 @@ Ltac conv_backward_sms :=
         [eassumption | conv_same_mach_state_tac | idtac]
   end.
 
-Lemma set_mem_n_same_mach_state : forall n seg (v:pseudo_reg (8*(n+1)-1)) addr,
+Lemma set_mem_n_same_mach_state : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
   conv_same_mach_state (set_mem_n seg v addr).
 Proof. unfold set_mem_n, smem, add_and_check_segment.
   induction n; intros. 
@@ -3053,8 +2750,6 @@ Proof. unfold set_mem_n, smem, add_and_check_segment.
 Qed.
 
 Hint Immediate set_mem_n_same_mach_state : conv_same_mach_state_db.
-
-
 
 (** * Lemmas about the property that conversions preserve the no_fail property *)
 Definition conv_no_fail (A:Type) (cv:Conv A) :=
@@ -3067,9 +2762,9 @@ Implicit Arguments conv_no_fail [A].
 Lemma conv_to_rtl_no_fail: forall cv,
     conv_no_fail cv ->  no_fail (RTL_step_list (runConv cv)).
 Proof. unfold conv_no_fail, runConv. intros.
-  remember_rev (cv {| c_rev_i := nil; c_next := 0 |}) as cva.
+  remember_rev (cv {| c_rev_i := nil |}) as cva.
   destruct cva.
-  apply H in Hcva. prover. 
+  apply H in Hcva. crush.
     compute [c_rev_i rev RTL_step_list].
     no_fail_tac.
 Qed.
@@ -3079,33 +2774,34 @@ Lemma bind_conv_no_fail : forall (A B:Type) (cv: Conv A) (f:A -> Conv B),
     -> (forall a:A, conv_no_fail (f a))
     -> conv_no_fail (Bind _ cv f).
 Proof. unfold conv_no_fail. intros.
-  conv_break. eauto.
+  conv_elim. eauto.
 Qed.
 
 Lemma emit_conv_no_fail : forall i,
   no_fail (interp_rtl i) -> conv_no_fail (emit i).
 Proof. unfold conv_no_fail, EMIT. intros.
-  prover. autorewrite with step_list_db.
+  crush. autorewrite with step_list_db.
   no_fail_tac.
 Qed.
 
 Hint Extern 1 (conv_no_fail (emit _)) => 
   apply emit_conv_no_fail; no_fail_tac : conv_no_fail_db.
 
-Lemma fresh_conv_no_fail : 
-  forall (s:nat) (almost_i: pseudo_reg s -> rtl_instr),
-    (forall r, no_fail (interp_rtl (almost_i r)))
-      -> conv_no_fail (fresh almost_i).
-Proof. unfold conv_no_fail, fresh. intros.
-  prover. autorewrite with step_list_db. 
-  no_fail_tac.
-Qed.
+(* todo: remove *)
+(* Lemma fresh_conv_no_fail :  *)
+(*   forall (s:nat) (almost_i: pseudo_reg s -> rtl_instr), *)
+(*     (forall r, no_fail (interp_rtl (almost_i r))) *)
+(*       -> conv_no_fail (fresh almost_i). *)
+(* Proof. unfold conv_no_fail, fresh. intros. *)
+(*   prover. autorewrite with step_list_db.  *)
+(*   no_fail_tac. *)
+(* Qed. *)
 
-Hint Extern 1 (conv_no_fail (fresh _)) => 
-  apply fresh_conv_no_fail; intros; no_fail_tac : conv_no_fail_db.
+(* Hint Extern 1 (conv_no_fail (fresh _)) =>  *)
+(*   apply fresh_conv_no_fail; intros; no_fail_tac : conv_no_fail_db. *)
 
 Lemma ret_conv_no_fail : forall (A:Type) (r:A), conv_no_fail (ret r).
-Proof. unfold conv_no_fail. prover. Qed.
+Proof. unfold conv_no_fail. crush. Qed.
 
 Hint Resolve ret_conv_no_fail : conv_no_fail_db.
 
@@ -3132,7 +2828,7 @@ Qed.
 Hint Extern 1 (conv_no_fail (load_mem_n _ _ ?X))
   =>  apply load_mem_n_no_fail with (n:=X) : conv_no_fail_db.
 
-Lemma set_mem_n_no_fail : forall n seg (v:pseudo_reg (8*(n+1)-1)) addr,
+Lemma set_mem_n_no_fail : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
   conv_no_fail (set_mem_n seg v addr).
 Proof. unfold set_mem_n, smem, add_and_check_segment.
   induction n; intros. 
@@ -3202,13 +2898,13 @@ Proof. unfold set_op. intros. conv_no_fail_tac. Qed.
 
 Hint Resolve set_op_no_fail : conv_no_fail_db.
 
-Lemma conv_BS_aux_no_fail : forall s d n (op:pseudo_reg s),
+Lemma conv_BS_aux_no_fail : forall s d n (op:rtl_exp s),
   conv_no_fail (conv_BS_aux d n op).
 Proof. unfold conv_BS_aux.  
   induction n; intros; conv_no_fail_tac.
 Qed.
 
-Lemma compute_parity_aux_no_fail : forall s (op1:pseudo_reg s) op2 n,
+Lemma compute_parity_aux_no_fail : forall s (op1:rtl_exp s) op2 n,
   conv_no_fail (compute_parity_aux op1 op2 n).
 Proof. induction n. simpl. conv_no_fail_tac.
   unfold compute_parity_aux. fold (@compute_parity_aux s).
@@ -3233,29 +2929,35 @@ Ltac unfold_instr_conv_tac :=
     conv_BSF, conv_BSR, conv_BS, 
     conv_MOVSX, conv_MOVZX, conv_MOV_extend, conv_XCHG,
     conv_LEAVE, conv_POPA, conv_POP, 
-    conv_PUSHA, conv_SAR, conv_SBB,
+    conv_PUSHA, conv_PUSH, conv_PUSH_pseudo, conv_SAR, conv_SBB,
     conv_SETcc, conv_SHL, conv_SHLD, conv_SHR, conv_SHRD, conv_RCL, conv_RCR, 
     conv_ROL, conv_ROR, conv_shift, 
     conv_CLD, conv_HLT, conv_STOS, conv_CLC, conv_CMC,
     conv_MOVS, conv_BT, conv_LAHF, conv_SAHF, conv_STC, conv_STD,
     conv_AAA_AAS, conv_AAD, conv_AAM, conv_DAA_DAS, conv_DEC,
     conv_POP_pseudo,
+    conv_CALL, conv_JMP,
     testcarryAdd, testcarrySub,
     extract_and_set, get_and_place,
-    get_AL, get_AH, set_AL, set_AH, ifset,
-    string_op_reg_shift, get_Bit, fbit, set_Bit, modify_Bit,
+    get_AL, get_AH, set_AL, set_AH, 
+    string_op_reg_shift, if_set_loc, get_Bit, fbit, set_Bit, modify_Bit,
     compute_parity, undef_flag,
-    load_mem, load_mem8, load_mem16, load_mem32, set_mem32,
+    load_mem, load_mem8, load_mem16, load_mem32,
+    set_mem, set_mem8, set_mem16, set_mem32,
     compute_addr, compute_cc, not.
 
 Ltac extra_unfold_conv_tac :=
-  unfold conv_CALL, conv_PUSH, conv_PUSH_pseudo, set_Bit_mem, 
-    iset_op8, iset_op16, iset_op32, set_mem, set_mem8, set_mem16, set_mem32; 
+  unfold set_Bit_mem, iset_op8, iset_op16, iset_op32; 
     unfold_instr_conv_tac.
 
 Ltac no_fail_extra_unfold_tac := 
-  unfold conv_CALL, conv_PUSH, conv_PUSH_pseudo, set_Bit_mem, 
+  unfold conv_CALL, conv_PUSH, set_Bit_mem, 
     set_mem, set_mem8, set_mem16; unfold_instr_conv_tac.
+
+Ltac unfold_prefix_filters_tac := 
+ unfold no_prefix, lock_or_gs_or_op, only_gs_seg_override, lock_or_gs_without_op,
+   only_seg_or_op, rep_or_repn_or_gs_or_op_prefix, rep_or_gs_or_op_prefix in *.
+
 
 Ltac prove_instr := 
   match goal with
@@ -3273,7 +2975,8 @@ Ltac prove_instr :=
          unfold_instr_conv_tac; conv_agree_outside_seg_tac
     | [|- no_fail (RTL_step_list (runConv ?CV))]
       => apply conv_to_rtl_no_fail with (cv:=CV);
-           unfold_instr_conv_tac; no_fail_extra_unfold_tac; conv_no_fail_tac
+           unfold_prefix_filters_tac; unfold_instr_conv_tac; 
+           no_fail_extra_unfold_tac; conv_no_fail_tac
   end.
 
 (* Desmonstration of how to use prove_instr *)
@@ -3297,241 +3000,80 @@ Lemma nci_same_seg_regs: forall ins pre,
   non_cflow_instr pre ins = true
     -> same_seg_regs (RTL_step_list (instr_to_rtl pre ins)).
 (* Admitted. *)
-Proof. intros. 
-  destruct ins; 
+Proof. intros.
+  destruct ins;
   unfold instr_to_rtl, check_prefix in *;
     (discriminate H || (prove_instr; fail) || idtac).
 Qed.
 
 Hint Resolve nci_same_seg_regs : same_seg_regs_db.
 
-(** ** Showing that non_cflow_instr modifies only DS, SS, ES segments *)
-Lemma PUSH_aos : forall pre w op,
-  conv_agree_outside_seg SS (conv_PUSH pre w op).
-Proof. unfold conv_PUSH, set_mem, set_mem32, set_mem16, set_mem8. 
-  intros.
-  do 3 (apply bind_conv_aos; [conv_agree_outside_seg_tac | intros]).
-  destruct (op_override pre); destruct w;
-    (apply set_mem_n_aos_3; 
-      [conv_index_monotone_tac | conv_agree_outside_seg_tac
-        | intros; conv_agree_outside_seg_tac]).
+(** ** Showing that non_cflow_instr preserves memory outside of DS, SS, GS,
+  ES segments *)
+
+Lemma filter_prefix_only_seg_get_segment : 
+  forall pre seg lrs_filter op_filter cs_filter,
+    filter_prefix lrs_filter ft_only_gs_seg op_filter cs_filter pre = true
+      -> seg_eq seg (get_segment pre seg) \/ seg_eq GS (get_segment pre seg).
+Proof. unfold filter_prefix, get_segment, ft_only_gs_seg; intros.
+  bool_elim_tac. destruct (seg_override pre). 
+    destruct s; crush. right; crush.
+    left; crush.
 Qed.
 
-Lemma PUSH_pseudo_aos : forall pre w op,
-  conv_agree_outside_seg SS (conv_PUSH_pseudo pre w op).
-Proof. unfold conv_PUSH_pseudo, set_mem, set_mem32, set_mem16, set_mem8. 
-  intros.
-  do 2 (apply bind_conv_aos; [conv_agree_outside_seg_tac | intros]).
-  destruct (op_override pre); destruct w;
-    (apply set_mem_n_aos_3; 
-      [conv_index_monotone_tac | conv_agree_outside_seg_tac
-        | intros; conv_agree_outside_seg_tac]).
+Lemma filter_prefix_only_seg_get_segment_op : 
+  forall pre seg lrs_filter op_filter cs_filter op,
+    filter_prefix lrs_filter ft_only_gs_seg op_filter cs_filter pre = true
+      -> seg_eq seg (get_segment_op pre seg op) \/ 
+         seg_eq GS (get_segment_op pre seg op) \/
+         seg_eq SS (get_segment_op pre seg op).
+Proof. unfold filter_prefix, get_segment_op, ft_only_gs_seg; intros.
+  bool_elim_tac. destruct (seg_override pre). 
+    destruct s; crush. right; left; crush.
+    destruct_head. right; right; crush.
+    left; crush.
 Qed.
 
-Hint Resolve PUSH_aos PUSH_pseudo_aos : conv_agree_outside_seg_db.
-
-Lemma only_op_override_seg_eq : forall pre seg,
-  only_op_override pre = true -> seg_eq seg (get_segment pre seg).
-Proof. unfold only_op_override, get_segment. intros.
-  destruct (lock_rep pre); destruct (seg_override pre); prover.
+Lemma filter_prefix_only_seg_get_segment_op2 : 
+  forall pre seg lrs_filter op_filter cs_filter op1 op2,
+    filter_prefix lrs_filter ft_only_gs_seg op_filter cs_filter pre = true
+      -> seg_eq seg (get_segment_op2 pre seg op1 op2) \/ 
+         seg_eq GS (get_segment_op2 pre seg op1 op2) \/
+         seg_eq SS (get_segment_op2 pre seg op1 op2).
+Proof. unfold filter_prefix, get_segment_op2, ft_only_gs_seg; intros.
+  bool_elim_tac. destruct (seg_override pre). 
+    destruct s; crush. right; left; crush.
+    destruct_head. right; right; crush.
+    destruct_head. right; right; crush.
+    left; crush.
 Qed.
 
-Lemma only_lock_or_rep_seg_eq : forall pre seg,
-  only_lock_or_rep pre = true -> seg_eq seg (get_segment pre seg).
-Proof. unfold only_lock_or_rep, get_segment. intros.
-  destruct (lock_rep pre); destruct (seg_override pre).
-    destruct l; prover.
-    destruct l; prover.
-    prover. prover.
-Qed.
+Ltac aos_helper_tac := 
+  repeat match goal with
+           | [H: seg_eq _ _ \/ _ |- _] => destruct H
+           | [H: seg_eq ?Seg _ |- agree_outside_seg ?Seg _ \/ _ ] => left
+           | [ |- agree_outside_seg _ _ \/ _ ] => right
+           | [ |- agree_outside_seg ?Seg _ ] => prove_instr
+         end.
 
-Lemma only_gs_seq_override_seg_eq : forall pre seg,
-  only_gs_seg_override pre = true -> 
-    (seg_eq seg (get_segment pre seg) \/ seg_eq GS (get_segment pre seg)).
-Proof. unfold only_gs_seg_override, get_segment. intros.
-  destruct (lock_rep pre). discriminate.
-  destruct (seg_override pre). right. destruct s; prover.
-  destruct op_override. discriminate.
-  destruct (addr_override pre). discriminate.
-    left. apply seg_eq_refl.
-Qed.  
-
-Lemma either_prefix_seg_eq : forall pre seg,
-  either_prefix pre = true -> 
-    seg_eq seg (get_segment pre seg) \/ seg_eq GS (get_segment pre seg).
-Proof. unfold either_prefix. intros.
-  bool_elim_tac. auto using only_op_override_seg_eq.
-    auto using only_gs_seq_override_seg_eq.
-Qed.
-
-Hint Resolve only_op_override_seg_eq only_lock_or_rep_seg_eq
-  only_gs_seq_override_seg_eq either_prefix_seg_eq : conv_agree_outside_seg_db.
-
-Lemma only_op_override_get_segment_op2 : forall pre seg op1 op2,
-  only_op_override pre = true
-    -> seg_eq seg (get_segment_op2 pre seg op1 op2) \/
-       seg_eq SS (get_segment_op2 pre seg op1 op2).
-Proof. unfold only_op_override, get_segment_op2. intros. 
-  do 2 (destruct_head in H; try discriminate).
-  destruct_head. right; prover.
-  destruct_head. right; prover. left; prover.
-Qed.
-
-Lemma only_lock_or_rep_get_segment_op2 : forall pre seg op1 op2,
-  only_lock_or_rep pre = true
-    -> seg_eq seg (get_segment_op2 pre seg op1 op2) \/
-       seg_eq SS (get_segment_op2 pre seg op1 op2).
-Proof. unfold only_lock_or_rep, get_segment_op2. intros.
-  destruct (lock_rep pre).
-  destruct l; try congruence.
-    do 3 (destruct_head in H; try discriminate).
-      destruct_head. right; prover.
-      destruct_head; prover.
-    do 3 (destruct_head in H; try discriminate).
-      destruct_head. prover.
-      destruct_head; prover.
-Qed.    
-
-Lemma only_gs_seq_override_get_segment_op2 : forall pre seg op1 op2,
-  only_gs_seg_override pre = true -> 
-    (seg_eq seg (get_segment_op2 pre seg op1 op2) \/
-     seg_eq SS (get_segment_op2 pre seg op1 op2) \/
-     seg_eq GS (get_segment_op2 pre seg op1 op2)).
-Proof. unfold only_gs_seg_override, get_segment_op2. intros.
-  destruct_head in H; try discriminate.
-  destruct (seg_override pre). destruct s; prover.
-  destruct (op_override pre); try discriminate.
-  destruct (addr_override pre); try discriminate.
-  destruct_head. prover.
-  destruct_head; prover.
-Qed.  
-
-Lemma either_prefix_get_segment_op2 : forall pre seg op1 op2,
-  either_prefix pre = true
-    -> seg_eq seg (get_segment_op2 pre seg op1 op2) \/
-       seg_eq SS (get_segment_op2 pre seg op1 op2) \/
-       seg_eq GS (get_segment_op2 pre seg op1 op2).
-Proof. unfold either_prefix. intros. bool_elim_tac.
-  use_lemma only_op_override_get_segment_op2 by eassumption.
-    destruct H0; eauto.
-  use_lemma only_gs_seq_override_get_segment_op2 by eassumption.
-    destruct H0. eauto. destruct H0; eauto.
-Qed.
-
-Lemma only_op_override_get_segment_op : forall pre seg op1,
-  only_op_override pre = true
-    -> seg_eq seg (get_segment_op pre seg op1) \/
-       seg_eq SS (get_segment_op pre seg op1).
-Proof. unfold only_op_override, get_segment_op. intros. 
-  do 2 (destruct_head in H; try discriminate).
-  destruct_head. right; prover.
-    left; prover. 
-Qed.
-
-Lemma only_lock_or_rep_get_segment_op : forall pre seg op1,
-  only_lock_or_rep pre = true
-    -> seg_eq seg (get_segment_op pre seg op1) \/
-       seg_eq SS (get_segment_op pre seg op1).
-Proof. unfold only_lock_or_rep, get_segment_op. intros. 
-  destruct (lock_rep pre).
-  destruct l; try congruence.
-  do 3 (destruct_head in H; try discriminate).
-    destruct_head; prover.
-  do 3 (destruct_head in H; try discriminate).
-    destruct_head; prover.
-Qed.
-
-Lemma only_gs_seq_override_get_segment_op : forall pre seg op1,
-  only_gs_seg_override pre = true -> 
-    (seg_eq seg (get_segment_op pre seg op1) \/
-     seg_eq SS (get_segment_op pre seg op1) \/
-     seg_eq GS (get_segment_op pre seg op1)).
-Proof. unfold only_gs_seg_override, get_segment_op. intros.
-  destruct_head in H; try discriminate.
-  destruct (seg_override pre). destruct s; prover.
-  destruct (op_override pre); try discriminate.
-  destruct (addr_override pre); try discriminate.
-  destruct_head; prover.
-Qed.  
-
-Lemma either_prefix_get_segment_op : forall pre seg op1,
-  either_prefix pre = true
-    -> seg_eq seg (get_segment_op pre seg op1) \/
-       seg_eq SS (get_segment_op pre seg op1) \/
-       seg_eq GS (get_segment_op pre seg op1).
-Proof. unfold either_prefix. intros. bool_elim_tac.
-  use_lemma only_op_override_get_segment_op by eassumption.
-    destruct H0; eauto.
-  use_lemma only_gs_seq_override_get_segment_op by eassumption.
-    destruct H0. eauto. destruct H0; eauto.
-Qed.
-
-(* This is only for demonstration purpose *)
-Lemma ADD_aos : forall pre w op1 op2,
-  either_prefix pre = true
-    -> agree_outside_seg DS (RTL_step_list (runConv (conv_ADD pre w op1 op2))) \/
-       agree_outside_seg SS (RTL_step_list (runConv (conv_ADD pre w op1 op2))) \/
-       agree_outside_seg GS (RTL_step_list (runConv (conv_ADD pre w op1 op2))).
-Proof. intros. 
-  assert (H10: seg_eq DS (get_segment_op2 pre DS op1 op2) \/
-               seg_eq SS (get_segment_op2 pre DS op1 op2) \/
-               seg_eq GS (get_segment_op2 pre DS op1 op2)).
-    apply either_prefix_get_segment_op2; assumption.
-  destruct H10 as [H10|[H10|H10]]. 
-    left. prove_instr.
-    right. left. prove_instr.
-    right. right. prove_instr.
-Qed.
-
-Ltac get_segment_aos_tac := 
+Ltac aos_tac := 
+  unfold_prefix_filters_tac;
+  unfold_instr_conv_tac; 
   match goal with
-    | [H:either_prefix _ = true |- _]
-      => apply either_prefix_seg_eq with (seg:=DS) in H;
-         destruct H; [left; prove_instr | right; right; left; prove_instr]
-  end.
-
-Ltac aos_case_tac H :=
-  destruct H; 
-    [left; prove_instr | 
-      (destruct H; [right; left; prove_instr | right; right; left; prove_instr])].
-
-Ltac get_segment_op2_aos_tac opx opy := 
-    match goal with 
-      | [H: either_prefix ?PRE = true |- _] =>
-        dupHyp H;
-        apply either_prefix_get_segment_op2 with 
-          (seg:=DS) (op1:=opx) (op2:=opy) in H;
-        aos_case_tac H
-      | [H: only_gs_seg_override ?PRE = true |- _] => 
-        dupHyp H;
-        apply only_gs_seq_override_get_segment_op2 with 
-          (seg:=DS) (op1:=opx) (op2:=opy) in H;
-        aos_case_tac H
-      | [H: only_lock_or_rep ?PRE = true |- _] =>
-        dupHyp H;
-        apply only_lock_or_rep_get_segment_op2 with 
-          (seg:=DS) (op1:=opx) (op2:=opy) in H;
-        destruct H; [left; prove_instr | right; left; prove_instr]
-    end.
-
-Ltac get_segment_op_aos_tac opx := 
-    match goal with 
-      | [H: either_prefix ?PRE = true |- _] =>
-        dupHyp H;
-        apply either_prefix_get_segment_op with 
-          (seg:=DS) (op1:=opx) in H;
-        aos_case_tac H
-      | [H: only_gs_seg_override ?PRE = true |- _] => 
-        dupHyp H;
-        apply only_gs_seq_override_get_segment_op with 
-          (seg:=DS) (op1:=opx) in H;
-        aos_case_tac H
-      | [H: only_lock_or_rep ?PRE = true |- _] =>
-        dupHyp H;
-        apply only_lock_or_rep_get_segment_op with 
-          (seg:=DS) (op1:=opx) in H;
-        destruct H; [left; prove_instr | right; left; prove_instr]
-    end.
+    | [ H: filter_prefix _ ft_only_gs_seg _ _ _ = true |-
+        context[get_segment_op ?Pre ?Seg _]] => 
+      eapply filter_prefix_only_seg_get_segment_op
+      with (seg:=Seg) (pre:=Pre)  in H
+    | [ H: filter_prefix _ ft_only_gs_seg _ _ _ = true |-
+        context[get_segment_op2 ?Pre ?Seg _ _]] => 
+      eapply filter_prefix_only_seg_get_segment_op2 
+      with (seg:=Seg) (pre:=Pre) in H
+    | [ H: filter_prefix _ ft_only_gs_seg _ _ _ = true |-
+        context[get_segment ?Pre ?Seg]] => 
+      apply filter_prefix_only_seg_get_segment
+      with (seg:=Seg) (pre:=Pre) in H
+  end;
+  aos_helper_tac.
 
 Lemma nci_aos :forall ins pre,
   non_cflow_instr pre ins = true
@@ -3541,96 +3083,36 @@ Lemma nci_aos :forall ins pre,
         agree_outside_seg ES (RTL_step_list (instr_to_rtl pre ins))).
 (* Admitted. *)
 Proof. intros.
-  destruct ins; 
+  Time destruct ins;
   unfold instr_to_rtl, check_prefix in *; simpl in H; bool_elim_tac;
-    try (discriminate H || left; prove_instr; fail).
+    try (discriminate H || (left; prove_instr; fail) || (aos_tac; fail)).
 
-  (* ADC *)
-  get_segment_op2_aos_tac op1 op2.
-  (* ADD *)
-  get_segment_op2_aos_tac op1 op2.
-  (* AND *)
-  get_segment_op2_aos_tac op1 op2.
-  (* BSF *)
-  get_segment_op2_aos_tac op1 op2.
-  (* BSR *)
-  get_segment_op2_aos_tac op1 op2.
-  (* BT *)
-  get_segment_op_aos_tac op1.
-  (* BT *)
-  get_segment_op_aos_tac op1.
-  (* BT *)
-  get_segment_op_aos_tac op1.
-  (* BT *)
-  get_segment_op_aos_tac op1.
-  (* CMOV *)
-  get_segment_op2_aos_tac op1 op2.
-  (* CMPXCHG *)
-  get_segment_op2_aos_tac op1 op2.
-  (* DEC *)
-  get_segment_op_aos_tac op1.
   (* IMUL *)
-  destruct opopt as [o|];
-    [get_segment_op2_aos_tac op1 o | get_segment_op_aos_tac op1].
-  (* INC *)
-  get_segment_op_aos_tac op1.
+  destruct opopt as [o|]. aos_tac.
+  unfold only_seg_or_op in H.
+  eapply filter_prefix_only_seg_get_segment_op
+  with (seg:=DS) (pre:=pre) (op:=op1) in H.
+  aos_helper_tac.
+
   (* LEA *)
-  destruct op2; try discriminate. bool_elim_tac.
-  get_segment_op_aos_tac op1.
-  (* MOV *)
-  get_segment_op2_aos_tac op1 op2.
+  destruct op2; try discriminate. 
+  bool_elim_tac. aos_tac.
+
   (* MOVS *)
   right; right; right; prove_instr.
-  (* MOVSX *)
-  get_segment_op2_aos_tac op1 op2.
-  (* MOVZX *)
-  get_segment_op2_aos_tac op1 op2.
-  (* NEG *)
-  get_segment_op_aos_tac op.
-  (* NOT *)
-  get_segment_op_aos_tac op.
-  (* OR *)
-  get_segment_op2_aos_tac op1 op2.
+
   (* POP *)
   right; left; prove_instr.
-  (* POPA *)
+
+  (* PUSH *)
   right; left; prove_instr.
+
   (* PUSHA *)
   right; left; prove_instr.
-  (* RCL *)
-  get_segment_op_aos_tac op1.
-  (* RCR *)
-  get_segment_op_aos_tac op1.
-  (* ROL *)
-  get_segment_op_aos_tac op1.
-  (* ROR *)
-  get_segment_op_aos_tac op1.
-  (* SAR *)
-  get_segment_op_aos_tac op1.
-  (* SBB *)
-  get_segment_op2_aos_tac op1 op2.
-  (* SETcc *)
-  get_segment_op_aos_tac op1.
-  (* SHL *)
-  get_segment_op_aos_tac op1.
-  (* SHLD *)
-  get_segment_op_aos_tac op1.
-  (* SHR *)
-  get_segment_op_aos_tac op1.
-  (* SHRD *)
-  get_segment_op_aos_tac op1.
   (* STOS *)
   right; right; right; prove_instr.
-  (* SUB *)
-  get_segment_op2_aos_tac op1 op2.
-  (* XADD *)
-  get_segment_op2_aos_tac op1 op2.
-  (* XCHG *)
-  get_segment_op2_aos_tac op1 op2.
-  (* XOR *)
-  get_segment_op2_aos_tac op1 op2.
 Qed.
- 
+
 (** ** Showing that non_cflow_instr does not modify the PC *)
 
 Lemma nci_same_pc: forall ins pre,
@@ -3638,7 +3120,7 @@ Lemma nci_same_pc: forall ins pre,
     -> same_pc (RTL_step_list (instr_to_rtl pre ins)).
 (* Admitted. *)
 Proof. intros.
-  destruct ins; 
+  destruct ins;
   unfold instr_to_rtl, check_prefix in *;
     (discriminate H || prove_instr).
 Qed.
@@ -3658,19 +3140,6 @@ Hint Resolve dci_same_seg_regs : same_seg_regs_db.
 
 (** ** Showing that dir_cflow_instr only modify SS memory
        (only the call instruction will modify that) *)
-
-Lemma CALL_aoss : forall pre near absolute op sel,
-  conv_agree_outside_seg SS (conv_CALL pre near absolute op sel).
-Proof. unfold conv_CALL, set_mem32. intros.
-  do 3 (conv_agree_outside_seg_one_tac; [conv_agree_outside_seg_tac | idtac]).
-  apply set_mem_n_aos_3.
-    conv_index_monotone_tac.
-    conv_agree_outside_seg_tac.
-    intros. unfold conv_JMP. conv_agree_outside_seg_tac.
-Qed.  
-
-Hint Resolve CALL_aoss : conv_agree_outside_seg_db.
-
 Lemma dci_aoss :forall ins pre, 
   dir_cflow_instr pre ins = true
     -> agree_outside_seg SS (RTL_step_list (instr_to_rtl pre ins)).
@@ -3682,77 +3151,86 @@ Qed.
 
 (** ** Showing that non_cflow_instr and dir_cflow_instr does not fail *)
 
-Lemma check_prefix_no_fail_1 : forall pre,
-  only_op_override pre = true -> conv_no_fail (check_prefix pre).
-Proof. unfold check_prefix. intros.
-  unfold only_op_override in H.
-  remember_destruct_head in H as lrp; try discriminate.
-  remember_destruct_head in H as sp; try discriminate.
-  remember_destruct_head in H as aop; try discriminate.
-  conv_no_fail_tac.
-Qed.
+Lemma filter_prefix_no_fail :
+  forall pre lrs_filter seg_filter op_filter,
+    filter_prefix lrs_filter seg_filter op_filter ft_bool_no pre = true
+    -> conv_no_fail (check_prefix pre).
+Proof. unfold filter_prefix, ft_bool_no, check_prefix; intros. 
+  bool_elim_tac. rewrite H0. conv_no_fail_tac.
+Qed.  
 
-Lemma check_prefix_no_fail_2 : forall pre,
-  only_lock_or_rep pre = true -> conv_no_fail (check_prefix pre).
-Proof. unfold check_prefix. intros.
-  unfold only_lock_or_rep in H.
-  destruct (lock_rep pre); try congruence.
-  destruct l; try congruence.
-  do 3 (destruct_head in H; try congruence).
-    conv_no_fail_tac.
-  do 3 (destruct_head in H; try congruence).
-    conv_no_fail_tac.
-Qed.
+Hint Extern 1 (conv_no_fail (check_prefix ?Pre)) =>
+  match goal with
+    | [H: filter_prefix _ _ _ ft_bool_no Pre = true |- _] => 
+      eapply filter_prefix_no_fail; eassumption
+  end : conv_no_fail_db.
 
-Lemma check_prefix_no_fail_3 : forall pre,
-  only_gs_seg_override pre = true -> conv_no_fail (check_prefix pre).
-Proof. unfold check_prefix. intros.
-  unfold only_gs_seg_override in H.
-  remember_destruct_head in H as sp; try discriminate.
-  destruct (seg_override pre).
-    destruct s; try discriminate.
-    do 2 (remember_destruct_head in H as op; try discriminate).
-    conv_no_fail_tac.
-    do 2 (remember_destruct_head in H as op; try discriminate).
-    conv_no_fail_tac.
-Qed.
+(* Lemma check_prefix_no_fail_1 : forall pre, *)
+(*   only_op_override pre = true -> conv_no_fail (check_prefix pre). *)
+(* Proof. unfold check_prefix. intros. *)
+(*   unfold only_op_override in H. *)
+(*   remember_destruct_head in H as lrp; try discriminate. *)
+(*   remember_destruct_head in H as sp; try discriminate. *)
+(*   remember_destruct_head in H as aop; try discriminate. *)
+(*   conv_no_fail_tac. *)
+(* Qed. *)
 
-Lemma check_prefix_no_fail_4 : forall pre,
-  either_prefix pre = true -> conv_no_fail (check_prefix pre).
-Proof. unfold either_prefix. intros. 
-  bool_elim_tac. auto using check_prefix_no_fail_1.
-    auto using check_prefix_no_fail_3.
-Qed.
+(* Lemma check_prefix_no_fail_2 : forall pre, *)
+(*   only_lock_or_rep pre = true -> conv_no_fail (check_prefix pre). *)
+(* Proof. unfold check_prefix. intros. *)
+(*   unfold only_lock_or_rep in H. *)
+(*   destruct (lock_rep pre); try congruence. *)
+(*   destruct l; try congruence. *)
+(*   do 3 (destruct_head in H; try congruence). *)
+(*     conv_no_fail_tac. *)
+(*   do 3 (destruct_head in H; try congruence). *)
+(*     conv_no_fail_tac. *)
+(* Qed. *)
 
-Lemma check_prefix_no_fail_5 : forall pre,
-  no_prefix pre = true -> conv_no_fail (check_prefix pre).
-Proof. unfold no_prefix, check_prefix. intros. 
-  do 4 (destruct_head in H; try discriminate).
-  conv_no_fail_tac.
-Qed.
+(* Lemma check_prefix_no_fail_3 : forall pre, *)
+(*   only_gs_seg_override pre = true -> conv_no_fail (check_prefix pre). *)
+(* Proof. unfold check_prefix. intros. *)
+(*   unfold only_gs_seg_override in H. *)
+(*   remember_destruct_head in H as sp; try discriminate. *)
+(*   destruct (seg_override pre). *)
+(*     destruct s; try discriminate. *)
+(*     do 2 (remember_destruct_head in H as op; try discriminate). *)
+(*     conv_no_fail_tac. *)
+(*     do 2 (remember_destruct_head in H as op; try discriminate). *)
+(*     conv_no_fail_tac. *)
+(* Qed. *)
 
-Hint Resolve check_prefix_no_fail_1 check_prefix_no_fail_2 
-  check_prefix_no_fail_3 check_prefix_no_fail_4 
-  check_prefix_no_fail_5 : conv_no_fail_db.
-  
+(* Lemma check_prefix_no_fail_4 : forall pre, *)
+(*   either_prefix pre = true -> conv_no_fail (check_prefix pre). *)
+(* Proof. unfold either_prefix. intros.  *)
+(*   bool_elim_tac. auto using check_prefix_no_fail_1. *)
+(*     auto using check_prefix_no_fail_3. *)
+(* Qed. *)
+
+(* Lemma check_prefix_no_fail_5 : forall pre, *)
+(*   no_prefix pre = true -> conv_no_fail (check_prefix pre). *)
+(* Proof. unfold no_prefix, check_prefix. intros.  *)
+(*   do 4 (destruct_head in H; try discriminate). *)
+(*   conv_no_fail_tac. *)
+(* Qed. *)
+
+(* Hint Resolve check_prefix_no_fail_1 check_prefix_no_fail_2  *)
+(*   check_prefix_no_fail_3 check_prefix_no_fail_4  *)
+(*   check_prefix_no_fail_5 : conv_no_fail_db. *)
+
 Lemma nci_no_fail : forall ins pre,
   non_cflow_instr pre ins = true
     -> no_fail (RTL_step_list (instr_to_rtl pre ins)).
 (* Admitted. *)
-Proof. intros. 
-  destruct ins; 
+Proof. intros.
+  destruct ins;
   simpl in H; bool_elim_tac;
   (discriminate H || (unfold instr_to_rtl in *; prove_instr; fail) || idtac).
 
   (* LEA *)
   unfold instr_to_rtl in *;
   destruct op2; try discriminate.
-  bool_elim_tac.  
-  match goal with
-    | [|- no_fail (RTL_step_list (runConv ?CV))]
-      => apply conv_to_rtl_no_fail with (cv:=CV);
-         unfold_instr_conv_tac; no_fail_extra_unfold_tac; conv_no_fail_tac
-  end.
+  bool_elim_tac. prove_instr.
 Qed.
 
 Lemma dci_CALL_pre : forall pre near absolute op1 sel,
@@ -3783,7 +3261,7 @@ Proof. intros.
   Case "Call".
     destruct near. eapply dci_CALL_pre in H. prove_instr. 
     discriminate.
-  Case "Jcc". prove_instr.
+  Case "Jcc".  simpl in H. prove_instr.
   Case "JMP".
     destruct near. eapply dci_JMP_pre in H. prove_instr.
       discriminate.

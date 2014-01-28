@@ -2814,6 +2814,7 @@ Definition conv_POPF pre :=
     string_op_reg_shift EDI pre w;;
     string_op_reg_shift ESI pre w.
  
+  (* The decoder outputs only the case that op2 is Address_op. *)
   Definition conv_LEA (pre: prefix) (op1 op2: operand) :=
     let seg := get_segment_op pre DS op1 in
       match op2 with
@@ -2834,10 +2835,9 @@ Definition conv_POPF pre :=
   (* Just a filter for some prefix stuff we're not really handling yet.
      In the future this should go away. *)
   Definition check_prefix (p: prefix) := 
-    (match op_override p, addr_override p with
-       | false, false => no_op
-       | true, false => no_op
-       | _, _ => raise_error
+    (match addr_override p with
+       | false => no_op
+       | _ => raise_error
      end).
 
   (*

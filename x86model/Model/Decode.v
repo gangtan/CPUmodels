@@ -742,8 +742,8 @@ Fixpoint alts0 t (ps:list (grammar t)) : grammar t :=
 
   Definition LDS_p := "1100" $$ "0101" $$ modrm @ 
     (fun p => LDS (fst p) (snd p) %% instruction_t).
-  Definition LEA_p := "1000" $$ "1101" $$ modrm @ 
-    (fun p => LEA (fst p) (snd p) %% instruction_t).
+  Definition LEA_p := "1000" $$ "1101" $$ modrm_noreg @ 
+    (fun p => LEA (Reg_op (fst p)) (snd p) %% instruction_t).
   Definition LEAVE_p := "1100" $$ bits "1001" @ 
     (fun _ => LEAVE %% instruction_t).
   Definition LES_p := "1100" $$ "0100" $$ modrm @ 
