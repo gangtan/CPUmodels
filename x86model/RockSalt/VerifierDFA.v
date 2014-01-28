@@ -322,87 +322,92 @@ Definition no_sse_imm_op(op1:sse_operand) : bool :=
     | _ => true
   end.
 
-Definition only_op_override (p : prefix) : bool := 
-  match lock_rep p, seg_override p, addr_override p with 
-    | None, None, false => true
-    | _, _, _ => false
-  end.
+Definition filter_prefix
+   (lr_ft: option lock_or_rep -> bool) (* filter on lock-or-rep prefix *) 
+   (seg_ft: option segment_register -> bool) (* filter on segment_override prefix *) 
+   (op_ft: bool -> bool) (* filter on op_override prefix *)
+   (addr_ft: bool -> bool) (* filter on addr_override prefix *)
+   (p: prefix) :=
+  lr_ft (lock_rep p) && seg_ft (seg_override p) && 
+  op_ft (op_override p) && addr_ft (addr_override p).
 
-Definition no_prefix (p : prefix) : bool := 
-  match lock_rep p, seg_override p, op_override p, addr_override p with
-    | None, None, false, false => true
-    | _, _, _, _ => false
-  end.
-
-Definition only_seg_or_op (p : prefix) : bool := 
-  match lock_rep p, seg_override p, op_override p, addr_override p with
-      | None, (Some GS), _, false => true
-      | None, None, _, false => true
-      | _, _, _, _ => false
-  end.
-
-Definition only_gs_seg_override (p:prefix) : bool := 
-  match lock_rep p, seg_override p, op_override p, addr_override p with
-    | None, None, false, false => true
-    | None, (Some GS), false, false => true
-    | _, _, _, _ => false
-  end.
-
-Definition only_lock_or_rep (p: prefix) : bool :=
-  match lock_rep p, seg_override p, op_override p, addr_override p with
-    | Some rep, None, false, false => true
-    | None, None, false, false => true
-    | _,_,_,_ => false
-  end.
-
-Definition lock_or_gs (p:prefix) : bool := 
-  match lock_rep p, seg_override p, op_override p, addr_override p with
-    | _, Some GS, false, false => true
-    | _, None, false, false => true
-    | _, _, _, _ => false
-  end.
-
-Definition rep_or_gs_or_op_prefix (p:prefix) := 
-  negb (addr_override p) &&  
-  match lock_rep p with 
+Definition ft_no_lock_or_rep (lro: option lock_or_rep) := 
+  match lro with
     | None => true
+    | _ => false
+  end.
+
+Definition ft_only_lock (lro: option lock_or_rep) := 
+  match lro with
+    | Some lock => true
+    | None => true
+    | _ => false
+  end.
+
+Definition ft_only_rep (lro: option lock_or_rep) := 
+  match lro with
     | Some rep => true
-    | _ => false
-  end &&
-  match seg_override p with 
     | None => true
+    | _ => false
+  end.
+
+Definition ft_rep_or_repn (lro: option lock_or_rep) := 
+  match lro with
+    | Some rep | Some repn | None => true
+    | _ => false
+  end.
+
+Definition ft_lock_or_rep_wildcard (lro: option lock_or_rep) := true.
+
+Definition ft_no_seg (so: option segment_register) :=
+  match so with
+    | None => true
+    | _ => false
+  end.
+
+Definition ft_only_gs_seg (so: option segment_register) :=
+  match so with
     | Some GS => true
-    | _ => false
-  end.
-
-Definition rep_or_repn_or_gs_or_op_prefix (p:prefix) := 
-  negb (addr_override p) && 
-  match lock_rep p with 
     | None => true
-    | Some rep => true
-    | Some repn => true
-    | _ => false
-  end && 
-  match seg_override p with 
-    | None => true
-    | Some GS => true
     | _ => false
   end.
 
-Definition lock_or_gs_with_op (p:prefix) := 
-  match lock_rep p, seg_override p, op_override p, addr_override p with
-    | _, None, true, false => true
-    | _, Some GS, true, false => true
-    | _, _, _, _ => false
-  end.
+Definition ft_bool_yes (b:bool) := b.
+Definition ft_bool_no (b:bool) := negb b.
+Definition ft_bool_wildcard (b:bool) := true.
 
-Definition lock_or_gs_without_op (p:prefix) := 
-  match lock_rep p, seg_override p, op_override p, addr_override p with
-    | _, None, false, false => true
-    | _, Some GS, false, false => true
-    | _, _, _, _ => false
-  end.
-                  
+
+Definition no_prefix : prefix -> bool := 
+  filter_prefix ft_no_lock_or_rep ft_no_seg ft_bool_no ft_bool_no.
+
+Definition only_op_override: prefix -> bool := 
+  filter_prefix ft_no_lock_or_rep ft_no_seg ft_bool_wildcard ft_bool_no.
+
+Definition only_seg_or_op: prefix -> bool := 
+  filter_prefix ft_no_lock_or_rep ft_only_gs_seg ft_bool_wildcard ft_bool_no.
+
+Definition only_gs_seg_override: prefix -> bool := 
+  filter_prefix ft_no_lock_or_rep ft_only_gs_seg ft_bool_no ft_bool_no.
+
+Definition only_rep: prefix -> bool :=
+  filter_prefix ft_only_rep ft_no_seg ft_bool_no ft_bool_no.
+
+Definition lock_or_gs: prefix -> bool := 
+  filter_prefix ft_lock_or_rep_wildcard ft_only_gs_seg ft_bool_no ft_bool_no.
+
+Definition rep_or_gs_or_op_prefix: prefix -> bool := 
+  filter_prefix ft_only_lock ft_only_gs_seg ft_bool_wildcard ft_bool_no.
+
+Definition rep_or_repn_or_gs_or_op_prefix: prefix -> bool :=
+  filter_prefix ft_rep_or_repn ft_only_gs_seg ft_bool_wildcard ft_bool_no.
+  
+Definition lock_or_gs_without_op: prefix -> bool := 
+  filter_prefix ft_lock_or_rep_wildcard ft_only_gs_seg ft_bool_no ft_bool_no.
+
+Definition lock_or_gs_or_op: prefix -> bool := 
+  filter_prefix ft_lock_or_rep_wildcard ft_only_gs_seg ft_bool_wildcard ft_bool_no.
+
+
 Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool := 
   match ins with 
     (* valid_instr_grammars_rep *)
@@ -413,33 +418,25 @@ Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool :=
     | SCAS w => rep_or_repn_or_gs_or_op_prefix pfx
     (* valid_instr_grammars_lock_with_op_override *)
     | ADD w op1 op2 => 
-      (* I'm not sure what to do here -- we use the lock_or_gs_with_op prefix
-         with the (ADD_p true) parser, and without for the (ADD_p false) parser.
-         The ADD_p true parser accepts halfword immediates and then 
-         sign extends them into a word, whereas the ADD_p false parser accepts a word,
-         so the information is lost as to whether we had a half-word or word.
-         So for now, I'm just going to assume that a prefix with or without
-         the operand is okay.   The situation is similar for other kinds
-         of operations such as ADC, AND, OR, SBB, SUB, and XOR. *)
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | ADC w op1 op2 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | AND w op1 op2 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | NEG w op1 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | NOT w op1 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | OR w op1 op2 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | SBB w op1 op2 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | SUB w op1 op2 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | XOR w op1 op2 => 
-      no_imm_op op1 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && lock_or_gs_or_op pfx
     | XCHG w op1 op2 => 
-      no_imm_op op1 && no_imm_op op2 && (lock_or_gs_with_op pfx || lock_or_gs_without_op pfx)
+      no_imm_op op1 && no_imm_op op2 && lock_or_gs_or_op pfx
     (* valid_instr_grammars_lock_no_op_override *)
     (* covered by above: 
     | ADD false op1 op2 => lock_or_gs_without_op pfx && no_imm_op op1
