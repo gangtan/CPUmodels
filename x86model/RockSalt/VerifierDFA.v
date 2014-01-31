@@ -389,23 +389,17 @@ Definition only_seg_or_op: prefix -> bool :=
 Definition only_gs_seg_override: prefix -> bool := 
   filter_prefix ft_no_lock_or_rep ft_only_gs_seg ft_bool_no ft_bool_no.
 
-Definition only_rep: prefix -> bool :=
-  filter_prefix ft_only_rep ft_no_seg ft_bool_no ft_bool_no.
-
-Definition lock_or_gs: prefix -> bool := 
-  filter_prefix ft_lock_or_rep_wildcard ft_only_gs_seg ft_bool_no ft_bool_no.
-
 Definition rep_or_gs_or_op_prefix: prefix -> bool := 
-  filter_prefix ft_only_lock ft_only_gs_seg ft_bool_wildcard ft_bool_no.
+  filter_prefix ft_only_rep ft_only_gs_seg ft_bool_wildcard ft_bool_no.
 
 Definition rep_or_repn_or_gs_or_op_prefix: prefix -> bool :=
   filter_prefix ft_rep_or_repn ft_only_gs_seg ft_bool_wildcard ft_bool_no.
   
 Definition lock_or_gs_without_op: prefix -> bool := 
-  filter_prefix ft_lock_or_rep_wildcard ft_only_gs_seg ft_bool_no ft_bool_no.
+  filter_prefix ft_only_lock ft_only_gs_seg ft_bool_no ft_bool_no.
 
 Definition lock_or_gs_or_op: prefix -> bool := 
-  filter_prefix ft_lock_or_rep_wildcard ft_only_gs_seg ft_bool_wildcard ft_bool_no.
+  filter_prefix ft_only_lock ft_only_gs_seg ft_bool_wildcard ft_bool_no.
 
 
 Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool := 
@@ -416,7 +410,7 @@ Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool :=
     (* valid_instr_grammars_rep_or_repn *)
     | CMPS w => rep_or_repn_or_gs_or_op_prefix pfx
 
-    (* gtan: the machine raises error (not trap) when there is no semantics for
+    (* G.T.: the machine raises error (not trap) when there is no semantics for
        instructions such as SCAS; same for BOUND, CLI, CLTS, CPUID, LAR, LGS,
        MOVCR, MOVDR, MOVSR, MOVBE, POPF, PUSHSR, PUSHF, RDMSR, RDPMC, RDTSC, 
        RDTSCP, RSM, SGDT, SIDT, SLDT, SMSW, STI, STR, WBINVD *)
@@ -507,7 +501,7 @@ Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool :=
     (* | IMUL false op1 opopt iopt => only_gs_seg_override pfx (* FIX? *) *)
     | LAHF => only_gs_seg_override pfx
     (* | LAR op1 op2 => only_gs_seg_override pfx && no_imm_op op1 *)
-    (* gtan:  The decoder allows only Address_op in the second operand *)
+    (* G.T.:  The decoder allows only Address_op in the second operand *)
     | LEA op1 (Address_op a) => only_gs_seg_override pfx && no_imm_op op1
     | LEAVE => only_gs_seg_override pfx
     (* | LGS op1 op2 => only_gs_seg_override pfx && no_imm_op op1 *)
@@ -548,7 +542,7 @@ Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool :=
     (* | TEST false op1 op2 => only_gs_seg_override pfx *)
     (* | WBINVD => only_gs_seg_override pfx  *)
 
-    (* gtan: the model raises errors when FPU/MMX instructions are encourntered;
+    (* G.T.: the model raises errors when FPU/MMX instructions are encourntered;
        to show the execution of a binary doesn't raise errors, we have to comment
        these cases out from the checker *)
     (* | F2XM1 => only_gs_seg_override pfx  *)

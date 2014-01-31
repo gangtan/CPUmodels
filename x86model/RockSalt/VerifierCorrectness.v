@@ -16,27 +16,31 @@ Require Import Ascii.
 Require Import String.
 Require Import List.
 Require Import Bits.
+
 Require Import Decode.
 Require Import X86Syntax.
+Require Import Recognizer.
 Require Import X86Semantics.
 Require Import X86Lemmas.
 Require Import Monad.
 Require Import Int32.
 Require Import VerifierDFA.
 Require Import FastVerifier.
-Require Import DFACorrectness.
-Require Import NACLjmp.
+
+(* todo: add them back *)
+(* Require Import DFACorrectness. *)
+(* Require Import NACLjmp. *)
 
 
 Import X86_PARSER_ARG.
 Import X86_PARSER.
-Import X86_BASE_PARSER.
+(* Import X86_BASE_PARSER. *)
 Import X86_RTL.
 Import X86_MACHINE.
-Import X86_Decode.
+Import X86_Compile.
 Require Import RTL.
 
-Import Tacs.
+Import CommonTacs.
 Require Import Omega.
 
 Definition emptyPrefix := mkPrefix None None false false.
@@ -44,6 +48,8 @@ Definition emptyPrefix := mkPrefix None None false false.
 Module Int32SetFacts := Coq.MSets.MSetFacts.Facts FastVerifier.Int32Set.
 
 (* Todo: organize the following *)
+
+Open Scope Z_scope.
 
 Lemma chunkSize_gt_0 : chunkSize > 0.
 Proof. unfold chunkSize. apply Coqlib.two_power_nat_pos. Qed.
@@ -145,7 +151,7 @@ Proof. intros.
     apply multiple_low_bits_zero. unfold wordsize. omega.
     rewrite H3. compute. trivial.
   unfold aligned, aligned_bool.
-  apply ZOrderedType.Z_as_DT.eqb_eq.
+  apply Zeq_is_eq_bool.
   apply low_bits_zero_multiple with (wordsize_minus_one:=31%nat).  
     unfold logChunkSize. compute. omega.
     apply and_low_bits_zero.
@@ -154,7 +160,6 @@ Proof. intros.
 Qed.
 
 (** * proving checkAligned is correct *)
-
 Lemma checkAligned_aux_unfold (startAddrs:Int32Set.t)(next:Z)(len:nat) :
     checkAligned_aux (startAddrs, next, len) = 
     match len with
@@ -177,7 +182,7 @@ Lemma checkAligned_aux_corr : forall len addr startAddrs x,
     -> Int32Set.In (repr x) startAddrs.
 Proof. induction len using lt_wf_ind. 
   destruct len. 
-  Case "len = 0". prover.
+  Case "len = 0". crush.
   Case "len > 0". intros.
     rewrite checkAligned_aux_unfold in H0.
     bool_elim_tac.
@@ -214,7 +219,7 @@ Proof. induction len using lt_wf_ind.
        rewrite Zplus_mod. rewrite H1. 
          rewrite Z_mod_same_full. simpl. apply Zmod_0_l.
        omega.
-    SCase "addr = x". prover.
+    SCase "addr = x". subst x; apply Int32Set.mem_spec; assumption.
 Qed.
 
 Lemma checkAligned_corr : forall len startAddrs x,
@@ -230,9 +235,10 @@ Qed.
 
 Section VERIFIER_CORR.
 
-  Variable non_cflow_dfa : DFA.
-  Variable dir_cflow_dfa : DFA.
-  Variable nacljmp_dfa : DFA.
+  Variable non_cflow_dfa : Recognizer.DFA.
+  Variable dir_cflow_dfa : Recognizer.DFA.
+  Variable nacljmp_dfa : Recognizer.DFA.
+  Variable initial_state : ParseState_t.
 
   (* The trampoline region is a blessed region in the code segment. 
      It's inserted there by the loader and never checked by the validator.
@@ -241,13 +247,15 @@ Section VERIFIER_CORR.
      This variable marks the limit of the trampoline region *)
   Variable trampoline_limit : int32.
 
-  Definition checkProgram := 
-    FastVerifier.checkProgram non_cflow_dfa dir_cflow_dfa nacljmp_dfa.
-  Definition process_buffer_aux := 
-    FastVerifier.process_buffer_aux non_cflow_dfa dir_cflow_dfa nacljmp_dfa.
-  Definition process_buffer := 
-    FastVerifier.process_buffer non_cflow_dfa dir_cflow_dfa nacljmp_dfa.
-
+  Definition checkProgram :=
+    FastVerifier.checkProgram non_cflow_dfa dir_cflow_dfa nacljmp_dfa
+      initial_state.
+  Definition process_buffer_aux :=
+    FastVerifier.process_buffer_aux non_cflow_dfa dir_cflow_dfa nacljmp_dfa
+      initial_state.
+  Definition process_buffer :=
+    FastVerifier.process_buffer non_cflow_dfa dir_cflow_dfa nacljmp_dfa
+      initial_state.
 
   (** * Definitions for aiding the verifier correctness proof *)
 
@@ -321,8 +329,8 @@ Section VERIFIER_CORR.
   Definition appropState (s:rtl_state) (inv:Inv) :=
     let (sregs, code) := inv in 
     let (sregs_starts, sregs_limits) := sregs in
-      seg_regs_starts (rtl_mach_state s) = sregs_starts /\
-      seg_regs_limits (rtl_mach_state s) = sregs_limits /\
+      seg_regs_starts (get_core_state s) = sregs_starts /\
+      seg_regs_limits (get_core_state s) = sregs_limits /\
       codeLoaded code s /\
       checkSegments s = true.
 
@@ -389,7 +397,7 @@ Section VERIFIER_CORR.
 
   Lemma nth_nil : forall (A:Type) n (default:A),
     nth n nil default = default.
-  Proof. destruct n; prover. Qed.
+  Proof. destruct n; crush. Qed.
 
   Lemma length_cons : forall (A:Type) (x:A) l,
     length (x :: l) = S (length l).
@@ -397,13 +405,13 @@ Section VERIFIER_CORR.
 
   Lemma skipn_map: forall n (A B:Type) (l:list A) (f: A -> B) ,
     List.map f (skipn n l) = skipn n (List.map f l).
-  Proof. induction n. prover.
-    destruct l; prover.
+  Proof. induction n. crush.
+    destruct l; crush.
   Qed.
 
   Lemma skipn_nth : forall (A:Type) n k  (l:list A) default,
     nth n (skipn k l) default = nth (n+k)%nat l default.
-  Proof. induction k. rewrite plus_0_r. prover.
+  Proof. induction k. rewrite plus_0_r. crush.
     destruct l. 
       intros. compute [skipn]. do 2 rewrite nth_nil. trivial.
       intros. rewrite cons_nth by omega.
@@ -413,19 +421,19 @@ Section VERIFIER_CORR.
 
   Lemma skipn_length : forall n (A:Type) (l:list A),
     (n < length l -> length (skipn n l) + n = length l)%nat.
-  Proof. induction n. prover.
+  Proof. induction n. crush.
     Case "S n". intros.
-      destruct l. prover.
-      simpl. erewrite <- IHn with (l:=l) by prover.
+      destruct l. crush.
+      simpl. erewrite <- IHn with (l:=l) by crush.
       omega.
   Qed.
 
   Lemma skipn_nil : forall n (A:Type) (l:list A),
     (n >= length l)%nat -> skipn n l = nil.
   Proof. induction n. 
-    Case "n=0". destruct l; prover.
-    Case "S n". intros. destruct l. prover.
-      simpl. apply IHn. prover.
+    Case "n=0". destruct l; crush.
+    Case "S n". intros. destruct l. crush.
+      simpl. apply IHn. crush.
   Qed.
 
   Lemma skipn_length_leq : forall n (A:Type) (l:list A),
@@ -434,22 +442,22 @@ Section VERIFIER_CORR.
     destruct (le_or_lt (length l) n).
     Case "length l <= n".
       assert (n >= length l)%nat by omega.
-      apply skipn_nil in H0. prover.
+      apply skipn_nil in H0. crush.
     Case "n < length l".
       apply skipn_length in H. omega.
   Qed.
 
   Lemma skipn_length_geq : forall n (A:Type) (l:list A),
     (length (skipn n l) + n >= length l)%nat.
-  Proof. induction n. prover.
-    intros. destruct l. prover.
+  Proof. induction n. crush.
+    intros. destruct l. crush.
     simpl. generalize (IHn _ l). intros. omega.
   Qed.
 
   Lemma skipn_list_app : forall (A:Type) n (l1 l2:list A),
     length l1 = n -> skipn n (l1 ++ l2) = l2.
-  Proof. induction n. destruct l1; prover.
-    destruct l1. prover.
+  Proof. induction n. destruct l1; crush.
+    destruct l1. crush.
       intros.
       rewrite <- app_comm_cons.
       simpl. f_equal. auto.
@@ -457,8 +465,8 @@ Section VERIFIER_CORR.
 
   Lemma firstn_list_app : forall (A:Type) n (l1 l2:list A),
     length l1 = n -> firstn n (l1 ++ l2) = l1.
-  Proof. induction n. destruct l1; prover.
-    destruct l1. prover.
+  Proof. induction n. destruct l1; crush.
+    destruct l1. crush.
       intros.
       rewrite <- app_comm_cons.
       simpl. f_equal. auto.
@@ -470,24 +478,24 @@ Section VERIFIER_CORR.
 
   Lemma nth_firstn : forall n (A:Type) i (l:list A) default,
     (i < n)%nat -> nth i (firstn n l) default = nth i l default.
-  Proof. induction n. intros. contradict H; prover.
-    destruct l. prover.
-      destruct i; prover.
+  Proof. induction n. intros. contradict H; crush.
+    destruct l. crush.
+      destruct i; crush.
   Qed.
 
   Lemma firstn_twice_eq : forall (A:Type) n m (l:list A),
     (n <= m)%nat -> firstn n (firstn m l) = firstn n l. 
-  Proof. induction n. prover.
-    intros. destruct m. prover.
-      destruct l. prover.
+  Proof. induction n. crush.
+    intros. destruct m. crush.
+      destruct l. crush.
         repeat (rewrite firstn_S_cons).
         f_equal. eapply IHn. omega.
   Qed.
 
   Lemma firstn_map : forall (A B:Type) n (f: A -> B) (l:list A),
     firstn n (List.map f l) = List.map f (firstn n l).
-  Proof. induction n. prover.
-    destruct l; prover.
+  Proof. induction n. crush.
+    destruct l; crush.
   Qed.
 
   (** ** Properties of codeLoaded *)
@@ -507,47 +515,47 @@ Section VERIFIER_CORR.
 
 
   (** ** Properties of dfa_recognize *)
-  Local Ltac dfaprover :=
-     simtuition ltac:(auto with *); autorewrite with dfaRecDB in *;
-       rewriter; simtuition ltac:(auto with *).
+
+    (* Local Ltac dfaprover := *)
+    (*    simtuition ltac:(auto with *star); autorewrite with dfaRecDB in *;  *)
+    (*    rewriter; simtuition ltac:(auto with *)
 
   Require Coqlib.
-  Hint Rewrite minus_diag : dfaRecDB.
 
-  Lemma dfa_loop_inv : forall numOfTokens dfa ts s count count1 ts1,
-      dfa_loop numOfTokens dfa s count ts = Some (count1, ts1) ->
+  Lemma dfa_loop_inv : forall dfa ts s count count1 ts1,
+      dfa_loop dfa s count ts = Some (count1, ts1) ->
         ts1 = List.skipn (count1-count) ts /\ (count1 >= count)%nat /\
         (length ts = count1 - count + length ts1)%nat.
   Proof. induction ts; intros; simpl in H.
-        Case "ts=nil". 
-          destruct_head in H; [dfaprover | discriminate].
+        Case "ts=nil".
+          destruct_head in H; [crush' minus_diag fail | discriminate].
         Case "a::ts".
           destruct_head in H.
-            dfaprover.
+            crush' minus_diag fail.
             apply IHts in H.
             assert (count1 - S count = count1 - count - 1)%nat by intuition.
-            rewrite Coqlib.skipn_gt_0; dfaprover.
+            rewrite Coqlib.skipn_gt_0; crush.
   Qed.
 
-  Lemma dfa_recognize_inv : forall numOfTokens dfa ts len ts',
-      dfa_recognize numOfTokens dfa ts = Some (len, ts')
+  Lemma dfa_recognize_inv : forall dfa ts len ts',
+      dfa_recognize dfa ts = Some (len, ts')
         -> (ts' = List.skipn len ts /\ length ts = len + length ts')%nat.
   Proof. unfold dfa_recognize.
-        intros. apply dfa_loop_inv in H. 
-        rewrite <- minus_n_O in H. prover.
+        intros. apply dfa_loop_inv in H.
+        rewrite <- minus_n_O in H. crush.
   Qed.
 
   (** ** Properties of safeInK and safeInSomeK *)
   Lemma safeInSomeK_no_fail : forall s inv,
     safeInSomeK s inv -> nextStepNoFail s.
-  Proof. unfold safeInSomeK. intros. destruct H as [k H]. destruct k; prover. Qed.
+  Proof. unfold safeInSomeK. intros. destruct H as [k H]. destruct k; crush. Qed.
 
   Lemma safeInK_step_dichotomy : forall k s inv s',
     safeInK k s inv -> s ==> s' -> safeState s' inv \/ safeInSomeK s' inv.
-  Proof. destruct k. prover.
+  Proof. destruct k. crush.
     intros. simpl in H.
-    assert (safeState s' inv \/ safeInK k s' inv) by prover.
-    destruct H1. prover. 
+    assert (safeState s' inv \/ safeInK k s' inv) by crush.
+    destruct H1. crush.
       right. unfold safeInSomeK. exists k; assumption.
   Qed.
 
@@ -555,7 +563,7 @@ Section VERIFIER_CORR.
     appropState s inv -> nextStepNoFail s 
       -> (forall s', s ==> s' -> safeState s' inv)
       -> safeInK 1%nat s inv.
-  Proof. prover. Qed.
+  Proof. crush. Qed.
 
   (** ** Properties of subsetRegion *)
   Ltac subsetRegion_intro_tac :=
@@ -583,7 +591,9 @@ Section VERIFIER_CORR.
       -> checkSegments s = true
       -> checkSegments s' = true.
   Proof. unfold Same_Seg_Regs_Rel.brel, checkSegments.  intros.
-    bool_elim_tac. bool_intro_tac; prover.
+    bool_elim_tac. sim.
+    rewrite <- H. rewrite <- H9.
+    bool_intro_tac; crush.
   Qed.
 
   Lemma checkSegments_inv2 : forall (A:Type) (c:RTL A) (s s':rtl_state) (v':A),
@@ -643,8 +653,8 @@ Section VERIFIER_CORR.
     unfold checkSegments in H0.
     bool_elim_tac.
     unfold Same_Seg_Regs_Rel.brel in H.
-    split. prover. 
-    split. prover.
+    split. crush.
+    split. crush.
     split. apply checkNoOverflow_equiv_noOverflow. trivial.
     destruct H1.
       Case "agree_outside_seg DS c".
@@ -694,7 +704,7 @@ Section VERIFIER_CORR.
     eqCodeRegion s1 s2 -> eqCodeRegion s2 s3
       -> eqCodeRegion s1 s3.
   Proof. unfold eqCodeRegion; intros. 
-    repeat genSimpl; try congruence.
+    crush.
     assert (segAddrs CS s1 = segAddrs CS s2) as H10.
       unfold segAddrs. congruence.
     rewrite H10 in *.
@@ -703,6 +713,7 @@ Section VERIFIER_CORR.
 
   (** ** Properties abour parse_instr *)
   Opaque Decode.X86_PARSER.parse_byte.
+  Opaque opt_initial_decoder_state.
 
   Lemma parse_instr_aux_same_state : forall n pc len ps,
     same_rtl_state (parse_instr_aux n pc len ps).
@@ -710,12 +721,13 @@ Section VERIFIER_CORR.
     induction n. intros. discriminate.
     intros. simpl in H.
     remember_destruct_head in H as pr.
-    destruct l. eauto. prover.
+    destruct l. eauto. crush.
   Qed.
 
   Lemma parse_instr_same_state : forall pc, same_rtl_state (parse_instr pc).
-  Proof. unfold same_rtl_state, parse_instr. intros.
-    rtl_okay_elim.  eapply parse_instr_aux_same_state. eassumption.
+  Proof. unfold same_rtl_state, parse_instr, parse_instr'. intros.
+    rtl_okay_elim. destruct (opt_initial_decoder_state 255); try discriminate.
+    eapply parse_instr_aux_same_state. eassumption.
   Qed.
 
   Lemma parse_instr_aux_len : forall n pc len ps s pi len' s',
@@ -735,8 +747,9 @@ Section VERIFIER_CORR.
 
   Lemma parse_instr_len : forall pc s pi len s',
     parse_instr pc s = (Okay_ans (pi, len), s') -> 1 <= Zpos len < 16.
-  Proof. unfold parse_instr. intros.
-    rtl_okay_elim. apply parse_instr_aux_len in H. simpl in H. omega.
+  Proof. unfold parse_instr, parse_instr'. intros.
+    rtl_okay_elim. destruct (opt_initial_decoder_state 255); try discriminate.
+    apply parse_instr_aux_len in H. simpl in H. omega.
   Qed.
 
   Lemma parse_instr_aux_same_seg_regs : forall n loc len ps,
@@ -747,6 +760,7 @@ Section VERIFIER_CORR.
   Qed.
 
   Hint Immediate parse_instr_aux_same_seg_regs : same_seg_regs_db.
+
 (*
   Lemma parse_instr_aux_no_fail : forall n loc len ps,
      no_fail (parse_instr_aux n loc len ps).
@@ -757,6 +771,7 @@ Section VERIFIER_CORR.
 
   Hint Immediate parse_instr_aux_no_fail : no_fail_db.
 *)
+
   Lemma parse_instr_aux_code_inv : forall s1 s1' s2 n pc len len' pi ps,
     eqCodeRegion s1 s2
       -> parse_instr_aux n pc len ps s1 = (Okay_ans (pi, len'), s1')
@@ -770,7 +785,7 @@ Section VERIFIER_CORR.
     Case "S n". simpl in H0. simpl.
       assert (AddrMap.get pc (rtl_memory s1)
                 = AddrMap.get pc (rtl_memory s2)) as H10.
-        unfold eqCodeRegion in H. repeat genSimpl.
+        unfold eqCodeRegion in H. sim.
         apply H6. apply H1. apply addrRegion_start_in.
       rewrite <- H10.
       remember_destruct_head as pr.
@@ -785,7 +800,7 @@ Section VERIFIER_CORR.
             subsetRegion_intro_tac; int32_prover.
             assumption.
           rewrite Zpos_plus_distr; lia.
-      SCase "l<>nil". prover.
+      SCase "l<>nil". crush.
   Qed.
 
   (* this can be proved as a corollary of the above lemma, given that
@@ -809,10 +824,11 @@ Section VERIFIER_CORR.
       -> noOverflow ((CStart s1 +32 pc) :: repr (Zpos len' - 1) ::nil)
       -> Zpos len' - 1 < w32modulus
       -> parse_instr pc s2 = (Okay_ans (pi, len'), s2).
-  Proof. unfold parse_instr. intros.
-    dupHyp H. unfold eqCodeRegion in H. simplHyp.
+  Proof. unfold parse_instr, parse_instr'. intros.
+    dupHyp H. unfold eqCodeRegion in H. sim.
     rtl_okay_elim. rtl_okay_intro.
     compute [get_location look]. rewrite  <- H. 
+    destruct (opt_initial_decoder_state 255); try discriminate.
     eapply parse_instr_aux_code_inv; eassumption.
   Qed.
 
@@ -823,17 +839,19 @@ Section VERIFIER_CORR.
   Lemma Int32Set_in_dichotomy : forall x y A B,
     Int32Set.In x (Int32Set.diff A B)
       -> (x=y \/ Int32Set.In x (Int32Set.diff A (Int32Set.add y B))).
-  Proof. intros. destruct (eq_dec x y). prover.
+  Proof. intros. destruct (eq_dec x y). crush.
       rewrite Int32Set.diff_spec in *. rewrite Int32Set.add_spec.
-      int32_to_Z_tac. prover.
+      right. unfold Logic.not.
+      int32_to_Z_tac. crush.
   Qed.
 
   (** ** Properties of process_buffer *)
 
   (* process buffer prover *)
-  Local Ltac pbprover :=
-    simtuition ltac:(auto with arith zarith); autorewrite with pbDB in *; 
-      rewriter; simtuition ltac:(auto with arith zarith).
+  (* Local Ltac pbprover := *)
+  (*   simtuition ltac:(auto with arith zarith); autorewrite with pbDB in *;  *)
+  (*     rewriter; simtuition ltac:(auto with arith zarith). *)
+  Local Ltac pbprover := autorewrite with pbDB in *; crush.
   
   Hint Rewrite Int32Set.diff_spec : pbDB.
   Hint Rewrite Int32SetFacts.empty_iff : pbDB.
@@ -864,15 +882,15 @@ Section VERIFIER_CORR.
         repeat match goal with
            | [ H: match ?X with Some _ => _ | None => _ end = _ |- _] =>
                  match X with
-                   | dfa_recognize _ non_cflow_dfa ?T => 
+                   | dfa_recognize non_cflow_dfa ?T => 
                      let dfa := fresh "d1" in let len := fresh "len1" in 
                        let remaining := fresh "remaining1" in
                          remember_rev X as dfa; destruct dfa as [(len, remaining)|]
-                   | dfa_recognize _ dir_cflow_dfa ?T => 
+                   | dfa_recognize dir_cflow_dfa ?T => 
                      let dfa := fresh "d2" in let len := fresh "len2" in 
                        let remaining := fresh "remaining2" in
                          remember_rev X as dfa; destruct dfa as [(len, remaining)|]
-                   | dfa_recognize _ nacljmp_dfa ?T => 
+                   | dfa_recognize nacljmp_dfa ?T => 
                      let dfa := fresh "d3" in let len := fresh "len3" in 
                        let remaining := fresh "remaining3" in
                          remember_rev X as dfa; destruct dfa as [(len, remaining)|]
@@ -903,6 +921,15 @@ Section VERIFIER_CORR.
            :: int32_of_nat (length remaining - 1) :: nil) /\
          Z_of_nat (length remaining) <= w32modulus.
   Proof. intros. int32_simplify. lia. Qed.
+
+(* todo: move to CommonTacs.v *)
+(* Simplify hypothesis *)
+Ltac simplHyp := 
+  repeat match goal with 
+           | [ H : _ /\ _ |- _ ] => destruct H
+           | [ H : _ <-> _ |- _] => destruct H
+           | [ H : exists x, _ |- _ ] => destruct H
+         end.
 
   Lemma process_buffer_aux_addrRange :
    forall n start tokens currStartAddrs currJmpTargets allStartAddrs allJmpTargets pc,
@@ -968,7 +995,7 @@ Section VERIFIER_CORR.
   Lemma Int32Set_subset_add : forall x s,
     Int32Set.Subset s (Int32Set.add x s).
   Proof. unfold Int32Set.Subset.
-    generalize Int32Set.add_spec. prover.
+    generalize Int32Set.add_spec. crush.
   Qed.
 
   Lemma process_buffer_aux_subset : 
@@ -1054,11 +1081,10 @@ Section VERIFIER_CORR.
     (startAddrs: Int32Set.t) (codeSize:nat) :=
     Int32Set.In default_pc startAddrs \/ default_pc = start +32_n codeSize.
 
-
   (* Capture the notion that all indirect-jmp targets are in jmpTargets *)
   Definition includeAllJmpTargets (start:int32) (len:nat) 
     (tokens:list token_id) (jmpTargets:Int32Set.t) := 
-    match (parseloop Decode.X86_PARSER.initial_parser_state 
+    match (parseloop initial_state 
             (List.map token2byte (firstn len tokens))) with
       | Some ((_, JMP true false (Imm_op disp) None), _) => 
         Int32Set.In (start +32_n len +32 disp) jmpTargets
@@ -1070,7 +1096,8 @@ Section VERIFIER_CORR.
     end.
 
   Lemma extract_disp_include : forall start len tokens disp S,
-    extract_disp (List.map token2byte (firstn len tokens)) = Some disp
+    extract_disp initial_state 
+      (List.map token2byte (firstn len tokens)) = Some disp
       -> Int32Set.In (start +32_n len +32 disp) S
       -> includeAllJmpTargets start len tokens S.
   Proof. unfold extract_disp, includeAllJmpTargets; intros.
@@ -1090,7 +1117,6 @@ Section VERIFIER_CORR.
       trivial.
   Qed.  
 
-
   Lemma Int32Set_in_subset : forall x s s',
     Int32Set.In x s -> Int32Set.Subset s s' -> Int32Set.In x s'.
   Proof. unfold Int32Set.Subset. intros. auto. Qed.
@@ -1098,7 +1124,7 @@ Section VERIFIER_CORR.
   Lemma process_buffer_aux_inversion :
    forall n start tokens currStartAddrs currJmpTargets allStartAddrs allJmpTargets,
     process_buffer_aux start n tokens (currStartAddrs, currJmpTargets) =
-      Some(allStartAddrs, allJmpTargets)
+      Some (allStartAddrs, allJmpTargets)
       -> noOverflow (start :: int32_of_nat (length tokens - 1) :: nil)
       -> Z_of_nat (length tokens) <= w32modulus
       -> forall pc:int32, Int32Set.In pc (Int32Set.diff allStartAddrs currStartAddrs)
@@ -1107,143 +1133,143 @@ Section VERIFIER_CORR.
                              tokens) /\
                 goodDefaultPC_aux (pc +32_n len) start allStartAddrs 
                   (length tokens) /\
-                (dfa_recognize 256 non_cflow_dfa tokens' = Some (len, remaining) \/
-                 (dfa_recognize 256 dir_cflow_dfa tokens' = Some (len, remaining) /\
+                (dfa_recognize non_cflow_dfa tokens' = Some (len, remaining) \/
+                 (dfa_recognize dir_cflow_dfa tokens' = Some (len, remaining) /\
                   includeAllJmpTargets pc len tokens' allJmpTargets) \/
-                 dfa_recognize 256 nacljmp_dfa tokens' = Some (len, remaining)).
-(*  Admitted. *)
-  Proof. induction n. intros.
-    Case "n=0". intros. destruct tokens; pbprover.
-    Case "S n". intros.
-      process_buffer_aux_tac.
-      SCase "tokens = nil". pbprover.
-      SCase "tokens<>nil; nacljmp_dfa matches". clear Hd1 Hd2.
-        use_lemma dfa_recognize_inv by eassumption. genSimpl.
-        destruct (@Int32Set_in_dichotomy pc start _ _ H2). 
-        SSCase "pc=start". subst pc. 
-          assert (goodDefaultPC_aux (start +32_n len3) start allStartAddrs
-                    (length (t1::tokens1))).
-            destruct remaining3.
-            SSSCase "remaining3=nil".
-              assert (len3 = length (t1 ::tokens1)) by prover.
-              right. prover.
-            SSSCase "remaining3<>nil".
-              left. eapply process_buffer_aux_start_in. 
-              eassumption. simpl. omega.
-          exists (t1::tokens1), len3, remaining3. pbprover.
-        SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)".
-          assert (length (t1::tokens1) >= 1)%nat by (simpl; omega).
-          assert (length remaining3 > 0)%nat by (destruct remaining3; pbprover).
-          use_lemma (process_buffer_arith_facts start len3 (t1::tokens1) remaining3)
-            by assumption.
-          simplHyp.
-          use_lemma process_buffer_aux_addrRange by eassumption.
-          use_lemma IHn by eassumption.
-          destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
-          subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22.
-          int32_simplify.
-          assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len3)) + len3 = 
-                  Zabs_nat (unsigned pc - unsigned start))%nat as H30.
-            apply inj_eq_rev; int32_simplify_in_goal; ring.
-          rewrite H30 in H22.
-          assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs
-                    (length (t1 :: tokens1))).
-            destruct H21. left. assumption.
-              right. rewrite H4. rewrite <- add_repr. 
-                unfold w32add at 2. rewrite <- add_assoc. 
-              assumption.
-          exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)).
-            exists len, remaining.
-              split. trivial.
-              split. assumption. assumption.
-      SCase "tokens<>nil; non_cflow_dfa matches". clear Hd2 Hd3.
-        use_lemma dfa_recognize_inv by eassumption. genSimpl.
-        destruct (@Int32Set_in_dichotomy pc start _ _ H2). 
-        SSCase "pc=start". subst pc. 
-          assert (goodDefaultPC_aux (start +32_n len1) start allStartAddrs
-                    (length (t1::tokens1))).
-            destruct remaining1.
-            SSSCase "remaining1=nil".
-              assert (len1 = length (t1 ::tokens1)) by prover.
-              right. prover.
-            SSSCase "remaining3<>nil".
-              left. eapply process_buffer_aux_start_in. 
-              eassumption. simpl. omega.
-          exists (t1::tokens1), len1, remaining1. pbprover.
-        SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)".
-          assert (length (t1::tokens1) >= 1)%nat by (simpl; omega).
-          assert (length remaining1 > 0)%nat by (destruct remaining1; pbprover).
-          use_lemma (process_buffer_arith_facts start len1 (t1::tokens1) remaining1)
-            by assumption.
-          simplHyp.
-          use_lemma process_buffer_aux_addrRange by eassumption.
-          use_lemma IHn by eassumption.
-          destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
-          subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22.
-          int32_simplify.
-          assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len1)) + len1 = 
-                  Zabs_nat (unsigned pc - unsigned start))%nat as H30.
-            apply inj_eq_rev; int32_simplify_in_goal; ring.
-          rewrite H30 in H22. simplHyp.
-          assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs
-                    (length (t1 :: tokens1))).
-            destruct H21. left. assumption.
-              right. rewrite H4. rewrite <- add_repr. 
-                unfold w32add at 2. rewrite <- add_assoc. 
-              assumption.
-          exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)).
-            exists len, remaining.
-              split. trivial. split; assumption.
-      SCase "tokens<>nil; dir_cflow_dfa matches". clear Hd1 Hd3.
-        remember_destruct_head in H as ed; try discriminate.
-        use_lemma dfa_recognize_inv by eassumption. genSimpl.
-        destruct (@Int32Set_in_dichotomy pc start _ _ H2). 
-        SSCase "pc=start". subst pc. 
-          assert (goodDefaultPC_aux (start +32_n len2) start allStartAddrs
-                    (length (t1::tokens1))).
-            destruct remaining2.
-            SSSCase "remaining2=nil".
-              assert (len2 = length (t1 ::tokens1)) by prover.
-              right. prover.
-            SSSCase "remaining2<>nil".
-              left. eapply process_buffer_aux_start_in. 
-              eassumption. simpl. omega.
-          use_lemma process_buffer_aux_subset by eassumption.
-          assert (Int32Set.In (start +32_n len2 +32 i) allJmpTargets).
-            apply Int32Set_in_subset 
-              with (s:=(Int32Set.add (start +32_n len2 +32 i) currJmpTargets)).
-            eapply Int32Set.add_spec. left. apply int_eq_refl.
-            prover.
-          exists (t1::tokens1), len2, remaining2.
-            split. pbprover.
-            split. assumption.
-              right; left. split. assumption.
-              eapply extract_disp_include; eassumption.
-        SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)".
-          assert (length (t1::tokens1) >= 1)%nat by (simpl; omega).
-          assert (length remaining2 > 0)%nat by (destruct remaining2; pbprover).
-          use_lemma (process_buffer_arith_facts start len2 (t1::tokens1) remaining2)
-            by assumption.
-          simplHyp.
-          use_lemma process_buffer_aux_addrRange by eassumption.
-          use_lemma IHn by eassumption.
-          destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
-          subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22.
-          int32_simplify.
-          assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len2)) + len2 = 
-                  Zabs_nat (unsigned pc - unsigned start))%nat as H30.
-            apply inj_eq_rev; int32_simplify_in_goal; ring.
-          rewrite H30 in H22.
-          assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs
-                    (length (t1 :: tokens1))).
-            destruct H21. left. assumption.
-              right. rewrite H4. rewrite <- add_repr. 
-                unfold w32add at 2. rewrite <- add_assoc. 
-              assumption.
-          exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)).
-            exists len, remaining.
-              split. trivial. split; assumption.
-  Qed.
+                 dfa_recognize nacljmp_dfa tokens' = Some (len, remaining)).
+ Admitted.
+  (* Proof. induction n. intros. *)
+  (*   Case "n=0". intros. destruct tokens; pbprover. *)
+  (*   Case "S n". intros. *)
+  (*     process_buffer_aux_tac. *)
+  (*     SCase "tokens = nil". pbprover. *)
+  (*     SCase "tokens<>nil; nacljmp_dfa matches". clear Hd1 Hd2. *)
+  (*       use_lemma dfa_recognize_inv by eassumption. sim. *)
+  (*       destruct (@Int32Set_in_dichotomy pc start _ _ H2).  *)
+  (*       SSCase "pc=start". subst pc.  *)
+  (*         assert (goodDefaultPC_aux (start +32_n len3) start allStartAddrs *)
+  (*                   (length (t1::tokens1))). *)
+  (*           destruct remaining3. *)
+  (*           SSSCase "remaining3=nil". *)
+  (*             assert (len3 = length (t1 ::tokens1)) by crush. *)
+  (*             right. congruence. *)
+  (*           SSSCase "remaining3<>nil". *)
+  (*             left. eapply process_buffer_aux_start_in.  *)
+  (*             eassumption. simpl. omega. *)
+  (*         exists (t1::tokens1), len3, remaining3. pbprover. *)
+  (*       SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)". *)
+  (*         assert (length (t1::tokens1) >= 1)%nat by (simpl; omega). *)
+  (*         assert (length remaining3 > 0)%nat by (destruct remaining3; pbprover). *)
+  (*         use_lemma (process_buffer_arith_facts start len3 (t1::tokens1) remaining3) *)
+  (*           by assumption. *)
+  (*         simplHyp. *)
+  (*         use_lemma process_buffer_aux_addrRange by eassumption. *)
+  (*         use_lemma IHn by eassumption. *)
+  (*         destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]]. *)
+  (*         subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22. *)
+  (*         int32_simplify. *)
+  (*         assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len3)) + len3 =  *)
+  (*                 Zabs_nat (unsigned pc - unsigned start))%nat as H30. *)
+  (*           apply inj_eq_rev; int32_simplify_in_goal; ring. *)
+  (*         rewrite H30 in H22. *)
+  (*         assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs *)
+  (*                   (length (t1 :: tokens1))). *)
+  (*           destruct H21. left. assumption. *)
+  (*             right. rewrite H4. rewrite <- add_repr.  *)
+  (*               unfold w32add at 2. rewrite <- add_assoc.  *)
+  (*             assumption. *)
+  (*         exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)). *)
+  (*           exists len, remaining. *)
+  (*             split. trivial. *)
+  (*             split. assumption. assumption. *)
+  (*     SCase "tokens<>nil; non_cflow_dfa matches". clear Hd2 Hd3. *)
+  (*       use_lemma dfa_recognize_inv by eassumption. sim. *)
+  (*       destruct (@Int32Set_in_dichotomy pc start _ _ H2).  *)
+  (*       SSCase "pc=start". subst pc.  *)
+  (*         assert (goodDefaultPC_aux (start +32_n len1) start allStartAddrs *)
+  (*                   (length (t1::tokens1))). *)
+  (*           destruct remaining1. *)
+  (*           SSSCase "remaining1=nil". *)
+  (*             assert (len1 = length (t1 ::tokens1)) by crush. *)
+  (*             right. congruence. *)
+  (*           SSSCase "remaining3<>nil". *)
+  (*             left. eapply process_buffer_aux_start_in.  *)
+  (*             eassumption. simpl. omega. *)
+  (*         exists (t1::tokens1), len1, remaining1. pbprover. *)
+  (*       SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)". *)
+  (*         assert (length (t1::tokens1) >= 1)%nat by (simpl; omega). *)
+  (*         assert (length remaining1 > 0)%nat by (destruct remaining1; pbprover). *)
+  (*         use_lemma (process_buffer_arith_facts start len1 (t1::tokens1) remaining1) *)
+  (*           by assumption. *)
+  (*         simplHyp. *)
+  (*         use_lemma process_buffer_aux_addrRange by eassumption. *)
+  (*         use_lemma IHn by eassumption. *)
+  (*         destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]]. *)
+  (*         subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22. *)
+  (*         int32_simplify. *)
+  (*         assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len1)) + len1 =  *)
+  (*                 Zabs_nat (unsigned pc - unsigned start))%nat as H30. *)
+  (*           apply inj_eq_rev; int32_simplify_in_goal; ring. *)
+  (*         rewrite H30 in H22. simplHyp. *)
+  (*         assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs *)
+  (*                   (length (t1 :: tokens1))). *)
+  (*           destruct H21. left. assumption. *)
+  (*             right. rewrite H4. rewrite <- add_repr.  *)
+  (*               unfold w32add at 2. rewrite <- add_assoc.  *)
+  (*             assumption. *)
+  (*         exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)). *)
+  (*           exists len, remaining. *)
+  (*             split. trivial. split; assumption. *)
+  (*     SCase "tokens<>nil; dir_cflow_dfa matches". clear Hd1 Hd3. *)
+  (*       remember_destruct_head in H as ed; try discriminate. *)
+  (*       use_lemma dfa_recognize_inv by eassumption. sim. *)
+  (*       destruct (@Int32Set_in_dichotomy pc start _ _ H2).  *)
+  (*       SSCase "pc=start". subst pc.  *)
+  (*         assert (goodDefaultPC_aux (start +32_n len2) start allStartAddrs *)
+  (*                   (length (t1::tokens1))). *)
+  (*           destruct remaining2. *)
+  (*           SSSCase "remaining2=nil". *)
+  (*             assert (len2 = length (t1 ::tokens1)) by crush. *)
+  (*             right. congruence. *)
+  (*           SSSCase "remaining2<>nil". *)
+  (*             left. eapply process_buffer_aux_start_in.  *)
+  (*             eassumption. simpl. omega. *)
+  (*         use_lemma process_buffer_aux_subset by eassumption. *)
+  (*         assert (Int32Set.In (start +32_n len2 +32 i) allJmpTargets). *)
+  (*           apply Int32Set_in_subset  *)
+  (*             with (s:=(Int32Set.add (start +32_n len2 +32 i) currJmpTargets)). *)
+  (*           eapply Int32Set.add_spec. left. apply int_eq_refl. *)
+  (*           crush. *)
+  (*         exists (t1::tokens1), len2, remaining2. *)
+  (*           split. pbprover. *)
+  (*           split. assumption. *)
+  (*             right; left. split. assumption. *)
+  (*             eapply extract_disp_include; eassumption. *)
+  (*       SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)". *)
+  (*         assert (length (t1::tokens1) >= 1)%nat by (simpl; omega). *)
+  (*         assert (length remaining2 > 0)%nat by (destruct remaining2; pbprover). *)
+  (*         use_lemma (process_buffer_arith_facts start len2 (t1::tokens1) remaining2) *)
+  (*           by assumption. *)
+  (*         simplHyp. *)
+  (*         use_lemma process_buffer_aux_addrRange by eassumption. *)
+  (*         use_lemma IHn by eassumption. *)
+  (*         destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]]. *)
+  (*         subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22. *)
+  (*         int32_simplify. *)
+  (*         assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len2)) + len2 =  *)
+  (*                 Zabs_nat (unsigned pc - unsigned start))%nat as H30. *)
+  (*           apply inj_eq_rev; int32_simplify_in_goal; ring. *)
+  (*         rewrite H30 in H22. *)
+  (*         assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs *)
+  (*                   (length (t1 :: tokens1))). *)
+  (*           destruct H21. left. assumption. *)
+  (*             right. rewrite H4. rewrite <- add_repr.  *)
+  (*               unfold w32add at 2. rewrite <- add_assoc.  *)
+  (*             assumption. *)
+  (*         exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)). *)
+  (*           exists len, remaining. *)
+  (*             split. trivial. split; assumption. *)
+  (* Qed. *)
 
   Hint Rewrite Zminus_0_r : pbDB.
 
@@ -1256,10 +1282,10 @@ Section VERIFIER_CORR.
                 tokens' = (List.skipn (Zabs_nat (unsigned pc)) 
                              (List.map byte2token buffer)) /\
                 goodDefaultPC (pc +32_n len) startAddrs (length buffer) /\
-                (dfa_recognize 256 non_cflow_dfa tokens' = Some (len, remaining) \/
-                 (dfa_recognize 256 dir_cflow_dfa tokens' = Some (len, remaining) /\
+                (dfa_recognize non_cflow_dfa tokens' = Some (len, remaining) \/
+                 (dfa_recognize dir_cflow_dfa tokens' = Some (len, remaining) /\
                   includeAllJmpTargets pc len tokens' jmpTargets) \/
-                 dfa_recognize 256 nacljmp_dfa tokens' = Some (len, remaining)).
+                 dfa_recognize nacljmp_dfa tokens' = Some (len, remaining)).
   Proof. unfold process_buffer; intros.
     assert (length (List.map byte2token buffer) = length buffer) as H10
       by (apply list_length_map).
@@ -1283,49 +1309,54 @@ Section VERIFIER_CORR.
   Qed.
 
   (** ** Properties of simple_parse *)
-  Lemma simple_parse'_len_pos : forall bytes ps pre ins bytes1,
-    simple_parse' ps bytes = Some ((pre,ins), bytes1)
-      -> (length bytes > length bytes1)%nat.
-  Proof. induction bytes. prover.
-    intros. compute [simple_parse'] in H. fold simple_parse' in H.
-      remember_destruct_head in H as pb.
-      destruct l. 
-        use_lemma IHbytes by eassumption. prover.
-        prover.
-  Qed.
+  (* resurrect this when DFACorrectness is online *)
+  (* Lemma simple_parse'_len_pos : forall bytes ps pre ins bytes1, *)
+  (*   simple_parse' ps bytes = Some ((pre,ins), bytes1) *)
+  (*     -> (length bytes > length bytes1)%nat. *)
+  (* Proof. induction bytes. prover. *)
+  (*   intros. compute [simple_parse'] in H. fold simple_parse' in H. *)
+  (*     remember_destruct_head in H as pb. *)
+  (*     destruct l.  *)
+  (*       use_lemma IHbytes by eassumption. prover. *)
+  (*       prover. *)
+  (* Qed. *)
 
-  Lemma simple_parse'_ext : forall bytes bytes1 ps pre ins rem len,
-    simple_parse' ps bytes = Some ((pre,ins), rem)
-      -> len = (length bytes - length rem)%nat
-      -> firstn len bytes = firstn len bytes1
-      -> exists rem1, simple_parse' ps bytes1 = Some ((pre,ins), rem1).
-  Proof. induction bytes as [ | b bytes']. prover.
-    Case "bytes = b :: bytes'".
-      intros. dupHyp H.
-      compute [simple_parse'] in H. fold simple_parse' in H.
-      use_lemma simple_parse'_len_pos by eassumption.
-      assert (len >= 1)%nat by omega.
-      destruct len. contradict H4. omega.
-      rewrite firstn_S_cons in H1.
-      destruct bytes1. simpl in H1. congruence.
-      rewrite firstn_S_cons in H1.
-      inversion H1. subst i.
-      compute [simple_parse']. fold simple_parse'.
-      destruct (parse_byte ps b).
-      destruct l.
-      SCase "parse_byte returns nil".
-        assert (len = length bytes' - length rem)%nat.
-          rewrite length_cons in H0. omega.
-        eapply IHbytes'; eassumption.
-      SCase "parse_byte returns some val".
-        exists bytes1. prover.
-  Qed.
+  (* Lemma simple_parse'_ext : forall bytes bytes1 ps pre ins rem len, *)
+  (*   simple_parse' ps bytes = Some ((pre,ins), rem) *)
+  (*     -> len = (length bytes - length rem)%nat *)
+  (*     -> firstn len bytes = firstn len bytes1 *)
+  (*     -> exists rem1, simple_parse' ps bytes1 = Some ((pre,ins), rem1). *)
+  (* Proof. induction bytes as [ | b bytes']. prover. *)
+  (*   Case "bytes = b :: bytes'". *)
+  (*     intros. dupHyp H. *)
+  (*     compute [simple_parse'] in H. fold simple_parse' in H. *)
+  (*     use_lemma simple_parse'_len_pos by eassumption. *)
+  (*     assert (len >= 1)%nat by omega. *)
+  (*     destruct len. contradict H4. omega. *)
+  (*     rewrite firstn_S_cons in H1. *)
+  (*     destruct bytes1. simpl in H1. congruence. *)
+  (*     rewrite firstn_S_cons in H1. *)
+  (*     inversion H1. subst i. *)
+  (*     compute [simple_parse']. fold simple_parse'. *)
+  (*     destruct (parse_byte ps b). *)
+  (*     destruct l. *)
+  (*     SCase "parse_byte returns nil". *)
+  (*       assert (len = length bytes' - length rem)%nat. *)
+  (*         rewrite length_cons in H0. omega. *)
+  (*       eapply IHbytes'; eassumption. *)
+  (*     SCase "parse_byte returns some val". *)
+  (*       exists bytes1. prover. *)
+  (* Qed. *)
 
   (** ** A theorem about immutable code region *)
 
   Section FETCH_INSTR_CODE_INV.
 
   Opaque parse_instr.
+  Ltac clear_parse_instr := 
+    match goal with
+      | [H: parse_instr _ _ = _ |- _ ] => clear H
+    end. 
 
   Remark fetchSize_lt_modulus : 15 <= w32modulus.
   Proof. rewrite int32_modulus_constant. lia. Qed.
@@ -1352,13 +1383,13 @@ Section VERIFIER_CORR.
       apply fetchSize_lt_modulus.
     assert (noOverflow (pc :: repr (Zpos len - 1) :: nil)).
       apply checkNoOverflow_equiv_noOverflow. trivial.
-    assert (noOverflow (CStart s1 +32 pc :: repr (Zpos len - 1) :: nil)) by
-      int32_prover.
+    assert (noOverflow (CStart s1 +32 pc :: repr (Zpos len - 1) :: nil))
+        by (clear_parse_instr; int32_prover).
     assert (H20: Ensembles.Included int32
               (addrRegion (CStart s1 +32 pc) (repr (Zpos len - 1)))
               (segAddrs CS s1)).
       apply subsetRegion_sound. assumption. assumption.
-        subsetRegion_intro_tac. int32_prover. int32_prover.
+        subsetRegion_intro_tac; clear_parse_instr; int32_prover.
     assert (parse_instr pc s2 = (Okay_ans (pre, i, len), s2)).
       eapply parse_instr_code_inv. eassumption. eapply H1.
       eassumption. eassumption. eassumption.
@@ -1376,32 +1407,15 @@ Section VERIFIER_CORR.
     reflexivity.
   Qed.
 
-  Lemma fetch_instr_after_flush_env : forall s v' s' pre ins len,
-    fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s)
-      -> flush_env s = (Okay_ans v', s')
-      -> checkSegments s = true
-      -> fetch_instruction (PC s') s' = (Okay_ans (pre, ins, len), s').
-  Proof. intros.
-    assert (H10: PC s = PC s').
-      unfold flush_env in *. prover.
-    assert (H12: eqCodeRegion s s').
-      eapply eqCodeRegion_intro2; try eassumption.
-      same_seg_regs_tac.
-      left; agree_outside_seg_tac.
-    apply fetch_instr_code_inv with (s1:=s) (s1':=s).
-      assumption.
-    rewrite <- H10. assumption.
-  Qed. 
-
   Transparent parse_instr.
   End FETCH_INSTR_CODE_INV.
 
   Lemma codeLoaded_inv : forall s1 s2 code,
     eqCodeRegion s1 s2 -> codeLoaded code s1 -> codeLoaded code s2.
   Proof. unfold eqCodeRegion, codeLoaded.
-    intros. split; [idtac | prover].
-    unfold eqMemBuffer in *. split. prover.
-    intros. repeat genSimpl.
+    intros. split; [idtac | crush].
+    unfold eqMemBuffer in *. split. crush.
+    intros. sim.
     generalize (H3 i); intros.
     rewrite H7 by assumption. 
     rewrite <- H. apply H6.
@@ -1423,7 +1437,7 @@ Section VERIFIER_CORR.
       use_lemma (H0 O) by omega.
       simpl in H1. inversion H1.
       assert (l1 = l2).
-        apply IHl1. prover.
+        apply IHl1. crush.
         intros. generalize (H0 (S n)).
         intros. use_lemma H4 by omega.
         simpl in H5. trivial.
@@ -1434,10 +1448,11 @@ Section VERIFIER_CORR.
     (n2 <= n1)%nat
       -> fetch_n n2 loc s = firstn n2 (fetch_n n1 loc s).
   Proof. induction n1; intros.
-    Case "n1=0". assert (n2=0)%nat by omega. subst n2. prover.
+    Case "n1=0". assert (n2=0)%nat by omega. subst n2. crush.
     Case "S n1".
-      destruct n2. prover.
-      SCase "S n2". simpl. f_equal. prover.
+      destruct n2. crush.
+      SCase "S n2". simpl. f_equal. 
+        clear initial_state. eapply IHn1. lia.
   Qed.
 
   Lemma codeLoaded_fetch_n : forall code s k pc code' gSize guardZone,
@@ -1448,7 +1463,7 @@ Section VERIFIER_CORR.
       -> (k < gSize)%nat
       -> fetch_n k (CStart s +32_n pc) s = firstn k (code' ++ guardZone).
   Proof. induction k.
-    Case "k=0". prover.
+    Case "k=0". crush.
     Case "S k". intros.
       destruct code' as [| byte code''].
       SCase "code'=nil".
@@ -1462,7 +1477,7 @@ Section VERIFIER_CORR.
         SSCase "byte = AddrMap.get (CStart s +32_n pc) (rtl_memory s))".
           erewrite <- codeLoaded_lookup by eassumption.
           rewrite <- (plus_0_l pc).
-          rewrite <- skipn_nth. rewrite <- H1. prover.
+          rewrite <- skipn_nth. rewrite <- H1. crush.
         SSCase "fetch_n k ... = firstn k ...".
           rewrite add_assoc. rewrite add_repr.
           assert (H10:Z_of_nat pc + 1 = Z_of_nat (pc + 1)).
@@ -1486,7 +1501,7 @@ Section VERIFIER_CORR.
             destruct code''. 
               simpl. rewrite H4. subst guardZone.
               apply fetch_n_sub_list. omega.
-              prover.
+              crush.
   Qed.
 
   (* todo: move *)
@@ -1526,12 +1541,11 @@ Section VERIFIER_CORR.
     case_eq (Zdiv_eucl a b). intros q r. intro.
     use_lemma (Z_div_mod a b) by omega.
     rewrite H2 in *. subst r.
-    genSimpl.
-    ring_simplify in H1.
+    sim. ring_simplify in H1.
     assert (c = q). 
       apply Zmult_reg_l with (p:=b). omega. 
       congruence.
-    prover.
+    crush.
   Qed.
 
   Lemma codeLoaded_pc_inbound: forall code s (tokens remaining: list token_id) len,
@@ -1546,7 +1560,7 @@ Section VERIFIER_CORR.
      f_equal. f_equal.
      use_lemma codeLoaded_length by eassumption.
      bool_intro_tac. int32_prover.
-       unfold codeLoaded in H. genSimpl.
+       unfold codeLoaded in H. sim.
        unfold look. int32_prover.
   Qed.
 
@@ -1620,7 +1634,7 @@ Section VERIFIER_CORR.
       -> PC s' = default_pc \/ PC s' = PC s.
   Proof. unfold run_rep; intros.
     repeat rtl_okay_break.
-    destruct (eq v0 zero). unfold set_loc in *. prover.
+    destruct (eq v0 zero). unfold set_loc in *. crush.
     repeat rtl_okay_break.
     destruct ins; try discriminate.
     (* CMPS *)
@@ -1630,14 +1644,14 @@ Section VERIFIER_CORR.
       eapply H10. eassumption.
     repeat rtl_okay_break.
     destruct (eq v3 zero); destruct (eq v5 zero).
-      unfold set_loc in *. prover.
+      unfold set_loc in *. crush.
       unfold set_loc in *. 
-        inversion H; inversion H6; inversion H5; subst. prover.
-      unfold set_loc in *. prover.
+        inversion H; inversion H6; inversion H5; subst. crush.
+      unfold set_loc in *. crush.
       unfold set_loc in *. right. 
         inversion H; inversion H6; inversion H5; inversion H4;
           inversion H2; inversion H1; inversion H0; subst.
-        prover.
+        crush.
     (* MOVS *)
     assert (H10:same_pc (RTL_step_list (instr_to_rtl pre (MOVS w)))).
       unfold instr_to_rtl, check_prefix, conv_MOVS. prove_instr.
@@ -1645,9 +1659,9 @@ Section VERIFIER_CORR.
       eapply H10. eassumption.
     repeat rtl_okay_break.
     destruct (eq v3 zero).
-      unfold set_loc in *. prover.
+      unfold set_loc in *. crush.
       unfold set_loc in *. right. 
-        prover. inversion H4. inversion H1. subst. congruence.
+        crush. inversion H4. inversion H1. subst. congruence.
     (* STOS *)
     assert (H10:same_pc (RTL_step_list (instr_to_rtl pre (STOS w)))).
       unfold instr_to_rtl, check_prefix, conv_STOS. prove_instr.
@@ -1655,25 +1669,38 @@ Section VERIFIER_CORR.
       eapply H10. eassumption.
     repeat rtl_okay_break.
     destruct (eq v3 zero).
-      unfold set_loc in *. prover.
+      unfold set_loc in *. crush.
       unfold set_loc in *. right. 
-        prover. inversion H4. inversion H1. subst. congruence.
+        crush. inversion H4. inversion H1. subst. congruence.
   Qed.        
 
   (** ** Proving that any non-cflow-instr reaches a safe state in one step *)
-  Ltac step_tac := 
-   match goal with 
+  Ltac step_tac :=
+   match goal with
     | [H1: step_immed ?s ?s' |- _] =>
-       unfold step_immed, step in H1;
-       rtl_okay_break;
-       do 2 rtl_okay_elim;
+       unfold step_immed, step in H1; 
+       do 2 rtl_okay_elim; unfold get_location in H1;
        match goal with
-         | [H2: context[if ?X then _ else _], 
-            H3: flush_env ?s = (Okay_ans ?v0, ?s0) |- _] => 
-           destruct X; [idtac | discriminate H1];
-           rtl_okay_break
+         | [H2: context[if ?X then _ else _]|- _] =>
+           destruct X; [idtac | discriminate ]; 
+           rtl_okay_elim
        end
    end.
+
+  (* todo: remove *)
+  (* Ltac step_tac :=  *)
+  (*  match goal with  *)
+  (*   | [H1: step_immed ?s ?s' |- _] => *)
+  (*      unfold step_immed, step in H1; *)
+  (*      rtl_okay_break; *)
+  (*      do 2 rtl_okay_elim; *)
+  (*      match goal with *)
+  (*        | [H2: context[if ?X then _ else _],  *)
+  (*           H3: flush_env ?s = (Okay_ans ?v0, ?s0) |- _] =>  *)
+  (*          destruct X; [idtac | discriminate H1]; *)
+  (*          rtl_okay_break *)
+  (*      end *)
+  (*  end. *)
 
   Lemma nci_eqCodeRegion: forall pre ins s v' s',
     non_cflow_instr pre ins = true
@@ -1702,6 +1729,7 @@ Section VERIFIER_CORR.
               eauto using H
       end.
 
+
   Lemma nci_step_same_seg_regs : forall s s' inv pre ins len,
     fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s)
       -> non_cflow_instr pre ins = true
@@ -1711,16 +1739,14 @@ Section VERIFIER_CORR.
   Proof. intros.
     safestate_unfold_tac.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, ins , len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
+    assert (v = (pre, ins , len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s0.
     assert (same_seg_regs (RTL_step_list (instr_to_rtl pre ins))).
       auto using nci_same_seg_regs.
-    apply Same_Seg_Regs_Rel.brel_trans with (s2:=s0).
-      same_seg_regs_rel_tac.
-      same_seg_regs_rel_tac.
+    same_seg_regs_rel_tac.
   Qed.
+
 
   Ltac aoar_tac := 
       match goal with
@@ -1732,6 +1758,7 @@ Section VERIFIER_CORR.
               eapply H; eassumption
       end.
 
+  (* todo: use a tactic to simplify the proof *)
   Lemma nci_step_aos : forall s s' inv pre ins len,
     fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s)
       -> non_cflow_instr pre ins = true
@@ -1743,74 +1770,47 @@ Section VERIFIER_CORR.
           agree_outside_addr_region (segAddrs ES s) s s').
   Proof. intros. safestate_unfold_tac.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, ins, len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
+    assert (v = (pre, ins, len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s0.
     remember (RTL_step_list (instr_to_rtl pre ins)) as comp.
     assert (H20: agree_outside_seg DS comp \/ agree_outside_seg SS comp \/
                  agree_outside_seg GS comp \/ agree_outside_seg ES comp).
       subst comp.
       eauto using nci_aos.
-    assert (H30: segAddrs DS s = segAddrs DS s0 /\ 
-              segAddrs SS s = segAddrs SS s0 /\
-              segAddrs GS s = segAddrs GS s0 /\
-              segAddrs ES s = segAddrs ES s0).
-      unfold segAddrs. unfold flush_env in *. prover.
-    destruct H30 as [H30 [H32 [H34 H36]]].
     destruct (lock_rep pre). destruct l. 
     Case "lock".
       destruct H20 as [H20 | [H20 | [H20 | H20]]].
       SCase "DS".
-        left. apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H30. aoar_tac.
+        left. aoar_tac.
       SCase "SS".
-        right. left. apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H32. aoar_tac.
+        right. left. aoar_tac.
       SCase "GS".
-        right. right. left. 
-        apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H34. aoar_tac.
+        right. right. left. aoar_tac.
       SCase "ES".
-        right. right. right. 
-        apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H36. aoar_tac.
+        right. right. right. aoar_tac.
     Case "rep".
-      right; right; right.
-      apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-      rewrite H36. aoar_tac.
+      right; right; right. aoar_tac.
     Case "repn".
       destruct H20 as [H20 | [H20 | [H20 | H20]]].
       SCase "DS".
-        left. apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H30. aoar_tac.
+        left. aoar_tac.
       SCase "SS".
-        right. left. apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H32. aoar_tac.
+        right. left. aoar_tac.
       SCase "GS".
-        right. right. left. 
-        apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H34. aoar_tac.
+        right. right. left. aoar_tac.
       SCase "ES".
-        right. right. right. 
-        apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H36. aoar_tac.
+        right. right. right. aoar_tac.
     Case "None".
       destruct H20 as [H20 | [H20 | [H20 | H20]]].
       SCase "DS".
-        left. apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H30. aoar_tac.
+        left. aoar_tac.
       SCase "SS".
-        right. left. apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H32. aoar_tac.
-      SCase "GS".
-        right. right. left. 
-        apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H34. aoar_tac.
+        right. left. aoar_tac.
+      SCase "GS". 
+        right. right. left. aoar_tac.
       SCase "ES".
-        right. right. right. 
-        apply agree_outside_addr_region_trans with (s2:=s0). aoar_tac.
-        rewrite H36. aoar_tac.
+        right. right. right. aoar_tac.
   Qed.
 
   Lemma nci_checkSegments_inv : forall s s' inv pre ins len,
@@ -1864,107 +1864,130 @@ Section VERIFIER_CORR.
     use_lemma nci_code_inv by eassumption.
     use_lemma nci_checkSegments_inv by eassumption.
     unfold Same_Seg_Regs_Rel.brel in *.
-    prover.
+    crush.
   Qed.
 
-  Lemma only_gs_seg_override_lock_rep : forall pre,
-    only_gs_seg_override pre = true -> lock_rep pre = None.
-  Proof. unfold only_gs_seg_override; intros.
+  Lemma filter_prefix_no_lock_or_rep:
+    forall pre seg_filter op_filter cs_filter,
+      filter_prefix ft_no_lock_or_rep seg_filter op_filter cs_filter pre = true
+        -> lock_rep pre = None.
+  Proof. unfold filter_prefix, ft_no_lock_or_rep; intros.
+    bool_elim_tac.
     destruct (lock_rep pre); congruence.
   Qed.
 
-  Lemma only_op_override_lock_rep : forall pre,
-    only_op_override pre = true -> lock_rep pre = None.
-  Proof. unfold only_op_override; intros.
-    destruct (lock_rep pre); congruence.
+  Lemma filter_prefix_only_lock:
+    forall pre seg_filter op_filter cs_filter,
+      filter_prefix ft_only_lock seg_filter op_filter cs_filter pre = true
+        -> lock_rep pre = Some lock \/ lock_rep pre = None.
+  Proof. unfold filter_prefix, ft_only_lock; intros.
+    bool_elim_tac.
+    destruct (lock_rep pre) as [lr|]; [destruct lr|]; crush.
   Qed.
 
-  Lemma either_prefix_lock_rep : forall pre,
-    either_prefix pre = true -> lock_rep pre = None.
-  Proof. unfold either_prefix; intros.
-    bool_elim_tac. apply only_op_override_lock_rep; assumption.
-      apply only_gs_seg_override_lock_rep; assumption.
-  Qed.
+  (* todo: remove *)
+  (* Lemma only_gs_seg_override_lock_rep : forall pre, *)
+  (*   only_gs_seg_override pre = true -> lock_rep pre = None. *)
+  (* Proof. unfold only_gs_seg_override, filter_prefix, ft_no_lock_or_rep; intros. *)
+  (*   bool_elim_tac. *)
+  (*   destruct (lock_rep pre); congruence. *)
+  (* Qed. *)
 
-  Lemma only_lock_or_rep_lock_rep : forall pre,
-    only_lock_or_rep pre = true -> lock_rep pre = Some rep \/ lock_rep pre = None.
-  Proof. unfold only_lock_or_rep. intros.
-    destruct (lock_rep pre).
-    destruct l; try congruence.
-    do 3 (destruct_head in H; try congruence). prover.
-    do 3 (destruct_head in H; try congruence). prover.
-  Qed.
+  (* Lemma only_op_override_lock_rep : forall pre, *)
+  (*   only_op_override pre = true -> lock_rep pre = None. *)
+  (* Proof. unfold only_op_override; intros. *)
+  (*   destruct (lock_rep pre); congruence. *)
+  (* Qed. *)
 
-  Lemma nci_lock_rep_prefix : forall pre ins,
-    non_cflow_instr pre ins = true -> 
-      lock_rep pre = Some rep \/ lock_rep pre = None.
-  Proof. intros.
-    destruct ins; simpl in H; bool_elim_tac;
-    match goal with
-      | [H: only_gs_seg_override pre = true |- _]
-        => right; apply only_gs_seg_override_lock_rep; assumption
-      | [H: either_prefix pre = true |- _]
-        => right; apply either_prefix_lock_rep; assumption
-      | [H: only_lock_or_rep pre = true |- _]
-        =>  apply only_lock_or_rep_lock_rep in H; assumption
-      | [H: false = true |- _] => congruence
-      | _ => idtac
-    end.
-    destruct op2; try congruence.
-    bool_elim_tac. 
-    right; apply only_gs_seg_override_lock_rep; assumption.
-  Qed.
+  (* Lemma either_prefix_lock_rep : forall pre, *)
+  (*   either_prefix pre = true -> lock_rep pre = None. *)
+  (* Proof. unfold either_prefix; intros. *)
+  (*   bool_elim_tac. apply only_op_override_lock_rep; assumption. *)
+  (*     apply only_gs_seg_override_lock_rep; assumption. *)
+  (* Qed. *)
 
-   Lemma same_pc_same_mem_fetch_equal : forall n loc len ps s s' s0,
+  (* Lemma only_lock_or_rep_lock_rep : forall pre, *)
+  (*   only_lock_or_rep pre = true -> lock_rep pre = Some rep \/ lock_rep pre = None. *)
+  (* Proof. unfold only_lock_or_rep. intros. *)
+  (*   destruct (lock_rep pre). *)
+  (*   destruct l; try congruence. *)
+  (*   do 3 (destruct_head in H; try congruence). prover. *)
+  (*   do 3 (destruct_head in H; try congruence). prover. *)
+  (* Qed. *)
+
+  (* todo: no long true; remove *)
+  (* Lemma nci_lock_rep_prefix : forall pre ins, *)
+  (*   non_cflow_instr pre ins = true -> *)
+  (*     lock_rep pre = Some rep \/ lock_rep pre = None. *)
+  (* Proof. intros. *)
+  (*   destruct ins; simpl in H; bool_elim_tac. *)
+  (*   match goal with *)
+  (*     | [H: only_gs_seg_override pre = true |- _] *)
+  (*       => right; apply only_gs_seg_override_lock_rep; assumption *)
+  (*     | [H: either_prefix pre = true |- _] *)
+  (*       => right; apply either_prefix_lock_rep; assumption *)
+  (*     | [H: only_lock_or_rep pre = true |- _] *)
+  (*       =>  apply only_lock_or_rep_lock_rep in H; assumption *)
+  (*     | [H: false = true |- _] => congruence *)
+  (*     | _ => idtac *)
+  (*   end. *)
+  (*   destruct op2; try congruence. *)
+  (*   bool_elim_tac. *)
+  (*   right; apply only_gs_seg_override_lock_rep; assumption. *)
+  (* Qed. *)
+
+  Lemma same_pc_same_mem_fetch_equal : forall n loc len ps s s' s0,
        rtl_memory s = rtl_memory s0
-    -> seg_regs_starts (rtl_mach_state s) = seg_regs_starts (rtl_mach_state s0)
-    -> seg_regs_limits (rtl_mach_state s) = seg_regs_limits (rtl_mach_state s0)
+    -> seg_regs_starts (get_core_state s) = seg_regs_starts (get_core_state s0)
+    -> seg_regs_limits (get_core_state s) = seg_regs_limits (get_core_state s0)
     -> parse_instr_aux n loc len ps s = Fail _ s' 
     -> (exists s0', parse_instr_aux n loc len ps s0 = Fail _ s0').
-   Proof.
-     induction n; intros.
-     simpl. auto. exists s0. auto. unfold parse_instr_aux in *.
-     Opaque parse_byte. simpl in *.
-     rewrite <-H. destruct (parse_byte ps (AddrMap.get loc0 (rtl_memory s))).
-     destruct l. eapply IHn; eauto.
+  Proof.
+    induction n; intros.
+    simpl. auto. exists s0. auto. unfold parse_instr_aux in *.
+    Opaque parse_byte. simpl in *.
+    rewrite <-H. destruct (parse_byte ps (AddrMap.get loc0 (rtl_memory s))).
+    destruct l. eapply IHn; eauto.
     discriminate H2.
-   Qed.
-
-  Lemma parse_instr_aux_flush_same : forall n loc len ps s s' s1 v v2,
-   flush_env s = (Okay_ans v, s1)
-   -> parse_instr_aux n loc len ps s = (Okay_ans v2, s')
-   -> (exists s1', parse_instr_aux n loc len ps s1 = (Okay_ans v2, s1')).
-  Proof. induction n; intros. simpl in *. discriminate H0.
-    simpl in *. inversion H. subst. simpl.
-    destruct (parse_byte ps (AddrMap.get loc0 (rtl_memory s))).
-    destruct l. eapply IHn. apply H. eauto.
-    eexists. inv H0. auto.
   Qed.
 
-  Lemma fetch_instr_flush_nofail : forall s s' s1 s1' v pre ins len,
-     fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s')
-    -> flush_env s = (Okay_ans v, s1)
-    -> fetch_instruction (PC s1) s1 <> (Fail_ans (prefix * instr * positive), s1').
-  Proof. 
-    intros. intro Hc.
-    unfold fetch_instruction in *.
-    rtl_fail_break. unfold parse_instr in *.
-    rtl_fail_break. discriminate Hc.
-    rtl_okay_break. 
-    rtl_okay_break. 
-    assert (exists s0', parse_instr_aux 15 (add v2 (PC s)) 1 initial_parser_state s3 = Fail _ s0').
-    eapply same_pc_same_mem_fetch_equal with (s := s0) (s' := s1').
-         inv H0. inv H1. inv H3. auto.
-         inv H0. inv H1. inv H3. auto.
-         inv H0. inv H1. inv H3. auto.
-    assert (v0 = v2). 
-         inv H0. inv H1. inv H3. auto. rewrite <-H4.
-    assert (PC s = PC s1).
-         inv H0. inv H1. inv H3. auto. rewrite H5. auto.
-    destruct H4. rewrite H4 in H2. discriminate H2.
-    destruct v0. rtl_fail_break. unfold in_seg_bounds_rng in *.
-   rtl_fail_break. discriminate Hc. discriminate Hc. destruct v0; discriminate. 
-  Qed.
+  (* todo: remove *)
+  (* Lemma parse_instr_aux_flush_same : forall n loc len ps s s' s1 v v2, *)
+  (*  flush_env s = (Okay_ans v, s1) *)
+  (*  -> parse_instr_aux n loc len ps s = (Okay_ans v2, s') *)
+  (*  -> (exists s1', parse_instr_aux n loc len ps s1 = (Okay_ans v2, s1')). *)
+  (* Proof. induction n; intros. simpl in *. discriminate H0. *)
+  (*   simpl in *. inversion H. subst. simpl. *)
+  (*   destruct (parse_byte ps (AddrMap.get loc0 (rtl_memory s))). *)
+  (*   destruct l. eapply IHn. apply H. eauto. *)
+  (*   eexists. inv H0. auto. *)
+  (* Qed. *)
+
+  (* todo: remove *)
+  (* Lemma fetch_instr_flush_nofail : forall s s' s1 s1' v pre ins len, *)
+  (*    fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s') *)
+  (*   -> flush_env s = (Okay_ans v, s1) *)
+  (*   -> fetch_instruction (PC s1) s1 <> (Fail_ans (prefix * instr * positive), s1'). *)
+  (* Proof.  *)
+  (*   intros. intro Hc. *)
+  (*   unfold fetch_instruction in *. *)
+  (*   rtl_fail_break. unfold parse_instr in *. *)
+  (*   rtl_fail_break. discriminate Hc. *)
+  (*   rtl_okay_break.  *)
+  (*   rtl_okay_break.  *)
+  (*   assert (exists s0', parse_instr_aux 15 (add v2 (PC s)) 1 initial_parser_state s3 = Fail _ s0'). *)
+  (*   eapply same_pc_same_mem_fetch_equal with (s := s0) (s' := s1'). *)
+  (*        inv H0. inv H1. inv H3. auto. *)
+  (*        inv H0. inv H1. inv H3. auto. *)
+  (*        inv H0. inv H1. inv H3. auto. *)
+  (*   assert (v0 = v2).  *)
+  (*        inv H0. inv H1. inv H3. auto. rewrite <-H4. *)
+  (*   assert (PC s = PC s1). *)
+  (*        inv H0. inv H1. inv H3. auto. rewrite H5. auto. *)
+  (*   destruct H4. rewrite H4 in H2. discriminate H2. *)
+  (*   destruct v0. rtl_fail_break. unfold in_seg_bounds_rng in *. *)
+  (*  rtl_fail_break. discriminate Hc. discriminate Hc. destruct v0; discriminate.  *)
+  (* Qed. *)
 
   Lemma nci_nextStepNoFail : forall s pre ins len,
     fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s)
@@ -1976,25 +1999,22 @@ Section VERIFIER_CORR.
     rtl_fail_break. discriminate Hc.
     do 2 rtl_comp_elim.
     destruct_head in Hc; [idtac | discriminate].
-    rtl_fail_break. 
-    eapply fetch_instr_flush_nofail. apply H. apply H2. apply Hc.
-      use_lemma fetch_instr_after_flush_env by eassumption.
-      assert (v0 = (pre, ins, len)) by prover.
-      assert (s0 = s1) by prover.
-      subst v0 s1.
-      assert (no_fail (RTL_step_list (instr_to_rtl pre ins)))
-        by (eauto using nci_no_fail).
-      use_lemma nci_lock_rep_prefix by eassumption.
-      destruct H6.
-      Case "Some rep".
-        rewrite H6 in Hc.
-        destruct ins; simpl in H1; bool_elim_tac;
+    rtl_fail_break; [congruence | idtac].
+    assert (v = (pre, ins, len)) by congruence.
+    assert (s0 = s) by crush.
+    subst v s.
+    assert (no_fail (RTL_step_list (instr_to_rtl pre ins)))
+      by (eauto using nci_no_fail).
+    remember_destruct_head in Hc as lr; [destruct l | idtac]; 
+      try (unfold Trap in *; congruence).
+    Case "Some rep".
+        destruct ins; simpl in H1; bool_elim_tac; unfold_prefix_filters_tac;
         match goal with
-          | [H: only_gs_seg_override pre = true |- _]
-            => apply only_gs_seg_override_lock_rep in H; congruence
-          | [H: either_prefix pre = true |- _]
-            => apply either_prefix_lock_rep in H; congruence
           | [H: false = true |- _] => congruence
+          | [H: filter_prefix ft_no_lock_or_rep _ _ _ _ = true |- _]
+            => apply filter_prefix_no_lock_or_rep in H; congruence
+          | [H: filter_prefix ft_only_lock _ _ _ _ = true |- _]
+            => apply filter_prefix_only_lock in H; destruct H; congruence
           | _ => (* CMPS/STOS/MOVS*)
             unfold run_rep, check_rep_instr in *;
             contradict Hc;
@@ -2009,9 +2029,8 @@ Section VERIFIER_CORR.
         SCase "LEA".
           destruct op2; try congruence.
           bool_elim_tac.
-          apply only_gs_seg_override_lock_rep in H1; congruence.
-      Case "none".
-        rewrite H6 in Hc.
+          apply filter_prefix_no_lock_or_rep in H1; congruence.
+      Case "None".
         destruct ins; simpl in H1; bool_elim_tac;
         match goal with
           | _ =>
@@ -2036,23 +2055,21 @@ Section VERIFIER_CORR.
   Proof. intros.
     safestate_unfold_tac.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, ins, len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
+    assert (v = (pre, ins, len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
     assert (H20:same_pc (RTL_step_list (instr_to_rtl pre ins))).
       eapply nci_same_pc; eassumption.
     destruct (lock_rep pre). destruct l.
     Case "lock". discriminate.
     Case "rep".
-      assert (H22: PC s = PC s0). unfold flush_env in *. prover.
-      rewrite H22. 
       eapply run_rep_PC. eassumption.
     Case "repn". discriminate.
     Case "none". left.
       rtl_okay_break.
-      assert (PC s1 = PC s'). eapply H20; eassumption.
-      rewrite <- H12. unfold flush_env, set_loc in *. prover.
+      assert (PC s = PC s'). eapply H20; eassumption.
+      unfold set_loc in *;
+      crush.
   Qed.
 
   Lemma pc_at_end_is_safe : forall s code pc startAddrs,
@@ -2078,7 +2095,7 @@ Section VERIFIER_CORR.
       unfold checkProgram, FastVerifier.checkProgram in H0.
       remember_destruct_head in H0 as pb; try discriminate H0.
       destruct p. inversion H0; subst.
-      apply process_buffer_start_in in Hpb. prover. assumption.
+      apply process_buffer_start_in in Hpb. crush. assumption.
   Qed.
 
   Lemma nci_safeInSomeK : forall s pre ins len inv startAddrs,
@@ -2092,7 +2109,7 @@ Section VERIFIER_CORR.
     dupHyp H1. safestate_unfold_tac.
     exists 1%nat.
     apply safeInK_intro_one. 
-      unfold safeState in H1. prover.
+      unfold safeState in H1. crush.
       eapply nci_nextStepNoFail; try eassumption.
       intros. unfold safeState. 
         assert (Int32Set.In (PC s) (snd (checkProgram code))).
@@ -2102,9 +2119,9 @@ Section VERIFIER_CORR.
         assert (Same_Seg_Regs_Rel.brel s s').
           eapply nci_step_same_seg_regs; eassumption.
         assert (CLimit s = CLimit s'). 
-          unfold Same_Seg_Regs_Rel.brel in *. prover.
+          unfold Same_Seg_Regs_Rel.brel in *. crush.
         assert (unsigned (CLimit s') + 1 = Z_of_nat (length code)).
-          unfold codeLoaded in H8. prover.
+          unfold codeLoaded in H8. crush.
         assert (Int32Set.In (PC s') (snd (checkProgram code)) \/
                 ~ inBoundCodeAddr (PC s') s').
           use_lemma nci_step_defaultPC by eassumption.
@@ -2113,14 +2130,14 @@ Section VERIFIER_CORR.
             unfold goodDefaultPC in *.
             destruct H3.
               SCase "Int32Set.In (PC s +32_p len) startAddrs".
-                left. prover.
+                left. crush.
               SCase "PC s +32_p len = length code".
                 unfold inBoundCodeAddr. rewrite <- H13.
                 use_lemma pc_at_end_is_safe by eassumption.
                 rewrite H15. simpl in H2. rewrite H2. simpl.
                 assumption.
           Case "PC s' = PC s".
-            left. prover.
+            left. crush.
         split. eapply nci_appropState; eassumption.
         split. trivial. trivial.
   Qed.
@@ -2146,15 +2163,12 @@ Section VERIFIER_CORR.
   Proof. intros.
     safestate_unfold_tac.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, ins , len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
+    assert (v = (pre, ins , len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
     assert (same_seg_regs (RTL_step_list (instr_to_rtl pre ins))).
       auto using dci_same_seg_regs.
-    apply Same_Seg_Regs_Rel.brel_trans with (s2:=s0).
-      same_seg_regs_rel_tac.
-      same_seg_regs_rel_tac.
+    same_seg_regs_rel_tac.
   Qed.
 
   Lemma dci_step_aoss : forall s s' inv pre ins len,
@@ -2165,24 +2179,17 @@ Section VERIFIER_CORR.
       -> agree_outside_addr_region (segAddrs SS s) s s'.
   Proof. intros. safestate_unfold_tac.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, ins, len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
+    assert (v = (pre, ins, len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
     remember (RTL_step_list (instr_to_rtl pre ins)) as comp.
     assert (H20: agree_outside_seg SS comp).
       subst comp.
       eauto using dci_aoss.
-    assert (H30: segAddrs SS s = segAddrs SS s0).
-      unfold segAddrs. unfold flush_env in *. prover.
     destruct (lock_rep pre).
       destruct l.
-        discriminate. 
-        (apply agree_outside_addr_region_trans with (s2:=s0); 
-          [aoar_tac | rewrite H30; aoar_tac]).
-        discriminate.
-      apply agree_outside_addr_region_trans with (s2:=s0); 
-        [aoar_tac | rewrite H30; aoar_tac].
+        discriminate. aoar_tac.
+        discriminate. aoar_tac.
   Qed.
 
   Lemma dci_checkSegments_inv : forall s s' inv pre ins len,
@@ -2226,15 +2233,15 @@ Section VERIFIER_CORR.
     use_lemma dci_code_inv by eassumption.
     use_lemma dci_checkSegments_inv by eassumption.
     unfold Same_Seg_Regs_Rel.brel in *.
-    prover.
-  Qed. (* ??? why is this slow *)
+    crush.
+  Qed. 
 
-  (* todo: put all these kinds of lemmas together *)
-  Lemma no_prefix_no_lock_rep : forall pre,
-    no_prefix pre = true -> lock_rep pre = None.
-  Proof. unfold no_prefix. intros.
-    repeat (destruct_head in H; try congruence).
-  Qed.
+  (* todo: remove *)
+  (* Lemma no_prefix_no_lock_rep : forall pre, *)
+  (*   no_prefix pre = true -> lock_rep pre = None. *)
+  (* Proof. unfold no_prefix. intros. *)
+  (*   repeat (destruct_head in H; try congruence). *)
+  (* Qed. *)
 
   Lemma dci_lock_rep_prefix : forall pre ins,
     dir_cflow_instr pre ins = true -> lock_rep pre = None.
@@ -2244,14 +2251,17 @@ Section VERIFIER_CORR.
       do 2 (destruct_head in H; try congruence).
       destruct op1; try congruence.
       destruct_head in H; try congruence.
-      apply no_prefix_no_lock_rep in H. assumption.
+      unfold no_prefix in *.
+      apply filter_prefix_no_lock_or_rep in H. assumption.
     Case "Jcc".
-      apply no_prefix_no_lock_rep in H. assumption.
+      unfold no_prefix in *.
+      apply filter_prefix_no_lock_or_rep in H. assumption.
     Case "Jmp".
       do 2 (destruct_head in H; try congruence).
       destruct op1; try congruence.
       destruct_head in H; try congruence.
-      apply no_prefix_no_lock_rep in H. assumption.
+      unfold no_prefix in *.
+      apply filter_prefix_no_lock_or_rep in H. assumption.
   Qed.
 
   Lemma dci_nextStepNoFail : forall s pre ins len,
@@ -2264,22 +2274,20 @@ Section VERIFIER_CORR.
     rtl_fail_break. discriminate Hc.
     do 2 rtl_comp_elim.
     destruct_head in Hc; [idtac | discriminate].
-    rtl_fail_break.
-    eapply fetch_instr_flush_nofail. apply H. apply H2. apply Hc.
-      use_lemma fetch_instr_after_flush_env by eassumption.
-      assert (v0 = (pre, ins, len)) by prover.
-      assert (s0 = s1) by prover.
-      subst v0 s1.
-      assert (no_fail (RTL_step_list (instr_to_rtl pre ins)))
+    rtl_fail_break; [congruence | idtac].
+    assert (v = (pre, ins, len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
+    assert (no_fail (RTL_step_list (instr_to_rtl pre ins)))
         by (eauto using dci_no_fail).
-      contradict Hc.
-      (match goal with
-         | [|-?c _ <> (Fail_ans _, _)] => 
-           cut (no_fail c)
-         end).
-      intro H10. apply H10.
-      use_lemma dci_lock_rep_prefix by eassumption.
-      rewrite H6. no_fail_tac.
+    contradict Hc.
+    (match goal with
+       | [|-?c _ <> (Fail_ans _, _)] => 
+         cut (no_fail c)
+     end).
+    intro H10. apply H10.
+    use_lemma dci_lock_rep_prefix by eassumption.
+    rewrite H4. no_fail_tac.
   Qed.
 
   Lemma conv_JMP_relative_imm_PC : forall pre disp cs r cs' s v' s',
@@ -2288,18 +2296,19 @@ Section VERIFIER_CORR.
       -> RTL_step_list (List.rev (c_rev_i cs')) s = (Okay_ans v', s')
       -> (PC s') = (PC s) +32 disp.
   Proof. intros.
-    unfold conv_JMP in H. 
-    simpl in H. simpl_rtl.
+    unfold conv_JMP in H.
+    simpl in H. 
     inv H. simpl in H1.
     autorewrite with step_list_db in H1.
     repeat rtl_okay_elim. removeUnit.
-    assert (H10:PC s = PC s2). eapply H0; eassumption.
+
+    assert (H10:PC s = PC s0). eapply H0; eassumption.
     rewrite H10.
     compute [interp_rtl] in *.
-    repeat rtl_okay_break. 
-    unfold get_ps, set_ps, get_loc, set_loc in *.
-    repeat (rtl_invert; simpl in *; autorewrite with rtl_rewrite_db in *).
-    trivial.
+    repeat rtl_okay_elim.
+    unfold get_loc, set_loc in *.
+    rtl_okay_elim. 
+    crush.
   Qed.
 
   Lemma conv_JMP_relative_imm_step_PC : forall s s' pre disp len,
@@ -2311,33 +2320,38 @@ Section VERIFIER_CORR.
       -> (PC s') = (PC s) +32_p len +32 disp.
   Proof. intros.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, (JMP true false (Imm_op disp) None), len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
-    unfold no_prefix in H0.
-    destruct (lock_rep pre); try discriminate H0.
+    assert (v = (pre, (JMP true false (Imm_op disp) None), len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
+    unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
+    bool_elim_tac.
+    destruct (lock_rep pre); try congruence.
     rtl_okay_break.
     unfold instr_to_rtl, runConv in H1.
     remember_rev 
        (Bind unit (check_prefix pre)
               (fun _ : unit => conv_JMP pre true false (Imm_op disp) None)
-              {| c_rev_i := nil; c_next := 0 |}) as cv.
+              {| c_rev_i := nil |}) as cv.
     destruct cv.
     unfold check_prefix in Hcv.
-    destruct (seg_override pre); try discriminate H0.
-    destruct (op_override pre); try discriminate H0.
-    destruct (addr_override pre); try discriminate H0.
-    conv_break.
-    assert (H10:PC s' = PC s1 +32 disp).
+    destruct (addr_override pre); try congruence.
+    conv_elim.
+    assert (H10:PC s' = PC s +32 disp).
       eapply conv_JMP_relative_imm_PC; try eassumption.
-      compute in H7. inv H7. simpl. 
-      unfold same_pc. prover.
-    rewrite H10.
-    assert (H12: PC s1 = PC s +32_p len).
-      unfold flush_env, set_loc in *. prover.
-    rewrite H12. trivial.
+      inv H8. crush.
+    unfold set_loc in *. rtl_okay_elim. 
+    (*todo: add a clause of set_loc (get_location?) in rtl_okay_elim *)
+    crush.
   Qed.
+
+(* todo: move to X86lemmas.v *)
+Ltac conv_backward_same_pc :=
+  match goal with
+    [H: ?cv ?cs = (_, ?cs') |- 
+      same_pc (RTL_step_list (rev (c_rev_i ?cs')))]
+    => eapply conv_same_pc_e;
+       [eassumption | conv_same_pc_tac | idtac]
+  end.
 
   Opaque set_mem_n. (* without this, the QED would take forever *)
   Lemma conv_CALL_relative_imm_step_PC : forall s s' pre disp len,
@@ -2349,33 +2363,30 @@ Section VERIFIER_CORR.
       -> (PC s') = (PC s) +32_p len +32 disp.
   Proof. intros.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, (CALL true false (Imm_op disp) None), len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
-    unfold no_prefix in H0.
-    destruct (lock_rep pre); try discriminate H0.
+    assert (v = (pre, (CALL true false (Imm_op disp) None), len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
+    unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
+    bool_elim_tac.
+    destruct (lock_rep pre); try congruence.
     rtl_okay_break.
     unfold instr_to_rtl, runConv in H1.
     remember_rev 
        (Bind unit (check_prefix pre)
               (fun _ : unit => conv_CALL pre true false (Imm_op disp) None)
-              {| c_rev_i := nil; c_next := 0 |}) as cv.
+              {| c_rev_i := nil |}) as cv.
     destruct cv.
     unfold conv_CALL, check_prefix in Hcv.
-    destruct (seg_override pre); try discriminate H0.
-    destruct (op_override pre); try discriminate H0.
-    destruct (addr_override pre); try discriminate H0.
-    repeat conv_break.
-    assert (H20:PC s' = PC s1 +32 disp).
+    destruct (addr_override pre); try congruence.
+    repeat conv_elim.
+    assert (H20:PC s' = PC s +32 disp).
       eapply conv_JMP_relative_imm_PC; try eassumption.
       unfold set_mem32 in *.
       repeat conv_backward_same_pc.
-      simpl. unfold same_pc. 
-        intros. unfold Same_PC_Rel.brel. inv H14. trivial.
-    assert (H22:PC s1 = PC s +32_p len).
-      inv H6. inv H3. simpl. trivial.
-    rewrite H20. rewrite H22. trivial.
+      simpl. unfold same_pc. crush.
+    assert (H22:PC s = PC s0 +32_p len).
+      unfold set_loc in *. crush.
+    crush.
   Qed.
   Transparent set_mem_n.
 
@@ -2386,43 +2397,36 @@ Section VERIFIER_CORR.
       -> (PC s' = (PC s) \/ (PC s') = (PC s) +32 disp).
   Proof. intros.
     unfold conv_Jcc in H. 
-    repeat conv_break.
+    repeat conv_elim.
     inv H. simpl in H1.
     autorewrite with step_list_db in H1.
     repeat rtl_okay_break.
     inv H1.
-    assert (H10: PC s' = PC s0 \/ PC s' = (rtl_env s0 v2)).
+    assert (H10: PC s' = PC s0 \/ PC s' = (interp_rtl_exp v2 s0)).
       simpl in H6.
-      destruct_head in H6. right. unfold set_loc in H6. prover.
-        left. prover.
+      destruct_head in H6. right. unfold set_loc in H6. crush.
+        left. crush.
     assert (H12: same_pc (RTL_step_list (rev (c_rev_i cs3)))).
       unfold compute_cc, not in *.
       repeat conv_backward_same_pc. assumption.
     assert (H14: PC s = PC s0). eapply H12; eassumption.
     clear H12 H6.
     destruct H10. 
-      Case "fall through case". left. prover.
+      Case "fall through case". left. crush.
       Case "the branch is taken". right.
         inv H5. simpl in *.
         autorewrite with step_list_db in H.
         repeat rtl_okay_break.
-        inv H.
+        inv H2. inv H. 
         inv H4. simpl in *.
-        autorewrite with step_list_db in H5.
-        repeat rtl_okay_break. inv H5.
-        simpl in *.
+        inv H6. simpl in *.
         inv H3. simpl in *. removeUnit.
-        autorewrite with step_list_db in H.
-        repeat rtl_okay_break. inv H.
-        assert (H20: same_pc (RTL_step_list (rev (c_rev_i cs0)))).
+        assert (H20: same_pc (RTL_step_list (rev (c_rev_i cs3)))).
           unfold compute_cc, not in *.
           repeat conv_backward_same_pc. assumption.
-        assert (H22: PC s = PC s3). eapply H20; eassumption.
+        assert (H22: PC s = PC s0). eapply H20; eassumption.
         rewrite H1. rewrite H22.
-        simpl in H5.
-        unfold set_ps  in *. inv H4. simpl in *.
-        inv H5. simpl in *. inv H6. simpl in *.
-        autorewrite with rtl_rewrite_db. trivial.
+        crush.
   Qed.
         
   Lemma conv_Jcc_step_PC : forall s s' pre ct disp len,
@@ -2433,32 +2437,29 @@ Section VERIFIER_CORR.
       -> (PC s' = (PC s) +32_p len \/ (PC s') = (PC s) +32_p len +32 disp).
   Proof. intros.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, (Jcc ct disp), len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
-    unfold no_prefix in H0.
-    destruct (lock_rep pre); try discriminate H0.
+    assert (v = (pre, (Jcc ct disp), len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
+    unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
+    bool_elim_tac.
+    destruct (lock_rep pre); try congruence.
     rtl_okay_break.
     unfold instr_to_rtl, runConv in H1.
     remember_rev 
        (Bind unit (check_prefix pre)
               (fun _ : unit => conv_Jcc pre ct disp)
-              {| c_rev_i := nil; c_next := 0 |}) as cv.
+              {| c_rev_i := nil|}) as cv.
     destruct cv.
     unfold check_prefix in Hcv.
-    destruct (seg_override pre); try discriminate H0.
-    destruct (op_override pre); try discriminate H0.
-    destruct (addr_override pre); try discriminate H0.
-    repeat conv_break.
-    assert (H20:PC s' = PC s1 \/ PC s' = PC s1 +32 disp).
+    destruct (addr_override pre); try congruence.
+    repeat conv_elim.
+    assert (H20:PC s' = PC s \/ PC s' = PC s +32 disp).
       eapply conv_Jcc_PC; try eassumption.
       repeat conv_backward_same_pc.
-      simpl. unfold same_pc. 
-        intros. unfold Same_PC_Rel.brel. inv H8. trivial.
-    assert (H22:PC s1 = PC s +32_p len).
-      inv H6. inv H3. simpl. trivial.
-    prover.
+      simpl. unfold same_pc. crush.
+    assert (H22:PC s = PC s0 +32_p len).
+      inv H7. crush.
+    crush.
   Qed.
 
   (* any aligned address is a safe program counter *)
@@ -2467,11 +2468,11 @@ Section VERIFIER_CORR.
       -> Int32Set.In pc (snd (checkProgram (snd inv))) \/ ~ inBoundCodeAddr pc s.
   Proof. intros. safestate_unfold_tac.
     unfold checkProgram in *. simpl.
-    remember_rev (FastVerifier.checkProgram non_cflow_dfa dir_cflow_dfa nacljmp_dfa
+    remember_rev (FastVerifier.checkProgram non_cflow_dfa dir_cflow_dfa nacljmp_dfa initial_state
                   code) as cp.
     destruct cp as [b startAddrs].
     unfold FastVerifier.checkProgram in Hcp.
-    destruct_head in Hcp; [idtac | prover].
+    destruct_head in Hcp; [idtac | crush].
     destruct p. inversion Hcp. subst. 
     simpl in H1. bool_elim_tac.
     remember_rev (int32_lequ_bool pc (CLimit s)) as cmp.
@@ -2483,9 +2484,9 @@ Section VERIFIER_CORR.
       rewrite <- (repr_unsigned _ pc).
       eapply checkAligned_corr; try eassumption.
         unfold aligned, aligned_bool in H0.
-        rewrite ZOrderedType.Z_as_DT.eqb_eq in H0.
+        apply Zeq_is_eq_bool in H0.
         assumption.
-    Case "pc > (CLimit s)". right. prover.
+    Case "pc > (CLimit s)". right. crush.
   Qed.
 
   Lemma dci_step_safePC : forall s s' pre ins len inv,
@@ -2500,7 +2501,7 @@ Section VERIFIER_CORR.
   Proof. unfold inBoundCodeAddr. intros.
     use_lemma dci_step_same_seg_regs by eassumption.
     assert (CLimit s = CLimit s').
-       unfold Same_Seg_Regs_Rel.brel in *. prover.
+       unfold Same_Seg_Regs_Rel.brel in *. crush.
     rewrite <- H6.
     dupHyp H1. safestate_unfold_tac.
     destruct ins; try discriminate H0.
@@ -2512,24 +2513,24 @@ Section VERIFIER_CORR.
       use_lemma conv_CALL_relative_imm_step_PC by eassumption.
       unfold goodJmp, goodJmpTarget in H3.
       bool_elim_tac.
-        left. prover.
-        eapply aligned_addr_safePC. assumption. prover.
+        left. rewrite H13. apply Int32Set.mem_spec. crush.
+        eapply aligned_addr_safePC. assumption. crush.
    Case "Jcc".
       use_lemma conv_Jcc_step_PC by eassumption.
       unfold goodJmp, goodJmpTarget in H3.
       unfold goodDefaultPC in H2.
       destruct H13.
       SCase "PC s' = PC s +32_p len".
-        destruct H2. left. prover.
+        destruct H2. left. crush.
           remember_rev (checkProgram code) as cp.
           destruct cp as [t startAddrs].
           simpl in H8. subst t.
           use_lemma pc_at_end_is_safe by eassumption.
-          simpl. prover.
+          simpl. rewrite H13. rewrite Hcp. crush.
       SCase "PC s' = PC s +32_p len +32 disp".
       bool_elim_tac.
         left. rewrite H13. apply Int32Set.mem_spec. assumption.
-        eapply aligned_addr_safePC. assumption. prover.
+        eapply aligned_addr_safePC. assumption. crush.
     Case "JMP".
       destruct near; try discriminate H0.
       destruct absolute; try discriminate H0.
@@ -2538,8 +2539,8 @@ Section VERIFIER_CORR.
       use_lemma conv_JMP_relative_imm_step_PC by eassumption.
       unfold goodJmp, goodJmpTarget in H3.
       bool_elim_tac.
-        left. prover.
-        eapply aligned_addr_safePC. assumption. prover.
+        left. rewrite H13. apply Int32Set.mem_spec. assumption.
+        eapply aligned_addr_safePC. assumption. crush.
   Qed.        
 
   Lemma dci_safeInSomeK : forall s pre ins len inv startAddrs,
@@ -2554,13 +2555,13 @@ Section VERIFIER_CORR.
     dupHyp H1. safestate_unfold_tac.
     exists 1%nat.
     apply safeInK_intro_one. 
-      unfold safeState in H1. prover.
+      unfold safeState in H1. crush.
       eapply dci_nextStepNoFail; try eassumption.
       intros. unfold safeState. 
         split. eapply dci_appropState; eassumption.
         split. trivial. 
           change code with (snd ((sregs_st, sregs_lm, code))).
-          eapply dci_step_safePC; try eassumption. prover.
+          eapply dci_step_safePC; try eassumption. crush.
   Qed. 
 
 
@@ -2581,7 +2582,7 @@ Section VERIFIER_CORR.
         apply orb_true_intro. left.
         trivial.
     destruct op1; try (destruct w; discriminate).
-    simpl. prover.
+    simpl. crush.
   Qed.
 
   Lemma nacljmp_no_prefix : forall pre1 ins1 pre2 ins2,
@@ -3399,10 +3400,11 @@ Section VERIFIER_CORR.
     rewrite H6. rewrite H5. simpl. reflexivity.
   Qed.
 
-  (* Including the following hypotheses in the context will make
-     some tactics such as discriminate extremely slow since they will
-     try to evaluate terms such as opt_dir_cflow_dfa, which are
-     huge terms.*)
+  (** The correctness proof is parametrized over the hypotheses about the
+     sucess of building of the three DFAs and the parser. They can be
+     easily discharged by performing evaluation in Coq. However, it would
+     take a long time. We actually extract ML code to do the evaluation.
+  *)
   Hypothesis non_cflow_dfa_built: 
     abstract_build_dfa 256 nat2bools 400 (par2rec non_cflow_parser)
       = Some non_cflow_dfa.
@@ -3415,6 +3417,9 @@ Section VERIFIER_CORR.
     abstract_build_dfa 256 nat2bools 400 (par2rec (alts nacljmp_mask))
       = Some nacljmp_dfa.
 
+  (* Including the above hypotheses in the context will make some tactics
+     such as discriminate extremely slow since they will try to evaluate
+     terms such as opt_dir_cflow_dfa, which are huge terms.*)
   Ltac clean := 
     clear non_cflow_dfa_built; clear dir_cflow_dfa_built; clear nacljmp_dfa_built.
 

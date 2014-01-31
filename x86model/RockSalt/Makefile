@@ -1,5 +1,5 @@
-MODULES := VerifierDFA DFACorrectness NACLjmp FastVerifier Int32 X86Lemmas VerifierCorrectness
-# DFACorrectness FastVerifier X86Lemmas VerifierCorrectness
+MODULES := VerifierDFA FastVerifier Int32 X86Lemmas NACLjmp DFACorrectness VerifierCorrectness
+# DFACorrectness X86Lemmas VerifierCorrectness
 VS 	:= $(MODULES:%=%.v)
 
 .PHONY: coq clean

@@ -16,12 +16,13 @@ Require Import List.
 Require Import Bits.
 Require Import Decode.
 Require Import X86Syntax.
+Require Import Recognizer.
 Require Import Int32.
 Require Import VerifierDFA.
 
 Import X86_PARSER_ARG.
 Import X86_PARSER.
-Import X86_BASE_PARSER.
+(* Import X86_BASE_PARSER. *)
 
 Require Coq.MSets.MSetAVL.
 Require Coq.Structures.OrdersAlt.
@@ -49,9 +50,11 @@ Section BUILT_DFAS.
   (* In this section we will just assume the DFAs are all built;
      that is, non_cflow_dfa should be the result of "make_dfa non_cflow_parser" and
      similarly for dir_cflow_dfa and nacljmp_dfa *)
-  Variable non_cflow_dfa : DFA.
-  Variable dir_cflow_dfa : DFA.
-  Variable nacljmp_dfa : DFA.
+  Variable non_cflow_dfa : Recognizer.DFA.
+  Variable dir_cflow_dfa : Recognizer.DFA.
+  Variable nacljmp_dfa : Recognizer.DFA.
+
+  Variable initial_state : ParseState_t.
 
   (* G.T.: may be a good idea to parametrize the DFA w.r.t. the ChunkSize;
      Google's verifier allows it either to be 16 or 32.
@@ -59,18 +62,18 @@ Section BUILT_DFAS.
    Hypothesis logChunkSize_range : (0 < logChunkSize <= Word.wordsize 31)%nat.
   *)
 
-  Fixpoint parseloop (ps:X86_PARSER.instParserState) (bytes:list int8) : 
+  Fixpoint parseloop (ps: ParseState_t) (bytes:list int8) : 
     option ((prefix * instr) * list int8) := 
     match bytes with 
       | nil => None
-      | b::bs => match X86_PARSER.parse_byte ps b with 
+      | b::bs => match parse_byte ps b with 
                    | (ps',nil) => parseloop ps' bs
                    | (_, v::_) => Some (v,bs)
                  end
     end.
 
-  Definition extract_disp bytes := 
-    match (parseloop Decode.X86_PARSER.initial_parser_state bytes) with
+  Definition extract_disp (bytes: list int8) :=
+    match (parseloop initial_state bytes) with
       | Some ((_, JMP true false (Imm_op disp) None), _) => Some disp
       | Some ((_, Jcc ct disp), _) => Some disp
       | Some ((_, CALL true false (Imm_op disp) None), _) => Some disp
@@ -83,7 +86,6 @@ Section BUILT_DFAS.
      has one value of type "list token_id" and the other of type "list nat", 
      proof scripts such as rewrite or omega may fail since token_id needs to
      be unfolded. *)
-
   Fixpoint process_buffer_aux (loc: int32) (n: nat) (tokens:list token_id) 
     (curr_res: Int32Set.t * Int32Set.t) :=
     let (start_instrs, check_list) := curr_res in
@@ -93,9 +95,9 @@ Section BUILT_DFAS.
           match n with
             | O => None 
             | S m =>
-              match (dfa_recognize 256 non_cflow_dfa tokens,
-                dfa_recognize 256 dir_cflow_dfa tokens,
-                dfa_recognize 256 nacljmp_dfa tokens) with
+              match (dfa_recognize non_cflow_dfa tokens,
+                dfa_recognize dir_cflow_dfa tokens,
+                dfa_recognize nacljmp_dfa tokens) with
                 | (Some (len, remaining), None, None) => 
                   process_buffer_aux (loc +32_n len) m remaining
                   (Int32Set.add loc start_instrs, check_list)
@@ -184,7 +186,8 @@ Section BUILT_DFAS.
 
 End BUILT_DFAS.
 
-Definition ncflow := make_dfa non_cflow_parser.
+Definition ncflow := make_dfa non_cflow_grammar.
 Definition dbranch := make_dfa (alts dir_cflow).
 Definition ibranch := make_dfa (alts nacljmp_mask).
+
 (*Extraction "fastverif.ml" checkProgram ncflow dbranch ibranch.*)

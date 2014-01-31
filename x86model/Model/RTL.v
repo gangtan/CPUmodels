@@ -200,16 +200,6 @@ Module RTL(M : MACHINE_SIG).
              rtl_mach_state := rtl_mach_state rs ;
              rtl_memory := rtl_memory rs |}).
 
-  Definition get_loc s (l:location s) : RTL (int s) :=
-    fun rs => (Okay_ans (get_location l (rtl_mach_state rs)), rs).
-  Definition get_array l s (a:array l s) (i:int l) : RTL (int s) :=
-    fun rs => (Okay_ans (array_sub a i (rtl_mach_state rs)), rs).
-  Definition get_byte (addr:int size_addr) : RTL (int size8) := 
-    fun rs => (Okay_ans (AddrMap.get addr (rtl_memory rs)), rs).
-  Definition get_random (s:nat) : RTL (int s) := 
-    fun rs => let oracle := rtl_oracle rs in
-              (Okay_ans (oracle_bits oracle s (oracle_offset oracle)), rs).
-
   Definition interp_arith s (b:bit_vector_op)(v1 v2:int s) : int s := 
     match b with 
       | add_op => Word.add v1 v2
@@ -331,6 +321,15 @@ Module RTL(M : MACHINE_SIG).
 
   Definition interp_rtl_exp_comp s (e:rtl_exp s): RTL (int s) := 
     fun rs => (Okay_ans (interp_rtl_exp e rs), rs).
+
+  Definition get_loc s (l:location s) : RTL (int s) :=
+    interp_rtl_exp_comp (get_loc_rtl_exp l).
+  Definition get_array l s (a:array l s) (i:int l) : RTL (int s) :=
+    interp_rtl_exp_comp (get_array_rtl_exp a (imm_rtl_exp i)).
+  Definition get_byte (addr:int size_addr) : RTL (int size8) := 
+    interp_rtl_exp_comp (get_byte_rtl_exp (imm_rtl_exp addr)).
+  Definition get_random (s:nat) : RTL (int s) := 
+    interp_rtl_exp_comp (get_random_rtl_exp s). 
 
   Fixpoint interp_rtl (instr:rtl_instr) : RTL unit := 
     match instr with 

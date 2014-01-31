@@ -4101,11 +4101,8 @@ Fixpoint fetch_n (n:nat) (loc:int32) (r:rtl_state) : list int8 :=
     needed, so we don't have to worry about running out side a segment just
     to support parsing.
 *)
-Definition ParseState_t := 
-  instParserState (Pair_t X86_PARSER.prefix_t X86_PARSER.instruction_t).
-
 Fixpoint parse_instr_aux
-  (n:nat) (loc:int32) (len:positive) (ps:ParseState_t) : 
+  (n:nat) (loc:int32) (len:positive) (ps:X86_PARSER.ParseState_t) : 
   RTL ((prefix * instr) * positive) := 
   match n with 
     | 0%nat => Fail _ 
@@ -4117,10 +4114,7 @@ Fixpoint parse_instr_aux
              end
   end.
 
-Definition initial_parser_state : option ParseState_t := 
-  X86_PARSER.opt_initial_decoder_state 255.
-
-Definition parse_instr' (ps:option ParseState_t) 
+Definition parse_instr' (ps:option X86_PARSER.ParseState_t) 
            (pc:int32) : RTL ((prefix * instr) * positive) :=
   seg_start <- get_loc (seg_reg_start_loc CS);
   (* add the PC to it *)
@@ -4130,7 +4124,8 @@ Definition parse_instr' (ps:option ParseState_t)
       | Some ps => parse_instr_aux 15 real_pc 1 ps
   end.
 
-Definition parse_instr := parse_instr' initial_parser_state.
+Definition parse_instr := 
+   parse_instr' (X86_PARSER.opt_initial_decoder_state 255).
 
 (** Fetch an instruction at the location given by the program counter.  Return
     the abstract syntax for the instruction, along with a count in bytes for 
@@ -4192,7 +4187,7 @@ Definition step : RTL unit :=
           run_rep pre instr default_new_pc
         | None => set_loc pc_loc default_new_pc;; 
                   RTL_step_list (X86_Compile.instr_to_rtl pre instr)
-        | _ => Fail _ 
+        | _ => Trap _ 
       end
   else Trap _.
 
