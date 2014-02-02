@@ -4124,8 +4124,9 @@ Definition parse_instr' (ps:option X86_PARSER.ParseState_t)
       | Some ps => parse_instr_aux 15 real_pc 1 ps
   end.
 
-Definition parse_instr := 
-   parse_instr' (X86_PARSER.opt_initial_decoder_state 255).
+Import X86_PARSER.ABSTRACT_OPT_INI_DECODER_STATE.
+
+Definition parse_instr := parse_instr' abs_opt_ini_decoder_state.
 
 (** Fetch an instruction at the location given by the program counter.  Return
     the abstract syntax for the instruction, along with a count in bytes for 

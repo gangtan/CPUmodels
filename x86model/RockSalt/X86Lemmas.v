@@ -228,7 +228,7 @@ Ltac rtl_comp_elim_L1 :=
     | [H: interp_rtl_exp_comp _ _ = _ |- _] => inv H
     | [H: interp_rtl ?I _ = _ |- _] => 
       match I with
-        | set_loc_rtl _ _ _ => compute [interp_rtl] in H
+        | set_loc_rtl _ _ => compute [interp_rtl] in H
         | set_array_rtl _ _ _ _ _ => compute [interp_rtl] in H
         | set_byte_rtl _ _ => compute [interp_rtl] in H
         | advance_oracle_rtl => compute [interp_rtl] in H
@@ -236,18 +236,17 @@ Ltac rtl_comp_elim_L1 :=
         | error_rtl => compute [interp_rtl] in H
         | trap_rtl => compute [interp_rtl] in H
       end
-    | [H: Bind _ (interp_rtl_exp_comp _) _ _ = _ |- _] =>
-      unfold_rtl_monad H; compute [interp_rtl_exp_comp interp_rtl_exp] in H
+    | [H: Bind _ (interp_rtl_exp_comp ?E) _ _ = _ |- _] =>
+      match E with
+        | get_loc_rtl_exp _ =>
+          unfold_rtl_monad H; compute [interp_rtl_exp_comp interp_rtl_exp] in H
+      end
     | [H: Bind _ (in_seg_bounds _ _) _ _ = _ |- _] =>
       unfold_rtl_monad H; rewrite in_seg_bounds_equation in H
     | [H: Bind _ (in_seg_bounds_rng _ _ _) _ _ = _ |- _] =>
       unfold_rtl_monad H; rewrite in_seg_bounds_rng_equation in H
     | [H: Bind _ (Return _) _ _ = _ |- _] =>
       unfold_rtl_monad H; compute [Return Bind RTL_monad] in H
-(* *)
-(*     | [H: Bind _ (fetch_n_rtl ?n ?pc) _ ?s = _ |- _] => *)
-(*       let name := fresh "bytes" in *)
-(*         rtl_comp_elim_exist H (fetch_n_exists n pc s) name *)
   end.
 
 (*
@@ -266,7 +265,7 @@ Ltac mach_comp_elim_L2 :=
    end.
 *)
 
-Ltac rtl_comp_elim :=  rtl_comp_elim_L1.
+Ltac rtl_comp_elim := rtl_comp_elim_L1.
 
 Ltac rtl_invert := 
   let tac1 H := 
@@ -1503,7 +1502,8 @@ Proof. intros.
   Case "test succeeds".
     repeat rtl_okay_elim.
     unfold segAddrs, Ensembles.In, addrRegion.
-    exists (interp_rtl_exp addr s0).
+
+    exists (interp_rtl_exp addr s2).
     split. trivial.
       apply int_eq_false_iff2 in Hchk.
       compute [interp_test] in Hchk.
@@ -1537,7 +1537,7 @@ Proof. unfold smem, conv_agree_outside_seg. intros.
     inv H3. simpl. crush.
   assert (agree_outside_addr_region (segAddrs seg s) s0 s1).
     unfold agree_outside_addr_region; intros.
-    unfold set_byte in H3. crush.
+    unfold set_byte in *. crush.
     rewrite AddrMap.gso; [trivial | contradict H12; subst; trivial].
   crush.
     apply agree_outside_addr_region_trans with (s2:=s0); crush.
@@ -2090,12 +2090,12 @@ Proof. intros. prove_instr. Qed.
 Lemma nci_same_seg_regs: forall ins pre,
   non_cflow_instr pre ins = true
     -> same_seg_regs (RTL_step_list (instr_to_rtl pre ins)).
-Admitted.
-(* Proof. intros. *)
-(*   destruct ins; *)
-(*   unfold instr_to_rtl, check_prefix in *; *)
-(*     (discriminate H || (prove_instr; fail) || idtac). *)
-(* Qed. *)
+(* Admitted. *)
+Proof. intros.
+  destruct ins;
+  unfold instr_to_rtl, check_prefix in *;
+    (discriminate H || (prove_instr; fail) || idtac).
+Qed.
 
 Hint Resolve nci_same_seg_regs : same_seg_regs_db.
 
@@ -2172,49 +2172,49 @@ Lemma nci_aos :forall ins pre,
         agree_outside_seg SS (RTL_step_list (instr_to_rtl pre ins)) \/
         agree_outside_seg GS (RTL_step_list (instr_to_rtl pre ins)) \/
         agree_outside_seg ES (RTL_step_list (instr_to_rtl pre ins))).
-Admitted.
-(* Proof. intros. *)
-(*   destruct ins; *)
-(*   unfold instr_to_rtl, check_prefix in *; simpl in H; bool_elim_tac; *)
-(*     try (discriminate H || (left; prove_instr; fail) || (aos_tac; fail)). *)
+(* Admitted. *)
+Proof. intros.
+  destruct ins;
+  unfold instr_to_rtl, check_prefix in *; simpl in H; bool_elim_tac;
+    try (discriminate H || (left; prove_instr; fail) || (aos_tac; fail)).
 
-(*   (* IMUL *) *)
-(*   destruct opopt as [o|]. aos_tac. *)
-(*   unfold only_seg_or_op in H. *)
-(*   eapply filter_prefix_only_seg_get_segment_op *)
-(*   with (seg:=DS) (pre:=pre) (op:=op1) in H. *)
-(*   aos_helper_tac. *)
+  (* IMUL *)
+  destruct opopt as [o|]. aos_tac.
+  unfold only_seg_or_op in H.
+  eapply filter_prefix_only_seg_get_segment_op
+  with (seg:=DS) (pre:=pre) (op:=op1) in H.
+  aos_helper_tac.
 
-(*   (* LEA *) *)
-(*   destruct op2; try discriminate.  *)
-(*   bool_elim_tac. aos_tac. *)
+  (* LEA *)
+  destruct op2; try discriminate.
+  bool_elim_tac. aos_tac.
 
-(*   (* MOVS *) *)
-(*   right; right; right; prove_instr. *)
+  (* MOVS *)
+  right; right; right; prove_instr.
 
-(*   (* POP *) *)
-(*   right; left; prove_instr. *)
+  (* POP *)
+  right; left; prove_instr.
 
-(*   (* PUSH *) *)
-(*   right; left; prove_instr. *)
+  (* PUSH *)
+  right; left; prove_instr.
 
-(*   (* PUSHA *) *)
-(*   right; left; prove_instr. *)
-(*   (* STOS *) *)
-(*   right; right; right; prove_instr. *)
-(* Qed. *)
+  (* PUSHA *)
+  right; left; prove_instr.
+  (* STOS *)
+  right; right; right; prove_instr.
+Qed.
 
 (** ** Showing that non_cflow_instr does not modify the PC *)
 
 Lemma nci_same_pc: forall ins pre,
   non_cflow_instr pre ins = true
     -> same_pc (RTL_step_list (instr_to_rtl pre ins)).
-Admitted.
-(* Proof. intros. *)
-(*   destruct ins; *)
-(*   unfold instr_to_rtl, check_prefix in *; *)
-(*     (discriminate H || prove_instr). *)
-(* Qed. *)
+(* Admitted. *)
+Proof. intros.
+  destruct ins;
+  unfold instr_to_rtl, check_prefix in *;
+    (discriminate H || prove_instr).
+Qed.
 
 (** ** Showing that dir_cflow_instr does not modify segment registers *)
 
@@ -2259,17 +2259,17 @@ Hint Extern 1 (conv_no_fail (check_prefix ?Pre)) =>
 Lemma nci_no_fail : forall ins pre,
   non_cflow_instr pre ins = true
     -> no_fail (RTL_step_list (instr_to_rtl pre ins)).
-Admitted.
-(* Proof. intros. *)
-(*   destruct ins; *)
-(*   simpl in H; bool_elim_tac; *)
-(*   (discriminate H || (unfold instr_to_rtl in *; prove_instr; fail) || idtac). *)
+(* Admitted. *)
+Proof. intros.
+  destruct ins;
+  simpl in H; bool_elim_tac;
+  (discriminate H || (unfold instr_to_rtl in *; prove_instr; fail) || idtac).
 
-(*   (* LEA *) *)
-(*   unfold instr_to_rtl in *; *)
-(*   destruct op2; try discriminate. *)
-(*   bool_elim_tac. prove_instr. *)
-(* Qed. *)
+  (* LEA *)
+  unfold instr_to_rtl in *;
+  destruct op2; try discriminate.
+  bool_elim_tac. prove_instr.
+Qed.
 
 Lemma dci_CALL_pre : forall pre near absolute op1 sel,
   dir_cflow_instr pre (CALL near absolute op1 sel) = true

@@ -41,10 +41,6 @@ Fixpoint n_of_bits (n: nat) (f: Z -> bool) {struct n}: nat :=
   | S m => n_shift_add (f 0) (n_of_bits m (fun i => f (i + 1)))
   end.
 
-(* Maybe tokens as nats isn't best... *)
-Definition byte2token (b: int8) : token_id := Zabs_nat (Word.unsigned b).
-Definition token2byte (t: token_id) : int8 := Word.repr (Z_of_nat t).
-
 Section BUILT_DFAS.
 
   (* In this section we will just assume the DFAs are all built;

@@ -27,7 +27,7 @@ Require Import Int32.
 Require Import VerifierDFA.
 Require Import FastVerifier.
 
-(* todo: add them back *)
+(* todo: add them back when they are up-to-date*)
 (* Require Import DFACorrectness. *)
 (* Require Import NACLjmp. *)
 
@@ -46,6 +46,113 @@ Require Import Omega.
 Definition emptyPrefix := mkPrefix None None false false.
 
 Module Int32SetFacts := Coq.MSets.MSetFacts.Facts FastVerifier.Int32Set.
+
+(* The following definitions and theorems are from DFACorrectness.v; 
+  they should be removed once that file is up-to-date *)
+
+Fixpoint simple_parse' (ps:ParseState_t) (bytes:list int8) : 
+  option ((prefix * instr) * list int8) := 
+  match bytes with 
+    | nil => None
+    | b::bs => match X86_PARSER.parse_byte ps b with 
+                 | (ps',nil) => simple_parse' ps' bs
+                 | (_, v::_) => Some (v,bs)
+               end
+  end.
+
+Import X86_PARSER.ABSTRACT_OPT_INI_DECODER_STATE.
+Definition simple_parse (bytes:list int8) : option ((prefix * instr) * list int8) := 
+  match abs_opt_ini_decoder_state with
+      | None => None
+      | Some s => simple_parse' s bytes
+  end.
+
+Module Type ABSTRACT_MAKE_RECOGNIZER_SIG.
+  Parameter abstract_make_recognizer : 
+    forall t, grammar t -> option Recognizer.DFA.
+  Parameter make_recognizer_eq : abstract_make_recognizer = make_recognizer.
+End ABSTRACT_MAKE_RECOGNIZER_SIG.
+
+Module ABSTRACT_MAKE_RECOGNIZER : ABSTRACT_MAKE_RECOGNIZER_SIG.
+  Definition abstract_make_recognizer := make_recognizer.
+  Definition make_recognizer_eq := eq_refl make_recognizer.
+End ABSTRACT_MAKE_RECOGNIZER.
+
+Definition nat_to_byte(n:nat) : int8 := Word.repr (Z_of_nat n).
+
+Local Open Scope list_scope.
+
+Import ABSTRACT_MAKE_RECOGNIZER.
+
+Lemma non_cflow_dfa_length : 
+  forall (d:DFA), 
+    (* Need to use abstract_build_dfa for the same reason as above I believe *)
+    abstract_make_recognizer _ non_cflow_grammar = Some d -> 
+    forall (bytes:list int8) (n:nat) (nats2:list nat),
+      dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
+        (n <= 15)%nat. 
+Admitted.
+
+Lemma non_cflow_dfa_corr : 
+  forall (d:DFA), 
+    abstract_make_recognizer _ non_cflow_grammar = Some d -> 
+    forall (bytes:list int8) (n:nat) (nats2:list nat),
+      dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
+      exists bytes1, exists pfx:prefix, exists ins:instr, 
+        simple_parse bytes = Some ((pfx,ins), List.map nat_to_byte nats2) /\
+        non_cflow_instr pfx ins = true /\
+        n = length bytes1 /\ 
+        bytes = bytes1 ++ (List.map nat_to_byte nats2).
+Admitted.
+
+Lemma dir_cflow_dfa_corr : 
+  forall (d:DFA),
+    abstract_make_recognizer _ (alts dir_cflow) = Some d -> 
+    forall (bytes:list int8) (n:nat) (nats2:list nat),
+      dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
+      exists bytes1, exists pfx:prefix, exists ins:instr,
+        simple_parse bytes = Some ((pfx,ins), List.map nat_to_byte nats2) /\
+        dir_cflow_instr pfx ins = true /\
+        n = length bytes1 /\ 
+        bytes = bytes1 ++ (List.map nat_to_byte nats2).
+Admitted.
+
+Lemma dir_cflow_dfa_length : 
+  forall (d:DFA), 
+    (* Need to use abstract_build_dfa for the same reason as above I believe *)
+    abstract_make_recognizer _ (alts dir_cflow) = Some d -> 
+    forall (bytes:list int8) (n:nat) (nats2:list nat),
+      dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
+        (n <= 15)%nat. 
+Admitted.
+
+Lemma nacljmp_dfa_corr : 
+  forall (d:DFA),
+    abstract_make_recognizer _ (alts nacljmp_mask) = Some d -> 
+    forall (bytes:list int8) (n:nat) (nats2:list nat),
+      dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
+      exists bytes1, exists pfx1:prefix, exists ins1:instr, exists bytes2,
+        exists pfx2:prefix, exists ins2:instr,
+        simple_parse bytes = Some ((pfx1,ins1), bytes2 ++ List.map nat_to_byte nats2)
+        /\
+        simple_parse (bytes2 ++ List.map nat_to_byte nats2) = 
+            Some ((pfx2,ins2), List.map nat_to_byte nats2) /\
+        nacljmp_mask_instr pfx1 ins1 pfx2 ins2 = true /\
+        n = length (bytes1 ++ bytes2) /\ 
+        bytes = bytes1 ++ bytes2 ++ (List.map nat_to_byte nats2).
+Admitted.
+
+Lemma nacljmp_mask_dfa_length : 
+  forall (d:DFA), 
+    (* Need to use abstract_build_dfa for the same reason as above I believe *)
+    abstract_make_recognizer _ (alts nacljmp_mask) = Some d -> 
+    forall (bytes:list int8) (n:nat) (nats2:list nat),
+      dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
+        (n <= 15)%nat. 
+Admitted.
+
+(* The above definitions and theorems are from DFACorrectness.v; 
+  they should be removed once that file is up-to-date *)
 
 (* Todo: organize the following *)
 
@@ -711,9 +818,8 @@ Section VERIFIER_CORR.
     eapply agree_over_addr_region_trans; eassumption.
   Qed.
 
-  (** ** Properties abour parse_instr *)
+  (** ** Properties about parse_instr *)
   Opaque Decode.X86_PARSER.parse_byte.
-  Opaque opt_initial_decoder_state.
 
   Lemma parse_instr_aux_same_state : forall n pc len ps,
     same_rtl_state (parse_instr_aux n pc len ps).
@@ -726,7 +832,7 @@ Section VERIFIER_CORR.
 
   Lemma parse_instr_same_state : forall pc, same_rtl_state (parse_instr pc).
   Proof. unfold same_rtl_state, parse_instr, parse_instr'. intros.
-    rtl_okay_elim. destruct (opt_initial_decoder_state 255); try discriminate.
+    rtl_okay_elim. destruct (abs_opt_ini_decoder_state); try discriminate.
     eapply parse_instr_aux_same_state. eassumption.
   Qed.
 
@@ -748,7 +854,7 @@ Section VERIFIER_CORR.
   Lemma parse_instr_len : forall pc s pi len s',
     parse_instr pc s = (Okay_ans (pi, len), s') -> 1 <= Zpos len < 16.
   Proof. unfold parse_instr, parse_instr'. intros.
-    rtl_okay_elim. destruct (opt_initial_decoder_state 255); try discriminate.
+    rtl_okay_elim. destruct (abs_opt_ini_decoder_state); try discriminate.
     apply parse_instr_aux_len in H. simpl in H. omega.
   Qed.
 
@@ -828,7 +934,7 @@ Section VERIFIER_CORR.
     dupHyp H. unfold eqCodeRegion in H. sim.
     rtl_okay_elim. rtl_okay_intro.
     compute [get_location look]. rewrite  <- H. 
-    destruct (opt_initial_decoder_state 255); try discriminate.
+    destruct (abs_opt_ini_decoder_state); try discriminate.
     eapply parse_instr_aux_code_inv; eassumption.
   Qed.
 
@@ -922,15 +1028,6 @@ Section VERIFIER_CORR.
          Z_of_nat (length remaining) <= w32modulus.
   Proof. intros. int32_simplify. lia. Qed.
 
-(* todo: move to CommonTacs.v *)
-(* Simplify hypothesis *)
-Ltac simplHyp := 
-  repeat match goal with 
-           | [ H : _ /\ _ |- _ ] => destruct H
-           | [ H : _ <-> _ |- _] => destruct H
-           | [ H : exists x, _ |- _ ] => destruct H
-         end.
-
   Lemma process_buffer_aux_addrRange :
    forall n start tokens currStartAddrs currJmpTargets allStartAddrs allJmpTargets pc,
     process_buffer_aux start n tokens (currStartAddrs, currJmpTargets) =
@@ -951,21 +1048,21 @@ Ltac simplHyp :=
          process_buffer_aux_Sn_tac.
          SSSCase "nacljmp_dfa matches". clear Hd1 Hd2.
            assert (length remaining3 > 0)%nat by (destruct remaining3; pbprover).
-           use_lemma dfa_recognize_inv by eassumption. simplHyp.
-           use_lemma process_buffer_arith_facts by eassumption. simplHyp.
+           use_lemma dfa_recognize_inv by eassumption. breakHyp.
+           use_lemma process_buffer_arith_facts by eassumption. breakHyp.
            apply IHn with (pc:=pc) in H; try (assumption || omega). clear IHn. 
            int32_simplify. lia.
         SSSCase "non_cflow_dfa matches". clear Hd2 Hd3.
            assert (length remaining1 > 0)%nat by (destruct remaining1; pbprover).
-           use_lemma dfa_recognize_inv by eassumption. simplHyp.
-           use_lemma process_buffer_arith_facts by eassumption. simplHyp.
+           use_lemma dfa_recognize_inv by eassumption. breakHyp.
+           use_lemma process_buffer_arith_facts by eassumption. breakHyp.
            apply IHn with (pc:=pc) in H; try (assumption || omega). clear IHn.
            int32_simplify. lia.
         SSSCase "dir_cflow_dfa matches". clear Hd1 Hd3.
            destruct_head in H; try discriminate.
            assert (length remaining2 > 0)%nat by (destruct remaining2; pbprover).
-           use_lemma dfa_recognize_inv by eassumption. simplHyp.
-           use_lemma process_buffer_arith_facts by eassumption. simplHyp.
+           use_lemma dfa_recognize_inv by eassumption. breakHyp.
+           use_lemma process_buffer_arith_facts by eassumption. breakHyp.
            apply IHn with (pc:=pc) in H; try (assumption || omega). clear IHn.
            int32_simplify. lia.
   Qed.
@@ -1013,7 +1110,7 @@ Ltac simplHyp :=
         process_buffer_aux_Sn_tac.
         SSCase "nacljmp_dfa matches". clear Hd1 Hd2.
           use_lemma IHn by eassumption.
-          simplHyp.
+          breakHyp.
           split.
             eapply Int32SetFacts.Subset_trans; [idtac | eassumption].
               apply Int32Set_subset_add.
@@ -1021,7 +1118,7 @@ Ltac simplHyp :=
               apply Int32SetFacts.Subset_refl.
         SSCase "non_cflow_dfa matches". clear Hd2 Hd3.
           use_lemma IHn by eassumption.
-          simplHyp.
+          breakHyp.
           split.
             eapply Int32SetFacts.Subset_trans; [idtac | eassumption].
               apply Int32Set_subset_add.
@@ -1030,7 +1127,7 @@ Ltac simplHyp :=
         SSCase "dir_cflow_dfa matches". clear Hd1 Hd3.
           destruct_head in H; try discriminate.
           use_lemma IHn by eassumption.
-          simplHyp.
+          breakHyp.
           split.
             eapply Int32SetFacts.Subset_trans; [idtac | eassumption].
               apply Int32Set_subset_add.
@@ -1137,139 +1234,139 @@ Ltac simplHyp :=
                  (dfa_recognize dir_cflow_dfa tokens' = Some (len, remaining) /\
                   includeAllJmpTargets pc len tokens' allJmpTargets) \/
                  dfa_recognize nacljmp_dfa tokens' = Some (len, remaining)).
- Admitted.
-  (* Proof. induction n. intros. *)
-  (*   Case "n=0". intros. destruct tokens; pbprover. *)
-  (*   Case "S n". intros. *)
-  (*     process_buffer_aux_tac. *)
-  (*     SCase "tokens = nil". pbprover. *)
-  (*     SCase "tokens<>nil; nacljmp_dfa matches". clear Hd1 Hd2. *)
-  (*       use_lemma dfa_recognize_inv by eassumption. sim. *)
-  (*       destruct (@Int32Set_in_dichotomy pc start _ _ H2).  *)
-  (*       SSCase "pc=start". subst pc.  *)
-  (*         assert (goodDefaultPC_aux (start +32_n len3) start allStartAddrs *)
-  (*                   (length (t1::tokens1))). *)
-  (*           destruct remaining3. *)
-  (*           SSSCase "remaining3=nil". *)
-  (*             assert (len3 = length (t1 ::tokens1)) by crush. *)
-  (*             right. congruence. *)
-  (*           SSSCase "remaining3<>nil". *)
-  (*             left. eapply process_buffer_aux_start_in.  *)
-  (*             eassumption. simpl. omega. *)
-  (*         exists (t1::tokens1), len3, remaining3. pbprover. *)
-  (*       SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)". *)
-  (*         assert (length (t1::tokens1) >= 1)%nat by (simpl; omega). *)
-  (*         assert (length remaining3 > 0)%nat by (destruct remaining3; pbprover). *)
-  (*         use_lemma (process_buffer_arith_facts start len3 (t1::tokens1) remaining3) *)
-  (*           by assumption. *)
-  (*         simplHyp. *)
-  (*         use_lemma process_buffer_aux_addrRange by eassumption. *)
-  (*         use_lemma IHn by eassumption. *)
-  (*         destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]]. *)
-  (*         subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22. *)
-  (*         int32_simplify. *)
-  (*         assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len3)) + len3 =  *)
-  (*                 Zabs_nat (unsigned pc - unsigned start))%nat as H30. *)
-  (*           apply inj_eq_rev; int32_simplify_in_goal; ring. *)
-  (*         rewrite H30 in H22. *)
-  (*         assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs *)
-  (*                   (length (t1 :: tokens1))). *)
-  (*           destruct H21. left. assumption. *)
-  (*             right. rewrite H4. rewrite <- add_repr.  *)
-  (*               unfold w32add at 2. rewrite <- add_assoc.  *)
-  (*             assumption. *)
-  (*         exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)). *)
-  (*           exists len, remaining. *)
-  (*             split. trivial. *)
-  (*             split. assumption. assumption. *)
-  (*     SCase "tokens<>nil; non_cflow_dfa matches". clear Hd2 Hd3. *)
-  (*       use_lemma dfa_recognize_inv by eassumption. sim. *)
-  (*       destruct (@Int32Set_in_dichotomy pc start _ _ H2).  *)
-  (*       SSCase "pc=start". subst pc.  *)
-  (*         assert (goodDefaultPC_aux (start +32_n len1) start allStartAddrs *)
-  (*                   (length (t1::tokens1))). *)
-  (*           destruct remaining1. *)
-  (*           SSSCase "remaining1=nil". *)
-  (*             assert (len1 = length (t1 ::tokens1)) by crush. *)
-  (*             right. congruence. *)
-  (*           SSSCase "remaining3<>nil". *)
-  (*             left. eapply process_buffer_aux_start_in.  *)
-  (*             eassumption. simpl. omega. *)
-  (*         exists (t1::tokens1), len1, remaining1. pbprover. *)
-  (*       SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)". *)
-  (*         assert (length (t1::tokens1) >= 1)%nat by (simpl; omega). *)
-  (*         assert (length remaining1 > 0)%nat by (destruct remaining1; pbprover). *)
-  (*         use_lemma (process_buffer_arith_facts start len1 (t1::tokens1) remaining1) *)
-  (*           by assumption. *)
-  (*         simplHyp. *)
-  (*         use_lemma process_buffer_aux_addrRange by eassumption. *)
-  (*         use_lemma IHn by eassumption. *)
-  (*         destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]]. *)
-  (*         subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22. *)
-  (*         int32_simplify. *)
-  (*         assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len1)) + len1 =  *)
-  (*                 Zabs_nat (unsigned pc - unsigned start))%nat as H30. *)
-  (*           apply inj_eq_rev; int32_simplify_in_goal; ring. *)
-  (*         rewrite H30 in H22. simplHyp. *)
-  (*         assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs *)
-  (*                   (length (t1 :: tokens1))). *)
-  (*           destruct H21. left. assumption. *)
-  (*             right. rewrite H4. rewrite <- add_repr.  *)
-  (*               unfold w32add at 2. rewrite <- add_assoc.  *)
-  (*             assumption. *)
-  (*         exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)). *)
-  (*           exists len, remaining. *)
-  (*             split. trivial. split; assumption. *)
-  (*     SCase "tokens<>nil; dir_cflow_dfa matches". clear Hd1 Hd3. *)
-  (*       remember_destruct_head in H as ed; try discriminate. *)
-  (*       use_lemma dfa_recognize_inv by eassumption. sim. *)
-  (*       destruct (@Int32Set_in_dichotomy pc start _ _ H2).  *)
-  (*       SSCase "pc=start". subst pc.  *)
-  (*         assert (goodDefaultPC_aux (start +32_n len2) start allStartAddrs *)
-  (*                   (length (t1::tokens1))). *)
-  (*           destruct remaining2. *)
-  (*           SSSCase "remaining2=nil". *)
-  (*             assert (len2 = length (t1 ::tokens1)) by crush. *)
-  (*             right. congruence. *)
-  (*           SSSCase "remaining2<>nil". *)
-  (*             left. eapply process_buffer_aux_start_in.  *)
-  (*             eassumption. simpl. omega. *)
-  (*         use_lemma process_buffer_aux_subset by eassumption. *)
-  (*         assert (Int32Set.In (start +32_n len2 +32 i) allJmpTargets). *)
-  (*           apply Int32Set_in_subset  *)
-  (*             with (s:=(Int32Set.add (start +32_n len2 +32 i) currJmpTargets)). *)
-  (*           eapply Int32Set.add_spec. left. apply int_eq_refl. *)
-  (*           crush. *)
-  (*         exists (t1::tokens1), len2, remaining2. *)
-  (*           split. pbprover. *)
-  (*           split. assumption. *)
-  (*             right; left. split. assumption. *)
-  (*             eapply extract_disp_include; eassumption. *)
-  (*       SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)". *)
-  (*         assert (length (t1::tokens1) >= 1)%nat by (simpl; omega). *)
-  (*         assert (length remaining2 > 0)%nat by (destruct remaining2; pbprover). *)
-  (*         use_lemma (process_buffer_arith_facts start len2 (t1::tokens1) remaining2) *)
-  (*           by assumption. *)
-  (*         simplHyp. *)
-  (*         use_lemma process_buffer_aux_addrRange by eassumption. *)
-  (*         use_lemma IHn by eassumption. *)
-  (*         destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]]. *)
-  (*         subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22. *)
-  (*         int32_simplify. *)
-  (*         assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len2)) + len2 =  *)
-  (*                 Zabs_nat (unsigned pc - unsigned start))%nat as H30. *)
-  (*           apply inj_eq_rev; int32_simplify_in_goal; ring. *)
-  (*         rewrite H30 in H22. *)
-  (*         assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs *)
-  (*                   (length (t1 :: tokens1))). *)
-  (*           destruct H21. left. assumption. *)
-  (*             right. rewrite H4. rewrite <- add_repr.  *)
-  (*               unfold w32add at 2. rewrite <- add_assoc.  *)
-  (*             assumption. *)
-  (*         exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)). *)
-  (*           exists len, remaining. *)
-  (*             split. trivial. split; assumption. *)
-  (* Qed. *)
+  (* Admitted. *)
+  Proof. induction n. intros.
+    Case "n=0". intros. destruct tokens; pbprover.
+    Case "S n". intros.
+      process_buffer_aux_tac.
+      SCase "tokens = nil". pbprover.
+      SCase "tokens<>nil; nacljmp_dfa matches". clear Hd1 Hd2.
+        use_lemma dfa_recognize_inv by eassumption. sim.
+        destruct (@Int32Set_in_dichotomy pc start _ _ H2).
+        SSCase "pc=start". subst pc.
+          assert (goodDefaultPC_aux (start +32_n len3) start allStartAddrs
+                    (length (t1::tokens1))).
+            destruct remaining3.
+            SSSCase "remaining3=nil".
+              assert (len3 = length (t1 ::tokens1)) by crush.
+              right. congruence.
+            SSSCase "remaining3<>nil".
+              left. eapply process_buffer_aux_start_in.
+              eassumption. simpl. omega.
+          exists (t1::tokens1), len3, remaining3. pbprover.
+        SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)".
+          assert (length (t1::tokens1) >= 1)%nat by (simpl; omega).
+          assert (length remaining3 > 0)%nat by (destruct remaining3; pbprover).
+          use_lemma (process_buffer_arith_facts start len3 (t1::tokens1) remaining3)
+            by assumption.
+          breakHyp.
+          use_lemma process_buffer_aux_addrRange by eassumption.
+          use_lemma IHn by eassumption.
+          destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
+          subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22.
+          int32_simplify.
+          assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len3)) + len3 =
+                  Zabs_nat (unsigned pc - unsigned start))%nat as H30.
+            apply inj_eq_rev; int32_simplify_in_goal; ring.
+          rewrite H30 in H22.
+          assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs
+                    (length (t1 :: tokens1))).
+            destruct H21. left. assumption.
+              right. rewrite H4. rewrite <- add_repr.
+                unfold w32add at 2. rewrite <- add_assoc.
+              assumption.
+          exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)).
+            exists len, remaining.
+              split. trivial.
+              split. assumption. assumption.
+      SCase "tokens<>nil; non_cflow_dfa matches". clear Hd2 Hd3.
+        use_lemma dfa_recognize_inv by eassumption. sim.
+        destruct (@Int32Set_in_dichotomy pc start _ _ H2).
+        SSCase "pc=start". subst pc.
+          assert (goodDefaultPC_aux (start +32_n len1) start allStartAddrs
+                    (length (t1::tokens1))).
+            destruct remaining1.
+            SSSCase "remaining1=nil".
+              assert (len1 = length (t1 ::tokens1)) by crush.
+              right. congruence.
+            SSSCase "remaining3<>nil".
+              left. eapply process_buffer_aux_start_in.
+              eassumption. simpl. omega.
+          exists (t1::tokens1), len1, remaining1. pbprover.
+        SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)".
+          assert (length (t1::tokens1) >= 1)%nat by (simpl; omega).
+          assert (length remaining1 > 0)%nat by (destruct remaining1; pbprover).
+          use_lemma (process_buffer_arith_facts start len1 (t1::tokens1) remaining1)
+            by assumption.
+          breakHyp.
+          use_lemma process_buffer_aux_addrRange by eassumption.
+          use_lemma IHn by eassumption.
+          destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
+          subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22.
+          int32_simplify.
+          assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len1)) + len1 =
+                  Zabs_nat (unsigned pc - unsigned start))%nat as H30.
+            apply inj_eq_rev; int32_simplify_in_goal; ring.
+          rewrite H30 in H22. breakHyp.
+          assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs
+                    (length (t1 :: tokens1))).
+            destruct H21. left. assumption.
+              right. rewrite H4. rewrite <- add_repr.
+                unfold w32add at 2. rewrite <- add_assoc.
+              assumption.
+          exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)).
+            exists len, remaining.
+              split. trivial. split; assumption.
+      SCase "tokens<>nil; dir_cflow_dfa matches". clear Hd1 Hd3.
+        remember_destruct_head in H as ed; try discriminate.
+        use_lemma dfa_recognize_inv by eassumption. sim.
+        destruct (@Int32Set_in_dichotomy pc start _ _ H2).
+        SSCase "pc=start". subst pc.
+          assert (goodDefaultPC_aux (start +32_n len2) start allStartAddrs
+                    (length (t1::tokens1))).
+            destruct remaining2.
+            SSSCase "remaining2=nil".
+              assert (len2 = length (t1 ::tokens1)) by crush.
+              right. congruence.
+            SSSCase "remaining2<>nil".
+              left. eapply process_buffer_aux_start_in.
+              eassumption. simpl. omega.
+          use_lemma process_buffer_aux_subset by eassumption.
+          assert (Int32Set.In (start +32_n len2 +32 i) allJmpTargets).
+            apply Int32Set_in_subset
+              with (s:=(Int32Set.add (start +32_n len2 +32 i) currJmpTargets)).
+            eapply Int32Set.add_spec. left. apply int_eq_refl.
+            crush.
+          exists (t1::tokens1), len2, remaining2.
+            split. pbprover.
+            split. assumption.
+              right; left. split. assumption.
+              eapply extract_disp_include; eassumption.
+        SSCase "pc in (allStartAddrs - ({start} \/ currStartAddrs)".
+          assert (length (t1::tokens1) >= 1)%nat by (simpl; omega).
+          assert (length remaining2 > 0)%nat by (destruct remaining2; pbprover).
+          use_lemma (process_buffer_arith_facts start len2 (t1::tokens1) remaining2)
+            by assumption.
+          breakHyp.
+          use_lemma process_buffer_aux_addrRange by eassumption.
+          use_lemma IHn by eassumption.
+          destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
+          subst tokens''. rewrite H3 in H22. rewrite skipn_twice_eq in H22.
+          int32_simplify.
+          assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len2)) + len2 =
+                  Zabs_nat (unsigned pc - unsigned start))%nat as H30.
+            apply inj_eq_rev; int32_simplify_in_goal; ring.
+          rewrite H30 in H22.
+          assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs
+                    (length (t1 :: tokens1))).
+            destruct H21. left. assumption.
+              right. rewrite H4. rewrite <- add_repr.
+                unfold w32add at 2. rewrite <- add_assoc.
+              assumption.
+          exists (skipn (Zabs_nat (unsigned pc -unsigned start)) (t1::tokens1)).
+            exists len, remaining.
+              split. trivial. split; assumption.
+  Qed.
 
   Hint Rewrite Zminus_0_r : pbDB.
 
@@ -1299,7 +1396,7 @@ Ltac simplHyp :=
     apply process_buffer_aux_inversion with (pc:=pc) in H;
       [idtac | assumption | (rewrite list_length_map; omega) | pbprover].
     destruct H as [tokens' [len [remaining H]]].
-    simplHyp.
+    breakHyp.
     assert (goodDefaultPC (pc +32_n len) startAddrs (length buffer)).
       unfold goodDefaultPC, goodDefaultPC_aux in *.
       destruct H3. left. trivial.
@@ -1309,44 +1406,43 @@ Ltac simplHyp :=
   Qed.
 
   (** ** Properties of simple_parse *)
-  (* resurrect this when DFACorrectness is online *)
-  (* Lemma simple_parse'_len_pos : forall bytes ps pre ins bytes1, *)
-  (*   simple_parse' ps bytes = Some ((pre,ins), bytes1) *)
-  (*     -> (length bytes > length bytes1)%nat. *)
-  (* Proof. induction bytes. prover. *)
-  (*   intros. compute [simple_parse'] in H. fold simple_parse' in H. *)
-  (*     remember_destruct_head in H as pb. *)
-  (*     destruct l.  *)
-  (*       use_lemma IHbytes by eassumption. prover. *)
-  (*       prover. *)
-  (* Qed. *)
+  Lemma simple_parse'_len_pos : forall bytes ps pre ins bytes1,
+    simple_parse' ps bytes = Some ((pre,ins), bytes1)
+      -> (length bytes > length bytes1)%nat.
+  Proof. induction bytes. crush.
+    intros. compute [simple_parse'] in H. fold simple_parse' in H.
+      remember_destruct_head in H as pb.
+      destruct l.
+        use_lemma IHbytes by eassumption. crush.
+        crush.
+  Qed.
 
-  (* Lemma simple_parse'_ext : forall bytes bytes1 ps pre ins rem len, *)
-  (*   simple_parse' ps bytes = Some ((pre,ins), rem) *)
-  (*     -> len = (length bytes - length rem)%nat *)
-  (*     -> firstn len bytes = firstn len bytes1 *)
-  (*     -> exists rem1, simple_parse' ps bytes1 = Some ((pre,ins), rem1). *)
-  (* Proof. induction bytes as [ | b bytes']. prover. *)
-  (*   Case "bytes = b :: bytes'". *)
-  (*     intros. dupHyp H. *)
-  (*     compute [simple_parse'] in H. fold simple_parse' in H. *)
-  (*     use_lemma simple_parse'_len_pos by eassumption. *)
-  (*     assert (len >= 1)%nat by omega. *)
-  (*     destruct len. contradict H4. omega. *)
-  (*     rewrite firstn_S_cons in H1. *)
-  (*     destruct bytes1. simpl in H1. congruence. *)
-  (*     rewrite firstn_S_cons in H1. *)
-  (*     inversion H1. subst i. *)
-  (*     compute [simple_parse']. fold simple_parse'. *)
-  (*     destruct (parse_byte ps b). *)
-  (*     destruct l. *)
-  (*     SCase "parse_byte returns nil". *)
-  (*       assert (len = length bytes' - length rem)%nat. *)
-  (*         rewrite length_cons in H0. omega. *)
-  (*       eapply IHbytes'; eassumption. *)
-  (*     SCase "parse_byte returns some val". *)
-  (*       exists bytes1. prover. *)
-  (* Qed. *)
+  Lemma simple_parse'_ext : forall bytes bytes1 ps pre ins rem len,
+    simple_parse' ps bytes = Some ((pre,ins), rem)
+      -> len = (length bytes - length rem)%nat
+      -> firstn len bytes = firstn len bytes1
+      -> exists rem1, simple_parse' ps bytes1 = Some ((pre,ins), rem1).
+  Proof. induction bytes as [ | b bytes']. crush.
+    Case "bytes = b :: bytes'".
+      intros. dupHyp H.
+      compute [simple_parse'] in H. fold simple_parse' in H.
+      use_lemma simple_parse'_len_pos by eassumption.
+      assert (len >= 1)%nat by omega.
+      destruct len. contradict H4. omega.
+      rewrite firstn_S_cons in H1.
+      destruct bytes1. simpl in H1. congruence.
+      rewrite firstn_S_cons in H1.
+      inversion H1. subst i.
+      compute [simple_parse']. fold simple_parse'.
+      destruct (parse_byte ps b).
+      destruct l.
+      SCase "parse_byte returns nil".
+        assert (len = length bytes' - length rem)%nat.
+          rewrite length_cons in H0. omega.
+        eapply IHbytes'; eassumption.
+      SCase "parse_byte returns some val".
+        exists bytes1. crush.
+  Qed.
 
   (** ** A theorem about immutable code region *)
 
@@ -1361,6 +1457,8 @@ Ltac simplHyp :=
   Remark fetchSize_lt_modulus : 15 <= w32modulus.
   Proof. rewrite int32_modulus_constant. lia. Qed.
 
+  (* todo: all lemmas about parse_instr changed abstract_parse_instr *)
+
   Theorem fetch_instr_code_inv : forall s1 s2 s1' pc pre i len,
     eqCodeRegion s1 s2
       -> fetch_instruction pc s1 = (Okay_ans (pre, i, len), s1')
@@ -1372,26 +1470,29 @@ Ltac simplHyp :=
     remember_destruct_head in H0 as bchk; try discriminate H0.
     inversion H0. subst pi' len' s1'.
     assert (s1 = s).
-      eapply parse_instr_same_state. eapply H1.
+      eapply parse_instr_same_state. 
+      eapply H1.
     subst s.
     bool_elim_tac.
     dupHyp H; unfold eqCodeRegion in H. destruct H as [H10 [H11 [H12 H13]]].
     assert (H14:1 <= Zpos len < 16).
-      eapply parse_instr_len. eapply H1.
+      eapply parse_instr_len. 
+      eapply H1.
     assert (Zpos len - 1 < w32modulus). 
       apply Zlt_le_trans with (m:=15). omega.
       apply fetchSize_lt_modulus.
     assert (noOverflow (pc :: repr (Zpos len - 1) :: nil)).
       apply checkNoOverflow_equiv_noOverflow. trivial.
     assert (noOverflow (CStart s1 +32 pc :: repr (Zpos len - 1) :: nil))
-        by (clear_parse_instr; int32_prover).
+        by int32_prover.
     assert (H20: Ensembles.Included int32
               (addrRegion (CStart s1 +32 pc) (repr (Zpos len - 1)))
               (segAddrs CS s1)).
       apply subsetRegion_sound. assumption. assumption.
-        subsetRegion_intro_tac; clear_parse_instr; int32_prover.
+        subsetRegion_intro_tac; int32_prover.
     assert (parse_instr pc s2 = (Okay_ans (pre, i, len), s2)).
-      eapply parse_instr_code_inv. eassumption. eapply H1.
+      eapply parse_instr_code_inv. 
+      eassumption. eapply H1.
       eassumption. eassumption. eassumption.
     assert (H22: AddrMap.get (CStart s1 +32 pc) (rtl_memory s1)
                 = AddrMap.get (CStart s1 +32 pc) (rtl_memory s2)).
@@ -1406,7 +1507,6 @@ Ltac simplHyp :=
     rewrite H2. rewrite H3. simpl.
     reflexivity.
   Qed.
-
   Transparent parse_instr.
   End FETCH_INSTR_CODE_INV.
 
@@ -1565,7 +1665,7 @@ Ltac simplHyp :=
   Qed.
 
   Lemma skipn_byte2token_len : forall tokens n code,
-    tokens = skipn n (List.map FastVerifier.byte2token code)
+    tokens = skipn n (List.map byte2token code)
       -> (n < length code)%nat
       -> (length tokens + n = length code)%nat.
   Proof. intros. rewrite H.
@@ -1718,7 +1818,7 @@ Ltac simplHyp :=
       | [H:safeState ?s ?inv |- _] => 
         unfold safeState, appropState in H; 
         destruct inv as [[sregs_st sregs_lm] code];
-        simplHyp
+        breakHyp
     end.
 
   Ltac same_seg_regs_rel_tac := 
@@ -2078,7 +2178,7 @@ Ltac simplHyp :=
       -> pc = int32_of_nat (length code)
       -> Int32Set.In pc startAddrs \/ ~inBoundCodeAddr pc s.
   Proof. unfold codeLoaded; intros.
-    simplHyp.
+    breakHyp.
     generalize (unsigned_range (CLimit s)); intro.
     assert (H20:unsigned (CLimit s) + 1 <= w32modulus) by omega.
     apply Zle_lt_or_eq in H20.
@@ -2236,12 +2336,11 @@ Ltac simplHyp :=
     crush.
   Qed. 
 
-  (* todo: remove *)
-  (* Lemma no_prefix_no_lock_rep : forall pre, *)
-  (*   no_prefix pre = true -> lock_rep pre = None. *)
-  (* Proof. unfold no_prefix. intros. *)
-  (*   repeat (destruct_head in H; try congruence). *)
-  (* Qed. *)
+  Lemma no_prefix_no_lock_rep : forall pre,
+    no_prefix pre = true -> lock_rep pre = None.
+  Proof. unfold no_prefix, filter_prefix, ft_no_lock_or_rep. intros.
+    bool_elim_tac. destruct (lock_rep pre); congruence.
+  Qed.
 
   Lemma dci_lock_rep_prefix : forall pre ins,
     dir_cflow_instr pre ins = true -> lock_rep pre = None.
@@ -2301,13 +2400,8 @@ Ltac simplHyp :=
     inv H. simpl in H1.
     autorewrite with step_list_db in H1.
     repeat rtl_okay_elim. removeUnit.
-
-    assert (H10:PC s = PC s0). eapply H0; eassumption.
-    rewrite H10.
-    compute [interp_rtl] in *.
-    repeat rtl_okay_elim.
-    unfold get_loc, set_loc in *.
-    rtl_okay_elim. 
+    inv H2. simpl.
+    assert (H10:PC s = PC s2). eapply H0; eassumption.
     crush.
   Qed.
 
@@ -2479,7 +2573,7 @@ Ltac conv_backward_same_pc :=
     destruct cmp.
     Case "pc <= (CLimit s)". left. simpl.
       unfold codeLoaded in *.
-      simplHyp.
+      breakHyp.
       assert (0 <= unsigned pc < Z_of_nat (length code)) by int32_prover.
       rewrite <- (repr_unsigned _ pc).
       eapply checkAligned_corr; try eassumption.
@@ -2566,21 +2660,23 @@ Ltac conv_backward_same_pc :=
 
 
   (** ** the proof that nacljmp is safe in two steps *)
+  Lemma no_prefix_lock_or_gs_or_op: forall pre,
+    no_prefix pre = true -> lock_or_gs_or_op pre = true.
+  Proof. unfold_prefix_filters_tac. unfold filter_prefix; intros.
+     bool_elim_tac. bool_intro_tac; try trivial.
+     unfold ft_only_lock, ft_no_lock_or_rep in *. 
+       destruct_head; congruence.
+     unfold ft_only_gs_seg, ft_no_seg in *. 
+       destruct_head; congruence.
+  Qed.
+  
   Lemma nacljmp_first_non_cflow_instr : forall pre1 ins1 pre2 ins2,
     nacljmp_mask_instr pre1 ins1 pre2 ins2 = true 
       -> non_cflow_instr pre1 ins1 = true.
   Proof. intros.
     unfold nacljmp_mask_instr in H.
     destruct ins1; bool_elim_tac; try discriminate.
-    assert (either_prefix pre1 = true).
-      clear H0. destruct pre1.
-        destruct lock_rep; try discriminate.
-        destruct seg_override; try discriminate.
-        destruct op_override; try discriminate.
-        destruct addr_override; try discriminate.
-        unfold either_prefix.
-        apply orb_true_intro. left.
-        trivial.
+    apply no_prefix_lock_or_gs_or_op in H.
     destruct op1; try (destruct w; discriminate).
     simpl. crush.
   Qed.
@@ -2589,7 +2685,7 @@ Ltac conv_backward_same_pc :=
     nacljmp_mask_instr pre1 ins1 pre2 ins2 = true 
       -> no_prefix pre1 = true /\ no_prefix pre2 = true.
   Proof. unfold nacljmp_mask_instr; intros. bool_elim_tac.
-    prover.
+    crush.
   Qed.
 
   Lemma nacljmp_mask_PC : forall s s' pre1 ins1 len1 pre2 ins2 inv,
@@ -2600,20 +2696,20 @@ Ltac conv_backward_same_pc :=
       -> PC s' = PC s +32_p len1.
   Proof. intros. safestate_unfold_tac.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre1, ins1, len1)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
-    assert (non_cflow_instr pre1 ins1 = true).
-      eapply nacljmp_first_non_cflow_instr; eassumption.
+    (* use_lemma fetch_instr_after_flush_env by eassumption. *)
+    assert (v = (pre1, ins1, len1)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
+    use_lemma nacljmp_first_non_cflow_instr by eassumption.
     assert (H20:same_pc (RTL_step_list (instr_to_rtl pre1 ins1))).
       eapply nci_same_pc; eassumption.
     use_lemma nacljmp_no_prefix by eassumption.
-    simplHyp. unfold no_prefix in H12.
-    do 4 (destruct_head in H12; try congruence).
-      rtl_okay_break.
-      assert (H22:PC s1 = PC s'). eapply H20; eassumption.
-      rewrite <- H22. unfold flush_env, set_loc in *. prover.
+    breakHyp. 
+    apply filter_prefix_no_lock_or_rep in H10.
+    rewrite H10 in *.
+    rtl_okay_break.
+    assert (H22:PC s = PC s'). eapply H20; eassumption.
+    rewrite <- H22. unfold set_loc in *. crush.
   Qed.
 
   Lemma nacljmp_snd_no_fail : forall pre1 ins1 pre2 ins2,
@@ -2637,7 +2733,6 @@ Ltac conv_backward_same_pc :=
       destruct op1; try discriminate.
       prove_instr.
   Qed.
-
   
   Lemma nacljmp_snd_nextStepNoFail : forall s pre1 ins1 pre2 ins2 len2,
     fetch_instruction (PC s) s = (Okay_ans (pre2, ins2, len2), s)
@@ -2649,12 +2744,10 @@ Ltac conv_backward_same_pc :=
     rtl_fail_break. discriminate Hc.
     do 2 rtl_comp_elim.
     destruct_head in Hc; [idtac | discriminate].
-    rtl_fail_break.
-    eapply fetch_instr_flush_nofail. apply H. apply H2. apply Hc.
-      use_lemma fetch_instr_after_flush_env by eassumption.
-      assert (v0 = (pre2, ins2, len2)) by prover.
-      assert (s0 = s1) by prover.
-      subst v0 s1.
+    rtl_fail_break; [congruence | idtac].
+      assert (v = (pre2, ins2, len2)) by congruence.
+      assert (s0 = s) by crush.
+      subst v s.
       assert (no_fail (RTL_step_list (instr_to_rtl pre2 ins2))) 
         by (eauto using nacljmp_snd_no_fail).
       contradict Hc.
@@ -2666,59 +2759,69 @@ Ltac conv_backward_same_pc :=
       remember_rev (lock_rep pre2) as lr.
       destruct lr. destruct l.
         Case "lock". 
-          apply nacljmp_no_prefix in H1. simplHyp. 
-          apply no_prefix_no_lock_rep in H6. congruence.
+          apply nacljmp_no_prefix in H1. breakHyp. 
+          crush' no_prefix_no_lock_rep fail.
         Case "rep". 
-          apply nacljmp_no_prefix in H1. simplHyp. 
-          apply no_prefix_no_lock_rep in H6. congruence.
+          apply nacljmp_no_prefix in H1. breakHyp. 
+          crush' no_prefix_no_lock_rep fail.
         Case "repn". 
-          apply nacljmp_no_prefix in H1. simplHyp. 
-          apply no_prefix_no_lock_rep in H6. congruence.
+          apply nacljmp_no_prefix in H1. breakHyp. 
+          crush' no_prefix_no_lock_rep fail.
         Case "none". no_fail_tac.
   Qed.
 
   Lemma no_prefix_no_op_override : forall pre,
     no_prefix pre = true -> op_override pre = false.
-  Proof. unfold no_prefix. intros.
-    repeat (destruct_head in H; try congruence).
+  Proof. unfold no_prefix, filter_prefix, ft_bool_no. intros.
+    bool_elim_tac. trivial.
   Qed.
 
-  Lemma compute_parity_aux_break : forall n sz (op1:pseudo_reg sz) op2 cs v' cs', 
-    compute_parity_aux op1 op2 n cs = (v', cs')
-      -> exists ilist,
-          c_rev_i cs' = (ilist ++ c_rev_i cs)%list /\
-          forall s s' szx x, 
-            RTL_step_list (rev ilist) s = (Okay_ans tt, s')
-              -> x < c_next cs 
-              -> rtl_env s (ps_reg szx x) = rtl_env s' (ps_reg szx x).
-  Proof. induction n; intros.
-    Case "n=0". simpl in H. inv H. simpl.
-      eexists. split.
-      rewrite CheckDeterministic.cons_app. trivial.
-      intros. simpl in H. inv H. simpl. autorewrite with rtl_rewrite_db. trivial.
-    Case "S n".  simpl in H.
-      remember_destruct_head in H as cp. rename c into cs1.
-      use_lemma IHn by eassumption.
-      destruct H0 as [ilist [H20 H22]].
-      unfold arith, fresh in H.
-      simpl in H. simpl_rtl.
-      eexists. split.
-        inv H. simpl. rewrite H20.
-        repeat (rewrite app_comm_cons). trivial.
-        simpl. intros.
-        autorewrite with step_list_db in H0.
-        repeat rtl_okay_elim. removeUnit.
-        erewrite H22; [idtac | eassumption | omega].
-        assert (c_next cs < c_next cs1).
-          eapply compute_parity_aux_index_increase; eassumption.
-        simpl in *.
-        unfold set_ps in *. prover.
-        simpl in *.
-        autorewrite with rtl_rewrite_db.
-        trivial.
-  Qed.        
+  (* todo: remove or revise *)
+  (* Lemma compute_parity_aux_break : forall n sz (op1:pseudo_reg sz) op2 cs v' cs',  *)
+  (*   compute_parity_aux op1 op2 n cs = (v', cs') *)
+  (*     -> exists ilist, *)
+  (*         c_rev_i cs' = (ilist ++ c_rev_i cs)%list /\ *)
+  (*         forall s s' szx x,  *)
+  (*           RTL_step_list (rev ilist) s = (Okay_ans tt, s') *)
+  (*             -> x < c_next cs  *)
+  (*             -> rtl_env s (ps_reg szx x) = rtl_env s' (ps_reg szx x). *)
+  (* Proof. induction n; intros. *)
+  (*   Case "n=0". simpl in H. inv H. simpl. *)
+  (*     eexists. split. *)
+  (*     rewrite CheckDeterministic.cons_app. trivial. *)
+  (*     intros. simpl in H. inv H. simpl. autorewrite with rtl_rewrite_db. trivial. *)
+  (*   Case "S n".  simpl in H. *)
+  (*     remember_destruct_head in H as cp. rename c into cs1. *)
+  (*     use_lemma IHn by eassumption. *)
+  (*     destruct H0 as [ilist [H20 H22]]. *)
+  (*     unfold arith, fresh in H. *)
+  (*     simpl in H. simpl_rtl. *)
+  (*     eexists. split. *)
+  (*       inv H. simpl. rewrite H20. *)
+  (*       repeat (rewrite app_comm_cons). trivial. *)
+  (*       simpl. intros. *)
+  (*       autorewrite with step_list_db in H0. *)
+  (*       repeat rtl_okay_elim. removeUnit. *)
+  (*       erewrite H22; [idtac | eassumption | omega]. *)
+  (*       assert (c_next cs < c_next cs1). *)
+  (*         eapply compute_parity_aux_index_increase; eassumption. *)
+  (*       simpl in *. *)
+  (*       unfold set_ps in *. prover. *)
+  (*       simpl in *. *)
+  (*       autorewrite with rtl_rewrite_db. *)
+  (*       trivial. *)
+  (* Qed.         *)
 
-  Lemma nacljmp_mask_reg_aligned : forall pre r1 wd cs r cs' s v' s',
+  (* A tactic useful when doing proofs that requires detailed reasoning of
+     instruction semantics *)
+  Local Ltac conv_backward_roll := 
+    conv_backward; repeat rtl_okay_elim;
+    repeat match goal with
+      | [H: set_loc _ _ _ = (Okay_ans _, _) |- _] => inv H; simpl
+      | [H: advance_oracle _ = (Okay_ans _, _) |- _] => inv H; simpl
+    end.
+
+  Lemma nacljmp_mask_reg_aligned: forall pre r1 wd cs r cs' s v' s',
     conv_AND pre true (Reg_op r1) (Imm_op wd) cs = (r, cs')
       -> no_prefix pre = true
       -> signed wd = signed safeMask
@@ -2730,71 +2833,13 @@ Ltac conv_backward_same_pc :=
     unfold  load_op, set_op, compute_parity in H.
     rewrite H3 in H.
     compute [opsize] in H.
-    repeat conv_break. removeUnit.
-    conv_backward.
-    inv H21. rtl_okay_elim. inv H2. simpl.
+    repeat conv_elim. removeUnit.
+    conv_backward_roll.
     unfold look, upd.
     destruct_head; [idtac | contradict n; trivial].
-    conv_backward.
-    inv H17. inv H. inv H22. inv H2. simpl.
-    autorewrite with rtl_rewrite_db.
-    repeat (conv_backward;
-      match goal with 
-        | [H: interp_rtl (set_loc_rtl _ _) _ = _,
-          H1 : Return _ _ = _ |- _]
-          => inv H; inv H1; simpl
-      end).
-    conv_backward.
-    inv H11. inv H. simpl.
-    autorewrite with rtl_rewrite_db.
-    conv_backward.
-    inv H10. inv H2. simpl.
-    autorewrite with rtl_rewrite_db.
-    eapply compute_parity_aux_break in H20.
-    destruct H20 as [ilists [H30 H32]].
-    rewrite H30 in H.
-    rewrite rev_app_distr in H.
-    autorewrite with step_list_db in H.
-    rtl_okay_elim. removeUnit.
-    destruct v1 as [andResIdx].
-    assert (andResIdx < c_next cs15).
-      do 5 (match goal with
-        | [H: ?cv ?cs = (_, ?cs') |- _ < c_next ?cs']
-          => apply Zlt_trans with (m:= c_next cs);
-             [idtac | 
-              cut (conv_index_increase cv); [eauto | conv_index_increase_tac]]
-      end).
-      unfold arith in H6.
-      eapply fresh_conv_index_monotone; eassumption.
-    use_lemma H32 by eassumption.    
-    rewrite <- H11. clear H30 H32 H10 H11 H.
-    conv_backward. 
-    inv H10. inv H2. simpl.
-    autorewrite with rtl_rewrite_db.
-    conv_backward.
-    inv H10. inv H. simpl.
-    autorewrite with rtl_rewrite_db.
-    conv_backward.
-    inv H9. inv H2. simpl.
-    autorewrite with rtl_rewrite_db.
-    conv_backward.
-    inv H8. inv H. simpl.
-    autorewrite with rtl_rewrite_db.
-    conv_backward.
-    inv H7. inv H2. simpl.
-    assert (andResIdx < c_next cs2).
-      unfold arith, fresh in H6. prover.
-    autorewrite with rtl_rewrite_db.
-    conv_backward.
-    inv H2. inv H7. inv H. simpl.
-    autorewrite with rtl_rewrite_db.
-    clear H9.
-    conv_backward.
-    inv H2. inv H6. simpl.
-    autorewrite with rtl_rewrite_db.
-    conv_backward.
-    inv H4. inv H. simpl.
-    autorewrite with rtl_rewrite_db.
+    repeat conv_backward_roll.
+    simpl.
+    unfold look.
     eapply and_safeMask_aligned. assumption.
   Qed.
 
@@ -2822,16 +2867,13 @@ Ltac conv_backward_same_pc :=
       -> Same_Seg_Regs_Rel.brel s s'.
   Proof. unfold safeState. intros.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre2, ins2 , len2)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
+    assert (v = (pre2, ins2 , len2)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
     unfold nacljmp_mask_instr in H0.
     assert (same_seg_regs (RTL_step_list (instr_to_rtl pre2 ins2))).
       eauto using nacljmp_snd_same_seg_regs.
-    apply Same_Seg_Regs_Rel.brel_trans with (s2:=s0).
-      same_seg_regs_rel_tac.
-      same_seg_regs_rel_tac.
+    same_seg_regs_rel_tac.
   Qed.
 
   (* todo: a tactic for unfolding nacljmp_mask_instr *)
@@ -2859,31 +2901,20 @@ Ltac conv_backward_same_pc :=
       -> agree_outside_addr_region (segAddrs SS s) s s'.
   Proof. intros.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre2, ins2, len2)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
+    assert (v = (pre2, ins2, len2)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
     assert (H20: agree_outside_seg SS (RTL_step_list (instr_to_rtl pre2 ins2))).
       eauto using nacljmp_snd_aoss.
-    assert (H30: segAddrs SS s = segAddrs SS s0).
-      unfold segAddrs. unfold flush_env in *. prover.
-    destruct (lock_rep pre2).
-      destruct l.
-        (apply agree_outside_addr_region_trans with (s2:=s0); 
-          [aoar_tac | rewrite H30; aoar_tac]).
-        (apply agree_outside_addr_region_trans with (s2:=s0); 
-          [aoar_tac | rewrite H30; idtac]).
-          assert (H32: agree_outside_seg SS 
+    destruct (lock_rep pre2); [idtac | aoar_tac].
+      destruct l; [aoar_tac | idtac | aoar_tac].
+        assert (H32: agree_outside_seg SS 
                    (run_rep pre2 ins2 (add (PC s0) (repr (Zpos len2))))).
-            apply same_mem_agree_outside_seg.
-            eapply run_rep_same_mem_nacljmp_snd; eassumption.
-            eapply run_rep_same_seg_regs.
-            eauto using nacljmp_snd_same_seg_regs.
-          eapply H32; eassumption.
-        (apply agree_outside_addr_region_trans with (s2:=s0); 
-          [aoar_tac | rewrite H30; aoar_tac]).
-      apply agree_outside_addr_region_trans with (s2:=s0); 
-        [aoar_tac | rewrite H30; aoar_tac].
+          apply same_mem_agree_outside_seg.
+          eapply run_rep_same_mem_nacljmp_snd; eassumption.
+          eapply run_rep_same_seg_regs.
+          eauto using nacljmp_snd_same_seg_regs.
+        eapply H32; eassumption.
   Qed.
 
   Lemma conv_JMP_absolute_reg_PC : forall pre reg cs r cs' s v' s',
@@ -2896,16 +2927,14 @@ Ltac conv_backward_same_pc :=
       -> (PC s') = (get_location (reg_loc reg) (rtl_mach_state s)).
   Proof. intros.
     unfold conv_JMP in H. 
-    simpl in H. simpl_rtl.
-    inv H. simpl in H1.
+    simpl in H. inv H.
+    simpl in H1.
     autorewrite with step_list_db in H1.
     repeat rtl_okay_elim. removeUnit.
-    compute [interp_rtl] in *.
-    repeat rtl_okay_break. 
-    unfold get_ps, set_ps, get_loc, set_loc in *.
-    repeat (rtl_invert; simpl in *; autorewrite with rtl_rewrite_db in *).
+    inv H2.
     rewrite zero_add.
-    apply eq_sym. eauto.
+    apply eq_sym.
+    crush.
   Qed.
 
   Lemma conv_JMP_absolute_reg_step_PC : forall s s' pre r len,
@@ -2917,30 +2946,28 @@ Ltac conv_backward_same_pc :=
       -> (PC s') = (get_location (reg_loc r) (rtl_mach_state s)).
   Proof. intros.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, (JMP true true (Reg_op r) None), len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
-    unfold no_prefix in H0.
-    destruct (lock_rep pre); try discriminate H0.
-    rtl_okay_break.
+    assert (v = (pre, (JMP true true (Reg_op r) None), len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
+    unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
+    bool_elim_tac.
+    destruct (lock_rep pre); try congruence.
+    rtl_okay_elim.
     unfold instr_to_rtl, runConv in H1.
     remember_rev 
        (Bind unit (check_prefix pre)
               (fun _ : unit => conv_JMP pre true true (Reg_op r) None)
-              {| c_rev_i := nil; c_next := 0 |}) as cv.
+              {| c_rev_i := nil |}) as cv.
     destruct cv.
     unfold check_prefix in Hcv.
-    destruct (seg_override pre); try discriminate H0.
-    destruct (op_override pre); try discriminate H0.
-    destruct (addr_override pre); try discriminate H0.
-    conv_break.
-    assert (gp_regs (rtl_mach_state s) = gp_regs (rtl_mach_state s1)).
-      unfold flush_env, set_loc in *. prover.
+    destruct (addr_override pre); try congruence.
+    conv_elim.
+    assert (H10: gp_regs (get_core_state s) = gp_regs (get_core_state s0)).
+      unfold set_loc in *. crush.
     unfold get_location.
-    rewrite H8.
+    rewrite <- H10.
     eapply conv_JMP_absolute_reg_PC; try eassumption.
-      intros. inv H7. prover.
+      intros. inv H8. crush.
   Qed.
 
   Opaque set_mem_n. (* without this, the QED would take forever *)
@@ -2954,45 +2981,39 @@ Ltac conv_backward_same_pc :=
       -> (PC s') = (get_location (reg_loc r) (rtl_mach_state s)).
   Proof. intros.
     step_tac.
-    use_lemma fetch_instr_after_flush_env by eassumption.
-    assert (v0 = (pre, (CALL true true (Reg_op r) None), len)) by congruence.
-    assert (s0 = s1) by congruence.
-    subst v0 s1.
-    unfold no_prefix in H1.
-    destruct (lock_rep pre); try discriminate H1.
+    assert (v = (pre, (CALL true true (Reg_op r) None), len)) by congruence.
+    assert (s0 = s) by congruence.
+    subst v s.
+    unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
+    bool_elim_tac.
+    destruct (lock_rep pre); try congruence.
     rtl_okay_break.
     unfold instr_to_rtl, runConv in H2.
     remember_rev 
        (Bind unit (check_prefix pre)
               (fun _ : unit => conv_CALL pre true true (Reg_op r) None)
-              {| c_rev_i := nil; c_next := 0 |}) as cv.
+              {| c_rev_i := nil |}) as cv.
     destruct cv.
     unfold conv_CALL, check_prefix in Hcv.
-    destruct (seg_override pre); try discriminate H1.
-    destruct (op_override pre); try discriminate H1.
-    destruct (addr_override pre); try discriminate H1.
-    repeat conv_break.
+    destruct (addr_override pre); try congruence.
+    repeat conv_elim.
     removeUnit.
-    assert (H20:gp_regs (rtl_mach_state s) = gp_regs (rtl_mach_state s1)).
-      unfold flush_env, set_loc in *. prover.
+    assert (H20:gp_regs (get_core_state s) = gp_regs (get_core_state s0)).
+      unfold set_loc in *. crush.
     unfold get_location.
-    rewrite H20.
+    rewrite <- H20.
     eapply conv_JMP_absolute_reg_PC; try eassumption.
-      intros. 
-      inv H14. simpl in *. autorewrite with step_list_db in *.
-      repeat rtl_okay_break.
-      inv H15. inv H16. simpl in *.
+      intros.
+      conv_backward_roll.
+      conv_backward_roll. simpl in *.
       unfold look, upd.
       destruct (register_eq_dec ESP r).
         contradict e; assumption.
-        simpl_rtl.
-        clear Hcv.
         unfold set_mem32 in *.
         assert (same_mach_state (RTL_step_list (rev (c_rev_i cs4)))).
-          do 5 conv_backward_sms. 
-          inv H8. prover.
-        assert (rtl_mach_state s2 = rtl_mach_state s4). eapply H15; eassumption.
-        prover.
+          do 5 conv_backward_sms.
+          inv H9. crush.
+        crush.
   Qed.
   Transparent set_mem_n.
 
@@ -3006,7 +3027,7 @@ Ltac conv_backward_same_pc :=
       -> aligned (PC s'').
   Proof. intros.
     dupHyp H1; unfold nacljmp_mask_instr in H1.
-    dupHyp H2; safestate_unfold_tac.  simplHyp.
+    dupHyp H2; safestate_unfold_tac.  breakHyp.
     destruct ins1; bool_elim_tac; try congruence.
     destruct w; try congruence.
     destruct op1; try congruence.
@@ -3015,15 +3036,17 @@ Ltac conv_backward_same_pc :=
     assert (aligned (get_location (reg_loc r) (rtl_mach_state s'))).
       clear H14 H0 H4.
       step_tac.
-      use_lemma fetch_instr_after_flush_env by eassumption.
-      assert (v0 = (pre1, (AND true (Reg_op r) (Imm_op i)), len1)) by congruence.
-      assert (s0 = s1) by congruence.
-      subst v0 s1.
+      assert (v = (pre1, (AND true (Reg_op r) (Imm_op i)), len1)) by congruence.
+      assert (s0 = s) by congruence.
+      subst v s.
       rewrite no_prefix_no_lock_rep in H3 by assumption.
+      repeat rtl_okay_elim.
       unfold instr_to_rtl, check_prefix in H3.
-      dupHyp H1; unfold no_prefix in H1.
-      repeat (destruct_head in H1; try congruence).
-      unfold runConv in H3. simpl in H3.
+      dupHyp H1. 
+      unfold no_prefix, filter_prefix, ft_bool_no in H1. bool_elim_tac.
+      destruct (addr_override pre1); try congruence.
+      simpl in H3.
+      compute [runConv] in H3. simpl in H3.
       remember_destruct_head in H3 as ca.
       eapply nacljmp_mask_reg_aligned; try eassumption.
         destruct (zeq (signed i) (signed safeMask)). congruence.
@@ -3080,7 +3103,7 @@ Ltac conv_backward_same_pc :=
     assert (non_cflow_instr pre1 ins1 = true).
       eapply nacljmp_first_non_cflow_instr; eassumption.
     unfold safeInK.
-      split. unfold safeState in H2. prover.
+      split. unfold safeState in H2. crush.
       split. eapply nci_nextStepNoFail. eapply H. assumption. assumption.
       intros. right.
         assert (Same_Seg_Regs_Rel.brel s s').
@@ -3108,7 +3131,7 @@ Ltac conv_backward_same_pc :=
             use_lemma nacljmp_snd_step_same_seg_regs by eassumption.
             assert (H20: CLimit s = CLimit s'').
               unfold Same_Seg_Regs_Rel.brel in *.
-              simplHyp. prover.
+              breakHyp. crush.
             assert (eqCodeRegion s' s'').
               eapply eqCodeRegion_intro; try eassumption.
               right; left. 
@@ -3117,7 +3140,7 @@ Ltac conv_backward_same_pc :=
             use_lemma checkSegments_inv by eassumption.
             assert (appropState s'' ((sregs_st, sregs_lm), code)).
               unfold appropState. unfold Same_Seg_Regs_Rel.brel in *.
-              prover.
+              crush.
             split. assumption.
             split. trivial.
               assert (aligned (PC s'')).
@@ -3147,7 +3170,7 @@ Ltac conv_backward_same_pc :=
   Lemma eqMemBuffer_succ : forall b buffer s lc,
     eqMemBuffer (b::buffer) s lc -> eqMemBuffer buffer s (lc +32_z 1).
   Proof. unfold eqMemBuffer. intros.
-    simplHyp.
+    breakHyp.
     rewrite length_cons in H.
     split. int32_prover.
     intros.
@@ -3158,9 +3181,9 @@ Ltac conv_backward_same_pc :=
       assert (S i - 1 = i)%nat by omega.
       assert (lc +32_n S i = lc +32_p 1 +32_n i).
         unfold w32add. rewrite add_assoc. rewrite add_repr.
-        cut (Z_of_nat (S i) = 1 + Z_of_nat i).  prover.
+        cut (Z_of_nat (S i) = 1 + Z_of_nat i).  crush.
         nat_to_Z_tac. omega.
-      prover.
+      crush.
   Qed.
 
   Lemma simple_parse_aux_corr_parse_instr_aux : 
@@ -3173,7 +3196,7 @@ Ltac conv_backward_same_pc :=
            parse_instr_aux k lc consumed_len ps s = (Okay_ans (pre, ins, pos), s) /\
            Zpos pos + 1 = Zpos consumed_len + Z_of_nat len.
   Proof. induction bytes as [ | b bytes']; intros.
-    Case "nil". prover.
+    Case "nil". crush.
     Case "bytes = b::bytes'".
       use_lemma simple_parse'_len_pos by eassumption.
       assert (len <= length (b::bytes'))%nat by omega.
@@ -3216,7 +3239,7 @@ Ltac conv_backward_same_pc :=
           SSCase "subgoal 1".
           compute [parse_instr_aux]. fold parse_instr_aux.
           rtl_okay_intro.
-          rewrite <- H20. rewrite Hpb. prover.
+          rewrite <- H20. rewrite Hpb. crush.
           SSCase "subgoal 2".
           inv H.
           assert (len = 0)%nat.
@@ -3234,17 +3257,17 @@ Ltac conv_backward_same_pc :=
            parse_instr pc s = (Okay_ans (pre, ins, pos), s) /\
            Zpos pos = Z_of_nat len.
   Proof. unfold simple_parse. intros.
+    remember_destruct_head in H as ds; try congruence.
     use_lemma simple_parse_aux_corr_parse_instr_aux by eassumption.
     destruct H3 as [pos [H10 H12]].
     exists pos. split.
-      unfold parse_instr. rtl_okay_intro. eassumption. omega.
+      unfold parse_instr, parse_instr'. 
+      rewrite Hds. rtl_okay_intro. eassumption. omega.
   Qed.
-
-  Import ABSTRACT_MAKE_DFA.
 
   Lemma eqMemBuffer_skipn : forall n ls s lc,
     eqMemBuffer ls s lc -> eqMemBuffer (skipn n ls) s (lc +32_n n).
-  Proof. unfold eqMemBuffer. intros. simplHyp.
+  Proof. unfold eqMemBuffer. intros. breakHyp.
     split.
       eapply Zle_trans. eapply inj_le. eapply skipn_length_leq. assumption.
       intros.
@@ -3262,12 +3285,12 @@ Ltac conv_backward_same_pc :=
           assert (lc +32_n (i+n) = lc +32_n n +32_n i).
             unfold w32add. rewrite add_assoc. rewrite add_repr.
             rewrite inj_plus. rewrite Zplus_comm. trivial.
-          prover.
+          crush.
   Qed.
 
   Lemma eqMemBuffer_firstn : forall n ls s lc,
     eqMemBuffer ls s lc -> eqMemBuffer (firstn n ls) s lc.
-  Proof. unfold eqMemBuffer. intros. simplHyp.
+  Proof. unfold eqMemBuffer. intros. breakHyp.
     assert (length (firstn n ls) <= length ls)%nat.
       rewrite firstn_length. apply Min.le_min_r.
     split. omega.
@@ -3281,39 +3304,82 @@ Ltac conv_backward_same_pc :=
 
   Lemma simple_parse_parseloop_same : forall bytes ps,
     simple_parse' ps bytes = parseloop ps bytes.
-  Proof. induction bytes; prover. Qed.
+  Proof. induction bytes; crush. Qed.
 
   Lemma token2byte_inv_byte2token : forall b,
-    FastVerifier.token2byte (FastVerifier.byte2token b) = b.
-  Proof. unfold FastVerifier.token2byte, FastVerifier.byte2token. intros.
+    token2byte (byte2token b) = b.
+  Proof. unfold token2byte, byte2token. intros.
     rewrite inj_Zabs_nat. rewrite Zabs_eq. rewrite repr_unsigned. trivial.
-    generalize (unsigned_range b). prover.
+    generalize (unsigned_range b). crush.
   Qed.
 
   Lemma list_map_token_byte : forall bytes,
-    List.map (fun x  => FastVerifier.token2byte (FastVerifier.byte2token x)) bytes
+    List.map (fun x  => token2byte (byte2token x)) bytes
       = bytes.
-  Proof. induction bytes. prover.
-    simpl. rewrite token2byte_inv_byte2token. prover.
+  Proof. induction bytes. crush.
+    simpl. rewrite token2byte_inv_byte2token. crush.
   Qed.
 
-  (* todo: two defs of byte2token in FastVerifier.v and DFACorrectness.v;
-     should remove one of them *)
-  Lemma byte2token_same : forall l,
-    List.map byte2token l = List.map FastVerifier.byte2token l.
-  Proof. unfold byte2token, FastVerifier.byte2token. 
-    induction l; prover.
+  (* todo: remove *)
+  (* Lemma byte2token_same : forall l, *)
+  (*   List.map byte2token l = List.map FastVerifier.byte2token l. *)
+  (* Proof. unfold byte2token, FastVerifier.byte2token.  *)
+  (*   induction l; crush. *)
+  (* Qed. *)
+
+  Lemma parse_instr_imp_fetch_instr : 
+    forall pc pre ins pos s,
+      parse_instr pc s = (Okay_ans (pre, ins, pos), s)
+        -> unsigned pc + Zpos pos <= unsigned (CLimit s) + 1
+        -> fetch_instruction pc s = (Okay_ans (pre, ins, pos), s).
+  Proof. intros.
+    int32_simplify.
+    assert (noOverflow (pc :: (repr (Zpos pos - 1)) :: nil)).
+      int32_simplify. omega.
+    assert (pc <=32 (pc +32_z (Zpos pos - 1))).
+      apply checkNoOverflow_equiv_noOverflow. assumption.
+    assert (pc +32_z (Zpos pos - 1) <=32 (CLimit s)).
+      int32_simplify. omega.
+    unfold fetch_instruction. 
+    eapply rtl_bind_okay_intro; [eassumption | idtac].
+    remember_destruct_head as pl. inversion Hpl. subst p0 p.
+    rtl_okay_intro. crush.
   Qed.
- 
-  Remark aligned_bool_proper: 
-    Morphisms.Proper ((fun x y : Int32_OT.t => eq x y = true) ==> Logic.eq)
-      aligned_bool.
+
+  Remark aligned_bool_proper:
+   Morphisms.Proper
+     (Morphisms.respectful (fun x y : Int32_OT.t => eq x y = true) Logic.eq)
+     aligned_bool.
   Proof. unfold Morphisms.Proper, Morphisms.respectful.
-    intros. apply int_eq_true_iff2 in H. prover.
+    intros. apply int_eq_true_iff2 in H. crush.
   Qed.
+
+  (** The correctness proof is parametrized over the hypotheses about the
+     sucess of building of the three DFAs and the parser. They can be
+     easily discharged by performing evaluation in Coq. However, it would
+     take a long time. We actually extract ML code to do the evaluation.
+  *)
+  Hypothesis non_cflow_dfa_built:
+    abstract_make_recognizer _ non_cflow_grammar = Some non_cflow_dfa.
+
+  Hypothesis dir_cflow_dfa_built:
+    abstract_make_recognizer _ (alts dir_cflow) = Some dir_cflow_dfa.
+
+  Hypothesis nacljmp_dfa_built:
+    abstract_make_recognizer _ (alts nacljmp_mask) = Some nacljmp_dfa.
+
+  Hypothesis initial_state_built:
+    abs_opt_ini_decoder_state = Some initial_state.
+
+  (* Including the above hypotheses in the context will make some tactics *)
+  (*    such as discriminate extremely slow since they will try to evaluate *)
+  (*    terms such as opt_dir_cflow_dfa, which are huge terms.*)
+  Ltac clean :=
+    clear non_cflow_dfa_built; clear dir_cflow_dfa_built; clear nacljmp_dfa_built;
+    clear initial_state_built.
 
   Lemma goodJmp_lemma : forall pc len bytes jmpTargets startAddrs pre ins rem,
-    dir_cflow_instr pre ins = true 
+    dir_cflow_instr pre ins = true
       -> simple_parse bytes = Some (pre, ins, rem)
       -> len = (length bytes - length rem)%nat
       -> includeAllJmpTargets pc len (List.map byte2token bytes) jmpTargets
@@ -3322,14 +3388,17 @@ Ltac conv_backward_same_pc :=
   Proof. intros.
     assert (firstn len bytes = firstn len (firstn len bytes)).
       rewrite firstn_twice_eq by omega. trivial.
+    unfold simple_parse in *.
+    remember_destruct_head in H0 as ds; try congruence.
     use_lemma simple_parse'_ext by eassumption.
     destruct H5 as [rem1 H10].
     rewrite simple_parse_parseloop_same in H10.
     rewrite <- (list_map_token_byte bytes) in H10.
     rewrite <- list_map_compose in H10.
     rewrite firstn_map in H10.
-    rewrite <- byte2token_same in H10.
     unfold goodJmp, checkJmpTargets in *.
+    assert (i=initial_state) by congruence.
+    subst i. clean.
     destruct ins; simpl in H; try congruence.
     Case "CALL".
       destruct near; try congruence.
@@ -3340,9 +3409,9 @@ Ltac conv_backward_same_pc :=
       rewrite H10 in H2.
       unfold goodJmpTarget.
       remember_rev (Int32Set.mem (pc +32_n len +32 i) startAddrs) as ab.
-      destruct ab. prover.
+      destruct ab. crush.
         apply orb_true_intro. right.
-        assert (Int32Set.In (pc +32_n len +32 i) 
+        assert (Int32Set.In (pc +32_n len +32 i)
                   (Int32Set.diff jmpTargets startAddrs)).
           apply Int32Set.diff_spec. split. assumption.
           apply Int32SetFacts.not_mem_iff. assumption.
@@ -3352,9 +3421,9 @@ Ltac conv_backward_same_pc :=
       rewrite H10 in H2.
       unfold goodJmpTarget.
       remember_rev (Int32Set.mem (pc +32_n len +32 disp) startAddrs) as ab.
-      destruct ab. prover.
+      destruct ab. crush.
         apply orb_true_intro. right.
-        assert (Int32Set.In (pc +32_n len +32 disp) 
+        assert (Int32Set.In (pc +32_n len +32 disp)
                   (Int32Set.diff jmpTargets startAddrs)).
           apply Int32Set.diff_spec. split. assumption.
           apply Int32SetFacts.not_mem_iff. assumption.
@@ -3368,60 +3437,14 @@ Ltac conv_backward_same_pc :=
       rewrite H10 in H2.
       unfold goodJmpTarget.
       remember_rev (Int32Set.mem (pc +32_n len +32 i) startAddrs) as ab.
-      destruct ab. prover.
+      destruct ab. crush.
         apply orb_true_intro. right.
-        assert (Int32Set.In (pc +32_n len +32 i) 
+        assert (Int32Set.In (pc +32_n len +32 i)
                   (Int32Set.diff jmpTargets startAddrs)).
           apply Int32Set.diff_spec. split. assumption.
           apply Int32SetFacts.not_mem_iff. assumption.
         apply Int32Set.for_all_spec in H3. auto. apply aligned_bool_proper.
   Qed.
-
-
-  Lemma parse_instr_imp_fetch_instr : 
-    forall pc pre ins pos s,
-      parse_instr pc s = (Okay_ans (pre, ins, pos), s)
-        -> unsigned pc + Zpos pos <= unsigned (CLimit s) + 1
-        -> fetch_instruction pc s = (Okay_ans (pre, ins, pos), s).
-  Proof. intros.
-    int32_simplify.
-    assert (0 <= Zpos pos - 1 < w32modulus). 
-      generalize (Zgt_pos_0 pos).  omega.
-    assert (noOverflow (pc :: (repr (Zpos pos - 1)) :: nil)).
-      int32_simplify. omega.
-    assert (pc <=32 (pc +32_z (Zpos pos - 1))).
-      apply checkNoOverflow_equiv_noOverflow. assumption.
-    assert (pc +32_z (Zpos pos - 1) <=32 (CLimit s)).
-      int32_simplify. omega.
-    unfold fetch_instruction. 
-    eapply rtl_bind_okay_intro; [eassumption | idtac].
-    remember_destruct_head as pl. inversion Hpl. subst p0 p.
-    rtl_okay_intro. 
-    rewrite H6. rewrite H5. simpl. reflexivity.
-  Qed.
-
-  (** The correctness proof is parametrized over the hypotheses about the
-     sucess of building of the three DFAs and the parser. They can be
-     easily discharged by performing evaluation in Coq. However, it would
-     take a long time. We actually extract ML code to do the evaluation.
-  *)
-  Hypothesis non_cflow_dfa_built: 
-    abstract_build_dfa 256 nat2bools 400 (par2rec non_cflow_parser)
-      = Some non_cflow_dfa.
-
-  Hypothesis dir_cflow_dfa_built: 
-    abstract_build_dfa 256 nat2bools 400 (par2rec (alts dir_cflow))
-      = Some dir_cflow_dfa.
-
-  Hypothesis nacljmp_dfa_built: 
-    abstract_build_dfa 256 nat2bools 400 (par2rec (alts nacljmp_mask))
-      = Some nacljmp_dfa.
-
-  (* Including the above hypotheses in the context will make some tactics
-     such as discriminate extremely slow since they will try to evaluate
-     terms such as opt_dir_cflow_dfa, which are huge terms.*)
-  Ltac clean := 
-    clear non_cflow_dfa_built; clear dir_cflow_dfa_built; clear nacljmp_dfa_built.
 
   (* The three cases when the current state is a safe state *)
   (* The proof theorem needs the interface lemmas from the parser;
@@ -3447,7 +3470,7 @@ Ltac conv_backward_same_pc :=
           fetch_instruction (PC s +32_p len1) s = (Okay_ans (pre2, ins2, len2), s) /\
           nacljmp_mask_instr pre1 ins1 pre2 ins2 = true).
   Proof. unfold checkProgram, FastVerifier.checkProgram; intros.
-    remember_destruct_head in H0 as pb; try discriminate.
+    remember_destruct_head in H0 as pb; try congruence.
     destruct p as [startAddrs' checkAddrs].
     assert (startAddrs = startAddrs') by congruence.
     subst startAddrs'. 
@@ -3465,11 +3488,11 @@ Ltac conv_backward_same_pc :=
       eapply eqMemBuffer_firstn. 
       subst code'. rewrite H3 at 2.
       apply eqMemBuffer_skipn. unfold codeLoaded in *. 
-      simplHyp. assumption.
+      breakHyp. assumption.
     use_lemma process_buffer_addrRange by eassumption.
     assert ((nat_of_int32 (PC s)) + length tokens = length code)%nat.
       rewrite H20. rewrite list_length_map. rewrite plus_comm.
-      apply skipn_length. apply inj_lt_rev. int32_prover.
+      apply skipn_length. apply inj_lt_rev. clean. int32_prover.
     destruct H24 as [H24 | [H24 | H24]].
     Case "non_cflow_dfa matches". left. 
       use_lemma non_cflow_dfa_corr by (subst tokens; eassumption).
@@ -3485,8 +3508,8 @@ Ltac conv_backward_same_pc :=
       use_lemma simple_parse_corr_parse_instr by eassumption.
       destruct H9 as [pos [H40 H42]].
       assert (unsigned (PC s) + Zpos pos <= unsigned (CLimit s) + 1).
-        use_lemma dfa_recognize_inv by eassumption. simplHyp.
-        unfold codeLoaded in *. simplHyp.
+        use_lemma dfa_recognize_inv by eassumption. breakHyp.
+        unfold codeLoaded in *. breakHyp. clean.
         int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
       exists pre. exists ins. exists pos.
@@ -3494,7 +3517,7 @@ Ltac conv_backward_same_pc :=
       split. assumption. 
         rewrite H42. assumption.
     Case "dir_cflow_dfa matches". right; left.
-      simplHyp.
+      breakHyp.
       use_lemma dir_cflow_dfa_corr by (subst tokens; eassumption).
       destruct H10 as [insBytes [pre [ins [H30 [H32 [H34 H36]]]]]].
       assert (len = length code' - length (List.map nat_to_byte remaining))%nat.
@@ -3508,8 +3531,8 @@ Ltac conv_backward_same_pc :=
       use_lemma simple_parse_corr_parse_instr by eassumption.
       destruct H12 as [pos [H40 H42]].
       assert (unsigned (PC s) + Zpos pos <= unsigned (CLimit s) + 1).
-        use_lemma dfa_recognize_inv by eassumption. simplHyp.
-        unfold codeLoaded in *. simplHyp.
+        use_lemma dfa_recognize_inv by eassumption. breakHyp.
+        unfold codeLoaded in *. breakHyp.
         int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
       exists pre. exists ins. exists pos.
@@ -3521,8 +3544,8 @@ Ltac conv_backward_same_pc :=
         rewrite H42.
         eapply goodJmp_lemma; eassumption.
     Case "nacljmp_dfa matches". right; right.
-      simplHyp.
-      use_lemma NACLjmp.nacljmp_dfa_corr by (subst tokens; eassumption).
+      breakHyp.
+      use_lemma nacljmp_dfa_corr by (subst tokens; eassumption).
       destruct H8 as 
         [bytes1 [pre1 [ins1 [bytes [pre2 [ins2 [H30 [H32 [H34 [H36 H38]]]]]]]]]].
       rewrite app_length in H36.
@@ -3542,8 +3565,8 @@ Ltac conv_backward_same_pc :=
       destruct H12 as [pos1 [H40 H42]].
 
       assert (unsigned (PC s) + Zpos pos1 <= unsigned (CLimit s) + 1).
-        use_lemma dfa_recognize_inv by eassumption. simplHyp.
-        unfold codeLoaded in *. simplHyp.
+        use_lemma dfa_recognize_inv by eassumption. breakHyp.
+        unfold codeLoaded in *. breakHyp.
         int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
 
@@ -3574,8 +3597,8 @@ Ltac conv_backward_same_pc :=
       use_lemma simple_parse_corr_parse_instr by (subst code'; eassumption).
       destruct H17 as [pos2 [H50 H52]].
 
-      use_lemma dfa_recognize_inv by eassumption. simplHyp.
-      unfold codeLoaded in *. simplHyp.
+      use_lemma dfa_recognize_inv by eassumption. breakHyp.
+      unfold codeLoaded in *. breakHyp.
       generalize (Zgt_pos_0 pos1) (Zgt_pos_0 pos2). intros.
       assert (Z_of_nat (length bytes1) < w32modulus). 
         int32_simplify. omega.
@@ -3599,7 +3622,7 @@ Ltac conv_backward_same_pc :=
   Proof. unfold safeInSomeK. intros.
     exists (S O). simpl.
     split. 
-      unfold safeState in *. destruct inv. simplHyp. assumption.
+      unfold safeState in *. destruct inv. breakHyp. assumption.
     split.
       unfold nextStepNoFail. intros. contradict H.
         eapply step_fail_pc_inBound; eassumption.
@@ -3610,7 +3633,7 @@ Ltac conv_backward_same_pc :=
   Lemma fetch_instruction_dichotomy : forall pc s pre ins len,
     parse_instr pc s = (Okay_ans (pre, ins, len), s)
       -> fetch_instruction pc s = (Okay_ans (pre, ins, len), s) \/
-         fetch_instruction pc s = (SafeFail_ans _, s).
+         fetch_instruction pc s = (Trap_ans _, s).
   Proof. intros.
     remember_rev (andb (int32_lequ_bool pc (pc +32 repr (Zpos len - 1)))
                     (int32_lequ_bool (pc +32 repr (Zpos len - 1)) (CLimit s)))
@@ -3621,7 +3644,7 @@ Ltac conv_backward_same_pc :=
       remember_destruct_head as pl. inv Hpl.
       rtl_okay_intro. rewrite Hrb. reflexivity.
     right. 
-      eapply rtl_bind_safefail_intro1. eassumption.
+      eapply rtl_bind_trap_intro1. eassumption.
       remember_destruct_head as pl. inv Hpl.
       unfold Bind at 1; unfold RTL_monad at 1.
       rewrite in_seg_bounds_rng_equation.
@@ -3689,7 +3712,7 @@ Ltac conv_backward_same_pc :=
       remember_destruct_head as pr.
       destruct l. 
       SCase "l=nil". eauto.
-      SCase "l<>nil". prover.
+      SCase "l<>nil". crush.
   Qed.
 
   Lemma parse_instr_code_inv2 : forall pc s1 s1' pi len' s2,
@@ -3697,9 +3720,10 @@ Ltac conv_backward_same_pc :=
       -> Same_Mach_State_Rel.brel s1 s2
       -> parse_instr pc s1 = (Okay_ans (pi, len'), s1')
       -> parse_instr pc s2 = (Okay_ans (pi, len'), s2).
-  Proof. clean. unfold parse_instr. intros.
+  Proof. clean. unfold parse_instr, parse_instr'. intros.
     rtl_okay_elim.
     rtl_okay_intro.
+    destruct abs_opt_ini_decoder_state; try (unfold Fail in H1; congruence).
     eapply parse_instr_aux_code_inv2. eassumption.
       rewrite <- H0. eassumption.
   Qed.
@@ -3715,7 +3739,7 @@ Ltac conv_backward_same_pc :=
     destruct H2.
     Case "pc in startAddrs".
       assert (checkProgram code = (true, startAddrs)).
-        destruct (checkProgram code); prover.
+        destruct (checkProgram code); crush.
       use_lemma safeState_next_instr by eassumption.
       destruct H7. 
       SCase "Next: non_cflow_instr".
@@ -3724,7 +3748,7 @@ Ltac conv_backward_same_pc :=
       destruct H7.
       SCase "Next: dir_cflow_instr".
         destruct H7 as [pre [ins [len [H20 [H22 [H24 H26]]]]]].
-          eapply dci_safeInSomeK; try eassumption. prover.
+          eapply dci_safeInSomeK; try eassumption. crush.
       SCase "Next: nacljmp".
         destruct H7 as [pre1 [ins1 [len1 [pre2 [ins2 [len2 [H20 [H22 H24]]]]]]]].
             eapply nacljmp_safeInSomeK. eapply H20. eapply H22. eassumption.
@@ -3759,7 +3783,7 @@ Ltac conv_backward_same_pc :=
     unfold safeInSomeK in H2.
     destruct H2 as [k H10]. 
     destruct k. simpl in H10. contradict H10.
-      simpl in H10. prover.
+      simpl in H10. crush.
   Qed.
 
 End VERIFIER_CORR.

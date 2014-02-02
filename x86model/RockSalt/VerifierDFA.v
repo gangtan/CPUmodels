@@ -35,6 +35,9 @@ Import X86_PARSER.
 (* Import X86_BASE_PARSER. *)
 Require Import X86Syntax.
 
+Definition byte2token (b: int8) : token_id := Zabs_nat (Word.unsigned b).
+Definition token2byte (t: token_id) : int8 := Word.repr (Z_of_nat t).
+
 (* In NaCl, ChunkSize is either 16 or 32 *)
 Definition logChunkSize := 5%nat.
 Definition chunkSize := two_power_nat logChunkSize.

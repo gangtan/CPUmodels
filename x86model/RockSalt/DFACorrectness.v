@@ -263,8 +263,6 @@ Ltac psimp :=
 (** Main connecton between non_cflow_dfa and semantics -- this is hopefully
     close enough to the actual grammar used in the semantics that proving
     a relationship is easy to do.  We will see... *)
-Require Import X86Semantics.
-
 Fixpoint simple_parse' (ps:ParseState_t) (bytes:list int8) : 
   option ((prefix * instr) * list int8) := 
   match bytes with 
@@ -275,17 +273,12 @@ Fixpoint simple_parse' (ps:ParseState_t) (bytes:list int8) :
                end
   end.
 
-Section CONFUSE_COQ_FROM_EXPANDING.
-Variable init_p_state : option ParseState_t.
-Definition simple_parse'' (bytes:list int8) : option ((prefix * instr) * list int8) := 
-  match init_p_state with
+Import X86_PARSER.ABSTRACT_OPT_INI_DECODER_STATE.
+Definition simple_parse (bytes:list int8) : option ((prefix * instr) * list int8) := 
+  match abs_opt_ini_decoder_state with
       | None => None
       | Some s => simple_parse' s bytes
   end.
-End CONFUSE_COQ_FROM_EXPANDING.
-Definition simple_parse := simple_parse'' initial_parser_state.
-
-Definition byte2token (b: int8) : token_id := Zabs_nat (Word.unsigned b).
 
 (** This lemma shows that any instruction returned by the [non_cflow_grammar]
     satisfies the boolean predicate [non_cflow_instr].  We should probably

@@ -181,6 +181,14 @@ Tactic Notation "use_lemma" constr(lm) "by" tactic(tac) :=
                end
            end.
 
+(* simple hypothesis simplification *)
+Ltac breakHyp :=
+  repeat match goal with
+           | [ H : _ /\ _ |- _ ] => destruct H
+           | [ H : _ <-> _ |- _] => destruct H
+           | [ H : exists x, _ |- _ ] => destruct H
+         end.
+
 (* ----------------------------------------------------------------------- *)
 (* Begin of tactics from Adam Chlipala's cpdt book. 
    Two changes were made to crush: (1) The use of intuition is replaced

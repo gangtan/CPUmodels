@@ -2112,8 +2112,25 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
 
   Definition instruction_grammar := alts instruction_grammar_list.
 
-  Definition opt_initial_decoder_state n := 
-    opt_initial_parser_state n instruction_grammar.
+  Definition opt_ini_decoder_state := 
+    opt_initial_parser_state 255 instruction_grammar.
+
+  (* Definition opt_ini_x86_decoder_state :=  *)
+  (*   X86_PARSER.opt_initial_decoder_state 255. *)
+
+  (* Preventing Coq from expanding the def of opt_ini_x86_decoder_state *)
+  Module Type ABSTRACT_OPT_INI_DECODER_STATE_SIG.
+    Parameter abs_opt_ini_decoder_state : 
+      option (instParserState
+                (Pair_t X86_PARSER.prefix_t X86_PARSER.instruction_t)).
+    Parameter opt_ini_decoder_state_eq : 
+        abs_opt_ini_decoder_state = opt_ini_decoder_state.
+  End ABSTRACT_OPT_INI_DECODER_STATE_SIG.
+
+  Module ABSTRACT_OPT_INI_DECODER_STATE : ABSTRACT_OPT_INI_DECODER_STATE_SIG.
+    Definition abs_opt_ini_decoder_state := opt_ini_decoder_state.
+    Definition opt_ini_decoder_state_eq := eq_refl opt_ini_decoder_state.
+  End ABSTRACT_OPT_INI_DECODER_STATE.
 
   Lemma byte_less_than_num_tokens (b:int8) : 
     (Z.to_nat (Word.intval _ b) < num_tokens).
