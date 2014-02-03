@@ -51,6 +51,7 @@ Notation int32_zero := (@Word.zero 31).
 (*Notation int32_max := (@repr 31 (Word.max_unsigned 31))*)
 Notation int32_max := (@Word.mone 31).
 Notation int32_of_nat n := (@repr 31 (Z_of_nat n)).
+Notation nat_of_int32 i := (Zabs_nat (unsigned i)).
 
 Definition int32_ltu_bool := @Word.ltu 31.
 Definition int32_eq_bool := @Word.eq 31.
@@ -109,6 +110,23 @@ Proof. intros x y Hc.
   apply eq_sym in H4. apply Zmod_plus_eq_self in H4.
   rewrite Zmod_small in H4 by assumption. rewrite H4.
   rewrite Zmod_0_l. trivial.
+Qed.
+
+Lemma int32_add_add_sub :
+  forall i1 i2 i3:int32, (i1 +32 i3) +32 (i2 -32 i3) = i1 +32 i2.
+Proof. intros; unfold w32add. rewrite add_assoc. 
+       rewrite (@add_commut 31 i3 (i2 -32 i3)).
+       rewrite <- sub_add_l. 
+       rewrite add_sub_assoc. rewrite sub_idem.
+       rewrite add_zero. trivial.
+Qed.
+
+Lemma int32_of_nat_of_int32 : forall x,
+                                int32_of_nat (nat_of_int32 x) = x.
+Proof. intros. rewrite inj_Zabs_nat.
+       generalize (unsigned_range x); intros.
+       rewrite Zabs_eq by omega.
+       apply repr_unsigned.
 Qed.
 
 (** ** Tactics for int32 *)

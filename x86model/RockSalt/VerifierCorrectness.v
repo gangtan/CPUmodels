@@ -154,14 +154,13 @@ Admitted.
 (* The above definitions and theorems are from DFACorrectness.v; 
   they should be removed once that file is up-to-date *)
 
-(* Todo: organize the following *)
-
 Open Scope Z_scope.
 
+(** * Misc. lemmas *)
+
+(** ** Properties of chunkSize *)
 Lemma chunkSize_gt_0 : chunkSize > 0.
 Proof. unfold chunkSize. apply Coqlib.two_power_nat_pos. Qed.
-
-(** ** Properties of aligned *)
 
 Lemma chunkSize_divide_modulus : Znumtheory.Zdivide chunkSize (Word.modulus 31).
 Proof. unfold chunkSize, Word.modulus. apply two_power_nat_divide.
@@ -175,6 +174,8 @@ Proof. intros; apply Znumtheory.Zmod_div_mod.
     apply Zgt_lt. apply modulus_pos.
     apply chunkSize_divide_modulus.
 Qed.
+
+(** ** Properties of aligned *)
 
 Lemma aligned_plus :
   forall a b:int32, aligned a -> aligned b -> aligned (a +32 b).
@@ -266,7 +267,7 @@ Proof. intros.
       assumption.
 Qed.
 
-(** * proving checkAligned is correct *)
+(** ** Proving the correctness of [checkAligned] *)
 Lemma checkAligned_aux_unfold (startAddrs:Int32Set.t)(next:Z)(len:nat) :
     checkAligned_aux (startAddrs, next, len) = 
     match len with
@@ -339,7 +340,33 @@ Proof. unfold checkAligned. intros.
   apply Zmod_0_l.
 Qed.
 
+(** * The main verifier-correctness proof *)
 
+(** Basic ideas of developing correctness proof of the fast verifier:
+     - Define a pseudo instruction to be either a non-control-flow instruction, 
+         a direct-jump instruction, or a nacljmp (which corresponds
+         to two real instructions);
+     - Formalize the invariant that should be satisfied between pseudo
+         instructions: safeState, which says that pc is one of the
+         start addresses of pseudo instructions.
+     - Introduce a notion of safeInK (k, s, code), which means s will
+         reach a safe state within k steps and it won't fail before reaching
+         a safe state.
+     - Show that any safe state also satifies safeInK(k,s,code) for some k>0.
+         This proof is by case analysis over the current pseudo instruction. 
+         If it is a non-control-flow or direct-jump instruction, then 
+         safeInK(1,s,code). If it's a nacljmp, then safeInK(2,s,code). 
+     - Show the initial state is a safe state. Then using the previous
+         step, we know the initial state will reach a safe state s1;
+         similarly, s1 will reach a safe state s2; ... By def of safeInK,
+         none of these states (and the intermediate states) will fail.
+
+     Note the above framework is general in that (i) it accommodates other
+     pseudo instructions, not just nacljmp; (ii) it acccommodates trampolines;
+     we just need an axiom assuming after jumping to a trampoline, the machine
+     will come back to a safe state in a finite number of steps (that is,
+     safeInK for some k).
+*)
 Section VERIFIER_CORR.
 
   Variable non_cflow_dfa : Recognizer.DFA.
@@ -363,34 +390,6 @@ Section VERIFIER_CORR.
   Definition process_buffer :=
     FastVerifier.process_buffer non_cflow_dfa dir_cflow_dfa nacljmp_dfa
       initial_state.
-
-  (** * Definitions for aiding the verifier correctness proof *)
-
-  (* Basic ideas of developing correctness proof of the fast verifier:
-     (1) Define a pseudo instruction to be either a non-control-flow instruction, 
-         a direct-jump instruction, or a nacljmp (which corresponds
-         to two real instructions);
-     (2) Formalize the invariant that should be satisfied between pseudo
-         instructions: safeState, which says that pc is one of the
-         start addresses of pseudo instructions.
-     (3) Introduce a notion of safeInK (k, s, code), which means s will
-         reach a safe state within k steps and it won't fail before reaching
-         a safe state.
-     (4) Show that any safe state also satifies safeInK(k,s,code) for some k>0.
-         This proof is by case analysis over the current pseudo instruction. 
-         If it is a non-control-flow or direct-jump instruction, then 
-         safeInK(1,s,code). If it's a nacljmp, then safeInK(2,s,code). 
-     (5) Show the initial state is a safe state. Then using (4), we know
-         the initial state will reach a safe state s1; similarly, s1 will
-         reach a safe state s2; ... By def of safeInK, none of these
-         states (and the intermediate states) will fail.
-
-     Note the above framework is general in that (i) it accommodates other
-     pseudo instructions, not just nacljmp; (ii) it acccommodates trampolines;
-     we just need an axiom assuming after jumping to a trampoline, the machine
-     will come back to a safe state in a finite number of steps (that is,
-     safeInK for some k)
-  *)
 
   (* Checks whether the memory of s starting at addr_offset is equal
      to buffer *)
@@ -427,11 +426,11 @@ Section VERIFIER_CORR.
       disjointRegions (CStart s) (CLimit s) (EStart s) (ELimit s) &&
       disjointRegions (CStart s) (CLimit s) (GStart s) (GLimit s))%bool.
 
-  (* Invariants include the segment register starts and limits, and the code *)
+  (** Invariants include the segment register starts and limits, and the code *)
   Definition Inv := 
      (fmap segment_register int32 * fmap segment_register int32 * list int8)%type.
 
-  (* An appropriate state is one that segment registers are the same as the initial
+  (** An appropriate state is one that segment registers are the same as the initial
      state and code is the same as the initial state *)
   Definition appropState (s:rtl_state) (inv:Inv) :=
     let (sregs, code) := inv in 
@@ -441,7 +440,7 @@ Section VERIFIER_CORR.
       codeLoaded code s /\
       checkSegments s = true.
 
-  (* The invariant that should be satisfied between pseudo instructions*)
+  (** The invariant that should be satisfied between pseudo instructions*)
   Definition safeState (s:rtl_state) (inv:Inv) :=
     let (sregs, code) := inv in 
     let cpRes := checkProgram code in
@@ -449,11 +448,11 @@ Section VERIFIER_CORR.
       fst cpRes = true /\
       (Int32Set.In (PC s) (snd cpRes) \/ ~ inBoundCodeAddr (PC s) s).
 
-  (* state s does not step to a failed state *)
+  (** State s does not step to a failed state *)
   Definition nextStepNoFail (s: rtl_state) := 
     forall s', step s <> (Fail_ans _, s').
 
-  (* The initial state can reach a safe state within k steps; the
+  (** The initial state can reach a safe state within k steps; the
      definition does not assume the step relation is
      deterministic; so the initial state may reach a safe state
      in different number of steps along different paths *)
@@ -467,7 +466,7 @@ Section VERIFIER_CORR.
   Definition safeInSomeK (s:rtl_state) (inv:Inv) := 
     exists k, safeInK k s inv.
 
-  (* An equivalence relation between states that says the code
+  (** An equivalence relation between states that says the code
      region is immutable *)
   Definition eqCodeRegion (s s':rtl_state) :=
     CStart s = CStart s' /\ CLimit s = CLimit s' /\
@@ -498,9 +497,9 @@ Section VERIFIER_CORR.
       | _ => false
     end.
 
-  (** * Fast verifier correctness proof *)
+  (** ** Fast verifier correctness proof *)
   
-  (** ** Auxliary lemmas about lists, skipn, and firstn *)
+  (** *** Auxliary lemmas about lists, skipn, and firstn *)
 
   Lemma nth_nil : forall (A:Type) n (default:A),
     nth n nil default = default.
@@ -605,7 +604,7 @@ Section VERIFIER_CORR.
     destruct l; crush.
   Qed.
 
-  (** ** Properties of codeLoaded *)
+  (** *** Properties of codeLoaded *)
   Lemma codeLoaded_length : forall code s,
     codeLoaded code s -> Z_of_nat (length code) <= w32modulus.
   Proof. unfold codeLoaded. intros.
@@ -621,11 +620,7 @@ Section VERIFIER_CORR.
   Qed.
 
 
-  (** ** Properties of dfa_recognize *)
-
-    (* Local Ltac dfaprover := *)
-    (*    simtuition ltac:(auto with *star); autorewrite with dfaRecDB in *;  *)
-    (*    rewriter; simtuition ltac:(auto with *)
+  (** *** Properties of dfa_recognize *)
 
   Require Coqlib.
 
@@ -652,7 +647,7 @@ Section VERIFIER_CORR.
         rewrite <- minus_n_O in H. crush.
   Qed.
 
-  (** ** Properties of safeInK and safeInSomeK *)
+  (** *** Properties of safeInK and safeInSomeK *)
   Lemma safeInSomeK_no_fail : forall s inv,
     safeInSomeK s inv -> nextStepNoFail s.
   Proof. unfold safeInSomeK. intros. destruct H as [k H]. destruct k; crush. Qed.
@@ -672,7 +667,7 @@ Section VERIFIER_CORR.
       -> safeInK 1%nat s inv.
   Proof. crush. Qed.
 
-  (** ** Properties of subsetRegion *)
+  (** *** Properties of subsetRegion *)
   Ltac subsetRegion_intro_tac :=
     unfold subsetRegion; bool_intro_tac.
 
@@ -692,7 +687,7 @@ Section VERIFIER_CORR.
    int32_prover.
   Qed.
 
-  (** ** Properties of checkSegments *)
+  (** *** Properties of checkSegments *)
   Lemma checkSegments_inv : forall (s s':rtl_state),
     Same_Seg_Regs_Rel.brel s s'
       -> checkSegments s = true
@@ -818,7 +813,7 @@ Section VERIFIER_CORR.
     eapply agree_over_addr_region_trans; eassumption.
   Qed.
 
-  (** ** Properties about parse_instr *)
+  (** *** Properties about parse_instr *)
   Opaque Decode.X86_PARSER.parse_byte.
 
   Lemma parse_instr_aux_same_state : forall n pc len ps,
@@ -940,7 +935,7 @@ Section VERIFIER_CORR.
 
   Transparent Decode.X86_PARSER.parse_byte.
 
-  (** ** Misc. lemmas *)
+  (** *** Misc. lemmas *)
 
   Lemma Int32Set_in_dichotomy : forall x y A B,
     Int32Set.In x (Int32Set.diff A B)
@@ -951,7 +946,7 @@ Section VERIFIER_CORR.
       int32_to_Z_tac. crush.
   Qed.
 
-  (** ** Properties of process_buffer *)
+  (** *** Properties of process_buffer *)
 
   (* process buffer prover *)
   (* Local Ltac pbprover := *)
@@ -1405,7 +1400,7 @@ Section VERIFIER_CORR.
     exists tokens', len, remaining. int32_simplify. pbprover.
   Qed.
 
-  (** ** Properties of simple_parse *)
+  (** *** Properties of simple_parse *)
   Lemma simple_parse'_len_pos : forall bytes ps pre ins bytes1,
     simple_parse' ps bytes = Some ((pre,ins), bytes1)
       -> (length bytes > length bytes1)%nat.
@@ -1444,8 +1439,7 @@ Section VERIFIER_CORR.
         exists bytes1. crush.
   Qed.
 
-  (** ** A theorem about immutable code region *)
-
+  (** *** A theorem about immutable code region *)
   Section FETCH_INSTR_CODE_INV.
 
   Opaque parse_instr.
@@ -1456,8 +1450,6 @@ Section VERIFIER_CORR.
 
   Remark fetchSize_lt_modulus : 15 <= w32modulus.
   Proof. rewrite int32_modulus_constant. lia. Qed.
-
-  (* todo: all lemmas about parse_instr changed abstract_parse_instr *)
 
   Theorem fetch_instr_code_inv : forall s1 s2 s1' pc pre i len,
     eqCodeRegion s1 s2
@@ -1604,17 +1596,6 @@ Section VERIFIER_CORR.
               crush.
   Qed.
 
-  (* todo: move *)
-  Notation nat_of_int32 i := (Zabs_nat (unsigned i)).
-
-  Lemma int32_of_nat_of_int32 : forall x,
-    int32_of_nat (nat_of_int32 x) = x.
-  Proof. intros. rewrite inj_Zabs_nat.
-    generalize (unsigned_range x); intros.
-    rewrite Zabs_eq by omega.
-    apply repr_unsigned.
-  Qed.
-
   Lemma codeLoaded_fetch_n_2 : forall code s k pc code' gSize guardZone,
     codeLoaded code s
       -> unsigned pc < Z_of_nat (length code)
@@ -1673,7 +1654,7 @@ Section VERIFIER_CORR.
     rewrite list_length_map. omega.
   Qed.
 
-  (** ** Properties of run_dep *)
+  (** *** Properties of run_dep *)
   Lemma run_rep_same_seg_regs : forall pre ins dpc,
     same_seg_regs (RTL_step_list (instr_to_rtl pre ins))
       -> same_seg_regs (run_rep pre ins dpc).
@@ -1687,14 +1668,13 @@ Section VERIFIER_CORR.
 
   Hint Resolve run_rep_same_seg_regs : same_seg_regs_db.
 
-  (* todo: change the following lemmas to the above way of organizing thing*)
   Lemma run_rep_aoes_nci : forall pre ins dpc,
     non_cflow_instr pre ins = true
       -> agree_outside_seg ES (run_rep pre ins dpc).
   Proof. unfold run_rep, check_rep_instr. intros.
     destruct ins; try discriminate; simpl in H.
     Case "CMPS".
-      agree_outside_seg_tac. 
+      agree_outside_seg_tac.
       unfold instr_to_rtl, check_prefix. prove_instr.
     Case "MOVS".
       agree_outside_seg_tac. 
@@ -1787,20 +1767,14 @@ Section VERIFIER_CORR.
        end
    end.
 
-  (* todo: remove *)
-  (* Ltac step_tac :=  *)
-  (*  match goal with  *)
-  (*   | [H1: step_immed ?s ?s' |- _] => *)
-  (*      unfold step_immed, step in H1; *)
-  (*      rtl_okay_break; *)
-  (*      do 2 rtl_okay_elim; *)
-  (*      match goal with *)
-  (*        | [H2: context[if ?X then _ else _],  *)
-  (*           H3: flush_env ?s = (Okay_ans ?v0, ?s0) |- _] =>  *)
-  (*          destruct X; [idtac | discriminate H1]; *)
-  (*          rtl_okay_break *)
-  (*      end *)
-  (*  end. *)
+  Ltac dup_fetch_instr_elim := 
+    match goal with 
+      | [H1: fetch_instruction _ _ = (Okay_ans (?Pre, ?Ins, ?Len), _),
+             H2: fetch_instruction _ ?S = (Okay_ans ?V, ?S0) |- _]
+        => assert (V = (Pre, Ins, Len)) by congruence;
+          assert (S0 = S) by congruence;
+          subst V S; clear H2
+    end.
 
   Lemma nci_eqCodeRegion: forall pre ins s v' s',
     non_cflow_instr pre ins = true
@@ -1838,15 +1812,11 @@ Section VERIFIER_CORR.
       -> Same_Seg_Regs_Rel.brel s s'.
   Proof. intros.
     safestate_unfold_tac.
-    step_tac.
-    assert (v = (pre, ins , len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s0.
+    step_tac. dup_fetch_instr_elim.
     assert (same_seg_regs (RTL_step_list (instr_to_rtl pre ins))).
       auto using nci_same_seg_regs.
     same_seg_regs_rel_tac.
   Qed.
-
 
   Ltac aoar_tac := 
       match goal with
@@ -1858,7 +1828,6 @@ Section VERIFIER_CORR.
               eapply H; eassumption
       end.
 
-  (* todo: use a tactic to simplify the proof *)
   Lemma nci_step_aos : forall s s' inv pre ins len,
     fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s)
       -> non_cflow_instr pre ins = true
@@ -1870,47 +1839,25 @@ Section VERIFIER_CORR.
           agree_outside_addr_region (segAddrs ES s) s s').
   Proof. intros. safestate_unfold_tac.
     step_tac.
-    assert (v = (pre, ins, len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s0.
+    dup_fetch_instr_elim.
     remember (RTL_step_list (instr_to_rtl pre ins)) as comp.
     assert (H20: agree_outside_seg DS comp \/ agree_outside_seg SS comp \/
                  agree_outside_seg GS comp \/ agree_outside_seg ES comp).
       subst comp.
       eauto using nci_aos.
     destruct (lock_rep pre). destruct l. 
-    Case "lock".
-      destruct H20 as [H20 | [H20 | [H20 | H20]]].
-      SCase "DS".
-        left. aoar_tac.
-      SCase "SS".
-        right. left. aoar_tac.
-      SCase "GS".
-        right. right. left. aoar_tac.
-      SCase "ES".
-        right. right. right. aoar_tac.
+    Local Ltac nci_step_aos_helper := repeat match goal with
+           | [H: agree_outside_seg _ _ \/ _ |- _] => destruct H
+           | [H: agree_outside_seg ?Seg _ |- 
+              agree_outside_addr_region (segAddrs ?Seg _) _ _ \/ _ ] => left
+           | [ |- agree_outside_addr_region _ _ _ \/ _ ] => right
+           | [ |- agree_outside_addr_region _ _ _] => aoar_tac
+         end.
+    nci_step_aos_helper.
     Case "rep".
       right; right; right. aoar_tac.
-    Case "repn".
-      destruct H20 as [H20 | [H20 | [H20 | H20]]].
-      SCase "DS".
-        left. aoar_tac.
-      SCase "SS".
-        right. left. aoar_tac.
-      SCase "GS".
-        right. right. left. aoar_tac.
-      SCase "ES".
-        right. right. right. aoar_tac.
-    Case "None".
-      destruct H20 as [H20 | [H20 | [H20 | H20]]].
-      SCase "DS".
-        left. aoar_tac.
-      SCase "SS".
-        right. left. aoar_tac.
-      SCase "GS". 
-        right. right. left. aoar_tac.
-      SCase "ES".
-        right. right. right. aoar_tac.
+    Case "repn".  nci_step_aos_helper.
+    Case "None". nci_step_aos_helper.
   Qed.
 
   Lemma nci_checkSegments_inv : forall s s' inv pre ins len,
@@ -1985,57 +1932,6 @@ Section VERIFIER_CORR.
     destruct (lock_rep pre) as [lr|]; [destruct lr|]; crush.
   Qed.
 
-  (* todo: remove *)
-  (* Lemma only_gs_seg_override_lock_rep : forall pre, *)
-  (*   only_gs_seg_override pre = true -> lock_rep pre = None. *)
-  (* Proof. unfold only_gs_seg_override, filter_prefix, ft_no_lock_or_rep; intros. *)
-  (*   bool_elim_tac. *)
-  (*   destruct (lock_rep pre); congruence. *)
-  (* Qed. *)
-
-  (* Lemma only_op_override_lock_rep : forall pre, *)
-  (*   only_op_override pre = true -> lock_rep pre = None. *)
-  (* Proof. unfold only_op_override; intros. *)
-  (*   destruct (lock_rep pre); congruence. *)
-  (* Qed. *)
-
-  (* Lemma either_prefix_lock_rep : forall pre, *)
-  (*   either_prefix pre = true -> lock_rep pre = None. *)
-  (* Proof. unfold either_prefix; intros. *)
-  (*   bool_elim_tac. apply only_op_override_lock_rep; assumption. *)
-  (*     apply only_gs_seg_override_lock_rep; assumption. *)
-  (* Qed. *)
-
-  (* Lemma only_lock_or_rep_lock_rep : forall pre, *)
-  (*   only_lock_or_rep pre = true -> lock_rep pre = Some rep \/ lock_rep pre = None. *)
-  (* Proof. unfold only_lock_or_rep. intros. *)
-  (*   destruct (lock_rep pre). *)
-  (*   destruct l; try congruence. *)
-  (*   do 3 (destruct_head in H; try congruence). prover. *)
-  (*   do 3 (destruct_head in H; try congruence). prover. *)
-  (* Qed. *)
-
-  (* todo: no long true; remove *)
-  (* Lemma nci_lock_rep_prefix : forall pre ins, *)
-  (*   non_cflow_instr pre ins = true -> *)
-  (*     lock_rep pre = Some rep \/ lock_rep pre = None. *)
-  (* Proof. intros. *)
-  (*   destruct ins; simpl in H; bool_elim_tac. *)
-  (*   match goal with *)
-  (*     | [H: only_gs_seg_override pre = true |- _] *)
-  (*       => right; apply only_gs_seg_override_lock_rep; assumption *)
-  (*     | [H: either_prefix pre = true |- _] *)
-  (*       => right; apply either_prefix_lock_rep; assumption *)
-  (*     | [H: only_lock_or_rep pre = true |- _] *)
-  (*       =>  apply only_lock_or_rep_lock_rep in H; assumption *)
-  (*     | [H: false = true |- _] => congruence *)
-  (*     | _ => idtac *)
-  (*   end. *)
-  (*   destruct op2; try congruence. *)
-  (*   bool_elim_tac. *)
-  (*   right; apply only_gs_seg_override_lock_rep; assumption. *)
-  (* Qed. *)
-
   Lemma same_pc_same_mem_fetch_equal : forall n loc len ps s s' s0,
        rtl_memory s = rtl_memory s0
     -> seg_regs_starts (get_core_state s) = seg_regs_starts (get_core_state s0)
@@ -2050,44 +1946,6 @@ Section VERIFIER_CORR.
     destruct l. eapply IHn; eauto.
     discriminate H2.
   Qed.
-
-  (* todo: remove *)
-  (* Lemma parse_instr_aux_flush_same : forall n loc len ps s s' s1 v v2, *)
-  (*  flush_env s = (Okay_ans v, s1) *)
-  (*  -> parse_instr_aux n loc len ps s = (Okay_ans v2, s') *)
-  (*  -> (exists s1', parse_instr_aux n loc len ps s1 = (Okay_ans v2, s1')). *)
-  (* Proof. induction n; intros. simpl in *. discriminate H0. *)
-  (*   simpl in *. inversion H. subst. simpl. *)
-  (*   destruct (parse_byte ps (AddrMap.get loc0 (rtl_memory s))). *)
-  (*   destruct l. eapply IHn. apply H. eauto. *)
-  (*   eexists. inv H0. auto. *)
-  (* Qed. *)
-
-  (* todo: remove *)
-  (* Lemma fetch_instr_flush_nofail : forall s s' s1 s1' v pre ins len, *)
-  (*    fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s') *)
-  (*   -> flush_env s = (Okay_ans v, s1) *)
-  (*   -> fetch_instruction (PC s1) s1 <> (Fail_ans (prefix * instr * positive), s1'). *)
-  (* Proof.  *)
-  (*   intros. intro Hc. *)
-  (*   unfold fetch_instruction in *. *)
-  (*   rtl_fail_break. unfold parse_instr in *. *)
-  (*   rtl_fail_break. discriminate Hc. *)
-  (*   rtl_okay_break.  *)
-  (*   rtl_okay_break.  *)
-  (*   assert (exists s0', parse_instr_aux 15 (add v2 (PC s)) 1 initial_parser_state s3 = Fail _ s0'). *)
-  (*   eapply same_pc_same_mem_fetch_equal with (s := s0) (s' := s1'). *)
-  (*        inv H0. inv H1. inv H3. auto. *)
-  (*        inv H0. inv H1. inv H3. auto. *)
-  (*        inv H0. inv H1. inv H3. auto. *)
-  (*   assert (v0 = v2).  *)
-  (*        inv H0. inv H1. inv H3. auto. rewrite <-H4. *)
-  (*   assert (PC s = PC s1). *)
-  (*        inv H0. inv H1. inv H3. auto. rewrite H5. auto. *)
-  (*   destruct H4. rewrite H4 in H2. discriminate H2. *)
-  (*   destruct v0. rtl_fail_break. unfold in_seg_bounds_rng in *. *)
-  (*  rtl_fail_break. discriminate Hc. discriminate Hc. destruct v0; discriminate.  *)
-  (* Qed. *)
 
   Lemma nci_nextStepNoFail : forall s pre ins len,
     fetch_instruction (PC s) s = (Okay_ans (pre, ins, len), s)
@@ -2154,10 +2012,7 @@ Section VERIFIER_CORR.
       -> PC s' = PC s +32_p len \/ PC s' = PC s.
   Proof. intros.
     safestate_unfold_tac.
-    step_tac.
-    assert (v = (pre, ins, len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     assert (H20:same_pc (RTL_step_list (instr_to_rtl pre ins))).
       eapply nci_same_pc; eassumption.
     destruct (lock_rep pre). destruct l.
@@ -2242,7 +2097,7 @@ Section VERIFIER_CORR.
         split. trivial. trivial.
   Qed.
 
-  (** ** Proving that dir_cflow_instr can reach safe state in one step *)
+  (** *** Proving that dir_cflow_instr can reach safe state in one step *)
   Lemma dci_eqCodeRegion: forall pre ins s v' s',
     dir_cflow_instr pre ins = true
       -> checkSegments s = true
@@ -2262,10 +2117,7 @@ Section VERIFIER_CORR.
       -> Same_Seg_Regs_Rel.brel s s'.
   Proof. intros.
     safestate_unfold_tac.
-    step_tac.
-    assert (v = (pre, ins , len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     assert (same_seg_regs (RTL_step_list (instr_to_rtl pre ins))).
       auto using dci_same_seg_regs.
     same_seg_regs_rel_tac.
@@ -2278,10 +2130,7 @@ Section VERIFIER_CORR.
       -> s ==> s'
       -> agree_outside_addr_region (segAddrs SS s) s s'.
   Proof. intros. safestate_unfold_tac.
-    step_tac.
-    assert (v = (pre, ins, len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     remember (RTL_step_list (instr_to_rtl pre ins)) as comp.
     assert (H20: agree_outside_seg SS comp).
       subst comp.
@@ -2413,10 +2262,7 @@ Section VERIFIER_CORR.
       -> checkSegments s = true
       -> (PC s') = (PC s) +32_p len +32 disp.
   Proof. intros.
-    step_tac.
-    assert (v = (pre, (JMP true false (Imm_op disp) None), len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
     bool_elim_tac.
     destruct (lock_rep pre); try congruence.
@@ -2432,20 +2278,10 @@ Section VERIFIER_CORR.
     conv_elim.
     assert (H10:PC s' = PC s +32 disp).
       eapply conv_JMP_relative_imm_PC; try eassumption.
-      inv H8. crush.
+      inv H7. crush.
     unfold set_loc in *. rtl_okay_elim. 
-    (*todo: add a clause of set_loc (get_location?) in rtl_okay_elim *)
     crush.
   Qed.
-
-(* todo: move to X86lemmas.v *)
-Ltac conv_backward_same_pc :=
-  match goal with
-    [H: ?cv ?cs = (_, ?cs') |- 
-      same_pc (RTL_step_list (rev (c_rev_i ?cs')))]
-    => eapply conv_same_pc_e;
-       [eassumption | conv_same_pc_tac | idtac]
-  end.
 
   Opaque set_mem_n. (* without this, the QED would take forever *)
   Lemma conv_CALL_relative_imm_step_PC : forall s s' pre disp len,
@@ -2456,10 +2292,7 @@ Ltac conv_backward_same_pc :=
       -> checkSegments s = true
       -> (PC s') = (PC s) +32_p len +32 disp.
   Proof. intros.
-    step_tac.
-    assert (v = (pre, (CALL true false (Imm_op disp) None), len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
     bool_elim_tac.
     destruct (lock_rep pre); try congruence.
@@ -2522,7 +2355,7 @@ Ltac conv_backward_same_pc :=
         rewrite H1. rewrite H22.
         crush.
   Qed.
-        
+
   Lemma conv_Jcc_step_PC : forall s s' pre ct disp len,
     fetch_instruction (PC s) s = (Okay_ans (pre, (Jcc ct disp), len), s)
       -> no_prefix pre = true
@@ -2530,10 +2363,7 @@ Ltac conv_backward_same_pc :=
       -> checkSegments s = true
       -> (PC s' = (PC s) +32_p len \/ (PC s') = (PC s) +32_p len +32 disp).
   Proof. intros.
-    step_tac.
-    assert (v = (pre, (Jcc ct disp), len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
     bool_elim_tac.
     destruct (lock_rep pre); try congruence.
@@ -2551,8 +2381,8 @@ Ltac conv_backward_same_pc :=
       eapply conv_Jcc_PC; try eassumption.
       repeat conv_backward_same_pc.
       simpl. unfold same_pc. crush.
-    assert (H22:PC s = PC s0 +32_p len).
-      inv H7. crush.
+    assert (H22:PC s = PC s0 +32_p len). 
+      extended_rtl_okay_elim. crush.
     crush.
   Qed.
 
@@ -2659,7 +2489,7 @@ Ltac conv_backward_same_pc :=
   Qed. 
 
 
-  (** ** the proof that nacljmp is safe in two steps *)
+  (** *** Proving that nacljmp is safe in two steps *)
   Lemma no_prefix_lock_or_gs_or_op: forall pre,
     no_prefix pre = true -> lock_or_gs_or_op pre = true.
   Proof. unfold_prefix_filters_tac. unfold filter_prefix; intros.
@@ -2695,18 +2525,15 @@ Ltac conv_backward_same_pc :=
       -> s ==> s'
       -> PC s' = PC s +32_p len1.
   Proof. intros. safestate_unfold_tac.
-    step_tac.
-    (* use_lemma fetch_instr_after_flush_env by eassumption. *)
-    assert (v = (pre1, ins1, len1)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     use_lemma nacljmp_first_non_cflow_instr by eassumption.
     assert (H20:same_pc (RTL_step_list (instr_to_rtl pre1 ins1))).
       eapply nci_same_pc; eassumption.
     use_lemma nacljmp_no_prefix by eassumption.
     breakHyp. 
-    apply filter_prefix_no_lock_or_rep in H10.
-    rewrite H10 in *.
+    assert (H21:lock_rep pre1 = None).
+      eauto using filter_prefix_no_lock_or_rep.
+    rewrite H21 in *.
     rtl_okay_break.
     assert (H22:PC s = PC s'). eapply H20; eassumption.
     rewrite <- H22. unfold set_loc in *. crush.
@@ -2776,42 +2603,6 @@ Ltac conv_backward_same_pc :=
     bool_elim_tac. trivial.
   Qed.
 
-  (* todo: remove or revise *)
-  (* Lemma compute_parity_aux_break : forall n sz (op1:pseudo_reg sz) op2 cs v' cs',  *)
-  (*   compute_parity_aux op1 op2 n cs = (v', cs') *)
-  (*     -> exists ilist, *)
-  (*         c_rev_i cs' = (ilist ++ c_rev_i cs)%list /\ *)
-  (*         forall s s' szx x,  *)
-  (*           RTL_step_list (rev ilist) s = (Okay_ans tt, s') *)
-  (*             -> x < c_next cs  *)
-  (*             -> rtl_env s (ps_reg szx x) = rtl_env s' (ps_reg szx x). *)
-  (* Proof. induction n; intros. *)
-  (*   Case "n=0". simpl in H. inv H. simpl. *)
-  (*     eexists. split. *)
-  (*     rewrite CheckDeterministic.cons_app. trivial. *)
-  (*     intros. simpl in H. inv H. simpl. autorewrite with rtl_rewrite_db. trivial. *)
-  (*   Case "S n".  simpl in H. *)
-  (*     remember_destruct_head in H as cp. rename c into cs1. *)
-  (*     use_lemma IHn by eassumption. *)
-  (*     destruct H0 as [ilist [H20 H22]]. *)
-  (*     unfold arith, fresh in H. *)
-  (*     simpl in H. simpl_rtl. *)
-  (*     eexists. split. *)
-  (*       inv H. simpl. rewrite H20. *)
-  (*       repeat (rewrite app_comm_cons). trivial. *)
-  (*       simpl. intros. *)
-  (*       autorewrite with step_list_db in H0. *)
-  (*       repeat rtl_okay_elim. removeUnit. *)
-  (*       erewrite H22; [idtac | eassumption | omega]. *)
-  (*       assert (c_next cs < c_next cs1). *)
-  (*         eapply compute_parity_aux_index_increase; eassumption. *)
-  (*       simpl in *. *)
-  (*       unfold set_ps in *. prover. *)
-  (*       simpl in *. *)
-  (*       autorewrite with rtl_rewrite_db. *)
-  (*       trivial. *)
-  (* Qed.         *)
-
   (* A tactic useful when doing proofs that requires detailed reasoning of
      instruction semantics *)
   Local Ltac conv_backward_roll := 
@@ -2866,10 +2657,7 @@ Ltac conv_backward_same_pc :=
       -> s ==> s'
       -> Same_Seg_Regs_Rel.brel s s'.
   Proof. unfold safeState. intros.
-    step_tac.
-    assert (v = (pre2, ins2 , len2)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     unfold nacljmp_mask_instr in H0.
     assert (same_seg_regs (RTL_step_list (instr_to_rtl pre2 ins2))).
       eauto using nacljmp_snd_same_seg_regs.
@@ -2900,10 +2688,7 @@ Ltac conv_backward_same_pc :=
       -> s ==> s'
       -> agree_outside_addr_region (segAddrs SS s) s s'.
   Proof. intros.
-    step_tac.
-    assert (v = (pre2, ins2, len2)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     assert (H20: agree_outside_seg SS (RTL_step_list (instr_to_rtl pre2 ins2))).
       eauto using nacljmp_snd_aoss.
     destruct (lock_rep pre2); [idtac | aoar_tac].
@@ -2945,10 +2730,7 @@ Ltac conv_backward_same_pc :=
       -> checkSegments s = true
       -> (PC s') = (get_location (reg_loc r) (rtl_mach_state s)).
   Proof. intros.
-    step_tac.
-    assert (v = (pre, (JMP true true (Reg_op r) None), len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
     bool_elim_tac.
     destruct (lock_rep pre); try congruence.
@@ -2967,7 +2749,7 @@ Ltac conv_backward_same_pc :=
     unfold get_location.
     rewrite <- H10.
     eapply conv_JMP_absolute_reg_PC; try eassumption.
-      intros. inv H8. crush.
+      intros. extended_rtl_okay_elim. crush.
   Qed.
 
   Opaque set_mem_n. (* without this, the QED would take forever *)
@@ -2980,10 +2762,7 @@ Ltac conv_backward_same_pc :=
       -> checkSegments s = true
       -> (PC s') = (get_location (reg_loc r) (rtl_mach_state s)).
   Proof. intros.
-    step_tac.
-    assert (v = (pre, (CALL true true (Reg_op r) None), len)) by congruence.
-    assert (s0 = s) by congruence.
-    subst v s.
+    step_tac. dup_fetch_instr_elim.
     unfold no_prefix, filter_prefix, ft_no_lock_or_rep, ft_bool_no in *.
     bool_elim_tac.
     destruct (lock_rep pre); try congruence.
@@ -3011,8 +2790,7 @@ Ltac conv_backward_same_pc :=
         contradict e; assumption.
         unfold set_mem32 in *.
         assert (same_mach_state (RTL_step_list (rev (c_rev_i cs4)))).
-          do 5 conv_backward_sms.
-          inv H9. crush.
+          do 5 conv_backward_sms. extended_rtl_okay_elim. crush.
         crush.
   Qed.
   Transparent set_mem_n.
@@ -3035,10 +2813,7 @@ Ltac conv_backward_same_pc :=
     bool_elim_tac.
     assert (aligned (get_location (reg_loc r) (rtl_mach_state s'))).
       clear H14 H0 H4.
-      step_tac.
-      assert (v = (pre1, (AND true (Reg_op r) (Imm_op i)), len1)) by congruence.
-      assert (s0 = s) by congruence.
-      subst v s.
+      step_tac. dup_fetch_instr_elim.
       rewrite no_prefix_no_lock_rep in H3 by assumption.
       repeat rtl_okay_elim.
       unfold instr_to_rtl, check_prefix in H3.
@@ -3154,18 +2929,8 @@ Ltac conv_backward_same_pc :=
   Qed.                  
 
 
-  (** ** The interface theorem between the verifier correctness proof and the
+  (** *** The interface theorem between the verifier correctness proof and the
      proofs about the parser *)
-
-  (* todo: move *)
-  Lemma int32_add_add_sub :
-    forall i1 i2 i3:int32, (i1 +32 i3) +32 (i2 -32 i3) = i1 +32 i2.
-  Proof. intros; unfold w32add. rewrite add_assoc. 
-    rewrite (@add_commut 31 i3 (i2 -32 i3)).
-    rewrite <- sub_add_l. 
-    rewrite add_sub_assoc. rewrite sub_idem.
-    rewrite add_zero. trivial.
-  Qed.
 
   Lemma eqMemBuffer_succ : forall b buffer s lc,
     eqMemBuffer (b::buffer) s lc -> eqMemBuffer buffer s (lc +32_z 1).
@@ -3319,13 +3084,6 @@ Ltac conv_backward_same_pc :=
   Proof. induction bytes. crush.
     simpl. rewrite token2byte_inv_byte2token. crush.
   Qed.
-
-  (* todo: remove *)
-  (* Lemma byte2token_same : forall l, *)
-  (*   List.map byte2token l = List.map FastVerifier.byte2token l. *)
-  (* Proof. unfold byte2token, FastVerifier.byte2token.  *)
-  (*   induction l; crush. *)
-  (* Qed. *)
 
   Lemma parse_instr_imp_fetch_instr : 
     forall pc pre ins pos s,
@@ -3615,7 +3373,7 @@ Ltac conv_backward_same_pc :=
         assumption.
   Qed.
 
-  (** ** the proof that any safeState is safe for in some k *)
+  (** *** Proving that any safeState is safe for in some k *)
 
   Lemma pc_out_bound_safeInSomeK : forall s inv,
     ~ inBoundCodeAddr (PC s) s -> safeState s inv -> safeInSomeK s inv.
@@ -3697,8 +3455,6 @@ Ltac conv_backward_same_pc :=
     unroll_bind. rewrite H0.
     reflexivity.
   Qed.
-
-
 
   Opaque Decode.X86_PARSER.parse_byte.
   Lemma parse_instr_aux_code_inv2 : forall n pc len ps s1 s1' pi len' s2,

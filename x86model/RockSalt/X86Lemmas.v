@@ -279,6 +279,10 @@ Ltac rtl_invert :=
 
 Ltac rtl_okay_elim :=  rtl_comp_elim || rtl_invert || rtl_okay_break.
 
+Ltac extended_rtl_okay_elim := 
+  unfold set_loc, set_array, set_byte, advance_oracle, no_op in *;
+  repeat rtl_okay_elim; simpl in *.
+        
 Ltac removeUnit :=
   repeat (match goal with
             | [v:unit |- _] => destruct v
@@ -306,15 +310,6 @@ Lemma conv_bind_elim :
 Proof. unfold Bind, Conv_monad. intros. 
   destruct_head in H. crush.
 Qed.
-
-(* todo: remove *)
-(* Ltac conv_break :=  *)
-(*   match goal with *)
-(*     | [H: Bind _ _ _ ?cs = (?v', ?cs') |- _]  =>  *)
-(*       apply conv_bind_elim in H; *)
-(*       let H1 := fresh "H" in let cs1 := fresh "cs" in let v1 := fresh "v" in  *)
-(*         destruct H as [cs1 [v1 [H1 H]]] *)
-(*   end. *)
 
 Ltac conv_elim := 
   unfold write_byte in *;
@@ -1727,6 +1722,14 @@ Lemma conv_same_pc_e : forall (A:Type) (cv:Conv A) cs v cs',
     -> same_pc (RTL_step_list (List.rev (c_rev_i cs)))
     -> same_pc (RTL_step_list (List.rev (c_rev_i cs'))).
 Proof. unfold conv_same_pc. eauto. Qed.
+
+Ltac conv_backward_same_pc :=
+  match goal with
+    [H: ?cv ?cs = (_, ?cs') |- 
+      same_pc (RTL_step_list (rev (c_rev_i ?cs')))]
+    => eapply conv_same_pc_e;
+       [eassumption | conv_same_pc_tac | idtac]
+  end.
 
 Lemma load_mem_n_same_pc : forall seg addr n,
   conv_same_pc (load_mem_n seg addr n).
