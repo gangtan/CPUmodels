@@ -9,7 +9,8 @@ open Big_int
 let bii = big_int_of_int
 let signed32 = (Word.signed (bii 31))
 let signed1 = (Word.signed (bii 0))
-  
+let unsigned32 = (Word.unsigned (bii 31))  
+
 let empty_mem = (Word.zero (bii 7), PTree.empty);;
 let empty_reg = (fun reg -> Word.zero (bii 31));;
 let empty_seg = (fun seg -> Word.zero (bii 31));; 
@@ -17,8 +18,8 @@ let empty_regpcseg = (empty_reg, Word.zero (bii 31), empty_seg);;
 
 let get_instr () = Scanf.scanf "%LX\n" (fun h -> h);;
 
-let reg_file = open_in Sys.argv.(1)
-let mem_file = open_in Sys.argv.(2)
+let reg_file = open_in "regs.txt" (* Sys.argv.(1) *)
+let mem_file = open_in "mem.txt" (* Sys.argv.(2) *)
 
 (***Update Machine State *****)
 
@@ -124,8 +125,8 @@ let set_regpc (regs,pc,segs) s x =
 let rec load_regpc curr channel =
   try (Scanf.bscanf (Scanf.Scanning.from_string (input_line channel)) "%s %Lx"
         (fun x y -> load_regpc (set_regpc curr x y) channel)) with
-    | End_of_file -> curr
-    | Scanf.Scan_failure str -> curr;; 
+    | End_of_file -> print_string("\nEnd of file\n");curr
+    | Scanf.Scan_failure str -> print_string("\Scan failure\n");curr;; 
 
 
 
@@ -176,7 +177,7 @@ let init_full_machine =
 
 let init_rtl_state =
   { X86_RTL.rtl_oracle = empty_oracle;
-    rtl_mach_state = init_full_machine;
+    X86_RTL.rtl_mach_state = init_full_machine;
     rtl_memory = loaded_mem
   };; 
 
@@ -233,14 +234,28 @@ let print_regs m =
 
 (**************** End Print **************************)
 
+let mismatch_string r v1 v2 =
+   let (v1, v2) = (hex_of_big (unsigned32 v1), hex_of_big (unsigned32 v2)) in
+  "Mismatched on " ^ reg_to_str r ^ ". Simulated: " ^ v1 ^ "\tReal: " ^ v2 ^ ".\n"
+
+let compare_reg r1 r2 =
+   let comp_reg r = if (Word.eq (bii 31) (r1 r) (r2 r)) then ""
+                      else mismatch_string r (r1 r) (r2 r) in
+   comp_reg EAX ^ comp_reg ECX ^ comp_reg EDX ^ comp_reg EBX ^
+   comp_reg ESP ^ comp_reg EBP ^ comp_reg ESI ^ comp_reg EDI
+
+let compare_pc pc1 pc2 =
+  if (Word.eq (bii 31) pc1 pc2) then "" else
+    let (v1, v2) = (hex_of_big (unsigned32 pc1), hex_of_big (unsigned32 pc2)) in
+    "Mismatched on PC. Simulated: " ^ v1 ^ "\tReal: " ^ v2 ^ "\n"
 
 
 
 
  let rec loop icnt rs = 
    try(
-(*    let (new_instr:Int64.t) = get_instr() in *)
-    let (rtl_ans, rstate_n) = step (* (big_int_of_int64 new_instr))*) rs in
+    let (real_regs, real_pc, real_segs) = load_regpc empty_regpcseg reg_file in
+    let (rtl_ans, rstate_n) = step rs in
     print_endline ("\nStep "^(string_of_int icnt));  
 
     match rtl_ans with
@@ -248,8 +263,12 @@ let print_regs m =
     | X86_RTL.Trap_ans -> ( print_endline "Safe Failed\n")
     | X86_RTL.Okay_ans _ ->
          print_regs (X86_RTL.rtl_mach_state rstate_n);
-	 print_flags (X86_RTL.rtl_mach_state rstate_n);
-  (*         loop (icnt+1) (rstate_n)  *)
+         let simregs = fun r -> (X86_MACHINE.get_location (bii 31) (X86_MACHINE.Coq_reg_loc r) (X86_RTL.rtl_mach_state rstate_n)) in
+         let simpc = X86_MACHINE.get_location (bii 31) (X86_MACHINE.Coq_pc_loc) (X86_RTL.rtl_mach_state rstate_n) in
+           match (compare_reg simregs real_regs, compare_pc simpc real_pc) with
+             | ("", "") -> loop (icnt + 1) rstate_n
+             | (s1, s2) -> print_string s1; print_string s2
+      
    ) 
    with
    | End_of_file -> print_string "EOF\n"

@@ -1,1 +1,1 @@
-test.ml: Array Big_int PTree Printf Scanf Sys Word X86Semantics X86_MACHINE X86_RTL
+test.ml: Big_int PTree Printf Scanf Word X86Semantics X86_MACHINE X86_RTL

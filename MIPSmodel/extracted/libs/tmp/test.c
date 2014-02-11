@@ -18,6 +18,7 @@ int main(){
 
   int nbits = 8 * sizeof(float);
 
+
   int m = 0x1 << (nbits -1);
 
   mask = m;
@@ -26,8 +27,8 @@ int main(){
     b = (data.output & mask)? 1 : 0;
     printf("%x", b);
   
-    //    if (count % 4 == 0)
-    //   printf(" ");
+    if (count % 4 == 0)
+       printf(" ");
     mask >>=1; 
   }  
 

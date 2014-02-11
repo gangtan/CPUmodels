@@ -195,12 +195,13 @@ let rec loop icnt rs =
     let (new_instr:Int64.t) = get_instr str_in in
     let (rtl_ans, rstate_n) = (step new_instr) rs in
     print_endline ("Step "^(string_of_int icnt)); 
-    print_string "EOF\n";
+    print_string "EOF1\n";
         if icnt > 0 then
         loop (icnt - 1) rs
 
   ) with
-  | End_of_file|Scanf.Scan_failure _ -> print_string "EOF\n"
+  | End_of_file -> print_string "End file\n"
+  | Scanf.Scan_failure _ -> print_string "EOF2\n"
 
 
 let _ = 
