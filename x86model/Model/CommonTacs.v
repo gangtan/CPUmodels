@@ -306,7 +306,14 @@ Hint Rewrite app_ass.
 Definition done (T : Type) (x : T) := True.
 
 (** Try a new instantiation of a universally quantified fact, proved by [e].
-   * [trace] is an accumulator recording which instantiations we choose. *)
+   * [trace] is an accumulator recording which instantiations we choose. 
+
+    One weakness of inster is that it processes from left to right and does
+    not deal with implicit arguments very well. For instance, if lm is of
+    type "forall (A:Set) (x:A), ...", then inster has to first find a term
+    of type Set in the local context. If that term is nat, then nat:Set is
+    not gonna be in the local context.  In this case, we have to provide
+    (lm nat) explicitly. *)
 Ltac inster e trace :=
   (** Does [e] have any quantifiers left? *)
   match type of e with
