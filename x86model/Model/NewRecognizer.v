@@ -9,8 +9,6 @@
    the License, or (at your option) any later version.
 *)
 
-(* Next: (3) define setwithindex; *)
-
 (** * DFA Construction *)
 Require Import Coq.Program.Equality.
 Require Import Coq.Init.Logic.
@@ -18,13 +16,12 @@ Require Import List.
 Require Import Arith.
 Require Import Bool.
 Require Import Eqdep.
-Require Import Coq.PArith.BinPosDef.
-Require Import Coq.ZArith.Zpower.
+(* Require Import PArith. *)
+Require Import ZArith.
 
 Require Import Parser.
 Import X86_PARSER_ARG.
 Set Implicit Arguments.
-(* Unset Automatic Introduction. *)
 Require Import CommonTacs.
 
 (** * Define a series of augmented MSets. 
@@ -35,7 +32,16 @@ Require Import Coq.MSets.MSetProperties.
 Require Import Coq.MSets.MSetWeakList.
 
 (** ** Additional properties of sets *)
-Module WMoreProperties (M:WSets).
+Module Type WMOREPROPERTIES (M:WSets).
+  Parameter add_transpose :
+    forall (A : Type) (f : A -> M.elt),
+       transpose M.Equal (fun (x : A) (s : M.t) => M.add (f x) s).
+
+  Parameter subset_empty_uniq :
+    forall s : M.t, M.Subset s M.empty -> M.Equal s M.empty.
+End WMOREPROPERTIES.
+
+Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
   Module P:= WProperties M.
 
   Lemma add_transpose :
@@ -50,21 +56,85 @@ Module WMoreProperties (M:WSets).
   Qed.
 
 End WMoreProperties.
-    
-(** ** A map function for sets *)
 
-Module MapFunctionGen (M:WSets)(M':WSets).
+
+(** ** A map function for sets *)
+Module Type MAPSET (M:WSets) (M':WSets).
+  Definition proper_map := 
+    {f: M.elt -> M'.elt | Proper (M.E.eq ==> M'.E.eq) f}.
+
+  Definition get_fun (m:proper_map) := proj1_sig m.
+
+  Definition eq_proper_map (m1 m2: proper_map) := 
+    (M.E.eq ==> M'.E.eq)%signature (get_fun m1) (get_fun m2).
+
+  Definition injective (m: proper_map) (s:M.t) :=
+    forall x y,  M.In x s -> M.In y s ->
+                 M'.E.eq (get_fun m x) (get_fun m y) -> M.E.eq x y.
+
+  Parameter map: proper_map -> M.t -> M'.t.
+
+  Declare Instance injective_eq:
+    forall m, Proper (M.eq ==> iff) (injective m).
+
+  Declare Instance injective_subset: 
+    forall m, Proper (flip M.Subset ==> impl) (injective m).
+
+  Parameter injective_empty: forall m, injective m M.empty.
+
+  Parameter map_intro :
+    forall (m : proper_map) (s : M.t) (x : M.elt) (y : M'.E.t),
+      M.In x s -> M'.E.eq (get_fun m x) y -> M'.In y (map m s).
+
+  Parameter map_elim :
+    forall (m : proper_map) (s : M.t) (y : M'.elt),
+      M'.In y (map m s) ->
+      exists x : M.elt, M.In x s /\ M'.E.eq (get_fun m x) y.
+
+  Parameter map_subset :
+    forall (m : proper_map) (s1 s2 : M.t),
+      M.Subset s1 s2 -> M'.Subset (map m s1) (map m s2).
+
+  Parameter map_union :
+    forall (m : proper_map) (s1 s2 : M.t),
+      M'.Equal (map m (M.union s1 s2)) (M'.union (map m s1) (map m s2)).
+
+  Parameter map_equal :
+    Proper (eq_proper_map ==> M.Equal ==> M'.Equal) map.
+
+  Parameter map_cardinal :
+    forall (m : proper_map) (s : M.t),
+      injective m s -> M'.cardinal (map m s) = M.cardinal s.
+
+  Parameter map_cardinal_le :
+    forall (m : proper_map) (s : M.t),
+      M'.cardinal (map m s) <= M.cardinal s.
+End MAPSET.
+
+Module MapSetGen (M:WSets)(M':WSets) : MAPSET M M'.
   Module P:=WProperties M.
   Module P':=WProperties M'.
   Module PM':=WMoreProperties M'.
 
+  Definition proper_map := 
+    {f: M.elt -> M'.elt | Proper (M.E.eq ==> M'.E.eq) f}.
+
+  Definition get_fun (m:proper_map) := proj1_sig m.
+
+  Definition eq_proper_map (m1 m2: proper_map) := 
+    (M.E.eq ==> M'.E.eq)%signature (get_fun m1) (get_fun m2).
+
   Section Map.
 
-    Variable f: M.elt -> M'.elt.
-    Parameter f_comp: Proper (M.E.eq ==> M'.E.eq) f.
+    Variable m: proper_map.
+
+    Instance m_proper : Proper (M.E.eq ==> M'.E.eq) (get_fun m).
+    Proof. apply (proj2_sig m). Qed.
 
     Definition injective (s:M.t) := 
-      forall x y, M.In x s -> M.In y s -> M'.E.eq (f x) (f y) -> M.E.eq x y.
+      forall x y, 
+        M.In x s -> M.In y s
+          -> M'.E.eq (get_fun m x) (get_fun m y) -> M.E.eq x y.
 
     Instance injective_eq: Proper (M.eq ==> iff) injective.
     Proof. intros s1 s2 H; split; unfold injective. 
@@ -85,28 +155,90 @@ Module MapFunctionGen (M:WSets)(M':WSets).
      apply P.FM.empty_iff in H; contradict H.
     Qed.
 
-    Definition map s := M.fold (fun x s => M'.add (f x) s) s M'.empty.
+    Definition map s := 
+      M.fold (fun x s => M'.add (get_fun m x) s) s M'.empty.
 
-    Lemma map_In : forall s a, 
-      M'.In a (map s) <-> exists b, M.In b s /\ M'.E.eq (f b) a.
-    Proof. split.
-      Case "->". unfold map.
+    Lemma map_intro: forall s x y,
+      M.In x s -> M'.E.eq (get_fun m x) y -> M'.In y (map s).
+    Proof. unfold map. intros s x y.
+      apply P.fold_rec_bis; intros.
+        apply H0; crush.
+        apply P.FM.empty_iff in H; contradict H.
+        apply P.FM.add_iff in H2; destruct H2.
+          apply P'.FM.add_1. rewrite H2. trivial.
+          apply P'.FM.add_2. apply H1; crush.
+    Qed.
+
+    Lemma map_elim: forall s y, 
+      M'.In y (map s)
+        -> exists x, M.In x s /\ M'.E.eq (get_fun m x) y.
+    Proof. unfold map. intros s y.
         apply P.fold_rec_nodep; intros.
           apply P'.FM.empty_iff in H; contradict H.
           apply P'.FM.add_iff in H1; destruct H1; crush.
-      Case "<-". unfold map.
-        apply P.fold_rec_bis; intros; sim.
-          apply H0. eexists; crush.
-          apply P.FM.empty_iff in H; contradict H.
-          apply P.FM.add_iff in H2; destruct H2.
-            apply P'.FM.add_1. rewrite H2. trivial.
-            apply P'.FM.add_2. apply H1. crush.
+    Qed.
+
+    (* Lemma map_In: forall s a,  *)
+    (*   M'.In a (map s) <-> exists b, M.In b s /\ M'.E.eq (f b) a. *)
+    (* Proof. split. *)
+    (*   Case "->". unfold map. *)
+    (*     apply P.fold_rec_nodep; intros. *)
+    (*       apply P'.FM.empty_iff in H; contradict H. *)
+    (*       apply P'.FM.add_iff in H1; destruct H1; crush. *)
+    (*   Case "<-". unfold map. *)
+    (*     apply P.fold_rec_bis; intros; sim. *)
+    (*       apply H0. eexists; crush. *)
+    (*       apply P.FM.empty_iff in H; contradict H. *)
+    (*       apply P.FM.add_iff in H2; destruct H2. *)
+    (*         apply P'.FM.add_1. rewrite H2. trivial. *)
+    (*         apply P'.FM.add_2. apply H1. crush. *)
+    (* Qed. *)
+
+    (* Instance map_equal: Proper (M.Equal ==> M'.Equal) map. *)
+    (* Proof. unfold Proper, respectful, map. intros x. *)
+    (*   apply P.fold_rec_bis. *)
+    (*     intros. assert (M.Equal s y) by (transitivity s'; assumption). *)
+    (*       crush. *)
+    (*     Case "base". intros. *)
+    (*       rewrite P.fold_1. *)
+    (*         reflexivity. *)
+    (*         apply M'.eq_equiv. *)
+    (*         apply P.empty_is_empty_2. symmetry; trivial. *)
+    (*     Case "ind". intros. *)
+    (*       rewrite P.fold_2; try eassumption. *)
+    (*       f_equiv. apply H1. reflexivity. *)
+    (*       apply M'.eq_equiv. *)
+    (*       solve_proper. *)
+    (*       apply PM'.add_transpose. *)
+    (*       apply P.Add_Equal. symmetry. trivial. *)
+    (* Qed. *)
+        
+    Lemma map_subset: forall s1 s2 ,
+       M.Subset s1 s2 -> M'.Subset (map s1) (map s2).
+    Proof. intros. unfold M'.Subset. intros.
+      apply map_elim in H0. sim.
+      eapply map_intro; eauto.
+    Qed.
+
+    Lemma map_union: forall s1 s2, 
+      M'.Equal (map (M.union s1 s2)) (M'.union (map s1) (map s2)).
+    Proof. unfold M'.Equal. intros; split; intro.
+      Case "->". apply map_elim in H. sim.
+        apply M'.union_spec.
+        apply M.union_spec in H; destruct H; 
+          [left|right]; eapply map_intro; eauto.
+      Case "<-". 
+        apply M'.union_spec in H; destruct H;
+          apply map_elim in H; sim.
+        eapply map_intro; [(apply M.union_spec; left; eassumption) | trivial].
+        eapply map_intro; [(apply M.union_spec; right; eassumption) | trivial].
     Qed.
 
     Lemma map_cardinal_aux : forall s,
       injective s -> 
         M'.cardinal (map s) = M.cardinal s /\
-        forall y, M'.In y (map s) -> exists x, M.In x s /\ M'.E.eq y (f x).
+        forall y, M'.In y (map s) -> 
+                  exists x, M.In x s /\ M'.E.eq y (get_fun m x).
     Proof.  unfold map. intros s.
       apply P.fold_rec_bis.
       Case "proper P". intros. rewrite <- H in H1. use_lemma H0 by assumption.
@@ -124,7 +256,7 @@ Module MapFunctionGen (M:WSets)(M':WSets).
           eapply injective_subset; try eassumption.
           apply P.subset_add_2. reflexivity.
         use_lemma H1 by assumption.
-        assert (H6: not (M'.In (f x) a)).
+        assert (H6: not (M'.In (get_fun m x) a)).
           contradict H0. sim. use_lemma H5 by eassumption. sim.
           assert (M.E.eq x x0).
             apply H2.
@@ -153,15 +285,15 @@ Module MapFunctionGen (M:WSets)(M':WSets).
 
   End Map.
 
-  Instance map_equal: 
-    Proper ((M.E.eq ==> M'.E.eq) ==> M.Equal ==> M'.Equal) map.
-  Proof. unfold Proper, respectful, map. intros f g H x.
-    apply P.fold_rec_bis. 
+  Instance map_equal:
+    Proper (eq_proper_map ==> M.Equal ==> M'.Equal) map.
+  Proof. unfold Proper, respectful, map. intros m1 m2 H x.
+    apply P.fold_rec_bis.
       intros. assert (M.Equal s y) by (transitivity s'; assumption).
         crush.
       Case "base". intros.
-        rewrite P.fold_1. 
-          reflexivity. 
+        rewrite P.fold_1.
+          reflexivity.
           apply M'.eq_equiv.
           apply P.empty_is_empty_2. symmetry; trivial.
       Case "ind". intros.
@@ -170,12 +302,13 @@ Module MapFunctionGen (M:WSets)(M':WSets).
           apply H. reflexivity.
           apply H2. reflexivity.
         apply M'.eq_equiv.
-        solve_proper.
+        f_equiv.
+        generalize (proj2_sig m2); intro; solve_proper.
         apply PM'.add_transpose.
         apply P.Add_Equal. symmetry. trivial.
   Qed.
-        
-  Lemma map_cardinal_le: forall f s, M'.cardinal (map f s) <= M.cardinal s.
+
+  Lemma map_cardinal_le: forall m s, M'.cardinal (map m s) <= M.cardinal s.
   Proof. unfold map; intros.
     apply P.fold_rec; intros.
     Case "base". 
@@ -184,56 +317,58 @@ Module MapFunctionGen (M:WSets)(M':WSets).
       apply P.Add_Equal in H1.
       apply P.Equal_cardinal in H1.
       apply P.add_cardinal_2 in H0.
-      destruct (P'.In_dec (f x) a).
+      destruct (P'.In_dec (get_fun m x) a).
         use_lemma P'.add_cardinal_1 by eassumption. omega.
         use_lemma P'.add_cardinal_2 by eassumption. omega.
   Qed.
 
-  Lemma map_subset : forall f s1 s2 ,
-     M.Subset s1 s2 -> M'.Subset (map f s1) (map f s2).
-  Proof. intros. unfold M'.Subset. intros.
-    apply map_In in H0. sim.
-    eapply map_In. exists x. eauto.
-  Qed.
+End MapSetGen.
 
-  Lemma map_union: forall f s1 s2, 
-    M'.Equal (map f (M.union s1 s2)) (M'.union (map f s1) (map f s2)).
-  Proof. unfold M'.Equal. intros; split; intro.
-    Case "->". apply map_In in H. sim.
-      apply M'.union_spec.
-      apply M.union_spec in H; destruct H; 
-        [left|right]; apply map_In; eauto.
-    Case "<-". apply map_In.
-      apply M'.union_spec in H; destruct H;
-        apply map_In in H; sim; eexists.
-      split; [(apply M.union_spec; left; eassumption) | trivial].
-      split; [(apply M.union_spec; right; eassumption) | trivial].
-  Qed.
-
-End MapFunctionGen.
-
-Module MapFunction (M:WSets) := MapFunctionGen M M.
+Module MapSet (M:WSets) : MAPSET M M := MapSetGen M M.
 
 (* gtan: I really wanted to do the following; but it seems like that a Coq
    bug prevents it; in particular, I cannot use operations in M somehow. *)
 (* Module SetWithMap (M:WSets). *)
 (*   Include M. *)
-(*   Include MapFunctionGen M M. *)
+(*   Include MapSetGen M M. *)
 (* End SetWithMap. *)
 
 (** ** Power sets *)
+Module Type POWERSET (M:WSets).
 
-Module PowerSet (M:WSets).
+  Declare Module MM : WSets with Definition E.t:=M.t.
+
+  Parameter powerset: M.t -> MM.t.
+
+  Parameter powerset_spec: 
+    forall s s', MM.In s' (powerset s) <-> M.Subset s' s.
+
+  Parameter powerset_cardinal: 
+    forall s, MM.cardinal (powerset s) = NPeano.pow 2 (M.cardinal s).
+
+End POWERSET.
+
+Module PowerSet (M:WSets) <: POWERSET M.
 
   Module MM := MSetWeakList.Make M.
-  Module MMF := MapFunction MM.
+  Module MMF := MapSet MM.
   Module P := MSetProperties.WProperties M.
   Module PM := WMoreProperties M.
   Module PP := MSetProperties.WProperties MM.
   (* Module PPM := WMoreProperties MM. *)
 
-  Definition powerset_fold_op := 
-    fun (x:M.elt)(ss:MM.t) => MM.union ss (MMF.map (M.add x) ss).
+  Definition add_elm: M.elt -> MMF.proper_map.
+    refine (fun (x:M.elt) => exist _ (M.add x) _).
+    abstract (solve_proper).
+  Defined.
+
+  Instance add_elm_proper: Proper (M.E.eq ==> MMF.eq_proper_map) add_elm.
+  Proof. unfold Proper, MMF.eq_proper_map, respectful. simpl. intros.
+   rewrite H, H0. reflexivity.
+  Qed.
+
+  Definition powerset_fold_op :=
+    fun (x:M.elt)(ss:MM.t) => MM.union ss (MMF.map (add_elm x) ss).
 
   Definition powerset s := 
     M.fold powerset_fold_op s (MM.singleton M.empty).
@@ -246,20 +381,20 @@ Module PowerSet (M:WSets).
   Qed.
 
   Lemma map_add_transpose: 
-    transpose MM.Equal (fun x s => MMF.map (M.add x) s).
+    transpose MM.Equal (fun x s => MMF.map (add_elm x) s).
   Proof. 
     assert (forall x y ss, 
-              MM.Subset (MMF.map (M.add x) (MMF.map (M.add y) ss))
-                        (MMF.map (M.add y) (MMF.map (M.add x) ss))).
+              MM.Subset (MMF.map (add_elm x) (MMF.map (add_elm y) ss))
+                        (MMF.map (add_elm y) (MMF.map (add_elm x) ss))).
       intros. intros mm H.
-      apply MMF.map_In in H. destruct H as [mm1 [H2 H4]].
-      apply MMF.map_In in H2. destruct H2 as [mm2 [H6 H8]].
-      assert (MM.In (M.add x mm2) (MMF.map (M.add x) ss)).
-        apply MMF.map_In. eexists. split; [eassumption | reflexivity].
+      apply MMF.map_elim in H. destruct H as [mm1 [H2 H4]].
+      apply MMF.map_elim in H2. destruct H2 as [mm2 [H6 H8]].
+      assert (MM.In (M.add x mm2) (MMF.map (add_elm x) ss)).
+        eapply MMF.map_intro. eassumption. reflexivity.
       assert (M.Equal (M.add y (M.add x mm2)) mm).
-        rewrite <- H4. rewrite <- H8.
+        rewrite <- H4. simpl. rewrite <- H8. simpl.
         apply PM.add_transpose with (f:= fun x => x).
-      apply MMF.map_In. eexists; split; eassumption.
+      eapply MMF.map_intro. eassumption. eassumption.
     unfold transpose. intros x y ss mm; split; intro;
       apply H; trivial.
   Qed.
@@ -268,9 +403,9 @@ Module PowerSet (M:WSets).
   Proof. unfold transpose, powerset_fold_op. intros.
     do 2 rewrite PP.union_assoc.
     f_equiv.
-    do 2 rewrite MMF.map_union.
+    do 2 (rewrite MMF.map_union by solve_proper).
     rewrite <- PP.union_assoc.
-    rewrite (@PP.union_sym (MMF.map (M.add y) z)).
+    rewrite (@PP.union_sym (MMF.map (add_elm y) z)).
     rewrite PP.union_assoc.
     do 2 f_equiv.
     apply map_add_transpose.
@@ -279,11 +414,12 @@ Module PowerSet (M:WSets).
   Lemma powerset_step : 
     forall s1 s2 x, not (M.In x s1) -> P.Add x s1 s2 ->
        MM.eq (powerset s2) 
-             (MM.union (powerset s1) (MMF.map (M.add x) (powerset s1))).
+             (MM.union (powerset s1) (MMF.map (add_elm x) (powerset s1))).
   Proof. unfold powerset at 1. intros.
     rewrite (@P.fold_2 s1 s2 x MM.t MM.Equal). reflexivity.
       apply MM.eq_equiv.
-      unfold powerset_fold_op; solve_proper.
+      unfold powerset_fold_op.
+        solve_proper.
       apply powerset_fold_op_transpose.
       assumption.
       assumption.
@@ -315,8 +451,8 @@ Module PowerSet (M:WSets).
         SSCase "s in (powerset s1)".
           apply P.subset_add_2. apply IHs1. assumption. 
         SSCase "s in map (add x) (powerset s1)".
-          apply MMF.map_In in H1. destruct H1 as [s' [H2 H4]].
-          rewrite <- H4. f_equiv. apply IHs1. assumption.
+          apply MMF.map_elim in H1. destruct H1 as [s' [H2 H4]].
+          rewrite <- H4. simpl. f_equiv. apply IHs1. assumption.
       SCase "<-".
         assert (M.Subset (M.remove x s) s1).
           intro a; intros. 
@@ -326,28 +462,28 @@ Module PowerSet (M:WSets).
         apply MM.union_spec.
         destruct (P.In_dec x s).
           SSCase "x in s". right.
-            apply MMF.map_In. eexists; split; try eassumption.
+            eapply MMF.map_intro; try eassumption.
             apply P.add_remove. assumption.
           SSCase "x notin s". left.
             rewrite P.remove_equal in H2 by assumption.
             assumption.
   Qed.
 
-  Require Import Coq.PArith.BinPos.
+  (* Require Import Coq.PArith.BinPos. *)
 
-  Definition two_power (n:nat) := shift_nat n 1.
+  (* Definition two_power (n:nat) := ZArith.Zpower.shift_nat n 1. *)
 
-  Lemma two_power_S: 
-    forall n, two_power (S n) = (2 * two_power n)%positive.
-  Proof. unfold two_power, shift_nat. simpl. trivial. Qed.
+  (* Lemma two_power_S:  *)
+  (*   forall n, two_power (S n) = (2 * two_power n)%positive. *)
+  (* Proof. unfold two_power, shift_nat. simpl. trivial. Qed. *)
 
   Lemma powerset_add_disjoint: forall x s,
     ~ M.In x s -> 
-       MM.Equal (MM.inter (powerset s) (MMF.map (M.add x) (powerset s)))
+       MM.Equal (MM.inter (powerset s) (MMF.map (add_elm x) (powerset s)))
                 MM.empty.
   Proof. intros. apply PP.subset_antisym.
     intros y H2. apply MM.inter_spec in H2. destruct H2.
-    apply MMF.map_In in H1. destruct H1 as [s' [H6 H8]].
+    apply MMF.map_elim in H1. destruct H1 as [s' [H6 H8]].
     apply powerset_spec in H0. apply powerset_spec in H6. 
     rewrite <- H8 in H0.
     assert (M.In x s).
@@ -357,7 +493,7 @@ Module PowerSet (M:WSets).
   Qed.
 
   Lemma powerset_add_injective: forall x s,
-    ~ M.In x s -> MMF.injective (M.add x) (powerset s).
+    ~ M.In x s -> MMF.injective (add_elm x) (powerset s).
   Proof. unfold MMF.injective. intros x s H. 
     assert (H2: forall s1 s2, 
               MM.In s1 (powerset s) -> MM.In s2 (powerset s) -> 
@@ -381,8 +517,7 @@ Module PowerSet (M:WSets).
   Qed.
 
   Theorem powerset_cardinal: 
-    forall s, MM.cardinal (powerset s) = 
-              Pos.to_nat (two_power (M.cardinal s)).
+    forall s, MM.cardinal (powerset s) = NPeano.pow 2 (M.cardinal s).
   Proof. induction s using P.set_induction.
     Case "empty(s)".
       rewrite powerset_base by assumption.
@@ -392,7 +527,7 @@ Module PowerSet (M:WSets).
     Case "s2 = add x s1".
       rewrite powerset_step by eassumption.
       assert (forall s, ~(MM.In s (powerset s1) /\
-                          MM.In s (MMF.map (M.add x) (powerset s1)))).
+                          MM.In s (MMF.map (add_elm x) (powerset s1)))).
         intros s H4.
         assert (MM.In s MM.empty).
           rewrite <- powerset_add_disjoint by eassumption.
@@ -400,15 +535,14 @@ Module PowerSet (M:WSets).
         apply PP.FM.empty_iff in H1.
         trivial.
       rewrite PP.union_cardinal by eassumption.
-      assert (MMF.injective (M.add x) (powerset s1)).
+      assert (MMF.injective (add_elm x) (powerset s1)).
         apply powerset_add_injective; eassumption.
       rewrite MMF.map_cardinal by assumption.
       rewrite IHs1.
       rewrite P.Add_Equal in H0. rewrite H0.
       rewrite P.add_cardinal_2 by assumption. 
-      rewrite two_power_S.
-      rewrite <- Pos.add_diag.
-      rewrite Pnat.Pos2Nat.inj_add. trivial.
+      simpl.
+      omega.
   Qed.
 
 End PowerSet.
@@ -440,7 +574,6 @@ End PowerSet.
     to just take the old code and adapt it to the new environment.  
 *)
 
-
 Require Import Coq.Structures.OrdersAlt.
 Require Import Coq.MSets.MSetAVL.
 Require Import Coq.MSets.MSetProperties.
@@ -448,7 +581,6 @@ Require Import Coq.MSets.MSetProperties.
 
 (* astgram is essentially the syntax of regexps *)
 Definition regexp := astgram.
-
 
 (** * Ordering for regexps *)
 
@@ -604,10 +736,10 @@ Qed.
 
 (** A set of regexps *)
 Module RESet := MSetAVL.Make REOrderedType.
-Module RESet' := MapFunction RESet.
+Module RESetF := MapSet RESet.
 Module RESetP := MSetProperties.Properties RESet.
 
-(* Print RESet'.singleton. *)
+(* Print RESetF.singleton. *)
 
 Local Ltac re_set_simpl :=
   repeat 
@@ -622,17 +754,33 @@ Local Ltac re_set_simpl :=
          apply compare_re_eq_leibniz in H; subst
      end).
 
-Lemma re_set_map_intro : forall (x y:RESet.elt) f (s:RESet.t),
-  RESet.In y s -> x = f y -> RESet.In x (RESet'.map f s).
-Proof. intros. apply RESet'.map_In.
-  exists y. subst. split; [trivial | apply REOrderedType.eq_equiv].
+Lemma re_set_map_intro: forall (x y:RESet.elt) m (s:RESet.t),
+  RESet.In y s -> x = RESetF.get_fun m y -> RESet.In x (RESetF.map m s).
+Proof. intros. 
+  eapply RESetF.map_intro.
+    eassumption.
+    subst. apply REOrderedType.eq_equiv.
 Qed.
 
-Lemma re_set_map_elim : forall (x:RESet.elt) f (s:RESet.t),
-  RESet.In x (RESet'.map f s) -> exists y, RESet.In y s /\ x = f y.
-Proof. intros. apply RESet'.map_In in H.
+Lemma re_set_map_elim: forall (x:RESet.elt) m (s:RESet.t),
+  RESet.In x (RESetF.map m s) -> 
+  exists y, RESet.In y s /\ x = RESetF.get_fun m y.
+Proof. intros. apply RESetF.map_elim in H.
   sim. apply compare_re_eq_leibniz in H0. crush.
 Qed.
+
+Lemma re_set_map_proper: forall f,
+   Proper
+     ((fun x y : REOrderedTypeAlt.t => REOrderedTypeAlt.compare x y = Eq) ==>
+      (fun x y : REOrderedTypeAlt.t => REOrderedTypeAlt.compare x y = Eq)) f.
+Proof.   unfold Proper, respectful. intros.
+  apply compare_re_eq_leibniz in H. subst. 
+  apply REOrderedType.eq_equiv.
+Qed.
+
+Definition re_set_build_map 
+           (f: RESet.elt -> RESet.elt) : RESetF.proper_map :=
+  exist _ f (re_set_map_proper f).
 
 (** * The notion of prebase of a regexp and partial-derivative sets.
 
@@ -645,7 +793,7 @@ Definition set_cat_re (s:RESet.t) (r:regexp): RESet.t :=
   match r with
     | aEps => s (* not stricitly necessary; an optimization *)
     | aZero => RESet.empty
-    | _ => RESet'.map (fun r1 => aCat r1 r) s
+    | _ => RESetF.map (re_set_build_map (fun r1 => aCat r1 r)) s
   end.
 Notation "s $ r" := (set_cat_re s r) (at level 60, no associativity).
 
@@ -706,9 +854,9 @@ Lemma set_cat_re_elim : forall r s r2,
     (r2=aEps /\ RESet.In r s) \/
     (r2=aZero /\ False) \/
     (r2<>aEps /\ r2<>aZero /\ exists r1, RESet.In r1 s /\ r = aCat r1 r2).
-Proof. intros. destruct r2; 
+Proof. intros. destruct r2;
   try (right; right; simpl in H; 
-       apply RESet'.map_In in H; 
+       apply RESetF.map_elim in H; 
        destruct H as [y [H2 H4]]; 
        apply compare_re_eq_leibniz in H4;
        eexists; crush; fail).
@@ -719,7 +867,7 @@ Qed.
 Lemma set_cat_re_cardinal: 
   forall s r, RESet.cardinal (s $ r) <= RESet.cardinal s.
 Proof. unfold set_cat_re. 
-  destruct r; auto using RESet'.map_cardinal_le.
+  destruct r; auto using RESetF.map_cardinal_le.
   Case "aZero".
     repeat rewrite RESet.cardinal_spec. simpl.
     auto using le_0_n.
@@ -727,7 +875,7 @@ Qed.
 
 Lemma set_cat_re_subset : forall s1 s2 r,
   RESet.Subset s1 s2 -> RESet.Subset (s1 $ r) (s2 $ r).
-Proof. destruct r; simpl; intros; try (auto using RESet'.map_subset).
+Proof. destruct r; simpl; intros; try (auto using RESetF.map_subset).
   trivial.
   apply RESetP.subset_refl.
 Qed.  
@@ -829,6 +977,16 @@ Fixpoint nullable (r:regexp) : bool :=
     | aStar r1 => true
   end.
 
+(** reset_nullable(rs) is true iff one of the regexp in rs is nullable *)
+Definition reset_nullable (rs:RESet.t): bool :=
+  RESet.exists_ nullable rs.
+
+(** reset_always_rejects(rs) is true iff all regexps in rs always rejects
+*)
+Definition reset_always_rejects (rs:RESet.t): bool :=
+  RESet.for_all always_rejects rs.
+
+
 (** Partial derivatives:
   pdrv(a, void) = pdrv(a, epsilon) = {}
   pdrv(a, b) = if a=b then {epsilon} else {}
@@ -864,7 +1022,7 @@ Proof. induction r; simpl; try (apply RESetP.subset_refl).
         eapply set_cat_re_subset. eassumption.
       apply RESetP.union_subset_1.
   Case "aAlt". apply RESetP.FM.union_s_m; assumption.
-  Case "aStar". apply RESet'.map_subset. assumption.
+  Case "aStar". apply RESetF.map_subset. assumption.
 Qed.
 
 Lemma pdrv_subset_pdset: 
@@ -941,15 +1099,16 @@ Proof.  split; intros.
         apply RESetP.union_subset_2. reflexivity. trivial.
 Qed.      
 
-Lemma in_re_set_map : forall f rs s,
-  in_re_set (RESet'.map f rs) s <-> exists r, RESet.In r rs /\ in_regexp (f r) s.
+Lemma in_re_set_map: forall m rs s,
+  in_re_set (RESetF.map m rs) s <-> 
+  exists r, RESet.In r rs /\ in_regexp (RESetF.get_fun m r) s.
 Proof. unfold in_re_set; split; intros.
   Case "->". 
     destruct H as [r [H2 H4]].
     apply re_set_map_elim in H2. crush.
   Case "<-".
     destruct H as [r [H2 H4]].
-    exists (f r). 
+    exists (RESetF.get_fun m r). 
     split; try assumption.
     apply re_set_map_intro with (y:=r); trivial.
 Qed.
@@ -1119,13 +1278,25 @@ Proof. split.
         crush.
 Qed.
 
-
 Lemma pdrv_set_trans: forall rs r a, 
   RESet.Subset rs (pdset r) -> RESet.Subset (pdrv_set a rs) (pdset r).
 Proof. intros. intro r1; intro H2.
   apply pdrv_set_in in H2. destruct H2 as [r' [H4 H6]].
   apply pdrv_subset_pdset in H6.
   eauto using pdset_trans.
+Qed.
+
+Instance pdrv_set_subset: 
+  forall a, Proper (RESet.Equal ==> RESet.Subset) (pdrv_set a).
+Proof. unfold Proper, respectful. intros a rs1 rs2 H r H2.
+  apply pdrv_set_in in H2. sim.
+  apply pdrv_set_in. exists x. rewrite <- H. crush.
+Qed.
+
+Instance pdrv_set_equal: 
+  forall a, Proper (RESet.Equal ==> RESet.Equal) (pdrv_set a).
+Proof. unfold Proper, respectful. intros a rs1 rs2 H.
+  apply RESetP.subset_antisym; rewrite H; reflexivity.
 Qed.
 
 Lemma wpdrv_pdset_trans : forall w rs r, 
@@ -1142,6 +1313,13 @@ Proof.  intros; apply wpdrv_pdset_trans.
   auto using RESetP.FM.add_1.
 Qed.
 
+Instance wpdrv_set_equal:
+  forall s, Proper (RESet.Equal ==> RESet.Equal) (wpdrv s).
+Proof. unfold Proper, respectful. induction s. crush.
+  intros. simpl. apply IHs. rewrite H. reflexivity.
+Qed.
+
+
 (*
 Notes: 
   * dfa_states in DFA changes list RESet
@@ -1153,46 +1331,85 @@ Next:
      - need to build a founded measure
   (2) next is the correctness proof
 
-Task: 
-  * deseign a new set interface with
-    - indexes
-    - the powerset operation  
 
 *)
-Require Import Coq.MSets.MSetWeakList.
 
+(* Require Import Coq.MSets.MSetWeakList. *)
 
-(* to be organized next *)
+(* Module POW : (POWERSET RESet) with Module MM := MSetWeakList.Make RESet *)
+(*   := PowerSet RESet. *)
 
-(* todo: make this general to have a make module *)
+Module POW := PowerSet RESet.
 
+(* Module RESetSet := POW.MM. *)
+(* Module RESetSetP := MSetProperties.WProperties RESetSet. *)
+
+(** A set of regexp sets *)
 Module RESetSet.
-  Include MSetWeakList.Make RESet.
+  Include POW.MM.
 
-  (* what operations to define next?
-     - find_index: RESet.t -> t -> nat option, which returns the index of RESet.t in the set.
-       * locate the index in the list returned by elements
-     - nth_error : nat -> t -> (RESet.t) option, which returns the nth RESet in the set.
-     - Lm find_index_spec: 
-          find_index rss rs = Some n <->
-          (exists rs', 
-             nth_error (elements rss) n = value rs' /\ Equal rs rs').
-     - Lm 2:
-       if rss' = add rs rss, find_index rs1 rss = Some n, then
-          find_index rs1 rss' = Some n.
-       Lm 3:
-       if rss' = add rs rss, find_index rs1 rss' = Some n, and 
-          n < cardinality (rss), then find_index rs1 rss = Some n.
-       Both can be proved from add_strong_spec.
+(*   Include MSetWeakList.Make M. *)
 
-     - the powerset operation of type: RESet.t -> t.
+(*   (* what operations to define next? *)
+(*      - get_index: RESet.t -> t -> nat option, which returns the index of RESet.t in the set. *)
+(*        * locate the index in the list returned by elements *)
+(*      - nth_error : nat -> t -> (RESet.t) option, which returns the nth RESet in the set. *)
+(*      - Lm get_index_spec:  *)
+(*           get_index rss rs = Some n <-> *)
+(*           (exists rs',  *)
+(*              nth_error (elements rss) n = value rs' /\ Equal rs rs'). *)
+*)
 
-     - need theorem: 2^(|s|) = |powerset(s)|
+  (** The following operations assume the set is implemented by a list. *)
 
-  *)
+  Fixpoint get_index' (e:elt) (n:nat) (l:list elt) : option nat :=
+    match l with
+      | nil => None
+      | h::t => if E.eq_dec e h then Some n else get_index' e (1 + n) t
+    end.
 
-  (** The strong spec of add given that the set is implemented by a
-      MSetWeakList *)
+  (** Given an element e, find its index in the set *)
+  Definition get_index (e:elt) (s:t) : option nat :=
+    get_index' e 0 (elements s).
+
+  Definition get_element (n:nat) (s:t) : option elt := 
+    nth_error (elements s) n.
+
+  Lemma get_index'_prop : forall e l2 l1 n, 
+    get_index' e (length l1) l2 = Some n ->
+    exists e', nth_error (l1 ++ l2) n = Some e' /\ E.eq e e'.
+  Proof. induction l2.
+    Case "base". crush.
+    Case "a::l2". simpl; intros.
+      destruct_head in H.
+      SCase "E.eq_dec e a".
+        inversion_clear H.
+        exists a.
+        rewrite nth_error_app_gt by auto.
+        rewrite minus_diag. crush.
+      SCase "~(E.eq_dec e a)".
+        assert (H2: length (l1 ++ a::nil) = S (length l1)). 
+          rewrite app_length. simpl. omega.
+        rewrite <- H2 in H.
+        use_lemma (IHl2 (l1++a::nil)) by eassumption.
+        crush.
+  Qed.
+
+  Lemma get_index_prop: forall e s n,
+    get_index e s = Some n ->                            
+    exists e', get_element n s = Some e' /\ E.eq e e'.
+  Proof. unfold get_index. intros. 
+    apply (get_index'_prop e (elements s) nil). trivial.
+  Qed.
+
+  Lemma get_element_some_lt: forall n s e,
+    get_element n s = Some e -> n < cardinal s.
+  Proof. unfold get_element, cardinal, Raw.cardinal. 
+     eauto using nth_error_some_lt.
+  Qed.
+
+  (** The strong spec of add given that the set is implemented by a *)
+  (* MSetWeakList *)
   Lemma add_strong_spec : forall s1 elm,
     if (mem elm s1) then elements (add elm s1) = elements s1
     else elements (add elm s1) = elements s1 ++ (elm :: nil).
@@ -1210,62 +1427,26 @@ Module RESetSet.
           rewrite Hme in IHls0. crush.
   Qed.
 
-  
-  (* Definition find_index: RESet.t -> t -> nat option. *)
-
+  (* todo: to prove this, I need to strengthen the get_index_prop 
+     to say ~(mem e (firstn (n-1) (elements s))) and also prove
+     the reverse direction *)
+  (* Lemma get_index_monotone: forall e e1 s n, *)
+  (*   get_index e s = Some n <->  *)
+  (*   n < cardinal s /\ get_index e (add e1 s) = Some n. *)
+  (* Proof. intros; split; intros. *)
+  (*   Case "->". use_lemma get_index_prop by eassumption. sim. *)
+  (*     eapply nth_error_some_lt; eassumption. *)
 End RESetSet.
 
-
-Print Module RESetSet.
-
-Module RESetSetP := MSetProperties.WProperties RESetSet.
-
+(* seems to need this to get around of a coq bug *)
 Module RESS := RESetSet.
-Module RESSP := RESetSetP.
-
-
-
-
-
-
-
-(* Module RESetSetOps := MSetWeakList.Ops RESet. *)
-(* Print RESetSetOps.t. *)
-
-(* Module RESetSetRaw := MSetWeakList.MakeRaw RESet. *)
-(* Print RESetSetRaw.t. *)
-
-(* Print Module Type WSetsOn. *)
-
-(* Module RESetSetP := MSetProperties.WProperties RESetSet. *)
-
-(** A set of regexp sets *)
-Module RESetSet := MSetWeakList.Make RESet.
-Print RESetSet.Raw.add.
-
-(* Print RESetSet.Raw.t. *)
-(* Variable s : RESetSet.t. *)
-(* Check (hd_error (RESetSet.this s)). *)
-(* Print RESetSet.Raw.elt. *)
-
-(* RESetSEt.Raw.t is a list *)
-
-Print Module Type WOps.
-Print Module Type WSetsOn.
-
-Print Module RESetSet.
-
-
-Print RESetSet.t_.
-Print RESetSet.this.
-
-Print Module RESetSetP.
+Module RESSP :=MSetProperties.WProperties RESetSet.
 
 Section DFA.
 
   Record DFA := { 
     dfa_num_states : nat ; 
-    dfa_states : list RESet.t ; 
+    dfa_states : RESS.t ; 
     dfa_transition : list (list nat) ; 
     dfa_accepts : list bool ;
     dfa_rejects : list bool
@@ -1276,7 +1457,7 @@ Section DFA.
   Definition state := RESet.t.
 
   (** a set of states *) 
-  Definition states := RESetSet.t.
+  Definition states := RESS.t.
 
 
     (* (* Poorly named, but basically calculates the derivative of an [astgram] and *)
@@ -1284,16 +1465,16 @@ Section DFA.
     (* Definition unit_derivs r s := let (r', _) := derivs_and_split r s in r'. *)
 
   (* (** Find the index of a state in the list of [states]. *) *)
-  (* Fixpoint find_index' (s:state) (n:nat) (ss:states) : option nat :=  *)
+  (* Fixpoint get_index' (s:state) (n:nat) (ss:states) : option nat :=  *)
   (*   match ss with  *)
   (*     | nil => None *)
-  (*     | h::t => if RESet.equal s h then Some n else find_index' s (1 + n) t *)
+  (*     | h::t => if RESet.equal s h then Some n else get_index' s (1 + n) t *)
   (*   end. *)
-  (* Definition find_index (s:state) (ss:states) : option nat := *)
-  (*   find_index' s 0 ss. *)
+  (* Definition get_index (s:state) (ss:states) : option nat := *)
+  (*   get_index' s 0 ss. *)
 
   (* Definition find_or_add (s:state) (ss:states) : states * nat :=  *)
-  (*   match find_index s ss with  *)
+  (*   match get_index s ss with  *)
   (*     | None => ((s::nil), length ss) *)
   (*     | Some i => (nil, i) *)
   (*   end. *)
@@ -1304,20 +1485,26 @@ Section DFA.
     match n with 
       | 0 => (ss, nil)
       | S n' => 
-        let (ss1, d) := find_or_add (wpdrv (token_id_to_chars token_id) s) ss in
-        let (ss2, row) := gen_row' n' s (ss ++ ss1) (1 + token_id) in
-        (ss2, d::row)
+        let s1 := (wpdrv (token_id_to_chars token_id) s) in
+        match RESS.get_index s1 ss with
+          | Some n => 
+            let (ss1, row) := gen_row' n' s ss (1 + token_id) in
+            (ss1, n :: row)
+          | None => 
+            let (ss1, row) := gen_row' n' s (RESS.add s1 ss) (1 + token_id) in
+            (ss1, RESS.cardinal ss :: row)
+        end
     end.
 
   Definition gen_row (s:state) (ss:states) : (states * list nat) := 
     gen_row' num_tokens s ss 0.
 
   (** A relation that puts an upper bound on nats *)
-  Definition limit_nat (m:positive) : relation nat :=
-    fun n1 n2: nat => Pos.to_nat m - n1 < Pos.to_nat m - n2.
+  Definition limit_nat (m:nat) : relation nat :=
+    fun n1 n2: nat => m - n1 < m - n2.
 
   Lemma limit_nat_wf_helper :
-    forall n k m, Pos.to_nat m - k < n -> Acc (limit_nat m) k.
+    forall n k m, m - k < n -> Acc (limit_nat m) k.
   Proof. induction n; intros; [omega | idtac].
     apply Acc_intro; intros. unfold limit_nat in H0.
     apply IHn. omega.
@@ -1334,17 +1521,27 @@ Section DFA.
   Variable r: astgram.
 
   (* max number of partial derivatives of r *)
-  Definition max_pdrv := 
-    Pos.add 1 (shift_nat (1 + num_of_syms r) 1).
+  Definition max_pdrv := NPeano.pow 2 (1 + num_of_syms r).
+    (* Pos.add 1 (shift_nat (1 + num_of_syms r) 1). *)
 
   (** The termination metric for function [build_table'] *)
   Definition build_table_metric := limit_nat max_pdrv.
 
-  (* todo: change this RESet.Equal *)
   Definition wf_state (s:state) : Prop := 
-    exists w, s = (wpdrv w (RESet.singleton r)).
+    exists w, RESet.Equal s (wpdrv w (RESet.singleton r)).
 
-  Definition wf_states (ss: states) : Prop := Forall wf_state ss.
+  Definition wf_states (ss: states) : Prop := RESS.For_all wf_state ss.
+
+  Instance wf_state_imp: Proper (RESet.Equal ==> impl) wf_state.
+  Proof. unfold Proper, respectful, impl, wf_state. intros s1 s2; intros.
+    destruct H0 as [w H2].
+    exists w. rewrite <- H. trivial.
+  Qed.
+    
+  Instance wf_state_equal: Proper (RESet.Equal ==> iff) wf_state.
+  Proof. unfold Proper, respectful. intros s1 s2 H.
+    split; apply wf_state_imp; [trivial | symmetry; trivial].
+  Qed.
 
   (* todo: move earlier *)
   Lemma wpdrv_list_cat: forall w1 w2 rs,
@@ -1358,26 +1555,25 @@ Section DFA.
   Proof. unfold wf_state; intros. 
     destruct H as [w1 H].
     exists (w1++w).
-    rewrite wpdrv_list_cat. congruence.
-  Qed.
-     
-
-  Lemma find_or_add_wf : forall s ss ss' n,
-    wf_state s -> wf_states ss -> find_or_add s ss = (ss',n)
-      -> wf_states ss'.
-  Proof. unfold find_or_add; intros.
-    destruct_head in H1; 
-      inversion_clear H1; unfold wf_states; 
-      auto using Forall_nil, Forall_cons.
+    rewrite wpdrv_list_cat. rewrite H. reflexivity.
   Qed.
 
-  (* todo: move *)
-  Lemma forall_cat: forall A l1 l2 (P:A->Prop),
-    Forall P l1 -> Forall P l2 -> Forall P (l1++l2).
-  Proof. induction l1. crush.
-    simpl; intros. inversion H. auto using Forall_cons.
-  Qed.
-      
+  (* Lemma find_or_add_wf : forall s ss ss' n, *)
+  (*   wf_state s -> wf_states ss -> find_or_add s ss = (ss',n) *)
+  (*     -> wf_states ss'. *)
+  (* Proof. unfold find_or_add; intros. *)
+  (*   destruct_head in H1;  *)
+  (*     inversion_clear H1; unfold wf_states;  *)
+  (*     auto using Forall_nil, Forall_cons. *)
+  (* Qed. *)
+
+  (* todo: move; decide whether this is necessary *)
+  (* Lemma forall_cat: forall A l1 l2 (P:A->Prop), *)
+  (*   Forall P l1 -> Forall P l2 -> Forall P (l1++l2). *)
+  (* Proof. induction l1. crush. *)
+  (*   simpl; intros. inversion H. auto using Forall_cons. *)
+  (* Qed. *)
+
   Lemma gen_row'_wf : forall n s ss ss' k row,
     wf_state s -> wf_states ss -> gen_row' n s ss k = (ss',row)
       -> wf_states ss'.
@@ -1385,74 +1581,110 @@ Section DFA.
     Case "n=0". crush.
     Case "S n". 
       compute [gen_row'] in H1. fold gen_row' in H1.
-      remember_head in H1 as fa.
-      destruct fa as [ss1 n1].
-      remember_head in H1 as gr.
-      destruct gr as [ss2 row2].
-      inversion H1; subst.
-      eapply IHn with (ss:=ss++ss1); try eassumption.
-      apply forall_cat. assumption.
-        eapply find_or_add_wf with (s:= wpdrv (token_id_to_chars k) s);
+      destruct (RESS.get_index (wpdrv (token_id_to_chars k) s) ss) in H1.
+      SCase "Some n".
+        remember_destruct_head in H1 as fa. 
+        inversion H1. crush.
+      SCase "None".
+        remember_destruct_head in H1 as fa. 
+        inversion H1. subst.
+        eapply IHn with (ss:=(RESS.add (wpdrv (token_id_to_chars k) s) ss));
           try eassumption.
-        auto using wpdrv_wf.
-   Qed.
+        unfold wf_states. unfold RESS.For_all. intros.
+        apply RESSP.FM.add_iff in H2. destruct H2.
+          rewrite <- H2. auto using wpdrv_wf.
+          auto.
+  Qed.
 
   Lemma gen_row_wf_state : forall s ss ss' row,
     wf_state s -> wf_states ss -> gen_row s ss = (ss',row) -> wf_states ss'.
-  Proof.  intros. eauto using gen_row'_wf. Qed.
+  Proof.  unfold gen_row; intros. eapply gen_row'_wf; eassumption. Qed.
 
-  Lemma wf_states_nth_wf_state : forall s ss n,
-    wf_states ss -> nth_error ss n = Some s -> wf_state s.
+  Lemma wf_states_element_wf_state : forall s ss n,
+    wf_states ss -> RESS.get_element n ss = Some s -> wf_state s.
   Proof. intros. apply Coqlib.nth_error_in in H0.
     unfold wf_states in H.
-    rewrite Forall_forall in H.
-    auto.
+    apply H.
+    assert (InA RESet.Equal s (RESS.elements ss)).
+      apply In_InA. apply RESet.eq_equiv. assumption.
+    apply RESS.elements_spec1. trivial.
   Qed.
 
-  Lemma gen_row_wf_state_2 : forall s ss n,
-    wf_states ss -> nth_error ss n = Some s -> wf_states (fst (gen_row s ss)).
+
+  (* Lemma wf_states_nth_wf_state : forall s ss n, *)
+  (*   wf_states ss -> nth_error ss n = Some s -> wf_state s. *)
+  (* Proof. intros. apply Coqlib.nth_error_in in H0. *)
+  (*   unfold wf_states in H. *)
+  (*   rewrite Forall_forall in H. *)
+  (*   auto. *)
+  (* Qed. *)
+
+  Lemma gen_row_wf_state_2: forall s ss n,
+    wf_states ss -> RESS.get_element n ss = Some s
+    -> wf_states (fst (gen_row s ss)).
   Proof. intros.
-    remember_rev (gen_row s ss) as gr; destruct gr as [ss' row].
-    eauto using gen_row_wf_state, wf_states_nth_wf_state.
+    remember (gen_row s ss) as gr. destruct gr as [ss' row].
+    symmetry in Heqgr.
+    eauto using gen_row_wf_state, wf_states_element_wf_state.
   Qed.
+
+  (* Lemma zpos_le_iff: forall p1 p2,  *)
+  (*    (p1 <= p2)%positive -> (Zpos p1 <= Zpos p2)%Z. *)
+
+  (* Lemma shift_nat_leq: forall n m p, *)
+  (*   n <= m -> BinPos.Pos.le (shift_nat n p) (shift_nat m p). *)
+  (* Proof. unfold shift_nat. induction n. simpl. *)
 
   Lemma states_upper_bound: forall ss,
-    wf_states ss -> S (length ss) <= Pos.to_nat max_pdrv.
-  Proof.
-
-
-   About RESetP.subset_cardinal.
-
-
-  Lemma states_upper_bound: forall n ss,
-    wf_states ss -> n < length ss -> S n <= Pos.to_nat max_pdrv.
-  Proof. 
-
-
+    wf_states ss -> RESS.cardinal ss <= max_pdrv.
+  Proof. intros.
+    assert (H2: RESS.Subset ss (POW.powerset (pdset r))).
+      intros s H2. apply POW.powerset_spec.
+      apply H in H2. unfold wf_state in H2.
+      destruct H2 as [w H2].
+      rewrite H2. apply wpdrv_subset_pdset.
+    apply RESSP.subset_cardinal in H2.
+    rewrite POW.powerset_cardinal in H2.
+    assert (NPeano.pow 2 (RESet.cardinal (pdset r)) <= 
+            NPeano.pow 2 (1 + num_of_syms r)).
+      apply NPeano.Nat.pow_le_mono_r. omega.
+      apply pdset_upper_bound.
+    unfold max_pdrv.
+    omega.
+  Qed.    
 
   Lemma build_table_metric_dec : forall n s ss,
-    wf_states ss -> nth_error ss n = Some s
+    wf_states ss -> RESS.get_element n ss = Some s
       -> build_table_metric (S n) n.
   Proof. intros. unfold build_table_metric, limit_nat.
     apply plus_lt_reg_l with (p:= S n).
-    assert (S n <= Pos.to_nat max_pdrv). 
-      
-      
-
+    assert (S n <= max_pdrv). 
+      apply RESS.get_element_some_lt in H0.
+      use_lemma states_upper_bound by eassumption.
+      omega.
     repeat rewrite NPeano.Nat.add_sub_assoc by omega.
     repeat rewrite NPeano.Nat.add_sub_swap by omega.
     omega.
+  Qed.
 
-
-
+  (* todo: use a subset type for {ss:states | wf_states ss} *)
+  (** Build a transition table by closing off the reachable states.  The
+      invariant is that we've closed the table up to the [next_state] and
+      have generated the appropriate transition rows for the states in the
+      range 0..next_state-1.  So we first check to see if [next_state] is
+      outside the range of states, and if so, we are done.  Otherwise, we
+      generate the transition row for the derivative at the position
+      [next_state], add it to the list of rows, and then move on to the
+      next position in the list of states.  Note that when we generate the
+      transition row, we may end up adding new states.  *)
   Unset Implicit Arguments.
   Require Import Coq.Program.Wf.
   Program Fixpoint build_table' (ss:states) (rows:list (list nat)) (next_state:nat)
            (Hwf:wf_states ss)
            {wf build_table_metric next_state} :
     states * list (list nat) :=
-    let ne := nth_error ss next_state in
-    (match ne as ne' return nth_error ss next_state = ne'
+    let ne := RESS.get_element next_state ss in
+    (match ne as ne' return RESS.get_element next_state ss = ne'
                             -> states * list (list nat)
      with
        | None => fun _ => (ss, rows)
@@ -1462,115 +1694,99 @@ Section DFA.
                       (gen_row_wf_state_2 _ Hwf Heq)
      end) eq_refl.
   Next Obligation. 
-    next 
+    eauto using build_table_metric_dec.
   Defined.
   Next Obligation.
     apply measure_wf. apply limit_nat_wf.
   Defined.
   Set Implicit Arguments.
 
-
-
-  The equality lemma
-
-
-
-
-  Function build_table' (ss:states) (rows:list (list nat)) (next_state:nat) 
-           (H:wf_states ss) {wf build_table_metric next_state}: 
-    states * list (list nat) := 
-    match nth_error ss next_state with 
-      | None => (ss, rows)
-      | Some s => 
-        (* let (ss1, row) := gen_row s ss in  *)
-        let gr := gen_row s ss in
-        build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state)
-          (aaa s H)
-    end.
-    Case "proof the metric decreases".
-      admit.
-
-    apply limit_nat_wf.
-  Defined.
-
-
-
-
-End DFA.
+  (* Function build_table' (ss:states) (rows:list (list nat)) (next_state:nat)  *)
+  (*          (H:wf_states ss) {wf build_table_metric next_state}:  *)
+  (*   states * list (list nat) :=  *)
+  (*   match nth_error ss next_state with  *)
+  (*     | None => (ss, rows) *)
+  (*     | Some s =>  *)
+  (*       (* let (ss1, row) := gen_row s ss in  *) *)
+  (*       let gr := gen_row s ss in *)
+  (*       build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state) *)
+  (*         (aaa s H) *)
+  (*   end. *)
+  (*   Case "proof the metric decreases". *)
+      (* admit. *)
+  (*   apply limit_nat_wf. *)
+  (* Defined. *)
 
   (* Extraction build_table'. *)
 
+  Definition ini_state := RESet.singleton r.
+  Definition ini_states := RESS.singleton ini_state.
 
-    (** Build a transition table by closing off the reachable states.  The invariant
-        is that we've closed the table up to the [next_state] and have generated the
-        appropriate transition rows for the states in the range 0..next_state-1.
-        So we first check to see if [next_state] is outside the range of states, and
-        if so, we are done.  Otherwise, we generate the transition row for the
-        derivative at the position [next_state], add it to the list of rows, and
-        then move on to the next position in the list of states.  Note that when 
-        we generate the transition row, we may end up adding new states.  
-     *)
-    Fixpoint build_table' n (s:states) (rows:list (list nat)) (next_state:nat) : 
-      option (states * list (list nat)) := 
-      match n with 
-        | 0 => None
-        | S n' => 
-          match nth_error s next_state with 
-            | None => Some (s, rows)
-            | Some r => 
-              let (s1, row) := gen_row r s in 
-                build_table' n' s1 (rows ++ (row::nil)) (1 + next_state)
-          end
+  Lemma ini_state_wf: wf_state ini_state.
+  Proof. unfold wf_state. exists nil. simpl. reflexivity. Qed.
+
+  Lemma ini_states_wf: wf_states ini_states.
+  Proof. unfold wf_states, ini_states. intros s H.
+    apply RESSP.FM.singleton_1 in H. rewrite <- H.
+    apply ini_state_wf.
+  Qed.
+
+  (** We start with the initial [astgram] in state 0 and then try to close 
+      off the table. *)
+  Definition build_transition_table := 
+    build_table' ini_states nil 0 ini_states_wf.
+ 
+  Definition build_accept_table (ss:states) : list bool := 
+    List.map reset_nullable (RESS.elements ss).
+
+  Definition build_rejects (ss:states) : list bool := 
+    List.map reset_always_rejects (RESS.elements ss).
+
+  Definition build_dfa: DFA := 
+    match build_transition_table with 
+      | (states, table) => 
+         {| dfa_num_states := RESS.cardinal states ; 
+            dfa_states := states ; 
+            dfa_transition := table ;
+            dfa_accepts := build_accept_table states ; 
+            dfa_rejects := build_rejects states |}
+    end.
+End DFA.
+
+Section DFA_RECOGNIZE.
+  Variable d : DFA.
+
+  (** This loop is intended to find the shortest match (if any) for a
+      sequence of tokens, given a [DFA].  It returns [(Some (n, ts'))] when
+      there is a match and where [ts'] is the unconsumed input and n is the
+      length of the consumed input.  If there is no match, it returns
+      [None].  This is just one example of a recognizer that can be built
+      with the DFA. *)
+  Fixpoint dfa_loop state (count: nat) (ts : list token_id) : 
+    option (nat * list token_id) := 
+    if nth state (dfa_accepts d) false then Some (count, ts)
+    else 
+      match ts with 
+        | nil => None
+        | t::ts' => let row := nth state (dfa_transition d) nil in 
+                    let new_state := nth t row num_tokens in
+                    dfa_loop new_state (S count) ts'
       end.
 
-
-Print Module RESet.
-SearchAbout RESet.union.
-Print Module RESetP.
-
-    (** We start with the initial [astgram] in state 0 and then try to close 
-        off the table. *)
-    Definition build_transition_table n (r:astgram) := build_table' n (r::nil) nil 0.
-
-    Definition build_accept_table (s:states) : list bool := List.map accepts_null s.
-    Definition build_rejects (s:states) : list bool := List.map always_rejects s.
-
-    Definition build_dfa n (r:astgram) : option DFA := 
-      match build_transition_table n r with 
-        | None => None
-        | Some (states, table) => 
-          Some {| dfa_num_states := length states ; 
-                  dfa_states := states ; 
-                  dfa_transition := table ;
-                  dfa_accepts := build_accept_table states ; 
-                  dfa_rejects := build_rejects states |}
-      end.
-
-    Section DFA_RECOGNIZE.
-      Variable d : DFA.
-      (** This loop is intended to find the shortest match (if any) for
-          a sequence of tokens, given a [DFA].  It returns [(Some (n,
-          ts'))] when there is a match and where [ts'] is the
-          unconsumed input and n is the length of the consumed input.
-          If there is no match, it returns [None].  This is just one
-          example of a recognizer that can be built with the DFA. *)
-
-      Fixpoint dfa_loop state (count: nat) (ts : list token_id) : 
-        option (nat * list token_id) := 
-        if nth state (dfa_accepts d) false then Some (count, ts)
-        else 
-          match ts with 
-          | nil => None
-          | t::ts' => let row := nth state (dfa_transition d) nil in 
-                      let new_state := nth t row num_tokens in
-                      dfa_loop new_state (S count) ts'
-        end.
-
-      Definition dfa_recognize (ts:list token_id) : option (nat * list token_id) := 
-        dfa_loop 0 0 ts.
-    End DFA_RECOGNIZE.
+  Definition dfa_recognize (ts:list token_id) : option (nat * list token_id) := 
+    dfa_loop 0 0 ts.
+End DFA_RECOGNIZE.
 
 
+
+
+
+
+
+
+
+(********************************************)
+(* todo: to be organized  from this point on*)
 
 
 
