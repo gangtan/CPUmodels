@@ -21,7 +21,10 @@ Require Export ZArith.
 Require Export Znumtheory.
 Require Export List.
 Require Export Bool.
+Require Import SetoidList.
+Require Import Classes.RelationClasses.
 Require Import Wf_nat.
+
 
 (** * Logical axioms *)
 
@@ -304,7 +307,7 @@ Proof.
   auto.
 Qed.  
 
-Open Scope Z_scope.
+Local Open Scope Z_scope.
 
 Definition zlt: forall (x y: Z), {x < y} + {x >= y} := Z_lt_ge_dec.
 
@@ -573,6 +576,7 @@ Qed.
 (** * Definitions and theorems on the data types [option], [sum] and [list] *)
 
 Set Implicit Arguments.
+Local Open Scope nat_scope.
 
 (** Mapping a function over an option type. *)
 
@@ -593,6 +597,17 @@ Definition sum_left_map (A B C: Type) (f: A -> B) (x: A + C) : B + C :=
 (** Properties of [List.nth] (n-th element of a list). *)
 
 Hint Resolve in_eq in_cons: coqlib.
+
+Lemma nth_nil : forall (A:Type) n (default:A),
+  nth n nil default = default.
+Proof. destruct n; auto. Qed.
+
+Lemma cons_nth : forall (A:Type) (a:A) l k default,
+  k > 0 -> nth k (a::l) default = nth (k-1) l default.
+Proof. intros. destruct k.
+  contradict H. omega.
+  replace (S k - 1) with k by omega. trivial.
+Qed.
 
 Lemma nth_error_in:
   forall (A: Type) (n: nat) (l: list A) (x: A),
@@ -615,11 +630,11 @@ Proof.
 Qed.
 Hint Resolve nth_error_nil: coqlib.
 
-Lemma cons_nth : forall (A:Type) (a:A) l k default,
-  (k > 0)%nat -> nth k (a::l) default = nth (k-1) l default.
-Proof. intros. destruct k.
-  contradict H. omega.
-  replace (S k - 1)%nat with k by omega. trivial.
+Lemma nth_error_app_gt: forall A n (xs ys:list A), n >= length xs -> 
+  nth_error (xs ++ ys) n = nth_error ys (n - (length xs)).
+Proof.
+  induction n ; destruct xs; simpl ; auto. intros. omega.
+  intros. apply IHn. omega.
 Qed.
 
 (** Properties of [List.incl] (list inclusion). *)
@@ -742,7 +757,7 @@ Qed.
 
 (** Properties of skipn *)
 Lemma skipn_gt_0 : forall (A:Type) x (a:A) l,
-  (x > 0 -> skipn x (a::l) = skipn (x - 1) l)%nat.
+  (x > 0 -> skipn x (a::l) = skipn (x - 1) l).
 Proof. intros. destruct x. contradict H. intuition.
   simpl. rewrite <- minus_n_O. reflexivity.
 Qed.
@@ -754,9 +769,257 @@ Proof. intros. generalize k1 ls. clear k1 ls.
     simpl. rewrite plus_0_r. trivial.
     destruct ls. destruct k1; auto.
       simpl. rewrite IHk2. 
-        assert (k1 + S k2 = S (k1 + k2))%nat by omega.
+        assert (k1 + S k2 = S (k1 + k2)) by omega.
       rewrite H. trivial.
 Qed.
+
+Lemma skipn_map: forall n (A B:Type) (l:list A) (f: A -> B) ,
+  List.map f (skipn n l) = skipn n (List.map f l).
+Proof. induction n. auto.
+  destruct l; [auto | apply IHn].
+Qed.
+
+Lemma skipn_nth : forall (A:Type) n k  (l:list A) default,
+  nth n (skipn k l) default = nth (n+k) l default.
+Proof. induction k. rewrite plus_0_r.  auto.
+    destruct l. 
+      intros. compute [skipn]. do 2 rewrite nth_nil. trivial.
+      intros. rewrite cons_nth by omega.
+      assert (n + S k - 1 = n + k) by omega.
+      rewrite H. simpl. apply IHk.
+Qed.
+
+Lemma skipn_length : forall n (A:Type) (l:list A),
+  (n < length l -> length (skipn n l) + n = length l).
+Proof. induction n. 
+  intros. simpl. auto using plus_0_r.
+  intros.
+    destruct l. simpl in H. omega.
+    simpl. erewrite <- IHn with (l:=l) by (simpl in H; omega).
+    omega.
+Qed.
+
+Lemma skipn_nil : forall n (A:Type) (l:list A),
+  (n >= length l) -> skipn n l = nil.
+Proof. induction n. 
+  destruct l; [auto | simpl; omega].
+  intros.
+    destruct l. auto.
+      simpl. apply IHn. simpl in H; omega.
+Qed.
+
+Lemma skipn_length_leq : forall n (A:Type) (l:list A),
+    (length (skipn n l) <= length l).
+Proof. intros.
+  destruct (le_or_lt (length l) n).
+    assert (n >= length l) by omega.
+      apply skipn_nil in H0. rewrite H0. simpl; omega.
+    apply skipn_length in H. omega.
+Qed.
+
+Lemma skipn_length_geq : forall n (A:Type) (l:list A),
+  (length (skipn n l) + n >= length l).
+Proof. induction n. simpl. intros. rewrite plus_0_r. auto.
+  intros. destruct l. simpl; omega.
+    simpl. generalize (IHn _ l). intros. omega.
+Qed.
+
+Lemma skipn_list_app : forall (A:Type) n (l1 l2:list A),
+  length l1 = n -> skipn n (l1 ++ l2) = l2.
+Proof. induction n. 
+  destruct l1. auto. 
+    simpl; intros. inversion H. 
+  destruct l1. intros. inversion H.
+    intros.
+      rewrite <- app_comm_cons.
+      simpl. auto.
+Qed.
+
+
+(** Properties of firstn *)
+Lemma firstn_list_app : forall (A:Type) n (l1 l2:list A),
+  length l1 = n -> firstn n (l1 ++ l2) = l1.
+Proof. induction n. 
+  destruct l1. auto.
+    simpl; intros. inversion H.
+  destruct l1. intros. inversion H.
+    intros.
+      rewrite <- app_comm_cons.
+      simpl. f_equal. auto.
+Qed.
+
+Lemma nth_firstn : forall n (A:Type) i (l:list A) default,
+  (i < n) -> nth i (firstn n l) default = nth i l default.
+Proof. induction n. intros. contradict H. omega.
+  destruct l. auto.
+    destruct i. auto.
+      simpl; intros. apply IHn. omega.
+Qed.
+
+Lemma firstn_twice_eq : forall (A:Type) n m (l:list A),
+  (n <= m) -> firstn n (firstn m l) = firstn n l. 
+Proof. induction n. auto.
+  intros. destruct m. inversion H.
+    destruct l. auto.
+      simpl. f_equal. eapply IHn. omega.
+Qed.
+
+Lemma firstn_map : forall (A B:Type) n (f: A -> B) (l:list A),
+  firstn n (List.map f l) = List.map f (firstn n l).
+Proof. induction n. auto.
+  destruct l. auto. simpl; f_equal; auto.
+Qed.
+
+Definition eq_firstn A n (l1 l2: list A) := 
+  firstn n l1 = firstn n l2.
+
+Instance eq_firstn_equiv: 
+  forall A n, Equivalence (@eq_firstn A n).
+Proof. intros. unfold eq_firstn; split; try auto.
+  intros x y z. intros. transitivity (firstn n y); trivial.
+Qed.  
+
+Lemma firstn_eq_lt: forall A n (l1 l2: list A),
+  (n < length l1) -> eq_firstn n (l1 ++ l2) l1.
+Proof. induction n; unfold eq_firstn; intros. auto.
+  destruct l1.
+    simpl in H. omega.
+    simpl. simpl in H. rewrite IHn by omega. trivial.
+Qed.
+
+Lemma nth_error_firstn: forall A n1 n2 (l:list A),
+  (n2 < n1) -> nth_error (firstn n1 l) n2 = nth_error l n2.
+Proof. induction n1. intros. contradict H. omega.
+  destruct l. auto.
+    destruct n2. auto.
+      simpl; intros. apply IHn1. omega.
+Qed.
+
+(** find an index of an element in a list w.r.t. an equivalence relation *)
+
+Section FIND_INDEX.
+  Variable A:Type.
+
+  Variable eqA : A -> A -> Prop. 
+  Hypothesis eq_equiv: Equivalence eqA.
+  Hypothesis eqA_dec : forall x y : A, {eqA x y}+{~(eqA x y)}.
+
+  (** Given an element and a list, find_index returns the index of the
+   element in the list according to an equivalence relation. *)
+  Fixpoint find_index' (x:A) (n:nat) (l:list A) : option nat :=
+    match l with
+      | nil => None
+      | h::t => if eqA_dec x h then Some n else find_index' x (1 + n) t
+    end.
+  Definition find_index (x:A) (l:list A) : option nat :=
+    find_index' x 0 l.
+
+  (** x is the first occurence in l at index n w.r.t. the equivalence
+  relation. *)
+  Definition first_occur (x:A) (l:list A) (n:nat) := 
+    ~ (InA eqA x (firstn n l)) /\
+    (exists y, nth_error l n = Some y /\ eqA x y).
+
+  Lemma first_occur_not_lt: forall x l n1 n2,
+    first_occur x l n1 -> (n2 < n1) -> ~ first_occur x l n2.
+  Proof. unfold first_occur; intros. intro H1.
+    destruct H as [H2 _].
+    destruct H1 as [_ [y [H4 H6]]].
+    contradict H2.
+    apply InA_altdef. apply Exists_exists.
+    exists y. split; [idtac | trivial].
+    apply nth_error_in with (n:=n2).
+    rewrite nth_error_firstn; assumption.
+  Qed.
+
+  Lemma first_occur_uniq: forall x l n1 n2,
+    first_occur x l n1 -> first_occur x l n2 -> n1 = n2.
+  Proof. intros.
+    assert (~ n1 < n2).
+      intro. eapply first_occur_not_lt in H0; try eassumption.
+      auto.
+    assert (~ n2 < n1).
+      intro. eapply first_occur_not_lt in H; try eassumption.
+      auto.
+    omega.
+  Qed.
+      
+  Lemma find_index'_spec: forall x l2 l1 n, 
+    ~ InA eqA x l1 ->
+    (find_index' x (length l1) l2 = Some n <-> first_occur x (l1 ++ l2) n).
+  Proof.  induction l2.
+    (* base case *)
+    intros; split; intros.
+      (* -> *)
+      simpl in H0. congruence.
+      (* <- *)
+      unfold first_occur in H0.
+      destruct H0 as [H2 [y [H4 H6]]].
+      assert (Exists (eqA x) l1).
+        apply Exists_exists. exists y.
+        apply nth_error_in in H4.
+        rewrite app_nil_r in H4.
+        split; trivial.
+      contradict H.
+      apply InA_altdef; trivial.
+    (* a::l2 *)
+    simpl; intros.
+    remember (eqA_dec x a) as e.
+    apply symmetry in Heqe. 
+    destruct e.
+    (* eqA x a *)
+      split; intros.
+      (* -> *)
+      inversion_clear H0.
+      unfold first_occur.
+      rewrite firstn_list_app by trivial.
+      split; [trivial | idtac].
+      exists a.
+      rewrite nth_error_app_gt by auto.
+      rewrite minus_diag. 
+      split; auto.
+      (* <- *)
+      assert (first_occur x (l1 ++ a :: l2) (length l1)).
+        unfold first_occur.
+        rewrite firstn_list_app by trivial.
+        split. trivial.
+          exists a. 
+          split; [idtac | trivial].
+          rewrite nth_error_app_gt by omega.
+          rewrite minus_diag. trivial.
+          f_equiv.
+          eapply (first_occur_uniq H1 H0).
+    (* ~ eqA x a *)
+      assert (H2: length (l1 ++ a::nil) = S (length l1)). 
+        rewrite app_length. simpl. omega.
+      assert (~ InA eqA x (l1 ++ a :: nil)).
+        intro H4.
+        apply (InA_app_iff eq_equiv) in H4.
+        destruct H4. auto.
+          apply (InA_singleton eq_equiv) in H0. congruence.
+      assert (H6: l1 ++ a :: l2 = (l1 ++ a :: nil) ++ l2).
+        rewrite <- app_assoc.
+        rewrite <- app_comm_cons.
+        rewrite app_nil_l. trivial.
+      eapply IHl2 in H0.
+      rewrite H2 in H0.
+      rewrite <- H6 in H0.
+      split; intros.
+      (* -> *)
+      apply H0; assumption.
+      (* <- *)
+      apply H0; assumption.
+  Qed.
+
+  Lemma find_index_spec: forall x l n,
+    find_index x l = Some n <-> first_occur x l n.
+  Proof. unfold find_index. intros.
+    eapply (@find_index'_spec _ _ nil).
+    intro H; apply InA_nil in H; trivial.
+  Qed.
+
+End FIND_INDEX.
+
 
 (** [list_disjoint l1 l2] holds iff [l1] and [l2] have no elements 
   in common. *)

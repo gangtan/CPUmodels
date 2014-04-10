@@ -1934,12 +1934,6 @@ Section DFA.
       try (assert False ; [ omega | contradiction ]). auto. apply IHn. omega.
   Qed.
 
-  Lemma nth_error_app_gt A n (xs ys:list A) : n >= length xs -> 
-    nth_error (xs ++ ys) n = nth_error ys (n - (length xs)).
-  Proof.
-    induction n ; destruct xs ; simpl ; auto. intros. assert False. omega.
-    contradiction. intros. apply IHn. omega.
-  Qed.
   (** End helper lemmas. *)
 
   (** Simple facts about [find_index] and [find_or_add_index]. *)

@@ -499,111 +499,6 @@ Section VERIFIER_CORR.
 
   (** ** Fast verifier correctness proof *)
   
-  (** *** Auxliary lemmas about lists, skipn, and firstn *)
-
-  Lemma nth_nil : forall (A:Type) n (default:A),
-    nth n nil default = default.
-  Proof. destruct n; crush. Qed.
-
-  Lemma length_cons : forall (A:Type) (x:A) l,
-    length (x :: l) = S (length l).
-  Proof. trivial. Qed.
-
-  Lemma skipn_map: forall n (A B:Type) (l:list A) (f: A -> B) ,
-    List.map f (skipn n l) = skipn n (List.map f l).
-  Proof. induction n. crush.
-    destruct l; crush.
-  Qed.
-
-  Lemma skipn_nth : forall (A:Type) n k  (l:list A) default,
-    nth n (skipn k l) default = nth (n+k)%nat l default.
-  Proof. induction k. rewrite plus_0_r. crush.
-    destruct l. 
-      intros. compute [skipn]. do 2 rewrite nth_nil. trivial.
-      intros. rewrite cons_nth by omega.
-      assert (n + S k - 1 = n + k)%nat by omega.
-      rewrite H. simpl. apply IHk.
-  Qed.
-
-  Lemma skipn_length : forall n (A:Type) (l:list A),
-    (n < length l -> length (skipn n l) + n = length l)%nat.
-  Proof. induction n. crush.
-    Case "S n". intros.
-      destruct l. crush.
-      simpl. erewrite <- IHn with (l:=l) by crush.
-      omega.
-  Qed.
-
-  Lemma skipn_nil : forall n (A:Type) (l:list A),
-    (n >= length l)%nat -> skipn n l = nil.
-  Proof. induction n. 
-    Case "n=0". destruct l; crush.
-    Case "S n". intros. destruct l. crush.
-      simpl. apply IHn. crush.
-  Qed.
-
-  Lemma skipn_length_leq : forall n (A:Type) (l:list A),
-    (length (skipn n l) <= length l)%nat.
-  Proof. intros.
-    destruct (le_or_lt (length l) n).
-    Case "length l <= n".
-      assert (n >= length l)%nat by omega.
-      apply skipn_nil in H0. crush.
-    Case "n < length l".
-      apply skipn_length in H. omega.
-  Qed.
-
-  Lemma skipn_length_geq : forall n (A:Type) (l:list A),
-    (length (skipn n l) + n >= length l)%nat.
-  Proof. induction n. crush.
-    intros. destruct l. crush.
-    simpl. generalize (IHn _ l). intros. omega.
-  Qed.
-
-  Lemma skipn_list_app : forall (A:Type) n (l1 l2:list A),
-    length l1 = n -> skipn n (l1 ++ l2) = l2.
-  Proof. induction n. destruct l1; crush.
-    destruct l1. crush.
-      intros.
-      rewrite <- app_comm_cons.
-      simpl. f_equal. auto.
-  Qed.
-
-  Lemma firstn_list_app : forall (A:Type) n (l1 l2:list A),
-    length l1 = n -> firstn n (l1 ++ l2) = l1.
-  Proof. induction n. destruct l1; crush.
-    destruct l1. crush.
-      intros.
-      rewrite <- app_comm_cons.
-      simpl. f_equal. auto.
-  Qed.
-  
-  Lemma firstn_S_cons : forall (A:Type) n (x:A) l, 
-    firstn (S n) (x :: l) = x :: firstn n l.
-  Proof. intros. trivial. Qed.
-
-  Lemma nth_firstn : forall n (A:Type) i (l:list A) default,
-    (i < n)%nat -> nth i (firstn n l) default = nth i l default.
-  Proof. induction n. intros. contradict H; crush.
-    destruct l. crush.
-      destruct i; crush.
-  Qed.
-
-  Lemma firstn_twice_eq : forall (A:Type) n m (l:list A),
-    (n <= m)%nat -> firstn n (firstn m l) = firstn n l. 
-  Proof. induction n. crush.
-    intros. destruct m. crush.
-      destruct l. crush.
-        repeat (rewrite firstn_S_cons).
-        f_equal. eapply IHn. omega.
-  Qed.
-
-  Lemma firstn_map : forall (A B:Type) n (f: A -> B) (l:list A),
-    firstn n (List.map f l) = List.map f (firstn n l).
-  Proof. induction n. crush.
-    destruct l; crush.
-  Qed.
-
   (** *** Properties of codeLoaded *)
   Lemma codeLoaded_length : forall code s,
     codeLoaded code s -> Z_of_nat (length code) <= w32modulus.
@@ -621,8 +516,6 @@ Section VERIFIER_CORR.
 
 
   (** *** Properties of dfa_recognize *)
-
-  Require Coqlib.
 
   Lemma dfa_loop_inv : forall dfa ts s count count1 ts1,
       dfa_loop dfa s count ts = Some (count1, ts1) ->
@@ -1424,16 +1317,15 @@ Section VERIFIER_CORR.
       use_lemma simple_parse'_len_pos by eassumption.
       assert (len >= 1)%nat by omega.
       destruct len. contradict H4. omega.
-      rewrite firstn_S_cons in H1.
       destruct bytes1. simpl in H1. congruence.
-      rewrite firstn_S_cons in H1.
+      simpl in H1.
       inversion H1. subst i.
       compute [simple_parse']. fold simple_parse'.
       destruct (parse_byte ps b).
       destruct l.
       SCase "parse_byte returns nil".
         assert (len = length bytes' - length rem)%nat.
-          rewrite length_cons in H0. omega.
+          simpl length at 1 in H0. omega.
         eapply IHbytes'; eassumption.
       SCase "parse_byte returns some val".
         exists bytes1. crush.
@@ -2936,11 +2828,11 @@ Section VERIFIER_CORR.
     eqMemBuffer (b::buffer) s lc -> eqMemBuffer buffer s (lc +32_z 1).
   Proof. unfold eqMemBuffer. intros.
     breakHyp.
-    rewrite length_cons in H.
+    simpl in H.
     split. int32_prover.
     intros.
       assert (S i < length (b::buffer))%nat.
-        rewrite length_cons. omega.
+        simpl. omega.
       use_lemma (H0 (S i)) by eassumption.
       rewrite cons_nth in H3 by omega.
       assert (S i - 1 = i)%nat by omega.
@@ -2972,7 +2864,7 @@ Section VERIFIER_CORR.
       destruct k; [contradict H2; omega | idtac].
       dupHyp H1; unfold eqMemBuffer in H1.
       destruct H1 as [H10 H12].
-      rewrite firstn_S_cons in H12.
+      simpl firstn in H12.
       assert (H20:b = AddrMap.get lc (rtl_memory s)).
         apply eq_trans with (y:= nth 0 (b::bytes') Word.zero).
           trivial.
@@ -2983,7 +2875,7 @@ Section VERIFIER_CORR.
       destruct l.
       SCase "parse_byte returns nil".
         assert (len = length bytes' - length bytes1)%nat.
-          rewrite length_cons in H0. omega.
+          simpl length in H0. omega.
         assert (len <= length bytes')%nat by omega.
         assert (eqMemBuffer (firstn len bytes') s (lc +32_p 1)).
           eapply eqMemBuffer_succ; eassumption.
@@ -3007,8 +2899,8 @@ Section VERIFIER_CORR.
           rewrite <- H20. rewrite Hpb. crush.
           SSCase "subgoal 2".
           inv H.
-          assert (len = 0)%nat.
-            rewrite length_cons in H0.  omega.
+          assert (len = 0)%nat. 
+            simpl length in H0. omega.
           rewrite H. nat_to_Z_tac. omega.
   Qed.
 

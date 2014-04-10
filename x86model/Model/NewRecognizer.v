@@ -9,7 +9,6 @@
    the License, or (at your option) any later version.
 *)
 
-(** * DFA Construction *)
 Require Import Coq.Program.Equality.
 Require Import Coq.Init.Logic.
 Require Import List.
@@ -25,20 +24,26 @@ Set Implicit Arguments.
 Require Import CommonTacs.
 
 (** * Define a series of augmented MSets. 
-      This can be moved to CoqLib.v *)
+      This should be moved to a separate file *)
 
-Require Import Coq.MSets.MSetInterface.
-Require Import Coq.MSets.MSetProperties.
-Require Import Coq.MSets.MSetWeakList.
+Require Import MSets.MSetInterface.
+Require Import MSets.MSetProperties.
+Require Import MSets.MSetWeakList.
 
 (** ** Additional properties of sets *)
 Module Type WMOREPROPERTIES (M:WSets).
-  Parameter add_transpose :
+  Parameter add_transpose:
     forall (A : Type) (f : A -> M.elt),
        transpose M.Equal (fun (x : A) (s : M.t) => M.add (f x) s).
 
-  Parameter subset_empty_uniq :
+  Parameter subset_empty_uniq:
     forall s : M.t, M.Subset s M.empty -> M.Equal s M.empty.
+
+  Definition disjoint s1 s2 := forall x, ~(M.In x s1 /\ M.In x s2).
+
+  Parameter disjoint_spec: forall s1 s2,
+    disjoint s1 s2 <-> M.Equal (M.inter s1 s2) M.empty.
+
 End WMOREPROPERTIES.
 
 Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
@@ -55,8 +60,22 @@ Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
     apply P.subset_antisym. assumption. apply P.subset_empty.
   Qed.
 
-End WMoreProperties.
+  Definition disjoint s1 s2 := forall x, ~(M.In x s1 /\ M.In x s2).
 
+  Lemma disjoint_spec: forall s1 s2,
+    disjoint s1 s2 <-> M.Equal (M.inter s1 s2) M.empty.
+  Proof. unfold disjoint; intros; split; intros. 
+    apply P.subset_antisym.
+      intros x H2. apply M.inter_spec in H2. apply H in H2. inversion H2.
+      apply P.subset_empty.
+    intro.
+      assert (M.In x (M.inter s1 s2)).
+        apply M.inter_spec; auto.
+      rewrite H in H1.
+      apply P.FM.empty_iff in H1. trivial.
+  Qed.
+
+End WMoreProperties.
 
 (** ** A map function for sets *)
 Module Type MAPSET (M:WSets) (M':WSets).
@@ -178,41 +197,6 @@ Module MapSetGen (M:WSets)(M':WSets) : MAPSET M M'.
           apply P'.FM.add_iff in H1; destruct H1; crush.
     Qed.
 
-    (* Lemma map_In: forall s a,  *)
-    (*   M'.In a (map s) <-> exists b, M.In b s /\ M'.E.eq (f b) a. *)
-    (* Proof. split. *)
-    (*   Case "->". unfold map. *)
-    (*     apply P.fold_rec_nodep; intros. *)
-    (*       apply P'.FM.empty_iff in H; contradict H. *)
-    (*       apply P'.FM.add_iff in H1; destruct H1; crush. *)
-    (*   Case "<-". unfold map. *)
-    (*     apply P.fold_rec_bis; intros; sim. *)
-    (*       apply H0. eexists; crush. *)
-    (*       apply P.FM.empty_iff in H; contradict H. *)
-    (*       apply P.FM.add_iff in H2; destruct H2. *)
-    (*         apply P'.FM.add_1. rewrite H2. trivial. *)
-    (*         apply P'.FM.add_2. apply H1. crush. *)
-    (* Qed. *)
-
-    (* Instance map_equal: Proper (M.Equal ==> M'.Equal) map. *)
-    (* Proof. unfold Proper, respectful, map. intros x. *)
-    (*   apply P.fold_rec_bis. *)
-    (*     intros. assert (M.Equal s y) by (transitivity s'; assumption). *)
-    (*       crush. *)
-    (*     Case "base". intros. *)
-    (*       rewrite P.fold_1. *)
-    (*         reflexivity. *)
-    (*         apply M'.eq_equiv. *)
-    (*         apply P.empty_is_empty_2. symmetry; trivial. *)
-    (*     Case "ind". intros. *)
-    (*       rewrite P.fold_2; try eassumption. *)
-    (*       f_equiv. apply H1. reflexivity. *)
-    (*       apply M'.eq_equiv. *)
-    (*       solve_proper. *)
-    (*       apply PM'.add_transpose. *)
-    (*       apply P.Add_Equal. symmetry. trivial. *)
-    (* Qed. *)
-        
     Lemma map_subset: forall s1 s2 ,
        M.Subset s1 s2 -> M'.Subset (map s1) (map s2).
     Proof. intros. unfold M'.Subset. intros.
@@ -326,7 +310,7 @@ End MapSetGen.
 
 Module MapSet (M:WSets) : MAPSET M M := MapSetGen M M.
 
-(* gtan: I really wanted to do the following; but it seems like that a Coq
+(* gtan: I really want to do the following; but it seems like that a Coq
    bug prevents it; in particular, I cannot use operations in M somehow. *)
 (* Module SetWithMap (M:WSets). *)
 (*   Include M. *)
@@ -348,17 +332,18 @@ Module Type POWERSET (M:WSets).
 
 End POWERSET.
 
-Module PowerSet (M:WSets) <: POWERSET M.
+Module ListPowerSet (M:WSets) <: POWERSET M.
 
   Module MM := MSetWeakList.Make M.
   Module MMF := MapSet MM.
   Module P := MSetProperties.WProperties M.
   Module PM := WMoreProperties M.
   Module PP := MSetProperties.WProperties MM.
-  (* Module PPM := WMoreProperties MM. *)
+  Module PPM := WMoreProperties MM.
 
-  Definition add_elm: M.elt -> MMF.proper_map.
-    refine (fun (x:M.elt) => exist _ (M.add x) _).
+  (** Add x to every set in a set of sets *)
+  Definition add_elm (x: M.elt) : MMF.proper_map.
+    refine (exist _ (M.add x) _).
     abstract (solve_proper).
   Defined.
 
@@ -470,26 +455,22 @@ Module PowerSet (M:WSets) <: POWERSET M.
   Qed.
 
   (* Require Import Coq.PArith.BinPos. *)
-
-  (* Definition two_power (n:nat) := ZArith.Zpower.shift_nat n 1. *)
-
+  (* Definition two_power (n:nat) := shift_nat n 1. *)
   (* Lemma two_power_S:  *)
   (*   forall n, two_power (S n) = (2 * two_power n)%positive. *)
   (* Proof. unfold two_power, shift_nat. simpl. trivial. Qed. *)
 
   Lemma powerset_add_disjoint: forall x s,
     ~ M.In x s -> 
-       MM.Equal (MM.inter (powerset s) (MMF.map (add_elm x) (powerset s)))
-                MM.empty.
-  Proof. intros. apply PP.subset_antisym.
-    intros y H2. apply MM.inter_spec in H2. destruct H2.
-    apply MMF.map_elim in H1. destruct H1 as [s' [H6 H8]].
-    apply powerset_spec in H0. apply powerset_spec in H6. 
-    rewrite <- H8 in H0.
+    PPM.disjoint (powerset s) (MMF.map (add_elm x) (powerset s)).
+  Proof. unfold PPM.disjoint. intros. 
+    intro H2; destruct H2 as [H2 H4].
+    apply MMF.map_elim in H4; destruct H4 as [s' [H6 H8]].
+    apply powerset_spec in H2. apply powerset_spec in H6. 
+    rewrite <- H8 in H2.
     assert (M.In x s).
-      apply H0. apply P.FM.add_1. reflexivity.
+      apply H2. apply P.FM.add_1. reflexivity.
     crush.
-    apply PP.subset_empty.
   Qed.
 
   Lemma powerset_add_injective: forall x s,
@@ -526,14 +507,9 @@ Module PowerSet (M:WSets) <: POWERSET M.
       rewrite P.empty_cardinal. trivial.
     Case "s2 = add x s1".
       rewrite powerset_step by eassumption.
-      assert (forall s, ~(MM.In s (powerset s1) /\
-                          MM.In s (MMF.map (add_elm x) (powerset s1)))).
-        intros s H4.
-        assert (MM.In s MM.empty).
-          rewrite <- powerset_add_disjoint by eassumption.
-          apply MM.inter_spec. crush.
-        apply PP.FM.empty_iff in H1.
-        trivial.
+      assert (PPM.disjoint (powerset s1)
+                           (MMF.map (add_elm x) (powerset s1))).
+        eauto using powerset_add_disjoint.
       rewrite PP.union_cardinal by eassumption.
       assert (MMF.injective (add_elm x) (powerset s1)).
         apply powerset_add_injective; eassumption.
@@ -545,7 +521,7 @@ Module PowerSet (M:WSets) <: POWERSET M.
       omega.
   Qed.
 
-End PowerSet.
+End ListPowerSet.
 
 
 (** In this section, we build a table-driven DFA recognizer for a [grammar].  
@@ -739,8 +715,6 @@ Module RESet := MSetAVL.Make REOrderedType.
 Module RESetF := MapSet RESet.
 Module RESetP := MSetProperties.Properties RESet.
 
-(* Print RESetF.singleton. *)
-
 Local Ltac re_set_simpl :=
   repeat 
     (simpl in *;
@@ -769,17 +743,13 @@ Proof. intros. apply RESetF.map_elim in H.
   sim. apply compare_re_eq_leibniz in H0. crush.
 Qed.
 
-Lemma re_set_map_proper: forall f,
-   Proper
-     ((fun x y : REOrderedTypeAlt.t => REOrderedTypeAlt.compare x y = Eq) ==>
-      (fun x y : REOrderedTypeAlt.t => REOrderedTypeAlt.compare x y = Eq)) f.
-Proof.   unfold Proper, respectful. intros.
+Lemma re_set_map_proper: forall f, Proper (RESet.E.eq ==> RESet.E.eq) f.
+Proof. unfold Proper, respectful. intros.
   apply compare_re_eq_leibniz in H. subst. 
   apply REOrderedType.eq_equiv.
 Qed.
 
-Definition re_set_build_map 
-           (f: RESet.elt -> RESet.elt) : RESetF.proper_map :=
+Definition re_set_build_map (f: regexp -> regexp) : RESetF.proper_map :=
   exist _ f (re_set_map_proper f).
 
 (** * The notion of prebase of a regexp and partial-derivative sets.
@@ -962,7 +932,7 @@ Proof. unfold pdset; intros.
     apply RESetP.FM.add_2. eauto using prebase_trans.
 Qed.
 
-(** * Definition the notion of partial derivatives.
+(** * Definition of the notion of partial derivatives.
 
     Partial derivatives are introduced in "Partial derivatives of regular
     expressions and finite automata construction" by Antimirov. *)
@@ -1009,6 +979,22 @@ Fixpoint pdrv (a: char_p) (r:regexp) : RESet.t :=
     | aStar r1 => (pdrv a r1) $ (aStar r1)
   end.
 
+(** Partial derivatives over a regexp set; the result of the union 
+    of taking partial derivatives on every regexp in the set *)
+Definition pdrv_set (a:char_p) (rs:RESet.t) : RESet.t :=
+  RESet.fold (fun r rs1 => RESet.union (pdrv a r) rs1) rs RESet.empty.
+
+(** Word partial derivatives; 
+  wpdrv(nil, rs) = rs
+  wpdrv(a cons w, rs) = wpdrv(w, pdrv_set(a, rs)) *)
+Fixpoint wpdrv (s:list char_p) (rs:RESet.t) : RESet.t := 
+  match s with
+    | nil => rs
+    | a :: s' => wpdrv s' (pdrv_set a rs)
+  end.
+
+(** ** Relating partial derivatives to prebase *)
+
 Lemma pdrv_subset_prebase: 
   forall a r, RESet.Subset (pdrv a r) (prebase r).
 Proof. induction r; simpl; try (apply RESetP.subset_refl).
@@ -1051,7 +1037,7 @@ Inductive in_regexp : forall (r:regexp), list char_p -> Prop :=
 
 Hint Local Constructors in_regexp.
 
-(** ** Denotation semantics of regexp sets *)
+(** Denotation semantics of regexp sets *)
 Definition in_re_set (rs:RESet.t) (s:list char_p) :=
   exists r, RESet.In r rs /\ in_regexp r s.
 
@@ -1242,22 +1228,7 @@ Section PDRV_CORRECT.
 
 End PDRV_CORRECT.
 
-
-(* todo: organize the following *)
-
-(** Partial derivatives over a regexp set; the result of the union 
-    of taking partial derivatives on every regexp in the set *)
-Definition pdrv_set (a:char_p) (rs:RESet.t) : RESet.t :=
-  RESet.fold (fun r rs1 => RESet.union (pdrv a r) rs1) rs RESet.empty.
-
-(** Word partial derivatives; 
-  wpdrv(nil, rs) = rs
-  wpdrv(a cons w, rs) = wpdrv(w, pdrv_set(a, rs)) *)
-Fixpoint wpdrv (s:list char_p) (rs:RESet.t) : RESet.t := 
-  match s with
-    | nil => rs
-    | a :: s' => wpdrv s' (pdrv_set a rs)
-  end.
+(** ** Properties of [pdrv_set] and [wpdrv] *)
 
 Lemma pdrv_set_in: forall rs r a,
   RESet.In r (pdrv_set a rs) <->
@@ -1319,98 +1290,48 @@ Proof. unfold Proper, respectful. induction s. crush.
   intros. simpl. apply IHs. rewrite H. reflexivity.
 Qed.
 
+Lemma wpdrv_list_cat: forall w1 w2 rs,
+  wpdrv (w1 ++ w2) rs = wpdrv w2 (wpdrv w1 rs). 
+Proof. induction w1; intros. 
+  simpl; trivial.
+  simpl. rewrite IHw1. trivial.
+Qed.
 
-(*
-Notes: 
-  * dfa_states in DFA changes list RESet
-  * states need to be changed to a list of RESet
-  * gen_row' iterates through all tokens (0 to 255)
+(** * Define [RESetSet], which is a set of RESet. 
 
-Next: 
-  (1) define build_loop with a termination proof
-     - need to build a founded measure
-  (2) next is the correctness proof
+  It supports (1) a powerset operation from RESet, and (2) a get_index
+  operation that returns the index of a RESet. *)
 
-
-*)
-
-(* Require Import Coq.MSets.MSetWeakList. *)
-
-(* Module POW : (POWERSET RESet) with Module MM := MSetWeakList.Make RESet *)
-(*   := PowerSet RESet. *)
-
-Module POW := PowerSet RESet.
-
-(* Module RESetSet := POW.MM. *)
-(* Module RESetSetP := MSetProperties.WProperties RESetSet. *)
+Module POW := ListPowerSet RESet.
 
 (** A set of regexp sets *)
 Module RESetSet.
   Include POW.MM.
 
-(*   Include MSetWeakList.Make M. *)
-
-(*   (* what operations to define next? *)
-(*      - get_index: RESet.t -> t -> nat option, which returns the index of RESet.t in the set. *)
-(*        * locate the index in the list returned by elements *)
-(*      - nth_error : nat -> t -> (RESet.t) option, which returns the nth RESet in the set. *)
-(*      - Lm get_index_spec:  *)
-(*           get_index rss rs = Some n <-> *)
-(*           (exists rs',  *)
-(*              nth_error (elements rss) n = value rs' /\ Equal rs rs'). *)
-*)
-
   (** The following operations assume the set is implemented by a list. *)
-
-  Fixpoint get_index' (e:elt) (n:nat) (l:list elt) : option nat :=
-    match l with
-      | nil => None
-      | h::t => if E.eq_dec e h then Some n else get_index' e (1 + n) t
-    end.
 
   (** Given an element e, find its index in the set *)
   Definition get_index (e:elt) (s:t) : option nat :=
-    get_index' e 0 (elements s).
+    Coqlib.find_index E.eq E.eq_dec e (elements s).
 
   Definition get_element (n:nat) (s:t) : option elt := 
     nth_error (elements s) n.
 
-  Lemma get_index'_prop : forall e l2 l1 n, 
-    get_index' e (length l1) l2 = Some n ->
-    exists e', nth_error (l1 ++ l2) n = Some e' /\ E.eq e e'.
-  Proof. induction l2.
-    Case "base". crush.
-    Case "a::l2". simpl; intros.
-      destruct_head in H.
-      SCase "E.eq_dec e a".
-        inversion_clear H.
-        exists a.
-        rewrite nth_error_app_gt by auto.
-        rewrite minus_diag. crush.
-      SCase "~(E.eq_dec e a)".
-        assert (H2: length (l1 ++ a::nil) = S (length l1)). 
-          rewrite app_length. simpl. omega.
-        rewrite <- H2 in H.
-        use_lemma (IHl2 (l1++a::nil)) by eassumption.
-        crush.
+  Lemma get_index_spec: forall e s n,
+    get_index e s = Some n <-> Coqlib.first_occur E.eq e (elements s) n.
+  Proof. unfold get_index; intros.
+    apply Coqlib.find_index_spec. apply E.eq_equiv.
   Qed.
 
-  Lemma get_index_prop: forall e s n,
-    get_index e s = Some n ->                            
-    exists e', get_element n s = Some e' /\ E.eq e e'.
-  Proof. unfold get_index. intros. 
-    apply (get_index'_prop e (elements s) nil). trivial.
+  Lemma get_index_some_lt: forall e s n,
+    get_index e s = Some n -> n < cardinal s.
+  Proof. intros. apply get_index_spec in H.
+    unfold Coqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
+    apply nth_error_some_lt in H2. auto.
   Qed.
 
-  Lemma get_element_some_lt: forall n s e,
-    get_element n s = Some e -> n < cardinal s.
-  Proof. unfold get_element, cardinal, Raw.cardinal. 
-     eauto using nth_error_some_lt.
-  Qed.
-
-  (** The strong spec of add given that the set is implemented by a *)
-  (* MSetWeakList *)
-  Lemma add_strong_spec : forall s1 elm,
+  (** The strong spec of add given that the set is implemented by a list. *)
+  Lemma add_spec_list : forall s1 elm,
     if (mem elm s1) then elements (add elm s1) = elements s1
     else elements (add elm s1) = elements s1 ++ (elm :: nil).
   Proof. intros. simpl.
@@ -1427,16 +1348,38 @@ Module RESetSet.
           rewrite Hme in IHls0. crush.
   Qed.
 
-  (* todo: to prove this, I need to strengthen the get_index_prop 
-     to say ~(mem e (firstn (n-1) (elements s))) and also prove
-     the reverse direction *)
-  (* Lemma get_index_monotone: forall e e1 s n, *)
-  (*   get_index e s = Some n <->  *)
-  (*   n < cardinal s /\ get_index e (add e1 s) = Some n. *)
-  (* Proof. intros; split; intros. *)
-  (*   Case "->". use_lemma get_index_prop by eassumption. sim. *)
-  (*     eapply nth_error_some_lt; eassumption. *)
+  Lemma get_index_monotone: forall e e1 s n,
+    get_index e s = Some n <->
+    n < cardinal s /\ get_index e (add e1 s) = Some n.
+  Proof. intros.
+    generalize (add_spec_list s e1); intro.
+    destruct_head in H.
+    Case "mem e1 s".
+      unfold get_index.
+      generalize get_index_some_lt; crush.
+    Case "~ mem e1 s". 
+      unfold elt, RESet.t in *.
+      split; intros. 
+      SCase "->". 
+        use_lemma get_index_some_lt by eassumption.
+        apply get_index_spec in H0. 
+        unfold Coqlib.first_occur in H0. sim. trivial.
+        apply get_index_spec; unfold Coqlib.first_occur.
+        rewrite H. rewrite Coqlib.firstn_eq_lt by trivial.
+        split; [crush | idtac].
+          exists x. rewrite nth_error_lt_app by trivial. crush.
+      SCase "<-".
+        sim. apply get_index_spec in H1. apply get_index_spec.
+        unfold Coqlib.first_occur in *.
+        sim. 
+          erewrite <- Coqlib.firstn_eq_lt by trivial.
+            rewrite H in H1. eassumption.
+          exists x. erewrite <- nth_error_lt_app by trivial.
+            rewrite H in H2. crush.
+  Qed.
+
 End RESetSet.
+
 
 (* seems to need this to get around of a coq bug *)
 Module RESS := RESetSet.
@@ -1458,26 +1401,6 @@ Section DFA.
 
   (** a set of states *) 
   Definition states := RESS.t.
-
-
-    (* (* Poorly named, but basically calculates the derivative of an [astgram] and *)
-    (*    throws away the adjustment function. *) *)
-    (* Definition unit_derivs r s := let (r', _) := derivs_and_split r s in r'. *)
-
-  (* (** Find the index of a state in the list of [states]. *) *)
-  (* Fixpoint get_index' (s:state) (n:nat) (ss:states) : option nat :=  *)
-  (*   match ss with  *)
-  (*     | nil => None *)
-  (*     | h::t => if RESet.equal s h then Some n else get_index' s (1 + n) t *)
-  (*   end. *)
-  (* Definition get_index (s:state) (ss:states) : option nat := *)
-  (*   get_index' s 0 ss. *)
-
-  (* Definition find_or_add (s:state) (ss:states) : states * nat :=  *)
-  (*   match get_index s ss with  *)
-  (*     | None => ((s::nil), length ss) *)
-  (*     | Some i => (nil, i) *)
-  (*   end. *)
 
   (** Generate the transition matrix row for the state s.  In general, this
       will add new states. *)
@@ -1543,36 +1466,12 @@ Section DFA.
     split; apply wf_state_imp; [trivial | symmetry; trivial].
   Qed.
 
-  (* todo: move earlier *)
-  Lemma wpdrv_list_cat: forall w1 w2 rs,
-    wpdrv (w1 ++ w2) rs = wpdrv w2 (wpdrv w1 rs). 
-  Proof. induction w1; intros. 
-    simpl; trivial.
-    simpl. rewrite IHw1. trivial.
-  Qed.
-
   Lemma wpdrv_wf : forall w s, wf_state s -> wf_state (wpdrv w s).
   Proof. unfold wf_state; intros. 
     destruct H as [w1 H].
     exists (w1++w).
     rewrite wpdrv_list_cat. rewrite H. reflexivity.
   Qed.
-
-  (* Lemma find_or_add_wf : forall s ss ss' n, *)
-  (*   wf_state s -> wf_states ss -> find_or_add s ss = (ss',n) *)
-  (*     -> wf_states ss'. *)
-  (* Proof. unfold find_or_add; intros. *)
-  (*   destruct_head in H1;  *)
-  (*     inversion_clear H1; unfold wf_states;  *)
-  (*     auto using Forall_nil, Forall_cons. *)
-  (* Qed. *)
-
-  (* todo: move; decide whether this is necessary *)
-  (* Lemma forall_cat: forall A l1 l2 (P:A->Prop), *)
-  (*   Forall P l1 -> Forall P l2 -> Forall P (l1++l2). *)
-  (* Proof. induction l1. crush. *)
-  (*   simpl; intros. inversion H. auto using Forall_cons. *)
-  (* Qed. *)
 
   Lemma gen_row'_wf : forall n s ss ss' k row,
     wf_state s -> wf_states ss -> gen_row' n s ss k = (ss',row)
@@ -1610,7 +1509,6 @@ Section DFA.
     apply RESS.elements_spec1. trivial.
   Qed.
 
-
   (* Lemma wf_states_nth_wf_state : forall s ss n, *)
   (*   wf_states ss -> nth_error ss n = Some s -> wf_state s. *)
   (* Proof. intros. apply Coqlib.nth_error_in in H0. *)
@@ -1627,13 +1525,6 @@ Section DFA.
     symmetry in Heqgr.
     eauto using gen_row_wf_state, wf_states_element_wf_state.
   Qed.
-
-  (* Lemma zpos_le_iff: forall p1 p2,  *)
-  (*    (p1 <= p2)%positive -> (Zpos p1 <= Zpos p2)%Z. *)
-
-  (* Lemma shift_nat_leq: forall n m p, *)
-  (*   n <= m -> BinPos.Pos.le (shift_nat n p) (shift_nat m p). *)
-  (* Proof. unfold shift_nat. induction n. simpl. *)
 
   Lemma states_upper_bound: forall ss,
     wf_states ss -> RESS.cardinal ss <= max_pdrv.
@@ -1786,6 +1677,10 @@ End DFA_RECOGNIZE.
 
 
 (********************************************)
+(* Next: the correctness proof
+*)
+
+
 (* todo: to be organized  from this point on*)
 
 
