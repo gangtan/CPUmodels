@@ -1330,6 +1330,12 @@ Module RESetSet.
     apply nth_error_some_lt in H2. auto.
   Qed.
 
+  Lemma get_element_some_lt: forall n s e,
+    get_element n s = Some e -> n < cardinal s.
+  Proof. unfold get_element, cardinal, Raw.cardinal. 
+     eauto using nth_error_some_lt.
+  Qed.
+
   (** The strong spec of add given that the set is implemented by a list. *)
   Lemma add_spec_list : forall s1 elm,
     if (mem elm s1) then elements (add elm s1) = elements s1
@@ -1387,6 +1393,9 @@ Module RESSP :=MSetProperties.WProperties RESetSet.
 
 Section DFA.
 
+  (** The initial regexp from which we will build the DFA *)
+  Variable r: regexp.
+
   Record DFA := { 
     dfa_num_states : nat ; 
     dfa_states : RESS.t ; 
@@ -1402,25 +1411,90 @@ Section DFA.
   (** a set of states *) 
   Definition states := RESS.t.
 
+  Definition state_is_wf (s:state) : Prop := 
+    exists w, RESet.Equal s (wpdrv w (RESet.singleton r)).
+  Definition wf_state := {s:state | state_is_wf s}.
+
+  Definition states_are_wf (ss: states) : Prop := RESS.For_all state_is_wf ss.
+  Definition wf_states := {ss:states | states_are_wf ss}.
+
+  Instance state_wf_imp: Proper (RESet.Equal ==> impl) state_is_wf.
+  Proof. unfold Proper, respectful, impl. intros s1 s2; intros.
+    destruct H0 as [w H2].
+    exists w. rewrite <- H. trivial.
+  Qed.
+    
+  Instance state_wf_equal: Proper (RESet.Equal ==> iff) state_is_wf.
+  Proof. unfold Proper, respectful. intros s1 s2 H.
+    split; apply state_wf_imp; [trivial | symmetry; trivial].
+  Qed.
+
+  Definition wpdrv_wf (w: list char_p) (s: wf_state): wf_state.
+    refine (exist _ (wpdrv w (proj1_sig s)) _).
+    unfold state_is_wf; intros. 
+    destruct s as [s [w1 H]].
+    exists (w1++w).
+    rewrite wpdrv_list_cat. simpl. rewrite H. reflexivity.
+  Defined.
+
+  Definition wf_states_add (s:wf_state) (ss:wf_states): wf_states.
+    refine (exist _ (RESS.add (proj1_sig s) (proj1_sig ss)) _).
+    unfold states_are_wf; intros.
+    unfold RESS.For_all. intros.
+    destruct s as [s H2].
+    destruct ss as [ss H4].
+    apply RESSP.FM.add_iff in H. destruct H.
+      simpl in H. rewrite <- H. trivial.
+      apply H4. trivial.
+  Defined.
+
+  Definition get_index_wf_state (s:wf_state) (ss:wf_states): option nat :=
+    RESS.get_index (proj1_sig s) (proj1_sig ss).
+
+  Definition cardinal_wf_states (ss:wf_states) := RESS.cardinal (proj1_sig ss).
+
   (** Generate the transition matrix row for the state s.  In general, this
       will add new states. *)
-  Fixpoint gen_row' n (s:state) (ss:states) token_id : (states * list nat) := 
-    match n with 
+  Fixpoint gen_row' (n:nat) (s:wf_state) (ss:wf_states) (tk_id:token_id) : 
+    (wf_states * list nat) :=
+    match n with
       | 0 => (ss, nil)
-      | S n' => 
-        let s1 := (wpdrv (token_id_to_chars token_id) s) in
-        match RESS.get_index s1 ss with
-          | Some n => 
-            let (ss1, row) := gen_row' n' s ss (1 + token_id) in
+      | S n' =>
+        let s1 := wpdrv_wf (token_id_to_chars tk_id) s in
+        match get_index_wf_state s1 ss with
+          | Some n =>
+            let (ss1, row) := gen_row' n' s ss (1 + tk_id) in
             (ss1, n :: row)
-          | None => 
-            let (ss1, row) := gen_row' n' s (RESS.add s1 ss) (1 + token_id) in
-            (ss1, RESS.cardinal ss :: row)
+          | None =>
+            let (ss1, row) := gen_row' n' s (wf_states_add s1 ss) (1 + tk_id) in
+            (ss1, cardinal_wf_states ss :: row)
         end
     end.
 
-  Definition gen_row (s:state) (ss:states) : (states * list nat) := 
+  Definition gen_row (s:wf_state) (ss:wf_states) : (wf_states * list nat) := 
     gen_row' num_tokens s ss 0.
+
+  Definition get_element_wf_state (n:nat) (ss:wf_states):
+    {s:state | state_is_wf s /\ n < cardinal_wf_states ss} +
+    {n >= cardinal_wf_states ss}.
+    refine (let ge := RESS.get_element n (proj1_sig ss) in
+            (match ge return RESS.get_element n (proj1_sig ss) = ge -> _
+             with
+               | Some s => fun H => inleft (exist _ s _)
+               | None => fun H => inright _
+             end) eq_refl).
+    Case "state_is_wf s".
+      split.
+        destruct ss as [ss H2].
+          apply H2.
+          apply Coqlib.nth_error_in in H.
+          assert (InA RESet.Equal s (RESS.elements ss)).
+            apply In_InA. apply RESet.eq_equiv. assumption.
+          apply RESS.elements_spec1. trivial.
+        apply RESS.get_element_some_lt in H. trivial.
+    Case "n>=|ss|".
+      apply nth_error_none in H. trivial.
+  Defined.
 
   (** A relation that puts an upper bound on nats *)
   Definition limit_nat (m:nat) : relation nat :=
@@ -1441,8 +1515,6 @@ Section DFA.
     eauto using limit_nat_wf_helper.
   Qed.
 
-  Variable r: astgram.
-
   (* max number of partial derivatives of r *)
   Definition max_pdrv := NPeano.pow 2 (1 + num_of_syms r).
     (* Pos.add 1 (shift_nat (1 + num_of_syms r) 1). *)
@@ -1450,85 +1522,10 @@ Section DFA.
   (** The termination metric for function [build_table'] *)
   Definition build_table_metric := limit_nat max_pdrv.
 
-  Definition wf_state (s:state) : Prop := 
-    exists w, RESet.Equal s (wpdrv w (RESet.singleton r)).
-
-  Definition wf_states (ss: states) : Prop := RESS.For_all wf_state ss.
-
-  Instance wf_state_imp: Proper (RESet.Equal ==> impl) wf_state.
-  Proof. unfold Proper, respectful, impl, wf_state. intros s1 s2; intros.
-    destruct H0 as [w H2].
-    exists w. rewrite <- H. trivial.
-  Qed.
-    
-  Instance wf_state_equal: Proper (RESet.Equal ==> iff) wf_state.
-  Proof. unfold Proper, respectful. intros s1 s2 H.
-    split; apply wf_state_imp; [trivial | symmetry; trivial].
-  Qed.
-
-  Lemma wpdrv_wf : forall w s, wf_state s -> wf_state (wpdrv w s).
-  Proof. unfold wf_state; intros. 
-    destruct H as [w1 H].
-    exists (w1++w).
-    rewrite wpdrv_list_cat. rewrite H. reflexivity.
-  Qed.
-
-  Lemma gen_row'_wf : forall n s ss ss' k row,
-    wf_state s -> wf_states ss -> gen_row' n s ss k = (ss',row)
-      -> wf_states ss'.
-  Proof. induction n; intros.
-    Case "n=0". crush.
-    Case "S n". 
-      compute [gen_row'] in H1. fold gen_row' in H1.
-      destruct (RESS.get_index (wpdrv (token_id_to_chars k) s) ss) in H1.
-      SCase "Some n".
-        remember_destruct_head in H1 as fa. 
-        inversion H1. crush.
-      SCase "None".
-        remember_destruct_head in H1 as fa. 
-        inversion H1. subst.
-        eapply IHn with (ss:=(RESS.add (wpdrv (token_id_to_chars k) s) ss));
-          try eassumption.
-        unfold wf_states. unfold RESS.For_all. intros.
-        apply RESSP.FM.add_iff in H2. destruct H2.
-          rewrite <- H2. auto using wpdrv_wf.
-          auto.
-  Qed.
-
-  Lemma gen_row_wf_state : forall s ss ss' row,
-    wf_state s -> wf_states ss -> gen_row s ss = (ss',row) -> wf_states ss'.
-  Proof.  unfold gen_row; intros. eapply gen_row'_wf; eassumption. Qed.
-
-  Lemma wf_states_element_wf_state : forall s ss n,
-    wf_states ss -> RESS.get_element n ss = Some s -> wf_state s.
-  Proof. intros. apply Coqlib.nth_error_in in H0.
-    unfold wf_states in H.
-    apply H.
-    assert (InA RESet.Equal s (RESS.elements ss)).
-      apply In_InA. apply RESet.eq_equiv. assumption.
-    apply RESS.elements_spec1. trivial.
-  Qed.
-
-  (* Lemma wf_states_nth_wf_state : forall s ss n, *)
-  (*   wf_states ss -> nth_error ss n = Some s -> wf_state s. *)
-  (* Proof. intros. apply Coqlib.nth_error_in in H0. *)
-  (*   unfold wf_states in H. *)
-  (*   rewrite Forall_forall in H. *)
-  (*   auto. *)
-  (* Qed. *)
-
-  Lemma gen_row_wf_state_2: forall s ss n,
-    wf_states ss -> RESS.get_element n ss = Some s
-    -> wf_states (fst (gen_row s ss)).
+  Lemma states_upper_bound: forall (ss: wf_states),
+    cardinal_wf_states ss <= max_pdrv.
   Proof. intros.
-    remember (gen_row s ss) as gr. destruct gr as [ss' row].
-    symmetry in Heqgr.
-    eauto using gen_row_wf_state, wf_states_element_wf_state.
-  Qed.
-
-  Lemma states_upper_bound: forall ss,
-    wf_states ss -> RESS.cardinal ss <= max_pdrv.
-  Proof. intros.
+    destruct ss as [ss H].
     assert (H2: RESS.Subset ss (POW.powerset (pdset r))).
       intros s H2. apply POW.powerset_spec.
       apply H in H2. unfold wf_state in H2.
@@ -1541,24 +1538,22 @@ Section DFA.
       apply NPeano.Nat.pow_le_mono_r. omega.
       apply pdset_upper_bound.
     unfold max_pdrv.
+    unfold cardinal_wf_states. simpl in *.
     omega.
-  Qed.    
+  Qed.
 
-  Lemma build_table_metric_dec : forall n s ss,
-    wf_states ss -> RESS.get_element n ss = Some s
-      -> build_table_metric (S n) n.
+  Lemma build_table_metric_dec : forall n ss,
+    n < cardinal_wf_states ss -> build_table_metric (S n) n.
   Proof. intros. unfold build_table_metric, limit_nat.
     apply plus_lt_reg_l with (p:= S n).
     assert (S n <= max_pdrv). 
-      apply RESS.get_element_some_lt in H0.
-      use_lemma states_upper_bound by eassumption.
+     generalize (states_upper_bound ss).
       omega.
     repeat rewrite NPeano.Nat.add_sub_assoc by omega.
     repeat rewrite NPeano.Nat.add_sub_swap by omega.
     omega.
   Qed.
 
-  (* todo: use a subset type for {ss:states | wf_states ss} *)
   (** Build a transition table by closing off the reachable states.  The
       invariant is that we've closed the table up to the [next_state] and
       have generated the appropriate transition rows for the states in the
@@ -1570,20 +1565,21 @@ Section DFA.
       transition row, we may end up adding new states.  *)
   Unset Implicit Arguments.
   Require Import Coq.Program.Wf.
-  Program Fixpoint build_table' (ss:states) (rows:list (list nat)) (next_state:nat)
-           (Hwf:wf_states ss)
+  Definition extract_wf_state (ss: wf_states) (n:nat)
+             (s: {s : state | state_is_wf s /\ n < cardinal_wf_states ss}): wf_state.
+    destruct s. destruct a.
+    refine (exist _ x _).
+    apply H.
+  Defined.
+  Program Fixpoint build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat)
            {wf build_table_metric next_state} :
-    states * list (list nat) :=
-    let ne := RESS.get_element next_state ss in
-    (match ne as ne' return RESS.get_element next_state ss = ne'
-                            -> states * list (list nat)
-     with
-       | None => fun _ => (ss, rows)
-       | Some s => fun Heq =>
-         let gr := gen_row s ss in
+    wf_states * list (list nat) :=
+    match get_element_wf_state next_state ss with
+       | inleft s => 
+         let gr := gen_row (extract_wf_state _ _ s) ss in
          build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state)
-                      (gen_row_wf_state_2 _ Hwf Heq)
-     end) eq_refl.
+       | inright _ => (ss, rows)
+    end.
   Next Obligation. 
     eauto using build_table_metric_dec.
   Defined.
@@ -1592,55 +1588,62 @@ Section DFA.
   Defined.
   Set Implicit Arguments.
 
-  (* Function build_table' (ss:states) (rows:list (list nat)) (next_state:nat)  *)
-  (*          (H:wf_states ss) {wf build_table_metric next_state}:  *)
-  (*   states * list (list nat) :=  *)
-  (*   match nth_error ss next_state with  *)
-  (*     | None => (ss, rows) *)
-  (*     | Some s =>  *)
-  (*       (* let (ss1, row) := gen_row s ss in  *) *)
-  (*       let gr := gen_row s ss in *)
-  (*       build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state) *)
-  (*         (aaa s H) *)
+  (* gtan: the following QED doesn't finish for some reason *)
+  (* Unset Implicit Arguments. *)
+  (* Require Import Coq.Program.Wf. *)
+  (* Require Import Recdef. *)
+  (* Function build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat) *)
+  (*          {wf build_table_metric next_state} : *)
+  (*   wf_states * list (list nat) := *)
+  (*   match get_element_wf_state next_state ss with *)
+  (*      | inleft s =>  *)
+  (*        let gr := gen_row (extract_wf_state _ _ s) ss in *)
+  (*        build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state) *)
+  (*      | inright _ => (ss, rows) *)
   (*   end. *)
-  (*   Case "proof the metric decreases". *)
-      (* admit. *)
+  (* Case "descreasing metric". *)
+  (*   intros. *)
+  (*   clear teq. *)
+  (*   destruct s as [s [H H2]]. *)
+  (*   eauto using build_table_metric_dec. *)
+  (* Case "measure wf". *)
   (*   apply limit_nat_wf. *)
-  (* Defined. *)
+  (* Qed. *)
+  (* Set Implicit Arguments. *)
 
-  (* Extraction build_table'. *)
+  (* Recursive Extraction build_table'. *)
 
-  Definition ini_state := RESet.singleton r.
-  Definition ini_states := RESS.singleton ini_state.
+  Definition ini_state: wf_state.
+    refine (exist _ (RESet.singleton r) _).
+    exists nil. simpl. reflexivity. 
+  Defined.
 
-  Lemma ini_state_wf: wf_state ini_state.
-  Proof. unfold wf_state. exists nil. simpl. reflexivity. Qed.
-
-  Lemma ini_states_wf: wf_states ini_states.
-  Proof. unfold wf_states, ini_states. intros s H.
+  Definition ini_states: wf_states.
+    refine (exist _ (RESS.singleton (proj1_sig ini_state)) _).
+    intros s H.
     apply RESSP.FM.singleton_1 in H. rewrite <- H.
-    apply ini_state_wf.
-  Qed.
+    apply (proj2_sig ini_state).
+  Defined.
 
   (** We start with the initial [astgram] in state 0 and then try to close 
       off the table. *)
   Definition build_transition_table := 
-    build_table' ini_states nil 0 ini_states_wf.
+    build_table' ini_states nil 0. 
  
-  Definition build_accept_table (ss:states) : list bool := 
-    List.map reset_nullable (RESS.elements ss).
+  Definition build_accept_table (ss:wf_states) : list bool := 
+    List.map reset_nullable (RESS.elements (proj1_sig ss)).
 
-  Definition build_rejects (ss:states) : list bool := 
-    List.map reset_always_rejects (RESS.elements ss).
+  Definition build_rejects (ss:wf_states) : list bool := 
+    List.map reset_always_rejects (RESS.elements (proj1_sig ss)).
 
   Definition build_dfa: DFA := 
     match build_transition_table with 
-      | (states, table) => 
-         {| dfa_num_states := RESS.cardinal states ; 
-            dfa_states := states ; 
+      | (wstates, table) => 
+         {| dfa_num_states := cardinal_wf_states wstates ; 
+            dfa_states := proj1_sig wstates ; 
             dfa_transition := table ;
-            dfa_accepts := build_accept_table states ; 
-            dfa_rejects := build_rejects states |}
+            dfa_accepts := build_accept_table wstates ; 
+            dfa_rejects := build_rejects wstates |}
     end.
 End DFA.
 
@@ -1667,6 +1670,7 @@ Section DFA_RECOGNIZE.
   Definition dfa_recognize (ts:list token_id) : option (nat * list token_id) := 
     dfa_loop 0 0 ts.
 End DFA_RECOGNIZE.
+
 
 
 
