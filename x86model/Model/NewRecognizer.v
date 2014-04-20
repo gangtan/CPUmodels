@@ -20,8 +20,9 @@ Require Import ZArith.
 
 Require Import Parser.
 Import X86_PARSER_ARG.
-Set Implicit Arguments.
 Require Import CommonTacs.
+Set Implicit Arguments.
+
 
 (** * Define a series of augmented MSets. 
       This should be moved to a separate file *)
@@ -29,19 +30,6 @@ Require Import CommonTacs.
 Require Import MSets.MSetInterface.
 Require Import MSets.MSetProperties.
 Require Import MSets.MSetWeakList.
-
-(* todo: move to Coqlib.v *)
-Lemma inclA_app1 A  eqA (H:Equivalence eqA) (l1 l2 l3: list A):
-  l1=l2++l3 -> inclA eqA l2 l1.
-Proof. unfold inclA. intros.
-  rewrite H0. apply InA_app_iff; auto.
-Qed.
-
-Lemma inclA_app2 A  eqA (H:Equivalence eqA) (l1 l2 l3: list A):
-  l1=l2++l3 -> inclA eqA l3 l1.
-Proof. unfold inclA. intros.
-  rewrite H0. apply InA_app_iff; auto.
-Qed.
 
 (** ** Additional properties of sets *)
 Module Type WMOREPROPERTIES (M:WSets).
@@ -72,6 +60,10 @@ Module Type WMOREPROPERTIES (M:WSets).
 
   Parameter elements_app_subset2: forall s1 s2 s3,
     M.elements s1 = M.elements s2 ++ M.elements s3 -> M.Subset s3 s1.
+
+  Parameter elements_app_disjoint: forall s s1 s2,
+    M.elements s = M.elements s1 ++ M.elements s2 -> disjoint s1 s2.
+
 End WMOREPROPERTIES.
 
 Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
@@ -133,15 +125,27 @@ Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
   Lemma elements_app_subset1 s1 s2 s3:
     M.elements s1 = M.elements s2 ++ M.elements s3 
       -> M.Subset s2 s1.
-  Proof. intros; apply inclA_subset.
-    eapply inclA_app1. apply M.E.eq_equiv. eassumption.
+  Proof. intros; apply inclA_subset. rewrite H.
+    eapply Coqlib.inclA_app_l. apply M.E.eq_equiv.
   Qed.
 
   Lemma elements_app_subset2 s1 s2 s3:
     M.elements s1 = M.elements s2 ++ M.elements s3 
       -> M.Subset s3 s1.
-  Proof. intros; apply inclA_subset.
-    eapply inclA_app2. apply M.E.eq_equiv. eassumption.
+  Proof. intros; apply inclA_subset. rewrite H.
+    eapply Coqlib.inclA_app_r. apply M.E.eq_equiv.
+  Qed.
+
+  Lemma elements_app_disjoint s s1 s2: 
+    M.elements s = M.elements s1 ++ M.elements s2 
+      -> disjoint s1 s2.
+  Proof. intro. intros x H2. destruct H2.
+    apply M.elements_spec1 in H0.
+    apply M.elements_spec1 in H1.
+    generalize (M.elements_spec2w s). intro.
+    rewrite H in H2.
+    generalize (Coqlib.NoDupA_app_if M.E.eq_equiv H2). 
+    crush_hyp.
   Qed.
     
 End WMoreProperties.
@@ -1628,6 +1632,8 @@ Section DFA.
     dfa_rejects : list bool
   }.
 
+  Hint Rewrite Coqlib.nth_error_app_eq using omega.
+
   (** A state is a set of regexps, corresponding to partial derivatives of
       the starting regexp w.r.t. some word. *)
   Definition state := RESet.t.
@@ -1648,8 +1654,7 @@ Section DFA.
 
   (** ss2 is an element extension of ss1 *)
   Definition wfs_ext (ss1 ss2: wf_states) := 
-    exists ss, elements_wfs ss2 = elements_wfs ss1 ++ elements_wfs ss /\
-               RESS.disjoint (proj1_sig ss1) (proj1_sig ss).
+    exists ss, elements_wfs ss2 = elements_wfs ss1 ++ elements_wfs ss.
 
   Instance state_wf_imp: Proper (RESet.Equal ==> impl) state_is_wf.
   Proof. unfold Proper, respectful, impl. intros s1 s2; intros.
@@ -1709,37 +1714,24 @@ Section DFA.
   Defined.
 
   Hint Rewrite RESS.add_set_empty.
-  Hint Immediate RESS.disjoint_empty.
+  (* Hint Immediate RESS.disjoint_empty. *)
 
   Instance wfs_ext_refl: Reflexive wfs_ext.
   Proof. unfold wfs_ext. intro. exists emp_wfs; crush. Qed.
 
   Instance wfs_ext_trans: Transitive wfs_ext.
   Proof. unfold wfs_ext. intros ss1 ss2 ss3 H1 H2.
-    destruct H1 as [ss1' [H4 H6]].
-    destruct H2 as [ss2' [H8 H10]].
+    destruct H1 as [ss1' H4].
+    destruct H2 as [ss2' H8].
     assert (RESS.Subset (proj1_sig ss1') (proj1_sig ss2)).
       eapply RESSMP.elements_app_subset2; eassumption.
+    use_lemma RESSMP.elements_app_disjoint by eassumption.
     assert (RESS.disjoint (proj1_sig ss1') (proj1_sig ss2')).
       rewrite H. assumption.
     exists (add_set_wfs ss1' ss2').
     unfold add_set_wfs, elements_wfs in *. simpl in *.
     rewrite RESS.add_set_elements by assumption.
-    split. crush.
-      unfold RESS.disjoint. 
-        intros x H2.
-        destruct H2 as [H2 H3].
-        apply RESS.add_set_in in H3.
-        destruct H3.
-          generalize (H6 x). crush.
-          apply (H10 x).
-          split; [idtac | trivial].
-          assert (InA RESet.Equal x (RESS.elements (proj1_sig ss2))).
-            rewrite H4.
-            apply InA_app_iff.
-              apply RESet.eq_equiv.
-              left. apply H2.
-          crush.
+    crush.
   Qed.
 
   Lemma wfs_ext_elements_ext ss ss':
@@ -1790,7 +1782,8 @@ Section DFA.
     RESS.mem (proj1_sig s) (proj1_sig ss1) = false
     -> wfs_ext (add_wfs s ss1) ss2 -> wfs_ext ss1 ss2.
   Proof. unfold wfs_ext, elements_wfs. intros.
-    destruct H0 as [ss [H2 H4]].
+    destruct H0 as [ss H2].
+    use_lemma RESSMP.elements_app_disjoint by eassumption.
     unfold add_set_wfs, add_wfs in *. simpl in *.
     rewrite RESS.add_elements_2 in H2 by assumption.
     exists (add_set_wfs (singleton_wfs s) ss).
@@ -1805,15 +1798,15 @@ Section DFA.
       -> RESS.mem (proj1_sig s) (proj1_sig ss) = false
       -> RESS.get_element (cardinal_wfs ss) (proj1_sig ss') = Some (proj1_sig s).
   Proof. unfold wfs_ext, elements_wfs, add_wfs, cardinal_wfs. simpl. intros.
-    destruct H as [ss1 [H2 H4]].
+    destruct H as [ss1 H2].
     unfold RESS.get_element.
     rewrite RESS.add_elements_2 in H2 by assumption.
     rewrite H2.
     rewrite app_ass.
     assert (H12:cardinal_wfs ss = length (RESS.elements (proj1_sig ss))).
       unfold cardinal_wfs. rewrite POW.MM.cardinal_spec. omega.
-    rewrite Coqlib.nth_error_app_gt by crush.
-    rewrite <- app_comm_cons. rewrite minus_diag.
+    rewrite Coqlib.nth_error_app_eq by crush.
+    rewrite <- app_comm_cons. 
     crush.
   Qed.
   Transparent RESS.elements. 
@@ -1996,7 +1989,7 @@ Section DFA.
 
   (** We start with the initial [astgram] in state 0 and then try to close 
       off the table. *)
-  Definition build_transition_table := 
+  Definition build_table := 
     build_table' ini_states nil 0. 
  
   Definition build_accept_table (ss:wf_states) : list bool := 
@@ -2006,7 +1999,7 @@ Section DFA.
     List.map reset_always_rejects (RESS.elements (proj1_sig ss)).
 
   Definition build_dfa: DFA := 
-    match build_transition_table with 
+    match build_table with 
       | (wstates, table) => 
          {| dfa_num_states := cardinal_wfs wstates ; 
             dfa_states := proj1_sig wstates ; 
@@ -2014,7 +2007,6 @@ Section DFA.
             dfa_accepts := build_accept_table wstates ; 
             dfa_rejects := build_rejects wstates |}
     end.
-
 
   (** This is the main loop-invariant for [gen_row'].  Given a state [s],
       a list of states [ss], and a token number [n], running [gen_row' n s ss
@@ -2101,8 +2093,6 @@ Section DFA.
     crush.
   Qed.
 
-(* todo *)
-
   (** This is the main invariant for the [build_table] routine.  Given a well-formed
       list of states [s] and a list of transition-table rows [ros], then for 
       all [i < n], [s(i)] and [r(i)] are defined, and the row [r(i)] is well-formed
@@ -2136,15 +2126,6 @@ Section DFA.
         crush.
   Qed.
 
-  (* todo: move *)
-  Lemma nth_error_app_eq: forall A n (xs ys:list A), n = length xs -> 
-    nth_error (xs ++ ys) n = nth_error ys 0.
-  Proof. intros. rewrite Coqlib.nth_error_app_gt by omega.
-    subst n. rewrite minus_diag. trivial.
-  Qed.
-
-  Hint Rewrite nth_error_app_eq using omega.
-
   Lemma gen_row_build_table_inv n ss
         ss1 rows row1:
     n = length rows ->
@@ -2157,7 +2138,7 @@ Section DFA.
     end.
   Proof.
     remember_rev (get_element_wfs n ss) as gew.
-    destruct gew; [idtac | crush].
+    destruct gew; [idtac | crush]. clear Hgew.
     intros.
     use_lemma build_table_inv_imp by eassumption.
     unfold build_table_inv in *.
@@ -2185,9 +2166,8 @@ Section DFA.
       rewrite <- (get_element_wfs_ext H6) by assumption.
       crush.
   Qed.
-     
-  Hint Rewrite app_length.
 
+     
    (** This lemma establishes that the [build_table'] loop maintains the
        [build_table_inv] and only adds to the states and rows of the table. *)
   Lemma build_table'_prop: forall n ss rows,
@@ -2227,6 +2207,28 @@ Section DFA.
       crush. reflexivity.
         exists nil. crush.
   Qed.
+
+  Lemma build_table_inv_ini: build_table_inv ini_states nil 0.
+  Proof. unfold build_table_inv. crush. Qed.
+
+  Lemma build_table_prop (ss: wf_states) (rows: list (list nat)):
+    match build_table with
+      | (ss, rows) => 
+        length rows = cardinal_wfs ss /\
+        build_table_inv ss rows (length rows) /\
+        wfs_ext ini_states ss
+    end.
+  Proof. generalize build_table_inv_ini. intro. unfold build_table. 
+    generalize (@build_table'_prop 0 ini_states nil). intro.
+    use_lemma H0 by crush.
+    remember_destruct_head as bt. crush.
+  Qed.
+
+
+  
+
+(* todo *)
+
 
 End DFA.
 

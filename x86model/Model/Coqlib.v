@@ -637,6 +637,12 @@ Proof.
   intros. apply IHn. omega.
 Qed.
 
+Lemma nth_error_app_eq: forall A n (xs ys:list A), n = length xs -> 
+  nth_error (xs ++ ys) n = nth_error ys 0.
+Proof. intros. rewrite nth_error_app_gt by omega.
+  subst n. rewrite minus_diag. trivial.
+Qed.
+
 (** Properties of [List.incl] (list inclusion). *)
 
 Lemma incl_cons_inv:
@@ -668,6 +674,43 @@ Lemma incl_same_head:
   incl l1 l2 -> incl (x::l1) (x::l2).
 Proof.
   intros; red; simpl; intros. intuition. 
+Qed.
+
+(** Properties of [SetoidList.inclA]. *)
+Instance inclA_refl: forall A eqA, Reflexive (@inclA A eqA).
+Proof. unfold inclA. intros. intros x H. auto. Qed.
+
+Lemma inclA_app_l A eqA (H:Equivalence eqA) (l1 l2: list A) : 
+  inclA eqA l1 (l1++l2).
+Proof. unfold inclA. intros. apply InA_app_iff; auto. Qed.
+
+Lemma inclA_app_r A eqA (H:Equivalence eqA) (l1 l2: list A) : 
+  inclA eqA l2 (l1++l2).
+Proof. unfold inclA. intros. apply InA_app_iff; auto. Qed.
+
+(** Properties of [SetoidList.NoDupA]. *)
+
+Lemma NoDupA_app_if A eqA: Equivalence eqA ->
+  forall (l1 l2: list A),
+    NoDupA eqA (l1 ++ l2) -> forall x, ~ (InA eqA x l1 /\ InA eqA x l2).
+Proof. induction l1.
+    (* base case *)
+    intros. intro H2. destruct H2.
+    apply InA_nil in H1. trivial.
+    (* inductive case *)
+    intros. intro H2.
+    rewrite <- app_comm_cons in H0.
+    inversion H0. subst.
+    destruct H2 as [H6 H8].
+    apply InA_cons in H6; destruct H6.
+      (* x = a *)
+      rewrite H1 in H8.
+      assert (InA eqA a (l1 ++ l2)).
+        apply InA_app_iff. assumption. right; assumption.
+      congruence.
+      (* x in l1 *)
+      apply IHl1 with (x:=x) in H5.
+      auto.
 Qed.
 
 (** Properties of [List.map] (mapping a function over a list). *)

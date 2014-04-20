@@ -299,8 +299,8 @@ Ltac rewriteHyp :=
 Ltac rewriterP := repeat (rewriteHyp; autorewrite with core in *).
 Ltac rewriter := autorewrite with core in *; rewriterP.
 
-(** This one is just so darned useful, let's add it as a hint here. *)
-Hint Rewrite app_ass app_nil_r.
+(** Hints for manipulating lists. *)
+Hint Rewrite app_ass app_nil_r app_length.
 
 (** Devious marker predicate to use for encoding state within proof goals *)
 Definition done (T : Type) (x : T) := True.
