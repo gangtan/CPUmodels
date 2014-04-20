@@ -30,6 +30,19 @@ Require Import MSets.MSetInterface.
 Require Import MSets.MSetProperties.
 Require Import MSets.MSetWeakList.
 
+(* todo: move to Coqlib.v *)
+Lemma inclA_app1 A  eqA (H:Equivalence eqA) (l1 l2 l3: list A):
+  l1=l2++l3 -> inclA eqA l2 l1.
+Proof. unfold inclA. intros.
+  rewrite H0. apply InA_app_iff; auto.
+Qed.
+
+Lemma inclA_app2 A  eqA (H:Equivalence eqA) (l1 l2 l3: list A):
+  l1=l2++l3 -> inclA eqA l3 l1.
+Proof. unfold inclA. intros.
+  rewrite H0. apply InA_app_iff; auto.
+Qed.
+
 (** ** Additional properties of sets *)
 Module Type WMOREPROPERTIES (M:WSets).
   Parameter add_transpose:
@@ -44,6 +57,21 @@ Module Type WMOREPROPERTIES (M:WSets).
   Parameter disjoint_spec: forall s1 s2,
     disjoint s1 s2 <-> M.Equal (M.inter s1 s2) M.empty.
 
+  Declare Instance disjoint_subset: 
+    Proper (flip M.Subset ==> flip M.Subset ==> impl) disjoint.
+
+  Parameter disjoint_symm: forall s1 s2, disjoint s1 s2 -> disjoint s2 s1.
+    
+  Parameter disjoint_empty: forall s, disjoint s M.empty.
+
+  Parameter inclA_subset: forall s1 s2,
+    inclA M.E.eq (M.elements s1) (M.elements s2) -> M.Subset s1 s2.
+
+  Parameter elements_app_subset1: forall s1 s2 s3,
+    M.elements s1 = M.elements s2 ++ M.elements s3 -> M.Subset s2 s1.
+
+  Parameter elements_app_subset2: forall s1 s2 s3,
+    M.elements s1 = M.elements s2 ++ M.elements s3 -> M.Subset s3 s1.
 End WMOREPROPERTIES.
 
 Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
@@ -75,6 +103,47 @@ Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
       apply P.FM.empty_iff in H1. trivial.
   Qed.
 
+  Instance disjoint_subset: 
+    Proper (flip M.Subset ==> flip M.Subset ==> impl) disjoint.
+  Proof. unfold Proper, respectful, impl.
+    intros s1' s1 H s2' s2 H2 H4.
+    apply disjoint_spec in H4. apply disjoint_spec.
+    apply P.subset_antisym.
+      intros x H6. apply H4. rewrite H. rewrite H2.
+      assumption.
+      apply P.subset_empty.
+  Qed.
+
+  Lemma disjoint_symm: forall s1 s2, disjoint s1 s2 -> disjoint s2 s1.
+  Proof. unfold disjoint. intros. intro. destruct H0. apply (H x). auto. Qed.
+    
+  Lemma disjoint_empty: forall s, disjoint s M.empty.
+  Proof. unfold disjoint. intros. intro. destruct H. 
+    apply P.FM.empty_iff in H0. trivial.
+  Qed.
+
+  Lemma inclA_subset s1 s2:
+    inclA M.E.eq (M.elements s1) (M.elements s2) -> M.Subset s1 s2.
+  Proof. unfold M.Subset; intros.
+    apply M.elements_spec1.
+    apply M.elements_spec1 in H0.
+    auto.
+  Qed.
+
+  Lemma elements_app_subset1 s1 s2 s3:
+    M.elements s1 = M.elements s2 ++ M.elements s3 
+      -> M.Subset s2 s1.
+  Proof. intros; apply inclA_subset.
+    eapply inclA_app1. apply M.E.eq_equiv. eassumption.
+  Qed.
+
+  Lemma elements_app_subset2 s1 s2 s3:
+    M.elements s1 = M.elements s2 ++ M.elements s3 
+      -> M.Subset s3 s1.
+  Proof. intros; apply inclA_subset.
+    eapply inclA_app2. apply M.E.eq_equiv. eassumption.
+  Qed.
+    
 End WMoreProperties.
 
 (** ** A map function for sets *)
@@ -184,8 +253,8 @@ Module MapSetGen (M:WSets)(M':WSets) : MAPSET M M'.
         apply H0; crush.
         apply P.FM.empty_iff in H; contradict H.
         apply P.FM.add_iff in H2; destruct H2.
-          apply P'.FM.add_1. rewrite H2. trivial.
-          apply P'.FM.add_2. apply H1; crush.
+          rewrite H2; auto with set.
+          auto with set.
     Qed.
 
     Lemma map_elim: forall s y, 
@@ -245,7 +314,7 @@ Module MapSetGen (M:WSets)(M':WSets) : MAPSET M M'.
           assert (M.E.eq x x0).
             apply H2.
               apply P.FM.add_1. reflexivity.
-              apply P.FM.add_2. assumption.
+              auto with set.
               trivial.
           rewrite H8. trivial.
         split.
@@ -259,8 +328,7 @@ Module MapSetGen (M:WSets)(M':WSets) : MAPSET M M'.
                 symmetry. trivial.
               sim. use_lemma H7 by eassumption.
               sim. exists x0.
-              split. apply P.FM.add_2. trivial.
-                trivial.
+              split; auto with set.
     Qed.
 
     Lemma map_cardinal : forall s,
@@ -927,8 +995,8 @@ Proof. unfold pdset; intros.
   apply RESet.add_spec in H; apply RESet.add_spec in H0.
   destruct H; destruct H0; re_set_simpl.
     apply RESetP.FM.add_1; apply REOrderedType.eq_equiv.
-    apply RESetP.FM.add_2; assumption.
-    apply RESetP.FM.add_2; assumption.
+    auto with set.
+    auto with set.
     apply RESetP.FM.add_2. eauto using prebase_trans.
 Qed.
 
@@ -1111,7 +1179,7 @@ Proof. intros. split; intros.
            unfold in_re_set;
            exists s1, s2; eauto).
     exists s, nil.
-      crush' (@app_nil_r char_p) fail.
+      crush.
       contradict H; apply in_re_set_empty.
   Case "<-".
     destruct H as [s1 [s2 [H2 [H4 H6]]]].
@@ -1119,7 +1187,7 @@ Proof. intros. split; intros.
       try (apply in_re_set_map;
            unfold in_re_set in *;
            generalize InrCat; crush; fail).
-      crush' (@app_nil_r char_p) in_regexp.
+      crush' false in_regexp.
       crush' false in_regexp.
 Qed.
 
@@ -1281,7 +1349,7 @@ Theorem wpdrv_subset_pdset : forall w r,
 Proof.  intros; apply wpdrv_pdset_trans.
   unfold pdset. intro r'; intros.
   apply RESetP.FM.singleton_iff in H.
-  auto using RESetP.FM.add_1.
+  auto with set.
 Qed.
 
 Instance wpdrv_set_equal:
@@ -1307,42 +1375,35 @@ Module POW := ListPowerSet RESet.
 (** A set of regexp sets *)
 Module RESetSet.
   Include POW.MM.
+  Include WMoreProperties POW.MM.
 
   (** The following operations assume the set is implemented by a list. *)
+
+  Definition get_element (n:nat) (s:t) : option elt := 
+    nth_error (elements s) n.
 
   (** Given an element e, find its index in the set *)
   Definition get_index (e:elt) (s:t) : option nat :=
     Coqlib.find_index E.eq E.eq_dec e (elements s).
 
-  Definition get_element (n:nat) (s:t) : option elt := 
-    nth_error (elements s) n.
+  (** add set s2 to s1; when they are disjoint, the elments
+     of the resulting set should be (elements s1) ++ (elements s2) *)
+  (* Definition add_set (s1 s2:t) := union s2 s1. *)
+  Definition add_set (s1 s2:t) := fold add s2 s1.
 
-  Lemma get_index_spec: forall e s n,
-    get_index e s = Some n <-> Coqlib.first_occur E.eq e (elements s) n.
-  Proof. unfold get_index; intros.
-    apply Coqlib.find_index_spec. apply E.eq_equiv.
-  Qed.
+  (** s2's elements are an extension of s1's elements *)
+  Definition elements_ext (s1 s2:t) := 
+    exists s, elements s2 = elements s1 ++ elements s.
 
-  Lemma get_index_some_lt: forall e s n,
-    get_index e s = Some n -> n < cardinal s.
-  Proof. intros. apply get_index_spec in H.
-    unfold Coqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
-    apply nth_error_some_lt in H2. auto.
-  Qed.
-
-  Lemma get_element_some_lt: forall n s e,
-    get_element n s = Some e -> n < cardinal s.
-  Proof. unfold get_element, cardinal, Raw.cardinal. 
-     eauto using nth_error_some_lt.
-  Qed.
+  (* Lemmas *)
 
   (** The strong spec of add given that the set is implemented by a list. *)
-  Lemma add_spec_list : forall s1 elm,
-    if (mem elm s1) then elements (add elm s1) = elements s1
-    else elements (add elm s1) = elements s1 ++ (elm :: nil).
+  Lemma add_elements: forall s elm,
+    if (mem elm s) then elements (add elm s) = elements s
+    else elements (add elm s) = elements s ++ (elm :: nil).
   Proof. intros. simpl.
     unfold elements, Raw.elements, mem.
-    remember (this s1) as ls. generalize ls.
+    remember (this s) as ls. generalize ls.
     induction ls0; intros; [crush | idtac].
       remember_destruct_head as me.
       Case "Raw.mem elm (a:: ls0)".
@@ -1354,11 +1415,150 @@ Module RESetSet.
           rewrite Hme in IHls0. crush.
   Qed.
 
-  Lemma get_index_monotone: forall e e1 s n,
+  Lemma add_elements_1: forall s elm,
+    mem elm s = true -> elements (add elm s) = elements s.
+  Proof. intros. generalize (add_elements s elm); intro.
+    rewrite H in H0. trivial.
+  Qed.
+
+  Lemma add_elements_2: forall s elm,
+    mem elm s = false -> elements (add elm s) = elements s ++ (elm :: nil).
+  Proof. intros. generalize (add_elements s elm); intro.
+    rewrite H in H0. trivial.
+  Qed.
+
+  Lemma add_ext elm s: elements_ext s (add elm s).
+  Proof. unfold elements_ext. 
+    generalize (add_elements s elm).
+    destruct (mem elm s); intros.
+      exists empty. crush.
+      exists (singleton elm). crush.
+  Qed.
+
+  Lemma add_set_elements: forall s2 s1,
+    disjoint s1 s2 -> elements (add_set s1 s2) = elements s1 ++ elements s2.
+  Proof. unfold add_set, disjoint, fold, POW.MM.In.
+    destruct s2 as [ls2 ok2]. simpl.
+    induction ls2.
+    Case "base". crush.
+    Case "a::ls2". simpl; intros.
+      assert (forall x : POW.MM.elt,
+                ~ (POW.MM.Raw.In x (POW.MM.this (add a s1)) /\ POW.MM.Raw.In x ls2)).
+        intros x. generalize (H x). unfold POW.MM.Raw.In.
+        intro. contradict H0. simpl in *.
+        destruct H0 as [H2 H4].
+        generalize (is_ok s1); intro.
+        apply Raw.add_spec in H2; [idtac | assumption].
+        destruct H2.
+        SCase "x=a".
+          rewrite H1 in H4.
+          inversion ok2. congruence.
+        SCase "x in s1". split; auto.
+      assert (POW.MM.Raw.Ok ls2).
+        inversion ok2. assumption.
+      use_lemma IHls2 by eassumption.
+      unfold flip.
+      rewrite H2.
+      generalize (add_elements s1 a); intro.
+      remember_destruct_head in H3 as mm.
+      SCase "a in s1".
+        generalize (H a). intro H4.
+        contradict H4.
+        apply POW.PP.FM.mem_2 in Hmm.
+        split.  assumption.
+          unfold  POW.MM.Raw.In. auto with set.
+      SCase "~ a in s1". crush.
+  Qed.
+
+  Lemma add_set_ext s1 s2:
+    disjoint s1 s2 -> elements_ext s1 (add_set s1 s2).
+  Proof. unfold elements_ext. intros.
+    exists s2. auto using add_set_elements. 
+  Qed.
+     
+  Lemma add_set_in: forall x s1 s2,
+    In x (add_set s1 s2) -> In x s1 \/ In x s2.
+  Proof. unfold add_set. intros x s1 s2.
+    apply POW.PP.fold_rec_bis.
+      intros. destruct (H0 H1); rewrite <- H; crush.
+      crush.
+      intros. 
+        apply POW.PP.FM.add_iff in H2; destruct H2;
+          auto with set.
+        destruct (H1 H2); auto with set.
+  Qed.
+
+  Lemma add_set_empty: forall s, add_set s empty = s.
+  Proof. unfold add_set. intros. rewrite POW.PP.fold_empty. trivial. Qed.
+
+  Lemma get_element_some_lt: forall n s e,
+    get_element n s = Some e -> n < cardinal s.
+  Proof. unfold get_element, cardinal, Raw.cardinal. 
+     eauto using nth_error_some_lt.
+  Qed.
+
+  Lemma get_element_eq: forall s1 s2 n,
+    elements s1 = elements s2 -> get_element n s1 = get_element n s2.
+  Proof. unfold get_element; crush. Qed.
+
+  Lemma get_element_ext s1 s2 n:
+    elements_ext s1 s2 -> n < cardinal s1
+      -> get_element n s1 = get_element n s2.
+  Proof. unfold elements_ext, get_element. intros. sim.
+    rewrite H. generalize nth_error_lt_app. crush.
+  Qed. 
+
+  Lemma get_element_add: forall n s e1 e,
+    get_element n s = Some e -> get_element n (add e1 s) = Some e.
+  Proof. intros. generalize (add_ext e1 s). 
+    use_lemma get_element_some_lt by eassumption. intro.
+    erewrite <- get_element_ext; eassumption. 
+  Qed.
+
+  Lemma get_element_add_set: forall n s s' e,
+    get_element n s = Some e -> get_element n (add_set s s') = Some e.
+  Proof.
+    unfold add_set. intros.
+    apply POW.PP.fold_rec. crush.
+      auto using get_element_add.
+  Qed.
+
+  Lemma get_index_spec: forall e s n,
+    get_index e s = Some n <-> Coqlib.first_occur E.eq e (elements s) n.
+  Proof. unfold get_index; intros.
+    apply Coqlib.find_index_spec. apply E.eq_equiv.
+  Qed.
+
+  Lemma get_index_none: forall e s,
+    get_index e s = None -> mem e s = false.
+  Proof. unfold get_index. intros.
+    apply Coqlib.find_index_none in H.
+    apply negb_true_iff. unfold negb.
+    remember_destruct_head as mm; try trivial.
+      apply POW.MM.mem_spec in Hmm.
+      apply POW.PP.FM.elements_iff in Hmm.
+      crush.
+  Qed.
+
+  Lemma get_index_get_element: forall e s n,
+    get_index e s = Some n -> 
+    exists e', get_element n s = Some e' /\ E.eq e e'.
+  Proof. intros. apply get_index_spec in H.
+    unfold Coqlib.first_occur in H. crush.
+  Qed.
+
+  Lemma get_index_some_lt: forall e s n,
+    get_index e s = Some n -> n < cardinal s.
+  Proof. intros. apply get_index_spec in H.
+    unfold Coqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
+    apply nth_error_some_lt in H2. auto.
+  Qed.
+
+  Lemma get_index_add_monotone: forall e e1 s n,
     get_index e s = Some n <->
     n < cardinal s /\ get_index e (add e1 s) = Some n.
   Proof. intros.
-    generalize (add_spec_list s e1); intro.
+    generalize (add_elements s e1); intro.
     destruct_head in H.
     Case "mem e1 s".
       unfold get_index.
@@ -1384,12 +1584,36 @@ Module RESetSet.
             rewrite H in H2. crush.
   Qed.
 
+  Lemma disjoint_add_add_set: forall s ss1 ss2, mem s ss1 = false ->
+    disjoint (add s ss1) ss2 -> disjoint ss1 (add_set (singleton s) ss2).
+  Proof. intros. unfold disjoint. intros x H2.
+    destruct H2.
+    apply add_set_in in H2. destruct H2.
+    Case "x in {s}".
+      apply POW.PP.FM.singleton_1 in H2. rewrite <- H2 in H1.
+      apply POW.PP.FM.mem_1 in H1. congruence.
+    Case "x in ss2".
+      unfold disjoint in H0.
+      generalize (H0 x); intro H3; contradict H3.
+      auto with set.
+  Qed.
+
+  Lemma disjoint_add_singleton: forall s ss1 ss2,
+    disjoint (add s ss1) ss2 -> disjoint (singleton s) ss2.
+  Proof. unfold disjoint; intros. intro H2.
+    destruct H2.
+    apply POW.PP.FM.singleton_1 in H0.
+    generalize (H x). intro H4.
+    contradict H4. auto with set.
+  Qed.
+
 End RESetSet.
 
 
 (* seems to need this to get around of a coq bug *)
 Module RESS := RESetSet.
 Module RESSP :=MSetProperties.WProperties RESetSet.
+Module RESSMP :=WMoreProperties RESetSet.
 
 Section DFA.
 
@@ -1418,6 +1642,15 @@ Section DFA.
   Definition states_are_wf (ss: states) : Prop := RESS.For_all state_is_wf ss.
   Definition wf_states := {ss:states | states_are_wf ss}.
 
+  Definition cardinal_wfs (ss:wf_states) := RESS.cardinal (proj1_sig ss).
+
+  Definition elements_wfs (ss: wf_states) := RESS.elements (proj1_sig ss).
+
+  (** ss2 is an element extension of ss1 *)
+  Definition wfs_ext (ss1 ss2: wf_states) := 
+    exists ss, elements_wfs ss2 = elements_wfs ss1 ++ elements_wfs ss /\
+               RESS.disjoint (proj1_sig ss1) (proj1_sig ss).
+
   Instance state_wf_imp: Proper (RESet.Equal ==> impl) state_is_wf.
   Proof. unfold Proper, respectful, impl. intros s1 s2; intros.
     destruct H0 as [w H2].
@@ -1437,7 +1670,20 @@ Section DFA.
     rewrite wpdrv_list_cat. simpl. rewrite H. reflexivity.
   Defined.
 
-  Definition wf_states_add (s:wf_state) (ss:wf_states): wf_states.
+  Definition emp_wfs: wf_states.
+    refine (exist _ RESS.empty _).
+    unfold states_are_wf, RESS.For_all. intros.
+    apply RESSP.FM.empty_iff in H. destruct H.
+  Defined.
+
+  Definition singleton_wfs (s:wf_state): wf_states.
+    refine (exist _ (RESS.singleton (proj1_sig s)) _).
+    unfold states_are_wf, RESS.For_all. intros.
+    apply RESSP.FM.singleton_1 in H.
+    generalize (proj2_sig s). intro. rewrite <- H. trivial.
+  Defined.    
+    
+  Definition add_wfs (s:wf_state) (ss:wf_states): wf_states.
     refine (exist _ (RESS.add (proj1_sig s) (proj1_sig ss)) _).
     unfold states_are_wf; intros.
     unfold RESS.For_all. intros.
@@ -1448,35 +1694,78 @@ Section DFA.
       apply H4. trivial.
   Defined.
 
-  Definition get_index_wf_state (s:wf_state) (ss:wf_states): option nat :=
+  Definition add_set_wfs (ss1 ss2:wf_states): wf_states.
+    refine (exist _ (RESS.add_set (proj1_sig ss1) (proj1_sig ss2)) _).
+    unfold RESS.add_set.
+    apply RESSP.fold_rec_bis. crush.
+      apply (proj2_sig ss1).
+      intros.
+      unfold states_are_wf.
+      intros y H2.
+      apply RESSP.FM.add_iff in H2.
+      destruct H2. 
+        rewrite <- H2. apply (proj2_sig ss2). trivial.
+        auto.
+  Defined.
+
+  Hint Rewrite RESS.add_set_empty.
+  Hint Immediate RESS.disjoint_empty.
+
+  Instance wfs_ext_refl: Reflexive wfs_ext.
+  Proof. unfold wfs_ext. intro. exists emp_wfs; crush. Qed.
+
+  Instance wfs_ext_trans: Transitive wfs_ext.
+  Proof. unfold wfs_ext. intros ss1 ss2 ss3 H1 H2.
+    destruct H1 as [ss1' [H4 H6]].
+    destruct H2 as [ss2' [H8 H10]].
+    assert (RESS.Subset (proj1_sig ss1') (proj1_sig ss2)).
+      eapply RESSMP.elements_app_subset2; eassumption.
+    assert (RESS.disjoint (proj1_sig ss1') (proj1_sig ss2')).
+      rewrite H. assumption.
+    exists (add_set_wfs ss1' ss2').
+    unfold add_set_wfs, elements_wfs in *. simpl in *.
+    rewrite RESS.add_set_elements by assumption.
+    split. crush.
+      unfold RESS.disjoint. 
+        intros x H2.
+        destruct H2 as [H2 H3].
+        apply RESS.add_set_in in H3.
+        destruct H3.
+          generalize (H6 x). crush.
+          apply (H10 x).
+          split; [idtac | trivial].
+          assert (InA RESet.Equal x (RESS.elements (proj1_sig ss2))).
+            rewrite H4.
+            apply InA_app_iff.
+              apply RESet.eq_equiv.
+              left. apply H2.
+          crush.
+  Qed.
+
+  Lemma wfs_ext_elements_ext ss ss':
+    wfs_ext ss ss' -> RESS.elements_ext (proj1_sig ss) (proj1_sig ss').
+  Proof. unfold wfs_ext, RESS.elements_ext. crush. Qed.
+
+  Lemma get_element_wfs_ext n ss ss': 
+    wfs_ext ss ss' -> n < cardinal_wfs ss
+      -> RESS.get_element n (proj1_sig ss) = RESS.get_element n (proj1_sig ss').
+  Proof. intros. apply wfs_ext_elements_ext in H. 
+    apply RESS.get_element_ext; auto.
+  Qed.
+
+  Lemma get_element_wfs_ext2: forall ss1 ss2 n e,
+    wfs_ext ss1 ss2 -> RESS.get_element n (proj1_sig ss1) = Some e
+      -> RESS.get_element n (proj1_sig ss2) = Some e.
+  Proof. intros. use_lemma RESS.get_element_some_lt by eassumption.
+    erewrite <- get_element_wfs_ext; eassumption.
+  Qed.
+
+  Definition get_index_wfs (s:wf_state) (ss:wf_states): option nat :=
     RESS.get_index (proj1_sig s) (proj1_sig ss).
 
-  Definition cardinal_wf_states (ss:wf_states) := RESS.cardinal (proj1_sig ss).
-
-  (** Generate the transition matrix row for the state s.  In general, this
-      will add new states. *)
-  Fixpoint gen_row' (n:nat) (s:wf_state) (ss:wf_states) (tk_id:token_id) : 
-    (wf_states * list nat) :=
-    match n with
-      | 0 => (ss, nil)
-      | S n' =>
-        let s1 := wpdrv_wf (token_id_to_chars tk_id) s in
-        match get_index_wf_state s1 ss with
-          | Some n =>
-            let (ss1, row) := gen_row' n' s ss (1 + tk_id) in
-            (ss1, n :: row)
-          | None =>
-            let (ss1, row) := gen_row' n' s (wf_states_add s1 ss) (1 + tk_id) in
-            (ss1, cardinal_wf_states ss :: row)
-        end
-    end.
-
-  Definition gen_row (s:wf_state) (ss:wf_states) : (wf_states * list nat) := 
-    gen_row' num_tokens s ss 0.
-
-  Definition get_element_wf_state (n:nat) (ss:wf_states):
-    {s:state | state_is_wf s /\ n < cardinal_wf_states ss} +
-    {n >= cardinal_wf_states ss}.
+  Definition get_element_wfs (n:nat) (ss:wf_states):
+    {s:state | state_is_wf s /\ RESS.get_element n (proj1_sig ss) = Some s}
+    + {n >= cardinal_wfs ss}.
     refine (let ge := RESS.get_element n (proj1_sig ss) in
             (match ge return RESS.get_element n (proj1_sig ss) = ge -> _
              with
@@ -1491,10 +1780,65 @@ Section DFA.
           assert (InA RESet.Equal s (RESS.elements ss)).
             apply In_InA. apply RESet.eq_equiv. assumption.
           apply RESS.elements_spec1. trivial.
-        apply RESS.get_element_some_lt in H. trivial.
+        trivial.
     Case "n>=|ss|".
       apply nth_error_none in H. trivial.
   Defined.
+
+  Opaque RESS.elements. 
+  Lemma wfs_ext_add s ss1 ss2: 
+    RESS.mem (proj1_sig s) (proj1_sig ss1) = false
+    -> wfs_ext (add_wfs s ss1) ss2 -> wfs_ext ss1 ss2.
+  Proof. unfold wfs_ext, elements_wfs. intros.
+    destruct H0 as [ss [H2 H4]].
+    unfold add_set_wfs, add_wfs in *. simpl in *.
+    rewrite RESS.add_elements_2 in H2 by assumption.
+    exists (add_set_wfs (singleton_wfs s) ss).
+    use_lemma RESS.disjoint_add_add_set by eassumption.
+    use_lemma RESS.disjoint_add_singleton by eassumption.
+    simpl. rewrite RESS.add_set_elements by assumption.
+    crush.
+  Qed.
+
+  Lemma get_element_add_wfs_ext s ss ss' : 
+    wfs_ext (add_wfs s ss) ss' 
+      -> RESS.mem (proj1_sig s) (proj1_sig ss) = false
+      -> RESS.get_element (cardinal_wfs ss) (proj1_sig ss') = Some (proj1_sig s).
+  Proof. unfold wfs_ext, elements_wfs, add_wfs, cardinal_wfs. simpl. intros.
+    destruct H as [ss1 [H2 H4]].
+    unfold RESS.get_element.
+    rewrite RESS.add_elements_2 in H2 by assumption.
+    rewrite H2.
+    rewrite app_ass.
+    assert (H12:cardinal_wfs ss = length (RESS.elements (proj1_sig ss))).
+      unfold cardinal_wfs. rewrite POW.MM.cardinal_spec. omega.
+    rewrite Coqlib.nth_error_app_gt by crush.
+    rewrite <- app_comm_cons. rewrite minus_diag.
+    crush.
+  Qed.
+  Transparent RESS.elements. 
+
+
+  (** Generate the transition matrix row for the state s.  In general, this
+      will add new states. *)
+  Fixpoint gen_row' (n:nat) (s:wf_state) (ss:wf_states) (tk_id:token_id) : 
+    (wf_states * list nat) :=
+    match n with
+      | 0 => (ss, nil)
+      | S n' =>
+        let s1 := wpdrv_wf (token_id_to_chars tk_id) s in
+        match get_index_wfs s1 ss with
+          | Some n =>
+            let (ss1, row) := gen_row' n' s ss (1 + tk_id) in
+            (ss1, n :: row)
+          | None =>
+            let (ss1, row) := gen_row' n' s (add_wfs s1 ss) (1 + tk_id) in
+            (ss1, cardinal_wfs ss :: row)
+        end
+    end.
+
+  Definition gen_row (s:wf_state) (ss:wf_states) : (wf_states * list nat) := 
+    gen_row' num_tokens s ss 0.
 
   (** A relation that puts an upper bound on nats *)
   Definition limit_nat (m:nat) : relation nat :=
@@ -1523,7 +1867,7 @@ Section DFA.
   Definition build_table_metric := limit_nat max_pdrv.
 
   Lemma states_upper_bound: forall (ss: wf_states),
-    cardinal_wf_states ss <= max_pdrv.
+    cardinal_wfs ss <= max_pdrv.
   Proof. intros.
     destruct ss as [ss H].
     assert (H2: RESS.Subset ss (POW.powerset (pdset r))).
@@ -1538,12 +1882,12 @@ Section DFA.
       apply NPeano.Nat.pow_le_mono_r. omega.
       apply pdset_upper_bound.
     unfold max_pdrv.
-    unfold cardinal_wf_states. simpl in *.
+    unfold cardinal_wfs. simpl in *.
     omega.
   Qed.
 
   Lemma build_table_metric_dec : forall n ss,
-    n < cardinal_wf_states ss -> build_table_metric (S n) n.
+    n < cardinal_wfs ss -> build_table_metric (S n) n.
   Proof. intros. unfold build_table_metric, limit_nat.
     apply plus_lt_reg_l with (p:= S n).
     assert (S n <= max_pdrv). 
@@ -1566,7 +1910,9 @@ Section DFA.
   Unset Implicit Arguments.
   Require Import Coq.Program.Wf.
   Definition extract_wf_state (ss: wf_states) (n:nat)
-             (s: {s : state | state_is_wf s /\ n < cardinal_wf_states ss}): wf_state.
+             (s: {s:state | state_is_wf s
+                            /\ RESS.get_element n (proj1_sig ss) = Some s})
+    : wf_state.
     destruct s. destruct a.
     refine (exist _ x _).
     apply H.
@@ -1574,13 +1920,17 @@ Section DFA.
   Program Fixpoint build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat)
            {wf build_table_metric next_state} :
     wf_states * list (list nat) :=
-    match get_element_wf_state next_state ss with
+    match get_element_wfs next_state ss with
        | inleft s => 
-         let gr := gen_row (extract_wf_state _ _ s) ss in
-         build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state)
+         let (ss1, row1) := gen_row (extract_wf_state _ _ s) ss in
+         build_table' ss1 (rows ++ (row1::nil)) (1 + next_state)
+         (* let gr := gen_row (extract_wf_state _ _ s) ss in *)
+         (* build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state) *)
        | inright _ => (ss, rows)
     end.
-  Next Obligation. 
+  Next Obligation.
+    destruct Heq_anonymous.
+    apply RESS.get_element_some_lt in e.
     eauto using build_table_metric_dec.
   Defined.
   Next Obligation.
@@ -1595,7 +1945,7 @@ Section DFA.
   (* Function build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat) *)
   (*          {wf build_table_metric next_state} : *)
   (*   wf_states * list (list nat) := *)
-  (*   match get_element_wf_state next_state ss with *)
+  (*   match get_element_wfs next_state ss with *)
   (*      | inleft s =>  *)
   (*        let gr := gen_row (extract_wf_state _ _ s) ss in *)
   (*        build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state) *)
@@ -1610,6 +1960,25 @@ Section DFA.
   (*   apply limit_nat_wf. *)
   (* Qed. *)
   (* Set Implicit Arguments. *)
+
+  Import WfExtensionality.
+  Lemma build_table'_unfold (ss:wf_states) rows next_state:
+    build_table' ss rows next_state  =
+    match get_element_wfs next_state ss with
+       | inleft s => 
+         let (ss1, row1) := gen_row (extract_wf_state _ _ s) ss in
+         build_table' ss1 (rows ++ (row1::nil)) (1 + next_state)
+       | inright _ => (ss, rows)
+    end.
+  Proof.
+   unfold build_table' at 1.
+   unfold_sub build_table'_func 
+     (build_table'_func 
+        (existT (fun _ : wf_states => {_ : list (list nat) & nat}) ss
+                (existT (fun _ : list (list nat) => nat) rows next_state))).
+   simpl.
+   destruct (get_element_wfs next_state ss); trivial.  
+  Qed.
 
   (* Recursive Extraction build_table'. *)
 
@@ -1639,12 +2008,226 @@ Section DFA.
   Definition build_dfa: DFA := 
     match build_transition_table with 
       | (wstates, table) => 
-         {| dfa_num_states := cardinal_wf_states wstates ; 
+         {| dfa_num_states := cardinal_wfs wstates ; 
             dfa_states := proj1_sig wstates ; 
             dfa_transition := table ;
             dfa_accepts := build_accept_table wstates ; 
             dfa_rejects := build_rejects wstates |}
     end.
+
+
+  (** This is the main loop-invariant for [gen_row'].  Given a state [s],
+      a list of states [ss], and a token number [n], running [gen_row' n s ss
+      (num_tokens - n)] yields a list of states [ss2] and transition-table
+      [row2] such that the length of [row2] is [n], [ss2] is an extension of
+      [ss], and for all [i], the [ith] element of [ss2] is the [wpdrv]
+      of [s] with respect to the token [i+num_tokens-n]. *)
+  Lemma gen_row'_prop: forall n s ss,
+    n <= num_tokens -> 
+    match gen_row' n s ss (num_tokens - n) with 
+      | (ss2, row2) => 
+        length row2 = n /\ wfs_ext ss ss2 /\
+        forall i, 
+          i < n -> 
+          match RESS.get_element (nth i row2 num_tokens) (proj1_sig ss2) with
+            | Some s' => 
+              RESet.Equal s'
+                (wpdrv (token_id_to_chars (i + num_tokens - n)) (proj1_sig s))
+            | None => False
+          end
+    end.
+  Proof. induction n.
+    Case "base". intros. compute [gen_row'].
+      repeat split; crush. reflexivity.
+    Case "S n". intros.
+      remember_destruct_head as gr.
+      Opaque token_id_to_chars num_tokens.
+      simpl in Hgr.
+      replace (S (num_tokens - S n)) with (num_tokens - n) in Hgr by omega.
+      remember (wpdrv_wf (token_id_to_chars (num_tokens - S n)) s) as s'.
+      remember_rev (get_index_wfs s' ss) as gi.
+      destruct gi.
+      SCase "s' in ss".
+        remember_destruct_head in Hgr as grr.
+        use_lemma (IHn s ss) by omega.
+        rewrite Hgrr in H0.
+        split. crush.
+          destruct H0 as [H2 [H4 H8]].
+          split. crush. 
+          destruct i; intros.
+          SSCase "i=0".
+            apply RESS.get_index_get_element in Hgi.
+            destruct Hgi as [e' [H10 H12]].
+            crush. erewrite get_element_wfs_ext2 by eassumption.
+            crush. reflexivity.
+          SSCase "S i". 
+            use_lemma (H8 i) by omega. crush.
+      SCase "s' notin ss".
+        remember_destruct_head in Hgr as grr.
+        use_lemma (IHn s (add_wfs s' ss)) by omega.
+        rewrite Hgrr in H0.
+        split. crush. 
+          inversion Hgr. subst w0 l. clear Hgr.
+          destruct H0 as [H2 [H4 H8]].
+          use_lemma RESS.get_index_none by crush.
+          split. eapply wfs_ext_add; eassumption.
+            destruct i; intro.
+            SSSCase "i=0". simpl.  
+              erewrite get_element_add_wfs_ext by eassumption.
+              crush. reflexivity.
+            SSSCase "S i".
+              use_lemma (H8 i) by omega. crush.
+  Qed.
+
+  Lemma gen_row_prop: forall s ss,
+    match gen_row s ss with 
+      | (ss2, row2) => 
+        length row2 = num_tokens /\ wfs_ext ss ss2 /\
+        forall i, 
+          i < num_tokens -> 
+          match RESS.get_element (nth i row2 num_tokens) (proj1_sig ss2) with
+            | Some s' => 
+              RESet.Equal s' (wpdrv (token_id_to_chars i) (proj1_sig s))
+            | None => False
+          end
+    end.
+  Proof. unfold gen_row. intros.
+    use_lemma (@gen_row'_prop num_tokens s ss) by omega.
+    rewrite minus_diag in H.
+    remember_destruct_head as gr.
+    crush.
+    use_lemma (H2 i) by assumption. 
+    replace (i+num_tokens-num_tokens) with i in H3 by omega.
+    crush.
+  Qed.
+
+(* todo *)
+
+  (** This is the main invariant for the [build_table] routine.  Given a well-formed
+      list of states [s] and a list of transition-table rows [ros], then for 
+      all [i < n], [s(i)] and [r(i)] are defined, and the row [r(i)] is well-formed
+      with respect to the state [s(i)]. *)
+  Definition build_table_inv (ss: wf_states) (rows: list (list nat)) n := 
+     forall i, i < n -> 
+       match RESS.get_element i (proj1_sig ss), nth_error rows i with 
+         | Some s, Some row => 
+           length row = num_tokens /\ 
+           forall j, j < num_tokens -> 
+             match RESS.get_element (nth j row num_tokens) (proj1_sig ss) with 
+               | Some s' => 
+                 RESet.Equal s' (wpdrv (token_id_to_chars j) s)
+               | None => False
+             end
+         | _, _ => False
+       end.
+
+  Lemma build_table_inv_imp ss rows n :
+    build_table_inv ss rows n -> n <= cardinal_wfs ss /\ n <= length rows.
+  Proof. 
+    unfold build_table_inv ; destruct n. 
+      auto with arith.
+      intros. assert (n < S n) by omega.
+        generalize (H n H0).
+        remember_destruct_head as ge; [idtac | crush].
+        remember_destruct_head as ne; [idtac | crush].
+        intros.
+        apply RESS.get_element_some_lt in Hge.
+        apply nth_error_some_lt in Hne.
+        crush.
+  Qed.
+
+  (* todo: move *)
+  Lemma nth_error_app_eq: forall A n (xs ys:list A), n = length xs -> 
+    nth_error (xs ++ ys) n = nth_error ys 0.
+  Proof. intros. rewrite Coqlib.nth_error_app_gt by omega.
+    subst n. rewrite minus_diag. trivial.
+  Qed.
+
+  Hint Rewrite nth_error_app_eq using omega.
+
+  Lemma gen_row_build_table_inv n ss
+        ss1 rows row1:
+    n = length rows ->
+    match get_element_wfs n ss with
+      | inleft s =>
+        gen_row (extract_wf_state ss n s) ss = (ss1, row1)
+         -> build_table_inv ss rows n
+         -> build_table_inv ss1 (rows ++ row1 :: nil) (1 + n)
+      | inright _ => True
+    end.
+  Proof.
+    remember_rev (get_element_wfs n ss) as gew.
+    destruct gew; [idtac | crush].
+    intros.
+    use_lemma build_table_inv_imp by eassumption.
+    unfold build_table_inv in *.
+    use_lemma (gen_row_prop (extract_wf_state ss n s) ss) by eassumption.
+    rewrite H0 in H3.
+    intros.
+    destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H4)); sim.
+    Case "i<n".
+      rewrite <- (get_element_wfs_ext H6) by omega.
+      rewrite nth_error_lt_app by omega.
+      use_lemma H1 by eassumption.
+      remember_destruct_head as ge; [idtac | crush].
+      remember_destruct_head as ne; [idtac | crush].
+      split. crush.
+        intros. sim.
+        use_lemma H11 by eassumption.
+        remember_destruct_head in H12 as ge2; [idtac | crush].
+        use_lemma get_element_wfs_ext2 by eassumption.
+        crush. reflexivity.
+    Case "i=n". subst i.
+      destruct s as [s [H20 H22]].
+      assert (n < cardinal_wfs ss).
+        use_lemma RESS.get_element_some_lt by eassumption. 
+        unfold cardinal_wfs. trivial.
+      rewrite <- (get_element_wfs_ext H6) by assumption.
+      crush.
+  Qed.
+     
+  Hint Rewrite app_length.
+
+   (** This lemma establishes that the [build_table'] loop maintains the
+       [build_table_inv] and only adds to the states and rows of the table. *)
+  Lemma build_table'_prop: forall n ss rows,
+     n = length rows -> build_table_inv ss rows n ->
+     match build_table' ss rows n with 
+       | (ss', rows') => 
+         length rows' = cardinal_wfs ss' /\ 
+         build_table_inv ss' rows' (length rows') /\ 
+         wfs_ext ss ss' /\ exists rows1, rows' = rows ++ rows1
+     end.
+  Proof. induction n using (well_founded_ind (limit_nat_wf max_pdrv)).
+    intros. remember_head as gw.
+    destruct gw as [ss' rows'].
+    rewrite build_table'_unfold in Hgw.
+    remember_rev (get_element_wfs n ss) as ge.
+    destruct ge.
+    Case "ss[n] exists".
+      remember_head in Hgw as gr.
+      destruct gr as [ss1 row1].
+      use_lemma (@gen_row_build_table_inv n ss ss1 rows row1) by eassumption.
+      rewrite Hge in H2.
+      use_lemma (gen_row_prop (extract_wf_state ss n s) ss) by eassumption.
+      rewrite Hgr in H3.
+      remember (rows ++ row1 :: nil) as rows1.
+      assert (n < cardinal_wfs ss).
+        destruct s as [s [H8 H10]]. 
+        use_lemma RESS.get_element_some_lt by eassumption. trivial.
+      use_lemma build_table_metric_dec by eassumption. 
+      assert (S n = length rows1) by crush.
+      assert (build_table_inv ss1 rows1 (1 + n)) by crush.
+      use_lemma H by eassumption.
+      simpl in Hgw.
+      rewrite Hgw in H8.
+      crush. reflexivity.
+    Case "ss[n] not exists".
+      use_lemma build_table_inv_imp by eassumption.
+      crush. reflexivity.
+        exists nil. crush.
+  Qed.
+
 End DFA.
 
 Section DFA_RECOGNIZE.
@@ -1670,10 +2253,6 @@ Section DFA_RECOGNIZE.
   Definition dfa_recognize (ts:list token_id) : option (nat * list token_id) := 
     dfa_loop 0 0 ts.
 End DFA_RECOGNIZE.
-
-
-
-
 
 
 
@@ -1742,61 +2321,6 @@ End DFA_RECOGNIZE.
       rewrite nth_error_app. auto.
     Qed.
 
-    (** This is the main loop-invariant for [gen_row'].  Given a 
-        astgram [r], a list of states [s], and a token number [n], 
-        running [gen_row' n r s (num_tokens - n)] yields a list of states [s2]
-        and transition-table [row2] such that the
-        length of [row2] is [n], [s2] is an extension of [s], and for all
-        [m], the [mth] element of [s2] is the [unit_derivs] of [r] with 
-        respect to the token [m+num_tokens-n]. *)
-    Lemma gen_row'_prop n r s : 
-      n <= num_tokens -> 
-      match gen_row' n r s (num_tokens - n) with 
-        | (s2, row2) => 
-          length row2 = n /\ 
-          (exists s1, s2 = s ++ s1) /\ 
-          forall m, 
-            m < n -> 
-            match nth_error s2 (nth m row2 num_tokens) with 
-              | Some r' => r' = unit_derivs r (token_id_to_chars (m + num_tokens - n)) 
-              | None => False
-            end
-      end.
-    Proof.
-      induction n. mysimp. exists nil. apply app_nil_end. intros. assert False. omega.
-      contradiction. Opaque token_id_to_chars. Opaque num_tokens. simpl. intros.
-      remember (find_or_add (unit_derivs r (token_id_to_chars (num_tokens - S n))) s).
-      destruct p. remember (gen_row' n r (s ++ s0) (S (num_tokens - S n))). destruct p.
-      generalize (find_or_add_prop 
-        (unit_derivs r (token_id_to_chars (num_tokens - S n))) s).
-      rewrite <- Heqp.
-      assert (n <= num_tokens). omega. intros. 
-      specialize (IHn r (s ++ s0) H0). 
-      assert (S (num_tokens - S n) = num_tokens - n). omega. rewrite <- H2 in IHn.
-      rewrite <- Heqp0 in IHn. mysimp. rewrite app_ass in H4. exists (s0 ++ x). auto.
-      destruct m. intros. simpl. subst. 
-      rewrite (nth_error_ext n0 (s ++ s0) x (eq_sym H1)). auto.
-      intros. assert (m < n). omega. specialize (H5 _ H7).
-      assert (S m + num_tokens - S n = m + num_tokens - n). omega.
-      rewrite H8. auto.
-   Qed.
-
-   (** This is the main invariant for the [build_table] routine.  Given a well-formed
-       list of states [s] and a list of transition-table rows [ros], then for 
-       all [i < n], [s(i)] and [r(i)] are defined, and the row [r(i)] is well-formed
-       with respect to the state [s(i)]. *)
-   Definition build_table_inv s rows n := 
-     forall i, i < n -> 
-       match nth_error s i, nth_error rows i with 
-         | Some r, Some row => 
-           length row = num_tokens /\ 
-           forall t, t < num_tokens -> 
-             match nth_error s (nth t row num_tokens) with 
-               | Some r' => r' = unit_derivs r (token_id_to_chars t)
-               | None => False
-             end
-         | _, _ => False
-       end.
 
    Lemma nth_error_some : forall A (xs:list A) n (v:A), 
      Some v = nth_error xs n -> n < length xs.
@@ -1805,79 +2329,11 @@ End DFA_RECOGNIZE.
      try congruence. omega. generalize (IHxs n v H). intros. omega.
    Qed.
 
-   Lemma build_table_inv_imp s rows n : 
-     build_table_inv s rows n -> n <= length s /\ n <= length rows.
-   Proof.
-     unfold build_table_inv ; destruct n. intros. auto with arith.
-     intros. assert (n < S n). auto with arith. generalize (H n H0).
-     remember (nth_error s n) as e1. remember (nth_error rows n) as e2.
-     destruct e1; destruct e2 ; try tauto. intros. 
-     generalize (nth_error_some _ _ Heqe1).
-     generalize (nth_error_some _ _ Heqe2). intros. omega.
-   Qed.
-
    Lemma nth_error_none A n (xs:list A) : None = nth_error xs n -> length xs <= n.
    Proof.
      induction n ; destruct xs ; simpl in * ; 
      unfold error, value in * ; intros ; auto with arith ; congruence.
    Qed.
-
-   (** This lemma establishes that the [build_table'] loop maintains the
-       [build_table_inv] and only adds to the states and rows of the table. *)
-   Lemma build_table'_prop n s rows : 
-     build_table_inv s rows (length rows) -> 
-     match build_table' n s rows (length rows) with 
-       | None => True
-       | Some (s', rows') => 
-         length rows' = length s' /\ 
-         build_table_inv s' rows' (length rows') /\ 
-         (exists s1, s' = s ++ s1) /\ 
-         (exists rows1, rows' = rows ++ rows1)
-     end.
-   Proof.
-     induction n. simpl. auto.
-     intros. generalize (build_table_inv_imp H). intros. destruct H0. simpl.
-     remember (nth_error s (length rows)). destruct e.
-     Focus 2. mysimp. generalize (nth_error_none _ _ Heqe). intros. 
-     apply le_antisym ; auto.
-     exists nil. apply app_nil_end. exists nil. apply app_nil_end.
-     unfold gen_row.
-     assert (num_tokens <= num_tokens). omega. 
-     generalize (gen_row'_prop a s H2). rewrite minus_diag.
-     remember (gen_row' num_tokens a s 0) as p. destruct p. mysimp.
-     match goal with 
-       | [ |- match build_table' n s0 ?e1 ?e2 with | Some _ => _ | None => _ end ] => 
-         specialize (IHn s0 e1) ; remember (build_table' n s0 e1 e2) as popt ; 
-         assert (length e1 = S (length rows))
-     end.
-     rewrite app_length ; simpl ; rewrite plus_comm ; auto.
-     rewrite <- H6 in Heqpopt. unfold token_id in *. 
-     rewrite <- Heqpopt in IHn.
-     destruct popt ; auto. destruct p.
-           
-     assert (build_table_inv s0 (rows ++ l ::nil) (S (length rows))).
-     Focus 2. rewrite <- H6 in H7. specialize (IHn H7). s ; rewrite app_ass. 
-     exists (x ++ x1). auto.  simpl. exists (l::x0). auto. clear IHn.
-
-     unfold build_table_inv. intros. 
-     assert (i < length rows \/ i = length rows).
-     omega. destruct H8. generalize (H i H8). subst. 
-     remember (nth_error s i) as e. destruct e ; simpl ; try tauto.
-     remember (nth_error rows i) as e. destruct e ; simpl ; try tauto. intros.
-     rewrite (nth_error_ext i s x Heqe0). unfold token_id.
-     rewrite (nth_error_ext i rows (l::nil) Heqe1). 
-     intros. unfold token_id in *.  rewrite <- Heqe1 in H4. destruct H4. split. auto. 
-     intros.
-     specialize (H9 _ H10). 
-     remember (nth_error s (nth t l1 num_tokens)) as e. destruct e ; try contradiction.
-     remember (nth_error_ext (nth t l1 num_tokens) s x Heqe2). rewrite e. auto.
-     subst. unfold token_id in *. rewrite <- Heqe1. intro ; contradiction.
-     subst.
-     rewrite (nth_error_ext (length rows) s x Heqe). unfold token_id in *.
-     rewrite (nth_error_app rows (l::nil)). simpl. mysimp.
-     intros. generalize (H5 _ H4). assert (t + num_tokens - num_tokens = t).
-     omega. rewrite H8. auto.
-  Qed.
 
   (** This predicate captures the notion of a correct [DFA] with respect to
       an initial astgram [r].  In essence, it says that the lengths of all of

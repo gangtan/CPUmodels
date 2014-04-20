@@ -1018,6 +1018,30 @@ Section FIND_INDEX.
     intro H; apply InA_nil in H; trivial.
   Qed.
 
+  Lemma find_index'_none: forall x l n,
+    find_index' x n l = None <-> ~ InA eqA x l.
+  Proof. induction l.
+    simpl. split. intro; intro. apply InA_nil in H0. trivial.
+      congruence.
+    unfold find_index'. fold find_index'.
+    destruct (eqA_dec x a); intros.
+    (* x = a *)
+      split; intros.
+        congruence.
+        contradict H. 
+          auto using InA_cons_hd. 
+    (* x <> a *)
+      split; intros.
+        apply IHl in H.
+          intro H2. apply InA_cons in H2. destruct H2; congruence. 
+        apply IHl. 
+        auto using InA_cons_tl.
+  Qed.
+
+  Lemma find_index_none: forall x l,
+    find_index x l = None <-> ~ InA eqA x l.
+  Proof. unfold find_index. auto using find_index'_none. Qed.
+
 End FIND_INDEX.
 
 
