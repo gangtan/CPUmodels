@@ -643,6 +643,14 @@ Proof. intros. rewrite nth_error_app_gt by omega.
   subst n. rewrite minus_diag. trivial.
 Qed.
 
+Lemma nth_error_some_nth A: forall (l: list A) n (x y:A),
+  nth_error l n = Some x -> nth n l y = x.
+Proof. induction l. 
+  destruct n; simpl; unfold error; congruence.
+  intros. destruct n; simpl in *. inversion H. trivial.
+    auto.
+Qed.
+
 (** Properties of [List.incl] (list inclusion). *)
 
 Lemma incl_cons_inv:
@@ -878,7 +886,6 @@ Proof. induction n.
       simpl. auto.
 Qed.
 
-
 (** Properties of firstn *)
 Lemma firstn_list_app : forall (A:Type) n (l1 l2:list A),
   length l1 = n -> firstn n (l1 ++ l2) = l1.
@@ -937,6 +944,15 @@ Proof. induction n1. intros. contradict H. omega.
     destruct n2. auto.
       simpl; intros. apply IHn1. omega.
 Qed.
+
+(** Properties of Forall *)
+Lemma Forall_app A (P:A->Prop) l1 l2:
+  Forall P (l1 ++ l2) -> Forall P l1 /\ Forall P l2.
+Proof. induction l1. auto.
+  intros. inversion H. subst. apply IHl1 in H3. destruct H3.
+    split. constructor; auto.  auto.
+Qed.
+
 
 (** find an index of an element in a list w.r.t. an equivalence relation *)
 

@@ -23,6 +23,10 @@ Import X86_PARSER_ARG.
 Require Import CommonTacs.
 Set Implicit Arguments.
 
+Local Ltac false_elim :=
+  match goal with
+    | [H:False |- _] => destruct H
+  end.
 
 (** * Define a series of augmented MSets. 
       This should be moved to a separate file *)
@@ -1023,8 +1027,7 @@ Fixpoint nullable (r:regexp) : bool :=
 Definition reset_nullable (rs:RESet.t): bool :=
   RESet.exists_ nullable rs.
 
-(** reset_always_rejects(rs) is true iff all regexps in rs always rejects
-*)
+(** reset_always_rejects(rs) is true iff all regexps in rs always rejects *)
 Definition reset_always_rejects (rs:RESet.t): bool :=
   RESet.for_all always_rejects rs.
 
@@ -1122,6 +1125,13 @@ Proof. intros rs1 rs2 H1 s1 s2 H2 H3. unfold in_re_set in *.
     congruence.
 Qed.
 
+Instance in_re_set_equal: Proper (RESet.Equal ==> eq ==> impl) in_re_set.
+Proof. intros rs1 rs2 H1 s1 s2 H2 H3. unfold in_re_set in *.
+  sim. exists x. 
+  split. rewrite <- H1. assumption.
+  crush.
+Qed.
+
 Lemma in_re_set_empty : forall s, not (in_re_set RESet.empty s).
 Proof. unfold in_re_set. intros. intro H.
   destruct H as [r [H2 _]].
@@ -1216,7 +1226,12 @@ Section PDRV_CORRECT.
       | _ => sim; crush' false in_regexp
     end.
 
-  Lemma nullable_correct :
+  Instance nullable_proper: Proper (RESet.E.eq ==> eq) nullable.
+  Proof. unfold Proper, respectful. intros.
+    apply compare_re_eq_leibniz in H. crush.
+  Qed.
+    
+  Lemma nullable_corr :
     forall r, nullable r = true <-> in_regexp r nil.
   Proof. induction r.
     Case "aEps".  crush.
@@ -1236,7 +1251,7 @@ Section PDRV_CORRECT.
     Case "aStar". crush.
   Qed.
 
-  Lemma pdrv_correct : 
+  Lemma pdrv_corr : 
     forall r a s, in_regexp r (a :: s) <-> in_re_set (pdrv a r) s.
   Proof. induction r.
     Case "aEps".
@@ -1257,7 +1272,7 @@ Section PDRV_CORRECT.
           SSSCase "nullable r1".
             apply in_re_set_union. right. crush_hyp.
           SSSCase "not (nullable r1)".
-            apply nullable_correct in H0. crush.
+            apply nullable_corr in H0. crush.
         SSCase "s1=b::s1'".
           destruct_head; [apply in_re_set_union; left | idtac];
           apply in_re_set_cat_re; exists s1', s2; crush_hyp.
@@ -1272,7 +1287,7 @@ Section PDRV_CORRECT.
             apply InrCat with (s1:= (a::s1)) (s2:=s2); crush.
           SSSCase "s in (pdrv a r2)".
             apply InrCat with (s1:= nil) (s2:=a::s); 
-               crush' nullable_correct fail.
+               crush' nullable_corr fail.
         SSCase "not (nullable r1)".
           apply in_re_set_cat_re in H.
           destruct H as [s1 [s2]]; sim.
@@ -1298,7 +1313,54 @@ Section PDRV_CORRECT.
         apply InrStar_cons with (s1:= (a::s1)) (s2:=s2); crush.
   Qed.
 
+
 End PDRV_CORRECT.
+
+Lemma reset_nullable_corr rs: reset_nullable rs = true <-> in_re_set rs nil.
+Proof. unfold reset_nullable, in_re_set. 
+    generalize (nullable_proper); intro.
+    split; intro.
+    Case "->".
+      apply RESet.exists_spec in H0; [idtac | trivial].
+      unfold RESet.Exists in H0.
+      generalize nullable_corr; crush_hyp.
+    Case "<-".
+      apply RESet.exists_spec; [trivial | idtac].
+      unfold RESet.Exists.
+      generalize nullable_corr; crush_hyp.
+Qed.
+      
+(** [always_rejects] is correct. *)
+Lemma always_rejects_corr (r:regexp) : 
+  always_rejects r = true -> forall ls, ~ in_regexp r ls.
+Proof.
+  induction r; crush.
+  Case "aZero". intro H2. inversion H2.
+  Case "aCat". intro H2.
+    apply orb_prop in H.
+    destruct H; inversion H2; crush_hyp.
+  Case "aAlt". intro H2.
+    apply andb_prop in H. inversion H2; crush_hyp.
+Qed.
+
+Instance always_rejects_proper: Proper (RESet.E.eq ==> eq) always_rejects.
+Proof. unfold Proper, respectful. intros.
+  apply compare_re_eq_leibniz in H. crush.
+Qed.
+
+Lemma reset_always_rejects_corr rs: 
+  reset_always_rejects rs = true -> forall ls, ~ in_re_set rs ls.
+Proof. unfold reset_always_rejects, in_re_set. intros. intro H2.
+  apply RESet.for_all_spec in H; [idtac | apply always_rejects_proper].
+  unfold RESet.For_all in H. 
+  generalize always_rejects_corr. crush_hyp.
+Qed.
+
+
+(* Definition reset_always_rejects (rs:RESet.t): bool := *)
+(*   RESet.for_all always_rejects rs. *)
+
+
 
 (** ** Properties of [pdrv_set] and [wpdrv] *)
 
@@ -1342,6 +1404,36 @@ Proof. unfold Proper, respectful. intros a rs1 rs2 H.
   apply RESetP.subset_antisym; rewrite H; reflexivity.
 Qed.
 
+Lemma pdrv_set_corr rs a s:
+  in_re_set (pdrv_set a rs) s <-> in_re_set rs (a::s).
+Proof. unfold in_re_set. split; intros.
+  Case "->".
+    destruct H as [r [H2 H4]].
+    apply pdrv_set_in in H2.
+    destruct H2 as [r' [H6 H8]].
+    assert (H10:in_re_set (pdrv a r') s).
+      unfold in_re_set. crush.
+    apply pdrv_corr in H10.
+    exists r'. crush.
+  Case "<-".
+    destruct H as [r [H2 H4]].
+    apply pdrv_corr in H4.
+    unfold in_re_set in H4.
+    destruct H4 as [r' [H6 H8]].
+    assert (RESet.In r' (pdrv_set a rs)).
+      apply pdrv_set_in. crush.
+    crush.
+Qed.
+
+Lemma wpdrv_corr: forall s1 s2 rs, 
+  in_re_set (wpdrv s1 rs) s2 <-> in_re_set rs (s1 ++ s2).
+Proof. induction s1. crush.
+  intros. simpl.
+  split; intros.
+    apply IHs1 in H. apply pdrv_set_corr in H. trivial.
+    apply IHs1. apply pdrv_set_corr. trivial.
+Qed.
+  
 Lemma wpdrv_pdset_trans : forall w rs r, 
   RESet.Subset rs (pdset r) -> RESet.Subset (wpdrv w rs) (pdset r).
 Proof. induction w; [auto | idtac].
@@ -1362,7 +1454,7 @@ Proof. unfold Proper, respectful. induction s. crush.
   intros. simpl. apply IHs. rewrite H. reflexivity.
 Qed.
 
-Lemma wpdrv_list_cat: forall w1 w2 rs,
+Lemma wpdrv_app: forall w1 w2 rs,
   wpdrv (w1 ++ w2) rs = wpdrv w2 (wpdrv w1 rs). 
 Proof. induction w1; intros. 
   simpl; trivial.
@@ -1507,7 +1599,7 @@ Module RESetSet.
 
   Lemma get_element_ext s1 s2 n:
     elements_ext s1 s2 -> n < cardinal s1
-      -> get_element n s1 = get_element n s2.
+      -> get_element n s2 = get_element n s1.
   Proof. unfold elements_ext, get_element. intros. sim.
     rewrite H. generalize nth_error_lt_app. crush.
   Qed. 
@@ -1516,7 +1608,7 @@ Module RESetSet.
     get_element n s = Some e -> get_element n (add e1 s) = Some e.
   Proof. intros. generalize (add_ext e1 s). 
     use_lemma get_element_some_lt by eassumption. intro.
-    erewrite <- get_element_ext; eassumption. 
+    erewrite get_element_ext; eassumption. 
   Qed.
 
   Lemma get_element_add_set: forall n s s' e,
@@ -1672,7 +1764,7 @@ Section DFA.
     unfold state_is_wf; intros. 
     destruct s as [s [w1 H]].
     exists (w1++w).
-    rewrite wpdrv_list_cat. simpl. rewrite H. reflexivity.
+    rewrite wpdrv_app. simpl. rewrite H. reflexivity.
   Defined.
 
   Definition emp_wfs: wf_states.
@@ -1740,7 +1832,7 @@ Section DFA.
 
   Lemma get_element_wfs_ext n ss ss': 
     wfs_ext ss ss' -> n < cardinal_wfs ss
-      -> RESS.get_element n (proj1_sig ss) = RESS.get_element n (proj1_sig ss').
+      -> RESS.get_element n (proj1_sig ss') = RESS.get_element n (proj1_sig ss).
   Proof. intros. apply wfs_ext_elements_ext in H. 
     apply RESS.get_element_ext; auto.
   Qed.
@@ -1749,7 +1841,7 @@ Section DFA.
     wfs_ext ss1 ss2 -> RESS.get_element n (proj1_sig ss1) = Some e
       -> RESS.get_element n (proj1_sig ss2) = Some e.
   Proof. intros. use_lemma RESS.get_element_some_lt by eassumption.
-    erewrite <- get_element_wfs_ext; eassumption.
+    erewrite get_element_wfs_ext; eassumption.
   Qed.
 
   Definition get_index_wfs (s:wf_state) (ss:wf_states): option nat :=
@@ -2094,9 +2186,9 @@ Section DFA.
   Qed.
 
   (** This is the main invariant for the [build_table] routine.  Given a well-formed
-      list of states [s] and a list of transition-table rows [ros], then for 
-      all [i < n], [s(i)] and [r(i)] are defined, and the row [r(i)] is well-formed
-      with respect to the state [s(i)]. *)
+      list of states [ss] and a list of transition-table rows [rows], then for 
+      all [i < n], [ss(i)] and [r(i)] are defined, and the row [r(i)] is well-formed
+      with respect to the state [ss(i)]. *)
   Definition build_table_inv (ss: wf_states) (rows: list (list nat)) n := 
      forall i, i < n -> 
        match RESS.get_element i (proj1_sig ss), nth_error rows i with 
@@ -2147,7 +2239,7 @@ Section DFA.
     intros.
     destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H4)); sim.
     Case "i<n".
-      rewrite <- (get_element_wfs_ext H6) by omega.
+      rewrite (get_element_wfs_ext H6) by omega.
       rewrite nth_error_lt_app by omega.
       use_lemma H1 by eassumption.
       remember_destruct_head as ge; [idtac | crush].
@@ -2163,7 +2255,7 @@ Section DFA.
       assert (n < cardinal_wfs ss).
         use_lemma RESS.get_element_some_lt by eassumption. 
         unfold cardinal_wfs. trivial.
-      rewrite <- (get_element_wfs_ext H6) by assumption.
+      rewrite (get_element_wfs_ext H6) by assumption.
       crush.
   Qed.
 
@@ -2211,7 +2303,7 @@ Section DFA.
   Lemma build_table_inv_ini: build_table_inv ini_states nil 0.
   Proof. unfold build_table_inv. crush. Qed.
 
-  Lemma build_table_prop (ss: wf_states) (rows: list (list nat)):
+  Lemma build_table_prop :
     match build_table with
       | (ss, rows) => 
         length rows = cardinal_wfs ss /\
@@ -2224,13 +2316,85 @@ Section DFA.
     remember_destruct_head as bt. crush.
   Qed.
 
+  (** This predicate captures the notion of a correct [DFA] with respect to
+      an initial astgram [r].  In essence, it says that the lengths of all of
+      the lists is equal to [dfa_num_states d], that {r} is at [dfa_states(0)],
+      each row of the [dfa_transition] table is well-formed, that 
+      [accepts(i)] holds iff the corresponding state accepts the empty string,
+      and when [rejects(i)] is true, the corresponding state rejects all strings. *)
+  Definition wf_dfa (d:DFA) := 
+    let num_states := dfa_num_states d in
+    let states := dfa_states d in 
+    let transition := dfa_transition d in 
+    let accepts := dfa_accepts d in 
+    let rejects := dfa_rejects d in 
+    num_states = RESS.cardinal states /\ 
+    num_states = length transition /\ 
+    num_states = length accepts /\ 
+    num_states = length rejects /\ 
+    RESS.get_element 0 states = Some (proj1_sig ini_state) /\
+    forall i, i < num_states -> 
+      match RESS.get_element i states with
+        | Some s =>
+          let acc := nth i accepts false in 
+          let rej := nth i rejects false in 
+          let row := nth i transition nil in 
+          length row = num_tokens /\
+          (acc = true <-> in_re_set s nil) /\
+          (rej = true -> forall ls, ~ in_re_set s ls) /\
+          (forall j, j < num_tokens ->
+            nth j row num_tokens < num_states /\
+            match RESS.get_element (nth j row num_tokens) states with
+              | Some s' => 
+                RESet.Equal s' (wpdrv (token_id_to_chars j) s)
+              | None => False
+            end)
+        | None => False
+      end.
 
-  
+  Hint Rewrite Coqlib.list_length_map.
 
-(* todo *)
-
+  (** [build_dfa] is correct. *)
+  Lemma build_dfa_wf: wf_dfa build_dfa.
+  Proof. generalize build_table_prop. 
+    unfold build_dfa, build_table. intros.
+    remember_head as bt. 
+    destruct bt as [ss rows]. 
+    unfold wf_dfa. simpl.
+    unfold build_accept_table, build_rejects.
+    crush.
+    erewrite get_element_wfs_ext by crush; crush.
+    unfold build_table_inv in *.
+    use_lemma H1 by crush.
+    remember_destruct_head as ge; [idtac | false_elim].
+    remember_destruct_head in H3 as ne; [idtac | false_elim].
+    split. erewrite Coqlib.nth_error_some_nth by eassumption; crush.
+    split.
+    Case "accept states correct".
+      change false with (reset_nullable RESet.empty).
+      rewrite map_nth.
+      erewrite Coqlib.nth_error_some_nth by eassumption.
+      apply reset_nullable_corr.
+    split.
+    Case "reject states correct".
+      change false with (reset_always_rejects (RESet.singleton aEps)).
+      rewrite map_nth.
+      erewrite Coqlib.nth_error_some_nth by eassumption.
+      apply reset_always_rejects_corr.
+    Case "invariant forall j, ...".
+      intros. destruct H3 as [H5 H6].
+      use_lemma H6 by eassumption.
+      remember_destruct_head in H3 as ge2; [idtac | false_elim].
+      assert (H8: nth i rows nil = l).
+        auto using Coqlib.nth_error_some_nth. 
+      rewrite H8.
+      use_lemma RESS.get_element_some_lt by eassumption.
+      split. assumption.
+        rewrite Hge2. crush.
+  Qed.
 
 End DFA.
+
 
 Section DFA_RECOGNIZE.
   Variable d : DFA.
@@ -2249,492 +2413,155 @@ Section DFA_RECOGNIZE.
         | nil => None
         | t::ts' => let row := nth state (dfa_transition d) nil in 
                     let new_state := nth t row num_tokens in
-                    dfa_loop new_state (S count) ts'
+                    dfa_loop new_state (1 + count) ts'
       end.
 
   Definition dfa_recognize (ts:list token_id) : option (nat * list token_id) := 
     dfa_loop 0 0 ts.
-End DFA_RECOGNIZE.
 
-
-
-
-
-
-(********************************************)
-(* Next: the correctness proof
-*)
-
-
-(* todo: to be organized  from this point on*)
-
-
-
-    (** In what follows, we try to give some lemmas for reasoning about the
-        DFA constructed from a parser. *)
-    Require Import Omega.
-
-    Lemma nth_error_app : forall A (xs ys:list A), 
-      nth_error (xs ++ ys) (length xs) = nth_error ys 0.
-    Proof.
-      induction xs ; mysimp.
-    Qed.
-
-    Ltac s := repeat (mysimp ; subst).
-
-    Lemma find_index'_prop : forall r s2 s1, 
-      match find_index' r (length s1) s2 with
-        | Some i => nth_error (s1 ++ s2) i = Some r
-        | _ => True
-      end.
-    Proof.
-      induction s2. mysimp. simpl. intros.
-      destruct (astgram_dec r a). s. rewrite nth_error_app. auto.
-      generalize (IHs2 (s1 ++ (a::nil))).
-      assert (length (s1 ++ a::nil) = S (length s1)). rewrite app_length. simpl. omega.
-      rewrite H. rewrite app_ass. simpl. auto.
-    Qed.
-
-    Lemma nth_error_ext : forall A n (xs ys:list A) (v:A), 
-      Some v = nth_error xs n -> nth_error (xs ++ ys) n = Some v.
-    Proof.
-      induction n. destruct xs. simpl. unfold error. intros. congruence. 
-      simpl. intros. auto. simpl. destruct xs ; simpl ; unfold error ; intros.
-      congruence. auto.
-    Qed.
-
-    Lemma nth_error_lt : forall A (xs ys:list A) n, 
-      n < length xs -> nth_error (xs ++ ys) n = nth_error xs n.
-    Proof.
-      induction xs ; mysimp. assert False. omega. contradiction. 
-      destruct n. auto. simpl. apply IHxs. omega.
-    Qed.
-
-    (** Calling [find_or_add_prop r s] yields a well-formed state, ensures that
-        if we lookup the returned index, we get [r], and that the state is only
-        extended. *)
-    Lemma find_or_add_prop : forall r s, 
-      match find_or_add r s with 
-        | (s',i) => nth_error (s ++ s') i = Some r 
-      end.
-    Proof.
-      unfold find_or_add, find_index. intros. generalize (find_index'_prop r s nil). 
-      simpl. intros. destruct (find_index' r 0 s).  mysimp. 
-      rewrite nth_error_app. auto.
-    Qed.
-
-
-   Lemma nth_error_some : forall A (xs:list A) n (v:A), 
-     Some v = nth_error xs n -> n < length xs.
-   Proof.
-     induction xs ; destruct n ; simpl in * ; unfold error, value in * ; mysimp ; 
-     try congruence. omega. generalize (IHxs n v H). intros. omega.
-   Qed.
-
-   Lemma nth_error_none A n (xs:list A) : None = nth_error xs n -> length xs <= n.
-   Proof.
-     induction n ; destruct xs ; simpl in * ; 
-     unfold error, value in * ; intros ; auto with arith ; congruence.
-   Qed.
-
-  (** This predicate captures the notion of a correct [DFA] with respect to
-      an initial astgram [r].  In essence, it says that the lengths of all of
-      the lists is equal to [dfa_num_states d], that [r] is at [dfa_states(0)],
-      each row of the [dfa_transition] table is well-formed, that 
-      [accepts(i)] holds iff the corresponding state accepts the empty string,
-      and when [rejects(i)] is true, the corresponding state rejects all strings. *)
-  Definition wf_dfa (r:astgram) (d:DFA) := 
-    let num_states := dfa_num_states d in
-    let states := dfa_states d in 
-    let transition := dfa_transition d in 
-    let accepts := dfa_accepts d in 
-    let rejects := dfa_rejects d in 
-    num_states = length states /\ 
-    num_states = length transition /\ 
-    num_states = length accepts /\ 
-    num_states = length rejects /\ 
-    nth_error states 0 = Some r /\ 
-    forall i, i < num_states -> 
-      let r' := nth i states aZero in
-      let acc := nth i accepts false in 
-      let rej := nth i rejects false in 
-      let row := nth i transition nil in 
-        length row = num_tokens /\ 
-        (acc = true <-> exists v:interp (astgram_type r'), in_astgram r' nil v) /\ 
-        (rej = true -> forall s, ~(exists v, in_astgram r' s v)) /\ 
-        (forall t, t < num_tokens -> 
-          nth t row num_tokens < num_states /\
-          nth (nth t row num_tokens) states aZero = 
-          unit_derivs r' (token_id_to_chars t)).
-
-    Lemma nth_error_nth A (xs:list A) n (v dummy:A) : 
-      Some v = nth_error xs n -> nth n xs dummy = v.
-    Proof.
-      induction xs ; destruct n ; simpl in * ; unfold error, value in * ; mysimp ; 
-        try congruence.
-    Qed.
-
-    (** These next few lemmas establish the correctness of [accepts_null]. *)
-    Lemma accepts_null_corr1' (r:astgram) : 
-      accepts_null r = true -> 
-      exists v, in_astgram r nil v.
-    Proof.
-      induction r ; mysimp ; try congruence. exists tt. constructor. auto. auto.
-      generalize (andb_prop _ _ H). mysimp. generalize (IHr1 H0) (IHr2 H1). mysimp.
-      exists (x0,x). econstructor ; eauto. generalize (orb_prop _ _ H). mysimp.
-      generalize (IHr1 H0). mysimp. exists (inl _ x). econstructor ; auto. auto.
-      generalize (IHr2 H0). mysimp. exists (inr _ x). eapply InaAlt_r ; auto. auto.
-      exists nil. constructor ; auto. 
-    Qed.
-
-    Lemma accepts_null_corr1 (r:astgram) : 
-      accepts_null r = true -> exists v, in_astgram r nil v.
-    Proof.
-      intros. generalize (accepts_null_corr1' _ H). mysimp. exists x ; eauto.
-    Qed.
-
-    Lemma accepts_null_corr2' (r:astgram) v : 
-      in_astgram r nil v -> 
-      accepts_null r = true.
-    Proof.
-      intros r v H. dependent induction H ; s ; try congruence.
-      generalize (app_eq_nil _ _ (eq_sym H1)). mysimp. subst.
-      rewrite (IHin_astgram2 (eq_refl _)). rewrite (IHin_astgram1 (eq_refl _)). auto.
-      rewrite IHin_astgram. auto. rewrite IHin_astgram. 
-      destruct (accepts_null a1) ; auto.
-    Qed.
-
-    Lemma accepts_null_corr2 (r:astgram) v : 
-      in_astgram r nil v -> accepts_null r = true.
-    Proof.
-      intros. apply (@accepts_null_corr2' r v H).
-    Qed.
-
-    (** [accepts_null] is correct. *)
-    Lemma accepts_null_corr (r:astgram) : 
-      accepts_null r = true <-> (exists v, in_astgram r nil v).
-    Proof.
-      intros. split. apply accepts_null_corr1 ; auto. mysimp. 
-      apply (accepts_null_corr2 H).
-    Qed.
-
-    (** [always_rejects] is correct. *)
-    Lemma always_rejects_corr (r:astgram) : 
-      always_rejects r = true -> forall s v, ~ in_astgram r s v.
-    Proof.
-      induction r ; mysimp ; try congruence. destruct v ; auto.
-      generalize (orb_prop _ _ H). mysimp. generalize (IHr1 H0). intros.
-      intro. generalize (inv_acat H2). mysimp. subst. apply (H1 x x1). auto.
-      generalize (IHr2 H0). intros. intro. generalize (inv_acat H2).
-      mysimp. s. apply (H1 x0 x2) ; auto.
-      generalize (andb_prop _ _ H). mysimp. intro. generalize (inv_aalt H2). mysimp.
-      eapply IHr1 ; eauto. eapply IHr2 ; eauto. 
-    Qed.
-
-    (** [build_dfa] is (partially) correct.  Note that we do not show that there's
-        always an [n], hence the partiality. *)
-    Lemma build_dfa_wf (r:astgram) (d:DFA) :
-      forall n, build_dfa n r = Some d -> wf_dfa r d.
-    Proof.
-      unfold build_dfa, build_transition_table. intros.
-      assert (build_table_inv (r::nil) nil 0). 
-      unfold build_table_inv. intros. 
-      destruct i. simpl. assert False. omega. contradiction. simpl.
-      assert False. omega.
-      contradiction. generalize (build_table'_prop n H0). simpl. intros. 
-      unfold token_id in *.
-      destruct (build_table' n (r::nil) nil 0) ; try congruence.
-      destruct p as [s' rows']. injection H ; clear H ; intros ; mysimp. 
-      unfold wf_dfa. simpl. mysimp ; try (subst ; simpl ;  auto ; fail).
-      subst. simpl. unfold build_accept_table.
-      rewrite map_length. auto. subst. simpl. unfold build_rejects. 
-      rewrite map_length. auto.
-      (*rewrite H1. unfold value. auto. intros. rewrite <- H0 in H5. *)
-      unfold build_table_inv in H2. rewrite H1 in H2. intros.
-      rewrite <- H in H5 ; simpl in H5.
-      specialize (H2 _ H5). 
-      remember (nth_error s' i) as e. destruct e ; try contradiction. 
-      unfold token_id in *.
-      remember (nth_error rows' i) as e. destruct e ; try contradiction. destruct H2.
-      split. assert (i < length x). subst. omega. rewrite <- H. simpl. rewrite <- H2.
-      rewrite (nth_error_nth rows' i _ Heqe0). auto. 
-      (* split. rewrite (nth_error_nth rows' i nil Heqe0). auto. 
-      rewrite (nth_error_nth s' i (Zero _) Heqe). *)
-      rewrite <- H ; simpl.
-      unfold build_accept_table. unfold build_rejects. unfold token_id.
-      generalize (map_nth accepts_null s' aZero i). intro. simpl in H7. rewrite H7.
-      generalize (map_nth always_rejects s' aEps i). intro. simpl in H8. rewrite H8.
-      rewrite (nth_error_nth s' i _ Heqe). 
-      rewrite (nth_error_nth s' i _ Heqe). split. apply accepts_null_corr. split.
-      intros. intro. mysimp. eapply always_rejects_corr ; eauto. 
-      intros. subst.
-      rewrite (nth_error_nth x i _ Heqe0). 
-      generalize (H6 _ H9). 
-      remember (nth_error (r::x0) (nth t l num_tokens)). destruct e ; try tauto. intros.
-      subst. unfold token_id in *.
-      rewrite (nth_error_nth (r::x0) (nth t l num_tokens) _ Heqe1).
-      split ; auto. generalize Heqe1. clear Heqe1.  rewrite <- H2.
-      generalize (nth t l (length l)) (r::x0). induction n0 ; destruct l0 ; simpl ; 
-      unfold error, value ; intros ; try congruence. omega. generalize (IHn0 _ Heqe1).
-      intros. omega.
-   Qed.
-
-  (** ** Building a recognizer which ignores semantic actions. *)
-  Definition par2rec t (g:grammar t) : astgram := 
-    let (ag, _) := split_astgram g in ag.
-
-  (** The translation from parsers to regexps which throws away the maps is correct. *)
-  Lemma par2rec_corr1 t (g:grammar t) cs v : 
-    in_grammar g cs v -> exists v, in_astgram (par2rec g) cs v.
-  Proof.
-    unfold par2rec.
-    induction 1 ; s ; eauto ; unfold ag_and_fn, fixfn ; 
-    try (remember (split_astgram g1) as e1 ; remember (split_astgram g2) as e2 ; 
-         destruct e1 ; destruct e2 ; eauto) ; 
-    try (remember (split_astgram g) as e ; destruct e ; eauto).
-  Qed.
-
-  Lemma par2rec_corr2 t (g:grammar t) cs v1 : 
-    in_astgram (par2rec g) cs v1 -> exists v2, in_grammar g cs v2.
-  Proof.
-    unfold par2rec.
-    induction g ; mysimp ; unfold ag_and_fn, fixfn in * ; 
-    try (remember (split_astgram g) as e ; destruct e) ; 
-    try (remember (split_astgram g1) as e1 ; destruct e1 ; 
-         remember (split_astgram g2) as e2 ; destruct e2) ; 
-    ainv ; subst ; mysimp ; eauto ; repeat 
-    match goal with 
-        | [ H1 : forall cs v, in_astgram ?x _ _ -> _ ,
-            H2 :  in_astgram ?x _ _ |- _ ] => specialize (H1 _ _ H2) ; mysimp ; eauto
-    end.
-    dependent induction H. eauto. clear IHin_astgram1.
-    specialize (IHin_astgram2 _ _ _ Heqe IHg v2 (eq_refl _) (JMeq_refl _)). mysimp.
-    specialize (IHg _ _ H). mysimp.
-    econstructor ; eapply InStar_cons ; eauto. 
-  Qed.
-
-  (** A simple recognizer -- given a grammar [g] and string [cs], returns a 
-     proof that either either [cs] matches the grammar [g] (i.e., there is
-     some semantic value that [cs] would parse into) or else there is no 
-     match (i.e., there is no value that it can parse into.)  I don't think
-     we actually use this anywhere.  Just here for fun.  *)
-  Definition recognize t (g:grammar t) cs : 
-    {exists v, in_grammar g cs v} + {forall v, ~ in_grammar g cs v}.
-    intros.
-    remember (derivs_and_split (par2rec g) cs) as p.
-    destruct p as [a f].
-    remember (accepts_null a) as b.
-    destruct b ; [ left | right ].
-    unfold par2rec in *. generalize (split_astgram_corr1 g). intro.
-    remember (split_astgram g) as e. destruct e.
-    generalize (accepts_null_corr1' a (eq_sym Heqb)). intro. destruct H0.
-    generalize (@derivs_and_split_corr2 cs x (xinterp f x0)). unfold in_agxf.
-    rewrite <- Heqp. intros. 
-    assert (in_astgram x cs (xinterp f x0)). apply H1. eauto.
-    specialize (H _ _ H2). eauto.
-    intros. intro. unfold par2rec in *. generalize (split_astgram_corr2 g).
-    intro. remember (split_astgram g) as e ; destruct e. specialize (H0 _ _ H).
-    destruct H0. destruct H0. subst.
-    generalize (@derivs_and_split_corr1 cs x x0 H0). unfold in_agxf. simpl.
-    rewrite <- Heqp. mysimp. subst. generalize (accepts_null_corr2 H1). intro.
-    rewrite H2 in Heqb. discriminate Heqb.
-  Defined.
 
    (** This is a simple function which runs a DFA on an entire string, returning
        true if the DFA accepts the string, and false otherwise.  In what follows,
        we prove that [run_dfa] is correct... *)
-   Fixpoint run_dfa (d:DFA) (state:nat) (ts:list token_id) : bool := 
-     match ts with 
-       | nil => nth state (dfa_accepts d) false
-       | t::ts' => run_dfa d (nth t (nth state (dfa_transition d) nil) num_tokens) ts'
-     end.
-
-   (** This lifts the [unit_deriv_corr1] to strings. *)
-   Lemma unit_derivs_corr1 cs1 (r:astgram) cs2 v : 
-     in_astgram (unit_derivs r cs1) cs2 v -> 
-     exists v, in_astgram r (cs1 ++ cs2) v.
-   Proof.
-     unfold unit_derivs. 
-     induction cs1 ; simpl ; eauto. intros.
-     generalize (@deriv_and_split_corr2 r a (cs1 ++ cs2)). unfold in_agxf. intro.
-     remember (deriv_and_split r a) as e ; destruct e.
-     specialize (IHcs1 x cs2). remember (derivs_and_split x cs1) as e ; destruct e.
-     unfold agxf in *. specialize (IHcs1 _ H). destruct IHcs1 as [v' IHcs1]. 
-     exists (xinterp x0 v'). apply H0. exists v'. auto.
-   Qed.
-
-   (** Lifts [unit_deriv_corr2] to strings. *)
-   Lemma unit_derivs_corr2 cs t (g:grammar t) v : 
-     in_grammar g cs v -> 
-     let (a,_) := split_astgram g in 
-     let a' := unit_derivs a cs in
-     exists v', in_astgram a' nil v'.
-   Proof.
-     intros. generalize (split_astgram_corr2 g). remember (split_astgram g) as e.
-     destruct e. intro. specialize (H0 _ _ H). mysimp. subst.
-     unfold unit_derivs. remember (derivs_and_split x cs) as e. destruct e.
-     generalize (derivs_and_split_corr1 H0). unfold in_agxf. rewrite <- Heqe0.
-     mysimp. subst. eauto.
-   Qed.
-
-   Definition list_all(A:Type)(P:A->Prop) : list A -> Prop := 
-     fold_right (fun x a => P x /\ a) True.
-
-   Lemma lt_nth_error : forall A (xs:list A) n dummy v, 
-     n < length xs -> nth n xs dummy = v -> nth_error xs n = Some v.
-   Proof.
-     induction xs ; destruct n ; mysimp ; try (assert False ; [ omega | contradiction] ); 
-       unfold error, value in * ; s. apply (IHxs n dummy). omega. auto.
-   Qed.
+  Fixpoint run_dfa (d:DFA) (st:nat) (ts:list token_id) : bool := 
+    match ts with 
+      | nil => nth st (dfa_accepts d) false
+      | t::ts' => run_dfa d (nth t (nth st (dfa_transition d) nil) num_tokens) ts'
+    end.
 
    Lemma flat_map_app A B (f:A->list B) (ts1 ts2:list A) : 
      flat_map f (ts1 ++ ts2) = (flat_map f ts1) ++ (flat_map f ts2).
-   Proof.
-     induction ts1 ; mysimp. rewrite app_ass. rewrite IHts1. auto.
-   Qed.
-   
-   Lemma unit_derivs_flat_map r ts1 ts2 : 
-     unit_derivs r (flat_map token_id_to_chars (ts1 ++ ts2)) = 
-     unit_derivs (unit_derivs r (flat_map token_id_to_chars ts1)) 
-     (flat_map token_id_to_chars ts2).
-   Proof.
-     intros. rewrite flat_map_app. generalize (flat_map token_id_to_chars ts1) r
-     (flat_map token_id_to_chars ts2). unfold unit_derivs. induction l ; mysimp. 
-     remember (deriv_and_split r0 a) as e ; destruct e. 
-     specialize (IHl x l0). remember (derivs_and_split x (l ++ l0)) as e ; destruct e.
-     remember (derivs_and_split x l) as e ; destruct e. subst. unfold agxf. auto.
-   Qed.
+   Proof. induction ts1 ; crush. Qed.
 
-   (** This lemma tells us that if we start with a grammar [g], build a [DFA],
-       and then run the [DFA] on a list of tokens, then we get [true] iff
-       the grammar would've accepted the string and produced a value.  *)
-   Lemma dfa_corr' : forall t (g:grammar t) n (d:DFA), 
-     build_dfa n (par2rec g) = Some d -> 
-     forall ts2 ts1 state, 
-       nth_error (dfa_states d) state = 
-       Some (unit_derivs (par2rec g) (flat_map token_id_to_chars ts1)) -> 
-       list_all (fun t => t < num_tokens) ts2 ->
-       if run_dfa d state ts2 then
-         exists v, in_grammar g (flat_map token_id_to_chars (ts1 ++ ts2)) v
-       else 
-         forall v, ~ in_grammar g (flat_map token_id_to_chars (ts1 ++ ts2)) v.
-   Proof.
-     intros t p n d H. assert (wf_dfa (par2rec p) d). eapply build_dfa_wf ; eauto.
-     unfold wf_dfa in H0. induction ts2 ; mysimp.
-     assert (state < dfa_num_states d). rewrite H0. generalize H1. 
-     generalize (unit_derivs (par2rec p) (flat_map token_id_to_chars ts1)).
-     generalize (dfa_states d) state. 
-     induction l ; destruct state0 ;  mysimp ; unfold error, value in * ; try congruence. 
-     subst. omega. subst. generalize (IHl _ _ H8). intros. omega. 
-     generalize (H7 _ H8). mysimp. remember (nth state (dfa_accepts d) false) as e.
-     destruct e. generalize (H10 (eq_refl _)).
-     rewrite (nth_error_nth (dfa_states d) state _ (eq_sym H1)). intros. mysimp.
-     generalize (unit_derivs_corr1 _ _ H14).
-     rewrite <- app_nil_end. mysimp. apply (par2rec_corr2 p H15).
-     unfold not. intros. assert (false = true).
-     apply H13. rewrite (nth_error_nth (dfa_states d) state _ (eq_sym H1)).
-     generalize (@par2rec_corr1 t p (flat_map token_id_to_chars ts1) v H14). intro.
-     generalize (unit_derivs_corr2 H14). unfold par2rec. 
-     remember (split_astgram p) as e. destruct e. auto. congruence.
-     
-     generalize (IHts2 (ts1 ++ a::nil) 
-       (nth a (nth state (dfa_transition d) nil) num_tokens)). 
-     rewrite app_ass. simpl. intros. apply H9 ; auto. clear H9 IHts2.
-     assert (state < dfa_num_states d). rewrite H0. generalize H1.
-     generalize (unit_derivs (par2rec p) (flat_map token_id_to_chars ts1)).
-     generalize (dfa_states d) state. induction l ; destruct state0 ; mysimp ; 
-     unfold error, value in * ; try congruence; try omega. 
-     generalize (IHl _ _ H9). intros. omega.
-     generalize (H8 _ H9) ; mysimp. generalize (H13 _ H2). mysimp.
-     rewrite unit_derivs_flat_map. simpl. rewrite <- app_nil_end.
-     generalize (H13 _ H2). mysimp. (*rewrite H0 in H18.*)
-     apply (lt_nth_error (dfa_states d) aZero). omega. rewrite H18.
-     rewrite (nth_error_nth _ _ aZero (eq_sym H1)). auto.
-  Qed.
+  (** This lemma tells us that if we start with a grammar [g], build a [DFA],
+      and then run the [DFA] on a list of tokens, then we get [true] iff
+      the grammar would've accepted the string and produced a value.  *)
+  Lemma run_dfa_corr' : forall (r: regexp), 
+    build_dfa r = d -> 
+    forall ts2 ts1 st rs, 
+      RESS.get_element st (dfa_states d) = Some rs ->
+      RESet.Equal rs
+        (wpdrv (flat_map token_id_to_chars ts1) (proj1_sig (ini_state r))) ->
+      Forall (fun t => t < num_tokens) ts2 ->
+      if run_dfa d st ts2 then
+        in_regexp r (flat_map token_id_to_chars (ts1 ++ ts2))
+      else ~ in_regexp r (flat_map token_id_to_chars (ts1 ++ ts2)).
+  Proof. intros r H.
+    generalize (build_dfa_wf r); intro.
+    unfold wf_dfa in H0. sim.
+    induction ts2.
+    Case "nil". intros. simpl.
+      rewrite app_nil_r.
+      assert (st < dfa_num_states (build_dfa r)).
+        use_lemma RESS.get_element_some_lt by eassumption. crush.
+      use_lemma (H5 st) by eassumption.
+      rewrite H in H10. rewrite H6 in H10. sim.
+      remember_destruct_head as nn.
+      SCase "nth n (dfa_accepts d) false = true".
+        apply in_re_set_singleton.
+        rewrite <- app_nil_r.
+        apply wpdrv_corr.
+        rewrite <- H7. auto.
+      SCase "nth n (dfa_accepts d) false = false".
+        intro.
+        cut (false = true). congruence.
+        apply H14. rewrite H7.
+        apply wpdrv_corr. apply in_re_set_singleton. rewrite app_nil_r.
+        assumption.
+    Case "a::ts2". intros. simpl.
+      remember (nth a (nth st (dfa_transition d) nil) num_tokens) as st'.
+      assert (st < dfa_num_states (build_dfa r)).
+        use_lemma RESS.get_element_some_lt by eassumption. crush.
+      use_lemma (H5 st) by eassumption.
+      rewrite H in H10. rewrite H6 in H10. sim.
+      use_lemma Forall_inv by eassumption.
+      use_lemma H13 by eassumption. sim.
+      rewrite <- Heqst' in H17.
+      remember_destruct_head in H17 as gn; [idtac | false_elim].
+      assert (H20: RESet.Equal e
+              (wpdrv (flat_map token_id_to_chars (ts1 ++ (a::nil)))
+                     (proj1_sig (ini_state r)))).
+        rewrite H17.
+        rewrite flat_map_app. rewrite wpdrv_app.
+        change (flat_map token_id_to_chars (a :: nil)) with
+          (token_id_to_chars a ++ nil).
+        rewrite app_nil_r.
+        rewrite H7. reflexivity.
+      inversion H8.
+      use_lemma IHts2 by eassumption.
+      rewrite <- app_assoc in H23. assumption.
+  Qed. 
 
-  (** Here is the key correctness property for the DFAs. *)
-  Lemma dfa_corr t (g:grammar t) n (d:DFA) :
-    build_dfa n (par2rec g) = Some d -> 
+  (** Here is the key correctness property for [run_dfa]. *)
+  Lemma run_dfa_corr (r: regexp) :
+    build_dfa r = d -> 
     forall ts, 
-      list_all (fun t => t < num_tokens) ts -> 
+      Forall (fun t => t < num_tokens) ts -> 
       if run_dfa d 0 ts then 
-        exists v, in_grammar g (flat_map token_id_to_chars ts) v
-      else 
-        forall v, ~ in_grammar g (flat_map token_id_to_chars ts) v.
-  Proof.
-    intros. assert (ts = nil ++ ts) ; auto. rewrite H1. eapply dfa_corr' ; eauto.
-    assert (wf_dfa (par2rec g) d). eapply build_dfa_wf ; eauto.
-    unfold wf_dfa in H2. mysimp.
+        in_regexp r (flat_map token_id_to_chars ts)
+      else ~ in_regexp r (flat_map token_id_to_chars ts).
+  Proof. intros. 
+    generalize (build_dfa_wf r); unfold wf_dfa; intro. sim.
+    change ts with (nil++ts).
+    eapply run_dfa_corr'; try eassumption.
+    rewrite <- H. eassumption. simpl. reflexivity.
   Qed.
 
-  Definition accepts_at_most_one_null (a:astgram) : bool := 
-    if le_gt_dec (List.length (astgram_extract_nil a)) 1 then true else false.
-
-  Fixpoint enum_tokens (f:token_id -> bool) (n:nat) : bool := 
-    match n with 
-      | 0 => true
-      | S m => (f m) && enum_tokens f m
-    end.
-
-  Definition forall_tokens (f:token_id -> bool) : bool := enum_tokens f num_tokens.
 
   (** Properties of dfa_recognize *)
-  Lemma dfa_loop_run : forall ts d state count count2 ts2,
-    dfa_loop d state count ts = Some (count2, ts2) -> 
+  Lemma dfa_loop_run : forall ts st count count2 ts2,
+    dfa_loop st count ts = Some (count2, ts2) -> 
     exists ts1, 
       ts = ts1 ++ ts2 /\ count2 = length ts1 + count /\ 
-      run_dfa d state ts1 = true /\
+      run_dfa d st ts1 = true /\
       forall ts1' ts2',
         ts = ts1' ++ ts2' -> 
         length ts1' < length ts1 -> 
-        ~ run_dfa d state ts1' = true.
-  Proof.
-    induction ts ; mysimp ; remember (nth state (dfa_accepts d) false) ; 
-    destruct y ; try congruence ; try (injection H ; mysimp ; clear H ; subst). 
-    exists nil. rewrite Heqy. repeat split ; auto. intros. simpl in H0.
-    assert False. omega. contradiction.
-    exists nil. simpl. rewrite Heqy. repeat split ; auto.
-    intros. assert False. omega. contradiction.
-    specialize (IHts d _ _ _ _ H). mysimp. exists (a::x). simpl.
-    split. subst ; auto. split ; subst ; auto. split ; auto. intros.
-    destruct ts1'. simpl in *. rewrite <- Heqy. auto. simpl in H0.
-    injection H0 ; intros ; subst; clear H0. 
-    specialize (H3 _ _ H4). assert (length ts1' < length x). simpl in *.
-    omega. specialize (H3 H0). simpl. congruence.
+        ~ run_dfa d st ts1' = true.
+  Proof. induction ts; simpl; intros; remember (nth st (dfa_accepts d) false) as acc;
+    destruct acc. 
+      exists nil; crush.
+      congruence.
+      exists nil; crush.
+      Case "a::ts, when acc is false".
+        remember (nth a (nth st (dfa_transition d) nil) num_tokens) as st'.
+        apply IHts in H. destruct H as [ts1 H]. sim.
+        exists (a::ts1). crush.
+          destruct ts1'. crush.
+          inversion H; subst.
+          use_lemma (H2 ts1' ts2') by crush.
+          assumption.
   Qed.
 
-  Lemma list_all_app : forall A (f:A->Prop) (xs ys:list A), 
-    list_all f (xs ++ ys) -> list_all f xs /\ list_all f ys.
-  Proof.
-    induction xs ; mysimp ; specialize (IHxs _ H0) ; mysimp.
-  Qed.
-
-  Lemma dfa_recognize_corr :
-    forall t (g:grammar t) n (d:DFA),
-    build_dfa n (par2rec g) = Some d -> 
+  Lemma dfa_recognize_corr :  forall (r:regexp),
+    build_dfa r = d -> 
     forall ts, 
-      list_all (fun t => t < num_tokens) ts -> 
-      match dfa_recognize d ts with 
+      Forall (fun t => t < num_tokens) ts -> 
+      match dfa_recognize ts with 
         | None => True
         | Some (count,ts2) => 
-          exists ts1, exists v, 
+          exists ts1, 
             ts = ts1 ++ ts2 /\ count = length ts1 /\ 
-            in_grammar g (flat_map token_id_to_chars ts1) v /\
+            in_regexp r (flat_map token_id_to_chars ts1) /\
             forall ts3 ts4,
               length ts3 < length ts1 ->
               ts = ts3 ++ ts4 -> 
-              forall v, ~ in_grammar g (flat_map token_id_to_chars ts3) v
+              ~ in_regexp r (flat_map token_id_to_chars ts3)
       end.
-  Proof.
-    intros. unfold dfa_recognize. remember (dfa_loop d 0 0 ts) as e.
+  Proof. intros. unfold dfa_recognize. remember_rev (dfa_loop 0 0 ts) as e.
     destruct e ; auto. destruct p. 
-    generalize (dfa_loop_run _ _ _ _ (eq_sym Heqe)). mysimp. subst.
-    exists x. generalize (list_all_app _ _ _ H0).  mysimp.
-    generalize (dfa_corr _ _ H _ H1).  rewrite H3. mysimp. 
-    rewrite plus_comm. simpl. exists x0. repeat split ; auto.
-    intros. specialize (H4 _ _ H7 H6). intro. apply H4.
-    rewrite H7 in H0. generalize (list_all_app _ _ _ H0). mysimp.
-    generalize (@dfa_corr _ g n d H ts3 H9).
-    destruct (run_dfa d 0 ts3). auto. intros. assert False.
-    eapply H11. eauto. contradiction.
-  Qed.
+    use_lemma dfa_loop_run by eassumption. 
+    destruct H1 as [ts1 H1]. sim.
+    exists ts1. crush.
+      apply Coqlib.Forall_app in H0. destruct H0.
+        generalize (run_dfa_corr _ H H0).
+        rewrite <- H. rewrite H3. trivial.
+      use_lemma H4 by eassumption.
+        apply not_true_is_false in H5.
+        rewrite H2 in H0.
+        apply Coqlib.Forall_app in H0. destruct H0.
+        generalize (run_dfa_corr _ H H0).
+        rewrite <- H. rewrite H5. trivial.
+  Qed.      
+
+End DFA_RECOGNIZE.
