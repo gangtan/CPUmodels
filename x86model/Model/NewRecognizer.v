@@ -1806,7 +1806,6 @@ Section DFA.
   Defined.
 
   Hint Rewrite RESS.add_set_empty.
-  (* Hint Immediate RESS.disjoint_empty. *)
 
   Instance wfs_ext_refl: Reflexive wfs_ext.
   Proof. unfold wfs_ext. intro. exists emp_wfs; crush. Qed.
@@ -1934,7 +1933,7 @@ Section DFA.
   Proof. induction n; intros; [omega | idtac].
     apply Acc_intro; intros. unfold limit_nat in H0.
     apply IHn. omega.
-  Qed.
+  Defined.
 
   Lemma limit_nat_wf: 
     forall m, well_founded (limit_nat m).
@@ -1942,7 +1941,7 @@ Section DFA.
     apply Acc_intro; intros.
     unfold limit_nat in H.
     eauto using limit_nat_wf_helper.
-  Qed.
+  Defined.
 
   (* max number of partial derivatives of r *)
   Definition max_pdrv := NPeano.pow 2 (1 + num_of_syms r).
@@ -2395,6 +2394,21 @@ Section DFA.
 
 End DFA.
 
+(* Definition test0:= aEps. *)
+(* Definition test1 := aChar true. *)
+(* Definition test2 := aCat (aChar true) (aChar false). *)
+(* Definition test3 := aCat (aChar false)  *)
+(*                          (aCat (aChar false) *)
+(*                                (aCat (aChar false) *)
+(*                                (aCat (aChar false) *)
+(*                                (aCat (aChar false) *)
+                               
+(*                                (aCat (aChar false) *)
+(*                                (aCat (aChar false) (aChar false))))))). *)
+
+(* Time Eval compute in (build_dfa test1). *)
+(* Time Eval compute in (build_dfa test3). *)
+
 
 Section DFA_RECOGNIZE.
   Variable d : DFA.
@@ -2419,7 +2433,6 @@ Section DFA_RECOGNIZE.
   Definition dfa_recognize (ts:list token_id) : option (nat * list token_id) := 
     dfa_loop 0 0 ts.
 
-
    (** This is a simple function which runs a DFA on an entire string, returning
        true if the DFA accepts the string, and false otherwise.  In what follows,
        we prove that [run_dfa] is correct... *)
@@ -2428,10 +2441,6 @@ Section DFA_RECOGNIZE.
       | nil => nth st (dfa_accepts d) false
       | t::ts' => run_dfa d (nth t (nth st (dfa_transition d) nil) num_tokens) ts'
     end.
-
-   Lemma flat_map_app A B (f:A->list B) (ts1 ts2:list A) : 
-     flat_map f (ts1 ++ ts2) = (flat_map f ts1) ++ (flat_map f ts2).
-   Proof. induction ts1 ; crush. Qed.
 
   (** This lemma tells us that if we start with a grammar [g], build a [DFA],
       and then run the [DFA] on a list of tokens, then we get [true] iff
@@ -2453,7 +2462,8 @@ Section DFA_RECOGNIZE.
     Case "nil". intros. simpl.
       rewrite app_nil_r.
       assert (st < dfa_num_states (build_dfa r)).
-        use_lemma RESS.get_element_some_lt by eassumption. crush.
+        use_lemma RESS.get_element_some_lt by eassumption. 
+        rewrite H0. congruence.
       use_lemma (H5 st) by eassumption.
       rewrite H in H10. rewrite H6 in H10. sim.
       remember_destruct_head as nn.
@@ -2471,7 +2481,8 @@ Section DFA_RECOGNIZE.
     Case "a::ts2". intros. simpl.
       remember (nth a (nth st (dfa_transition d) nil) num_tokens) as st'.
       assert (st < dfa_num_states (build_dfa r)).
-        use_lemma RESS.get_element_some_lt by eassumption. crush.
+        use_lemma RESS.get_element_some_lt by eassumption. 
+        rewrite H0. congruence.
       use_lemma (H5 st) by eassumption.
       rewrite H in H10. rewrite H6 in H10. sim.
       use_lemma Forall_inv by eassumption.
@@ -2482,7 +2493,7 @@ Section DFA_RECOGNIZE.
               (wpdrv (flat_map token_id_to_chars (ts1 ++ (a::nil)))
                      (proj1_sig (ini_state r)))).
         rewrite H17.
-        rewrite flat_map_app. rewrite wpdrv_app.
+        rewrite Coqlib.flat_map_app. rewrite wpdrv_app.
         change (flat_map token_id_to_chars (a :: nil)) with
           (token_id_to_chars a ++ nil).
         rewrite app_nil_r.
@@ -2503,10 +2514,9 @@ Section DFA_RECOGNIZE.
   Proof. intros. 
     generalize (build_dfa_wf r); unfold wf_dfa; intro. sim.
     change ts with (nil++ts).
-    eapply run_dfa_corr'; try eassumption.
-    rewrite <- H. eassumption. simpl. reflexivity.
+    eapply run_dfa_corr'; try eassumption; subst; eauto.
+     simpl; reflexivity.
   Qed.
-
 
   (** Properties of dfa_recognize *)
   Lemma dfa_loop_run : forall ts st count count2 ts2,
@@ -2528,9 +2538,7 @@ Section DFA_RECOGNIZE.
         apply IHts in H. destruct H as [ts1 H]. sim.
         exists (a::ts1). crush.
           destruct ts1'. crush.
-          inversion H; subst.
-          use_lemma (H2 ts1' ts2') by crush.
-          assumption.
+          crush; eapply H2; crush.
   Qed.
 
   Lemma dfa_recognize_corr :  forall (r:regexp),
@@ -2548,20 +2556,22 @@ Section DFA_RECOGNIZE.
               ts = ts3 ++ ts4 -> 
               ~ in_regexp r (flat_map token_id_to_chars ts3)
       end.
-  Proof. intros. unfold dfa_recognize. remember_rev (dfa_loop 0 0 ts) as e.
+  Proof. intros. red. remember_rev (dfa_loop 0 0 ts) as e.
     destruct e ; auto. destruct p. 
     use_lemma dfa_loop_run by eassumption. 
     destruct H1 as [ts1 H1]. sim.
     exists ts1. crush.
       apply Coqlib.Forall_app in H0. destruct H0.
         generalize (run_dfa_corr _ H H0).
-        rewrite <- H. rewrite H3. trivial.
+        remember_destruct_head as rd; crush.
       use_lemma H4 by eassumption.
-        apply not_true_is_false in H5.
         rewrite H2 in H0.
         apply Coqlib.Forall_app in H0. destruct H0.
         generalize (run_dfa_corr _ H H0).
-        rewrite <- H. rewrite H5. trivial.
-  Qed.      
+        remember_destruct_head as rd; crush.
+  Qed.
 
 End DFA_RECOGNIZE.
+
+Definition par2rec t (g:grammar t) : astgram := 
+  let (ag, _) := split_astgram g in ag.

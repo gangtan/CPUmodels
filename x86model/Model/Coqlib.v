@@ -643,6 +643,8 @@ Proof. intros. rewrite nth_error_app_gt by omega.
   subst n. rewrite minus_diag. trivial.
 Qed.
 
+Hint Rewrite nth_error_app_eq using omega: coqlib.
+
 Lemma nth_error_some_nth A: forall (l: list A) n (x y:A),
   nth_error l n = Some x -> nth n l y = x.
 Proof. induction l. 
@@ -764,6 +766,8 @@ Lemma list_length_map:
 Proof.
   induction l; simpl; congruence.
 Qed.
+
+Hint Rewrite list_length_map: coqlib.
 
 Lemma list_in_map_inv:
   forall (A B: Type) (f: A -> B) (l: list A) (y: B),
@@ -953,6 +957,13 @@ Proof. induction l1. auto.
     split. constructor; auto.  auto.
 Qed.
 
+(** Properties of flat_map *)
+
+Lemma flat_map_app A B (f:A->list B) (ts1 ts2:list A) : 
+  flat_map f (ts1 ++ ts2) = (flat_map f ts1) ++ (flat_map f ts2).
+Proof. induction ts1. auto.  
+  simpl; rewrite app_ass; f_equal; auto.
+Qed.
 
 (** find an index of an element in a list w.r.t. an equivalence relation *)
 
