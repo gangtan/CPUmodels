@@ -1478,6 +1478,16 @@ Module RESetSet.
   Definition get_element (n:nat) (s:t) : option elt := 
     nth_error (elements s) n.
 
+  Definition get_element_2 (n:nat) (s:t) : 
+    {elt | get_element n s = Some elt} + {get_element n s = None}.
+    refine (let ge := get_element n s in
+            (match ge return get_element n s = ge -> _
+             with
+               | Some e => fun H => inleft (exist _ e _)
+               | None => fun H => inright _
+             end) eq_refl); crush.
+  Defined.
+
   (** Given an element e, find its index in the set *)
   Definition get_index (e:elt) (s:t) : option nat :=
     Coqlib.find_index E.eq E.eq_dec e (elements s).
@@ -1849,17 +1859,16 @@ Section DFA.
   Definition get_element_wfs (n:nat) (ss:wf_states):
     {s:state | state_is_wf s /\ RESS.get_element n (proj1_sig ss) = Some s}
     + {n >= cardinal_wfs ss}.
-    refine (let ge := RESS.get_element n (proj1_sig ss) in
-            (match ge return RESS.get_element n (proj1_sig ss) = ge -> _
-             with
-               | Some s => fun H => inleft (exist _ s _)
-               | None => fun H => inright _
-             end) eq_refl).
+    refine (match RESS.get_element_2 n (proj1_sig ss) with
+              | inleft s => inleft (exist _ (proj1_sig s) _)
+              | inright H => inright _ 
+           end).
     Case "state_is_wf s".
-      split.
-        destruct ss as [ss H2].
+      destruct ss as [ss H2].
+        destruct s as [s H4]. simpl in *.
+        split.
           apply H2.
-          apply Coqlib.nth_error_in in H.
+          apply Coqlib.nth_error_in in H4.
           assert (InA RESet.Equal s (RESS.elements ss)).
             apply In_InA. apply RESet.eq_equiv. assumption.
           apply RESS.elements_spec1. trivial.
@@ -2008,8 +2017,6 @@ Section DFA.
        | inleft s => 
          let (ss1, row1) := gen_row (extract_wf_state _ _ s) ss in
          build_table' ss1 (rows ++ (row1::nil)) (1 + next_state)
-         (* let gr := gen_row (extract_wf_state _ _ s) ss in *)
-         (* build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state) *)
        | inright _ => (ss, rows)
     end.
   Next Obligation.
@@ -2402,7 +2409,6 @@ End DFA.
 (*                                (aCat (aChar false) *)
 (*                                (aCat (aChar false) *)
 (*                                (aCat (aChar false) *)
-                               
 (*                                (aCat (aChar false) *)
 (*                                (aCat (aChar false) (aChar false))))))). *)
 
