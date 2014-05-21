@@ -8,6 +8,7 @@ Require Import Xform.
 Require Import Regexp.
 
 Require Import CommonTacs.
+Require Import Coqlib.  (* for proof_irrelevance *)
 
 Set Implicit Arguments.
 
@@ -173,7 +174,7 @@ Module RESETXFORM <: RESetXform.
       end fr
          else create_xform l fl x fx r fr.
 
-  Lemma bal_erase : 
+  Lemma bal_xform_erase : 
     forall t l fl x fx r fr, projT1 (@bal_xform t l fl x fx r fr) = Raw.bal l x r.
   Proof.
     intros. unfold bal_xform, Raw.bal.
@@ -274,14 +275,14 @@ Module RESETXFORM <: RESetXform.
     match goal with 
         | [ |- projT1 (match ?e with | existT _ _ => _ end) = _ ] => remember e as e1
     end.
-    destruct e1. rewrite bal_erase. 
+    destruct e1. rewrite bal_xform_erase. 
     fold tree_type in IHs1. rewrite <- Heqe1 in IHs1. rewrite <- IHs1. auto.
     specialize (IHs2 x f1 (xcomp (xcomp xinr xinr) f)).
     fold tree_type in IHs2.
     match goal with 
       | [ |- projT1 (match ?e with | existT _ _ => _ end) = _ ] => remember e as e1
     end.
-    destruct e1. rewrite bal_erase. rewrite <- IHs2. auto.
+    destruct e1. rewrite bal_xform_erase. rewrite <- IHs2. auto.
   Qed.
 
   Fixpoint join_xform t (l:Raw.tree) : 
@@ -321,50 +322,241 @@ Module RESETXFORM <: RESetXform.
           end
     end.
 
-(*
-Record triple : Type := mktriple
-  { t_left : Raw.t;  t_in : bool;  t_right : Raw.t }
+  Lemma join_xform_erase : forall t l fl x fx r fr, 
+      projT1 (@join_xform t l fl x fx r fr) = Raw.join l x r.
+  Proof.                             
+    induction l. intros ; simpl ; apply add_xform_tree_erase.
+    intros fl x fx. 
+    unfold join_xform. fold join_xform.
+    unfold Raw.join. fold Raw.join.
+    match goal with 
+      | [ |- forall _ _, projT1 (?fexp1 _ _) = ?fexp2 _ ] => 
+        remember fexp1 as join_aux_xform ; remember fexp2 as join_aux
+    end.
+    induction r ; intros. 
+      rewrite Heqjoin_aux ; rewrite Heqjoin_aux_xform ; 
+      rewrite add_xform_tree_erase ; auto.
+    rewrite Heqjoin_aux. rewrite <- Heqjoin_aux.
+    rewrite Heqjoin_aux_xform. rewrite <- Heqjoin_aux_xform.
+    destruct (Int.Z_as_Int.gt_le_dec t1 (Int.Z_as_Int.plus t3 Int.Z_as_Int._2)).
+    specialize (IHl2 (xcomp (xcomp xinr xinr) fl) x fx (Raw.Node t3 r1 t4 r2) fr).
+    remember (join_xform l2 (xcomp (xcomp xinr xinr) fl) x fx (Raw.Node t3 r1 t4 r2) fr)
+             as e.
+    destruct e.
+    rewrite bal_xform_erase. rewrite <- IHl2. auto.
+    destruct (Int.Z_as_Int.gt_le_dec t3 (Int.Z_as_Int.plus t1 Int.Z_as_Int._2)).
+    specialize (IHr1 (xcomp xinl fr)). 
+    remember (join_aux_xform r1 (xcomp xinl fr)) as e. 
+    destruct e. rewrite bal_xform_erase. rewrite <- IHr1. auto.
+    rewrite create_xform_erase. auto.
+  Qed.
 
-Raw.split = 
-fix split (x : REOrderedTypeAlt.t) (s : Raw.tree) {struct s} : Raw.triple :=
-  match s with
-  | Raw.Leaf =>
-      {|
-      Raw.t_left := Raw.Leaf;
-      Raw.t_in := false;
-      Raw.t_right := Raw.Leaf |}
-  | Raw.Node _ l y r =>
-      match REOrderedTypeAlt.compare x y with
-      | Eq => {| Raw.t_left := l; Raw.t_in := true; Raw.t_right := r |}
-      | Lt =>
-          let (ll, b, rl) := split x l in
-          {|
-          Raw.t_left := ll;
-          Raw.t_in := b;
-          Raw.t_right := Raw.join rl y r |}
-      | Gt =>
-          let (rl, b, rr) := split x r in
-          {|
-          Raw.t_left := Raw.join l y rl;
-          Raw.t_in := b;
-          Raw.t_right := rr |}
-      end
-  end
+  Record triple_xform (t:type) (x:regexp) : Type := 
+    mkTX { t_left : Raw.tree ; t_left_xform : tree_type t_left ->> List_t t ; 
+           t_in : option (regexp_type x ->> List_t t) ; 
+           t_right : Raw.tree ; t_right_xform : tree_type t_right ->> List_t t
+         }.
 
-Raw.union = 
-fix union (s1 s2 : Raw.tree) {struct s1} : Raw.tree :=
-  match s1 with
-  | Raw.Leaf => s2
-  | Raw.Node _ l1 x1 r1 =>
-      match s2 with
-      | Raw.Leaf => s1
-      | Raw.Node _ _ _ _ =>
-          let (l2', _, r2') := Raw.split x1 s2 in
-          Raw.join (union l1 l2') x1 (union r1 r2')
-      end
-  end
-*)
+  Fixpoint split_xform t (x:regexp) (s : Raw.tree) :
+                                  tree_type s ->> List_t t -> triple_xform t x := 
+    match s return tree_type s ->> List_t t -> triple_xform t x with 
+      | Raw.Leaf => fun f => {| t_left := Raw.Leaf ; t_left_xform := xzero ; 
+                                t_in := None ; 
+                                t_right := Raw.Leaf ; t_right_xform := xzero |}
+      | Raw.Node i l y r => 
+        fun f => 
+          match REOrderedTypeAlt.compare x y as c return 
+                REOrderedTypeAlt.compare x y = c -> triple_xform t x with
+            | Eq => fun H => 
+                      {| t_left := l ; t_left_xform := xcomp xinl f ; 
+                       t_in := 
+                         Some (xcomp (eq_rec y 
+                                      (fun y0 => regexp_type y0 ->> 
+                                         tree_type (Raw.Node i l y r)) 
+                                      (xcomp xinl xinr) x (eq_sym (cmp_leib x y H))) f) ; 
+                       t_right := r ; t_right_xform := xcomp (xcomp xinr xinr) f |}
+            | Lt => fun _ => 
+                      let (ll, fll, opt, rl, frl) := split_xform x l (xcomp xinl f) in 
+                      let (r',fr') := join_xform rl frl y (xcomp (xcomp xinl xinr) f) r
+                                                 (xcomp (xcomp xinr xinr) f) in
+                      {| t_left := ll ; t_left_xform := fll ; 
+                         t_in := opt ; 
+                         t_right := r' ; t_right_xform := fr' |}
+            | Gt => fun _ => 
+                      let (rl, frl, opt, rr, frr) := split_xform x r 
+                                                      (xcomp (xcomp xinr xinr) f) in 
+                      let (l',fl') := join_xform l (xcomp xinl f) y 
+                                                 (xcomp (xcomp xinl xinr) f) 
+                                                 rl frl in
+                      {| t_left := l' ; t_left_xform := fl' ; 
+                         t_in := opt ; 
+                         t_right := rr ; t_right_xform := frr |}
+          end eq_refl
+    end.
 
+  Lemma split_xform_erase : forall t x s fs, 
+      Raw.split x s = 
+      match @split_xform t x s fs with
+        | mkTX l _ None r _ => Raw.mktriple l false r
+        | mkTX l _ _ r _ => Raw.mktriple l true r
+      end.
+  Proof.
+    induction s ; intros ; auto. unfold Raw.split. fold Raw.split.
+    unfold split_xform. fold split_xform. generalize (cmp_leib x t2).
+    destruct (REOrderedTypeAlt.compare x t2) ; auto ; intro e ; clear e.
+    specialize (IHs1 (xcomp xinl fs)). 
+    remember (split_xform x s1 (xcomp xinl fs)) as e1.
+    destruct e1. 
+    remember (join_xform t_right0 t_right_xform0 t2 (xcomp (xcomp xinl xinr) fs)
+                         s2 (xcomp (xcomp xinr xinr) fs)) as e2.
+    destruct e2. rewrite IHs1. 
+    replace x0 with (projT1 (existT (fun rs => tree_type rs->>List_t t0) x0 x1)) ; auto.
+    rewrite Heqe2. rewrite join_xform_erase. destruct t_in0 ; auto.
+    specialize (IHs2 (xcomp (xcomp xinr xinr) fs)).
+    rewrite IHs2. destruct (split_xform x s2 (xcomp (xcomp xinr xinr) fs)).
+    remember (join_xform s1 (xcomp xinl fs) t2 (xcomp (xcomp xinl xinr) fs) t_left0
+                         t_left_xform0) as e1.
+    destruct e1. 
+    replace x0 with (projT1 (existT (fun rs => tree_type rs->>List_t t0) x0 x1)) ; auto.
+    rewrite Heqe1. rewrite join_xform_erase. destruct t_in0 ; auto.
+  Qed.    
+
+  Fixpoint union_xform_tree t (s1:Raw.tree) : (tree_type s1 ->> List_t t) -> 
+                                      forall s2:Raw.tree, tree_type s2 ->> List_t t -> 
+                                  { rs : Raw.tree & tree_type rs ->> List_t t } := 
+    match s1 return 
+          (tree_type s1 ->> List_t t) -> forall s2:Raw.tree, tree_type s2 ->> List_t t -> 
+                              { rs : Raw.tree & tree_type rs ->> List_t t }
+    with 
+      | Raw.Leaf => fun _ s2 f2 => existT _ s2 f2
+      | Raw.Node i l1 x1 r1 => 
+        fun f1 s2 f2 => 
+          match s2 return {rs:Raw.tree & tree_type rs ->> List_t t} with
+              | Raw.Leaf => existT _ (Raw.Node i l1 x1 r1) f1
+              | Raw.Node _ _ _ _ => 
+                let (l2',fl2', opt, r2',fr2') := split_xform x1 s2 f2 in 
+                let (l',fl') := union_xform_tree l1 (xcomp xinl f1) l2' fl2' in 
+                let (r',fr') := union_xform_tree r1 (xcomp (xcomp xinr xinr) f1) r2' fr2'
+                in let xf1 := xcomp (xcomp xinl xinr) f1 in
+                   let xf := match opt with 
+                               | None => xf1
+                               | Some fother => xcomp (xpair xf1 fother) xapp
+                             end in 
+                join_xform l' fl' x1 xf r' fr'
+          end
+    end.
+
+  Lemma union_xform_tree_erase t s1 : forall f1 s2 f2,
+    projT1 (@union_xform_tree t s1 f1 s2 f2) = Raw.union s1 s2.
+  Proof.
+    induction s1 ; intros ; auto. 
+    simpl. destruct s2. auto.
+    remember (split_xform t1 (Raw.Node t2 s2_1 t3 s2_2) f2) as e1.
+    destruct e1.
+    remember (Raw.split t1 (Raw.Node t2 s2_1 t3 s2_2)) as e2.
+    destruct e2.
+    match goal with 
+      | [ |- projT1 (match ?exp with | existT _ _ => _ end) = _ ] => 
+        remember exp as e3 ; destruct e3
+    end.
+    match goal with 
+      | [ |- projT1 (match ?exp with | existT _ _ => _ end) = _ ] => 
+        remember exp as e4 ; destruct e4
+    end.
+    rewrite join_xform_erase.
+    replace x with (projT1 (existT (fun rs => tree_type rs->>List_t t) x x0)) ; auto.
+    rewrite Heqe3. rewrite IHs1_1.
+    replace x1 with (projT1 (existT (fun rs => tree_type rs->>List_t t) x1 x2)) ; auto.
+    rewrite Heqe4. rewrite IHs1_2.
+    specialize (split_xform_erase t1 (Raw.Node t2 s2_1 t3 s2_2) f2).
+    intros. rewrite H in Heqe2. 
+    remember (split_xform t1 (Raw.Node t2 s2_1 t3 s2_2) f2) as e5.
+    destruct e5. 
+    injection Heqe1. intros ; subst. clear Heqe1. 
+    destruct t_in2 ; injection Heqe2 ; intros ; subst ; auto.
+  Qed.
+
+  (* should rewrite using explicit code -- hard to work with it this way... *)
+  Definition add_xform (ty:type)(x:regexp)(fx:regexp_type x->>List_t ty)
+             (rs:rs_xf_pair (List_t ty)) : rs_xf_pair (List_t ty).
+    destruct rs as [s fs].
+    destruct s as [t ok].
+    remember (add_xform_tree x fx t fs) as p.
+    destruct p as [t' ft'].
+    assert (Raw.Ok t').
+    replace t' with (projT1 (existT (fun rs => tree_type rs ->> List_t ty) t' ft')).
+    rewrite Heqp. rewrite add_xform_tree_erase.
+    apply (Raw.add_ok _ ok). auto.
+    remember ({|this := t' ; is_ok := H|}) as s'.
+    eapply (existT (fun rs => re_set_type rs ->> List_t ty) s').
+    rewrite Heqs'. apply ft'.
+  Defined.
+
+  Lemma add_xform_erase ty x fx rs : 
+    projT1 (@add_xform ty x fx rs) = add x (projT1 rs).
+  Proof.
+    unfold add_xform.
+    destruct rs as [s fs].
+    destruct s as [t ok].
+    generalize (eq_ind_r (fun s => Raw.Ok (projT1 s))
+                         (eq_ind_r (fun t0 => Raw.Ok t0)
+                                   (Raw.add_ok x ok)
+                                   (add_xform_tree_erase t x fx fs))).
+    remember (add_xform_tree x fx t fs) as p.
+    destruct p as [t' ft'].
+    unfold add. simpl.
+    intros.
+    generalize (o (existT (fun rs => tree_type rs ->> List_t ty) t' ft') eq_refl).
+    simpl. 
+    replace (t') 
+    with (projT1 (existT (fun rs => tree_type rs ->> List_t ty) t' ft')) ; auto.
+    rewrite Heqp. rewrite add_xform_tree_erase. intros.
+    rewrite (proof_irrelevance _ o0 (Raw.add_ok x ok)). auto.
+  Qed.
+
+  Definition union_xform (ty:type) (rs1 rs2 : rs_xf_pair (List_t ty)) : 
+    rs_xf_pair (List_t ty).
+    destruct rs1 as [s1 f1].
+    destruct rs2 as [s2 f2].
+    destruct s1 as [t1 okt1].
+    destruct s2 as [t2 okt2].
+    remember (union_xform_tree t1 f1 t2 f2) as p.
+    destruct p as [t0 f0].
+    assert (H: Raw.Ok t0).
+    replace t0 with (projT1 (existT (fun rs => tree_type rs ->> List_t ty) t0 f0)) ; auto.
+    rewrite Heqp. rewrite union_xform_tree_erase.
+    apply (Raw.union_ok okt1 okt2).
+    remember ({|this := t0 ; is_ok := H|}) as s'.
+    apply (existT (fun rs => re_set_type rs ->> List_t ty) s').
+    rewrite Heqs'.
+    apply f0.
+  Defined.
+
+  Lemma union_xform_erase ty rs1 rs2 : 
+    projT1 (@union_xform ty rs1 rs2) = union (projT1 rs1) (projT1 rs2).
+  Proof.
+    unfold union_xform. 
+    destruct rs1 as [s1 f1].
+    destruct rs2 as [s2 f2].
+    destruct s1 as [t1 okt1].
+    destruct s2 as [t2 okt2]. simpl.
+    generalize (eq_ind_r (fun s => 
+                            Raw.Ok (projT1 s))
+                         (eq_ind_r (fun t3 => Raw.Ok t3)
+                                   (Raw.union_ok okt1 okt2)
+                                   (union_xform_tree_erase t1 f1 t2 f2))).
+    remember (union_xform_tree t1 f1 t2 f2) as p.
+    destruct p. simpl. 
+    unfold union. simpl. intro.
+    generalize (o (existT (fun rs => tree_type rs ->> List_t ty) x x0) eq_refl).
+    clear o. simpl. 
+    replace (x) with (projT1 (existT (fun rs => tree_type rs ->> List_t ty) x x0)) ; auto.
+    rewrite Heqp. rewrite union_xform_tree_erase. intros.
+    rewrite (proof_irrelevance _ o (Raw.union_ok okt1 okt2)). auto.
+  Qed.
+
+  (* An iterator for the trees -- extracts the elements and the appropriate
+     transform.  Don't need this now, but I've left it in. *)
   Section ITER_TREE.
     Parameter T : type.
     Parameter A : Type.
