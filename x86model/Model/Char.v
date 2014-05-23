@@ -7,11 +7,13 @@ Definition char_cmp (c1 c2:char_t) : comparison :=
     | true, false => Gt
     | _, _ => Eq
   end.
+
 Lemma char_eq_leibniz : 
   forall c1 c2, char_cmp c1 c2 = Eq -> c1 = c2.
 Proof.
   destruct c1 ; destruct c2 ; intros  ; auto ; discriminate.
 Qed.
+
 Require Import Coq.Structures.OrdersAlt.
 Module CharOrderedTypeAlt <: OrderedTypeAlt.
   Definition t : Type := char_t.
@@ -30,7 +32,13 @@ Module CharOrderedTypeAlt <: OrderedTypeAlt.
 End CharOrderedTypeAlt.
 
 Module CharOrderedType := OT_from_Alt CharOrderedTypeAlt.
-                         
+
+Definition char_eq_dec : forall c1 c2 : char_t, {c1 = c2} + {c1 <> c2}.
+  intros. destruct (CharOrderedType.eq_dec c1 c2).
+    left. apply char_eq_leibniz in e. trivial.
+    right. contradict n. subst c2. apply CharOrderedType.eq_equiv.
+Defined.    
+
 Require Import String.
 Open Scope string_scope.
 Definition show_char (c:char_t) : string := 

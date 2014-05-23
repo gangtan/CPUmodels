@@ -323,7 +323,7 @@ Qed.
      inl o (char c) = char c
      inl o unit = unit
      inl o empty = empty
-     inl o (match f1 f2) = f o f1 
+     inl o (match f1 f2) = f1 
 *)
 Definition xcomp_inl t21 t22 (x2:t21 ->> t22) : 
   forall ta tb, (Sum_t ta tb = t21) -> ta ->> t22 :=
@@ -348,11 +348,11 @@ Proof.
   rewrite (proof_irrelevance _ H (eq_refl _)). auto.
 Qed.
 
-(**  (inr f) o id = inr f
-     (inr f) o (char c) = char c
-     (inr f) o unit = unit
-     (inr f) o empty = empty
-     (inr f) o (match f1 f2) = f o f2
+(**  inr o id = inr f
+     inr o (char c) = char c
+     inr o unit = unit
+     inr o empty = empty
+     inr o (match f1 f2) = f2
 *)
 Definition xcomp_inr t21 t22 (x2:t21 ->> t22) : 
   forall ta tb, (Sum_t ta tb = t21) -> tb ->> t22 :=

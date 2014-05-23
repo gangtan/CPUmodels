@@ -1,14 +1,14 @@
 Require Import List.
-Require Import Char.
+Require Export Char.
 Require Import Xform.
 Require Import CommonTacs.
 Require Import Structures.OrdersAlt.
 
 Inductive regexp : Set := 
-| Any : regexp
 | Eps : regexp
 | Zero : regexp
 | Char : char_t -> regexp
+| Any : regexp
 | Cat : regexp -> regexp -> regexp
 | Alt : regexp -> regexp -> regexp
 | Star : regexp -> regexp.
