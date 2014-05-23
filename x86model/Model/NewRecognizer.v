@@ -31,28 +31,6 @@ Local Ltac false_elim :=
     | [H:False |- _] => destruct H
   end.
 
-  (* todo: move somewhere else *)
-  Lemma nth_error_some_lt A n : 
-    forall s (r:A), nth_error s n = Some r -> n < length s.
-    induction n; simpl ; destruct s ; simpl ; intros ; try discriminate.
-    injection H. intros ; subst. auto with arith. 
-      specialize (IHn _ _ H).
-      auto with arith.
-  Qed.
-
-  Lemma nth_error_lt_app A n: forall (xs ys:list A), n < length xs -> 
-    nth_error (xs ++ ys) n = nth_error xs n.
-  Proof.
-    induction n ; destruct xs ; simpl ; intros ; 
-      try (assert False ; [ omega | contradiction ]). auto. apply IHn. omega.
-  Qed.
-
-  Lemma nth_error_none A (s:list A): 
-    forall n, nth_error s n = None -> n >= length s.
-  Proof.
-    induction s ; destruct n ; simpl ; intros ; auto with arith. discriminate.
-    specialize (IHs _ H). omega.
-  Qed.
 
 (** In this section, we build a table-driven DFA recognizer for a [grammar].  
     This is very similar to the table-driven parser we build in Parser.v 
@@ -929,7 +907,7 @@ Module RESetSet.
     elements_ext s1 s2 -> n < cardinal s1
       -> get_element n s2 = get_element n s1.
   Proof. unfold elements_ext, get_element. intros. sim.
-    rewrite H. generalize nth_error_lt_app. crush.
+    rewrite H. generalize nth_error_app_lt. crush.
   Qed. 
 
   Lemma get_element_add: forall n s e1 e,
@@ -997,14 +975,14 @@ Module RESetSet.
         apply get_index_spec; unfold Coqlib.first_occur.
         rewrite H. rewrite Coqlib.firstn_eq_lt by trivial.
         split; [crush | idtac].
-          exists x. rewrite nth_error_lt_app by trivial. crush.
+          exists x. rewrite nth_error_app_lt by trivial. crush.
       SCase "<-".
         sim. apply get_index_spec in H1. apply get_index_spec.
         unfold Coqlib.first_occur in *.
         sim. 
           erewrite <- Coqlib.firstn_eq_lt by trivial.
             rewrite H in H1. eassumption.
-          exists x. erewrite <- nth_error_lt_app by trivial.
+          exists x. erewrite <- nth_error_app_lt by trivial.
             rewrite H in H2. crush.
   Qed.
 
@@ -1564,7 +1542,7 @@ Section DFA.
     destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H4)); sim.
     Case "i<n".
       rewrite (get_element_wfs_ext H6) by omega.
-      rewrite nth_error_lt_app by omega.
+      rewrite nth_error_app_lt by omega.
       use_lemma H1 by eassumption.
       remember_destruct_head as ge; [idtac | crush].
       remember_destruct_head as ne; [idtac | crush].

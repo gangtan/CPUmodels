@@ -630,6 +630,35 @@ Proof.
 Qed.
 Hint Resolve nth_error_nil: coqlib.
 
+Lemma nth_error_some_lt A n : 
+  forall s (r:A), nth_error s n = Some r -> n < length s.
+  induction n; simpl ; destruct s ; simpl ; intros ; try discriminate.
+  injection H. intros ; subst. auto with arith. 
+    specialize (IHn _ _ H).
+    auto with arith.
+Qed.
+
+Lemma nth_error_none A (s:list A): 
+  forall n, nth_error s n = None -> n >= length s.
+Proof.
+  induction s ; destruct n ; simpl ; intros ; auto with arith. discriminate.
+  specialize (IHs _ H). omega.
+Qed.
+
+Lemma nth_error_lt A n: 
+  forall (xs:list A), n < length xs -> exists r, nth_error xs n = Some r.
+Proof.
+    induction n ; simpl; intros. destruct xs. assert False. simpl in *. omega. 
+    contradiction. exists a. auto. destruct xs. simpl in H. assert False. omega.
+    contradiction. simpl in H. eapply IHn. omega.
+Qed.
+
+Lemma nth_error_gt A n :
+  forall (xs:list A), n >= length xs -> nth_error xs n = None.
+  induction n ; simpl ; intros ; destruct xs ; simpl in * ; auto.
+  assert False. omega. contradiction. apply IHn. omega.
+Qed.
+
 Lemma nth_error_app_gt: forall A n (xs ys:list A), n >= length xs -> 
   nth_error (xs ++ ys) n = nth_error ys (n - (length xs)).
 Proof.
@@ -642,8 +671,14 @@ Lemma nth_error_app_eq: forall A n (xs ys:list A), n = length xs ->
 Proof. intros. rewrite nth_error_app_gt by omega.
   subst n. rewrite minus_diag. trivial.
 Qed.
-
 Hint Rewrite nth_error_app_eq using omega: coqlib.
+
+Lemma nth_error_app_lt A n: forall (xs ys:list A), n < length xs -> 
+  nth_error (xs ++ ys) n = nth_error xs n.
+Proof.
+  induction n ; destruct xs ; simpl ; intros ; 
+    try (assert False ; [ omega | contradiction ]). auto. apply IHn. omega.
+Qed.
 
 Lemma nth_error_some_nth A: forall (l: list A) n (x y:A),
   nth_error l n = Some x -> nth n l y = x.
@@ -652,6 +687,7 @@ Proof. induction l.
   intros. destruct n; simpl in *. inversion H. trivial.
     auto.
 Qed.
+
 
 (** Properties of [List.incl] (list inclusion). *)
 

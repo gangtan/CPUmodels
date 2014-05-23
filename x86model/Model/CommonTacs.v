@@ -9,10 +9,6 @@
    the License, or (at your option) any later version.
 *)
 
-(* GTan: This is a new version of Tacs.v. But some older files under the
-   RockSalt directory depend on the older version, which is why I opened
-   a new file; should do some migration at some point *)
-
 Require Import Bool.
 Require Import ZArith.
 Require Import Eqdep List.
