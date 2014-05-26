@@ -51,8 +51,8 @@ Module Type RESetXform.
           let (rs1, f1) := pdrv (a, r1) in
             cat_re_xform (rs1, f1) r2
   *)
-  Parameter cat_re_xform: forall ty,
-    rs_xf_pair ty -> forall r:regexp, rs_xf_pair (Pair_t ty (regexp_type r)).
+  (* Parameter cat_re_xform: forall ty, *)
+  (*   rs_xf_pair ty -> forall r:regexp, rs_xf_pair (Pair_t ty (regexp_type r)). *)
   (* can also state a erasure lemma, need to bring the set_cat_re definition,
      which is in NewRecognizer.v *)
 
