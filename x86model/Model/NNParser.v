@@ -9,19 +9,22 @@
    the License, or (at your option) any later version.
 *)
 
+(** In this section, we build a table-driven DFA parser for a [grammar]. *)
+
 Require Import Coq.Program.Equality.
-Require Import Coq.Init.Logic.
+Require Import Coq.Classes.Morphisms.
+(* Require Import Coq.Init.Logic. *)
 Require Import List.
 Require Import Arith.
 Require Import Bool.
 Require Import MSetsMore.
 Require Import Eqdep.
-(* Require Import PArith. *)
 Require Import ZArith.
 
 Require Import Regexp.
 Require Import ParserArg.
 Import X86_PARSER_ARG.
+Require Import Xform.
 
 Require Import CommonTacs.
 Set Implicit Arguments.
@@ -31,43 +34,19 @@ Local Ltac false_elim :=
     | [H:False |- _] => destruct H
   end.
 
-(** In this section, we build a table-driven DFA recognizer for a [grammar].  
-    This is very similar to the table-driven parser we build in Parser.v 
-    except we don't need any semantic actions.  In essence, we just translate
-    the grammar to an [astgram] (and throw away the semantic action function),
-    then build a DFA structure very similar to, but much simpler than, the 
-    DFA structure constructed in Parser.v.  In particular, what we build is:
-        - A list of states which are really derivatives of the original astgram.
-          The position of the astgram determines an identity (i.e., index) for the 
-          state.  The initial astgram is always at position 0.  
-        - A transition table as a list of list of nats.  If [T(i,j) = k], then 
-          this says that in state [i], if we see an input list of characters 
-          corresponding to the [token_id] [j], then we can transition to state [k].
-          Obviously, [i] and [k] should be indexes of astgrams in the
-          list of [states].  Furthermore, it should be that [states(k)] is the
-          derivative of [states(i)] with respect to the token_id [j].
-        - An accept table as a list of booleans.  [dfa_accepts(i) = true] iff 
-          [states(i)] accepts the empty string.
-        - A reject table as a list of booleans.  [dfa_rejects(i) = true] iff
-          [states(i)] rejects all strings.
+Local Hint Resolve in_map in_prod in_or_app.
 
-    It may be worth rewriting this to use the table construction (and proofs) 
-    we already have in Parser.v.  For instance, we could take the Parser DFA
-    structure and erase the stuff we don't need.  But it was simpler for now
-    to just take the old code and adapt it to the new environment.  
-*)
-
-Require Import Coq.Structures.OrdersAlt.
-Require Import Coq.MSets.MSetAVL.
-Require Import Coq.MSets.MSetProperties.
+(* Require Import Coq.Structures.OrdersAlt. *)
+(* Require Import Coq.MSets.MSetAVL. *)
+(* Require Import Coq.MSets.MSetProperties. *)
 (* Require Import Coq.MSets.MSetFacts. *)
 
 (* todo: move to regexp ??? *)
-Lemma InA_regexp_eq_In: 
-  forall x l, InA REOrderedType.eq x l -> In x l.
-Proof. intros. apply InA_alt in H. 
-  sim. apply compare_re_eq_leibniz in H. congruence.
-Qed.
+(* Lemma InA_regexp_eq_In:  *)
+(*   forall x l, InA REOrderedType.eq x l -> In x l. *)
+(* Proof. intros. apply InA_alt in H.  *)
+(*   sim. apply compare_re_eq_leibniz in H. congruence. *)
+(* Qed. *)
 
 (** * Define [RESet], a set of regexps *)
 Require Import RESet.
@@ -77,6 +56,11 @@ Module RES := RESet.RESETXFORM.
 (* Module RESet := MSetAVL.Make REOrderedType. *)
 Module RESF := MapSet RES.
 Module RESP := MSetProperties.Properties RES.
+
+
+(** ** Abbreviations and definitions for [RESet] *)
+
+Definition rx_pair := RES.rs_xf_pair.
 
 Local Ltac re_set_simpl :=
   repeat 
@@ -115,12 +99,6 @@ Qed.
 Definition re_set_build_map (f: regexp -> regexp) : RESF.proper_map :=
   exist _ f (re_set_map_proper f).
 
-(** * The notion of prebase of a regexp and partial-derivative sets.
-
-  The relation between prebases and partial derivative sets are in the
-  paper "From Mirkin's prebases to Antimirov's Word Partial Derivatives"
-  by Champarnaud and Ziadi.  *)
-
 (** Concat regexp r to the right of every regexp in a regexp set *)
 Definition set_cat_re (s:RES.t) (r:regexp): RES.t := 
   match r with
@@ -129,6 +107,145 @@ Definition set_cat_re (s:RES.t) (r:regexp): RES.t :=
     | _ => RESF.map (re_set_build_map (fun r1 => Cat r1 r)) s
   end.
 Notation "s $ r" := (set_cat_re s r) (at level 60, no associativity).
+
+(**************************************************************************)
+(* Some assumed axioms; these should be later proved in other files *)
+
+Axiom in_re_set: 
+  forall s:RES.t, list char_t -> interp (RES.re_set_type s) -> Prop.
+
+Lemma in_re_set_empty : forall s v, not (in_re_set RES.empty s v).
+Admitted.
+
+Definition in_re_set_xform
+           t (rx:RES.rs_xf_pair (List_t t)) s (v:interp t) := 
+  let (rs, f) := rx in
+  exists v', in_re_set rs s v' /\ In v (xinterp f v').
+
+Definition singleton_xform (r:regexp) : RES.rs_xf_pair (List_t (regexp_type r)) :=
+  existT _ (RES.singleton r) 
+    (xcons (xmatch xzero (xmatch xid xzero)) xempty).
+
+Lemma singleton_xform_erase: forall r, 
+  projT1 (@singleton_xform r) = (RES.singleton r).
+Admitted.
+
+Lemma singleton_xform_corr: forall r s v,
+  in_re_set_xform (singleton_xform r) s v <-> in_regexp r s v.
+Admitted.
+
+Axiom cat_re_xform: forall ty,
+  RES.rs_xf_pair (List_t ty) -> 
+  forall r:regexp, RES.rs_xf_pair (List_t (Pair_t ty (regexp_type r))).
+
+Lemma cat_re_xform_erase: forall t rx1 r,
+  projT1 (@cat_re_xform t rx1 r) = set_cat_re (projT1 rx1) r.
+Admitted.
+
+Lemma cat_re_xform_corr: forall t (rx:RES.rs_xf_pair (List_t t)) r s v,
+  in_re_set_xform (cat_re_xform rx r) s v <->
+  exists s1 s2 v1 v2, s = s1++s2 /\ v=(v1,v2) /\
+    in_re_set_xform rx s1 v1 /\ in_regexp r s2 v2.
+Admitted.
+
+Lemma empty_xform_corr: forall t s v,
+   ~ in_re_set_xform (RES.empty_xform (List_t t)) s v.
+Admitted.
+
+Lemma union_xform_corr: forall t (rx1 rx2: RES.rs_xf_pair (List_t t)) s v,
+  in_re_set_xform (RES.union_xform rx1 rx2) s v
+  <-> in_re_set_xform rx1 s v \/ in_re_set_xform rx2 s v.
+Admitted.
+  
+(* Definition xmatchlist {t1 t2}: *)
+(*   (Unit_t ->> t2) -> (Pair_t t1 (List_t t1) ->> t2) -> (List_t t1 ->> t2) :=  *)
+
+Lemma xcross_corr {t1 t2} (vs: interp (Pair_t (List_t t1) (List_t t2))):
+  xinterp xcross vs = List.list_prod (fst vs) (snd vs).
+Admitted.
+
+Opaque RES.union_xform RES.singleton_xform singleton_xform.
+Opaque xcross xmap xapp xcomp.
+
+Ltac xinterp_simpl :=
+  repeat match goal with
+    | [|- context[xcomp ?X1 ?X2]] => rewrite (xcomp_corr X1 X2); simpl
+    | [H:context[xcomp ?X1 ?X2] |- _] => 
+      rewrite (xcomp_corr X1 X2) in H; simpl in H
+    | [|- context[xinterp (xpair _ _) _]] => rewrite xpair_corr; simpl
+    | [H:context[xinterp (xpair _ _) _] |- _] => 
+      rewrite xpair_corr in H; simpl in H
+    | [|- context[xinterp xcross _]] => rewrite xcross_corr; simpl
+    | [H:context[xinterp xcross _] |- _] => 
+      rewrite xcross_corr in H; simpl in H
+    | [|- context [xinterp xapp (_,_)]] => rewrite xapp_corr; simpl
+    | [H:context [xinterp xapp (_,_)] |- _] => 
+      rewrite xapp_corr in H; simpl in H
+    | [|- context [xinterp (xmap _) ?V]] => 
+      rewrite (@xmap_corr _ _ _ V); simpl
+    | [H:context [xinterp (xmap _) ?V] |- _] => 
+      rewrite (@xmap_corr _ _ _ V) in H; simpl in H
+  end.
+
+Lemma in_re_set_xform_intro: forall t (rx:RES.rs_xf_pair (List_t t)) s v v',
+  in_re_set (projT1 rx) s v' -> In v (xinterp (projT2 rx) v') -> 
+    in_re_set_xform rx s v.
+Proof. intros. unfold in_re_set_xform. destruct rx as [rs f].  
+       exists v'; crush.
+Qed.
+
+Lemma in_re_set_xform_intro2: 
+  forall t rs (f:RES.re_set_type rs ->> (List_t t)) s v v',
+  in_re_set rs s v' -> In v (xinterp f v') -> 
+    in_re_set_xform (existT _ rs f) s v.
+Proof.  generalize in_re_set_xform_intro; crush. Qed.
+
+Lemma in_re_set_xform_elim: forall t (rx:RES.rs_xf_pair (List_t t)) s v,
+  in_re_set_xform rx s v -> 
+    exists v', in_re_set (projT1 rx) s v' /\ In v (xinterp (projT2 rx) v').
+Proof. unfold in_re_set_xform; intros. destruct rx as [rs f]. crush. Qed.
+
+Lemma in_re_set_xform_elim2: 
+  forall t rs (f: RES.re_set_type rs ->> (List_t t)) s v,
+  in_re_set_xform (existT _ rs f) s v -> 
+    exists v', in_re_set rs s v' /\ In v (xinterp f v').
+Proof. intros. generalize in_re_set_xform_elim. crush. Qed.
+
+Lemma in_re_set_xform_comp: 
+  forall t1 t2 (rx:RES.rs_xf_pair (List_t t1)) s (g:t1 ->> t2) v' rs f,
+  rx = existT _ rs f ->
+  (in_re_set_xform (existT _ rs (xcomp f (xmap g))) s v' <->
+   exists v,  in_re_set_xform rx s v /\ v' = xinterp g v).
+Proof. intros. 
+  split; intros.
+  Case "->".
+    apply in_re_set_xform_elim2 in H0. 
+    destruct H0 as [v1 H0]. 
+    xinterp_simpl. sim. 
+    apply Coqlib.list_in_map_inv in H1. crush.
+  Case "<-". destruct H0 as [v H0]. sim.
+    subst rx.
+    apply in_re_set_xform_elim2 in H0.
+    destruct H0 as [v1 H0]. 
+    exists v1; crush.
+    xinterp_simpl. crush. 
+Qed.
+
+Lemma in_re_set_xform_comp2: 
+  forall t1 t2 (rx:RES.rs_xf_pair (List_t t1)) s (g:t1 ->> t2) v',
+  in_re_set_xform (let (rs, f) := rx in existT _ rs (xcomp f (xmap g))) s v' <->
+  exists v,  in_re_set_xform rx s v /\ v' = xinterp g v.
+Proof. intros. destruct rx as [rs f]. apply in_re_set_xform_comp. trivial. Qed.
+
+
+(* End of assumed axioms *)
+(**************************************************************************)
+
+(** * The notion of prebase of a regexp and partial-derivative sets.
+
+  The relation between prebases and partial derivative sets are in the
+  paper "From Mirkin's prebases to Antimirov's Word Partial Derivatives"
+  by Champarnaud and Ziadi.  *)
 
 (** Prebase of a regexp:
     prebase(zero) = {} 
@@ -300,19 +417,10 @@ Qed.
     Partial derivatives are introduced in "Partial derivatives of regular
     expressions and finite automata construction" by Antimirov. *)
 
-(** Nullable (r) returns true iff r can match the empty string *)
-Fixpoint nullable (r:regexp) : bool := 
-  match r with
-    | Zero | Char _ | Any => false
-    | Eps => true
-    | Cat r1 r2 => nullable r1 && nullable r2
-    | Alt r1 r2 => nullable r1 || nullable r2
-    | Star r1 => true
-  end.
-
+(* todo: revise the following *)
 (** reset_nullable(rs) is true iff one of the regexp in rs is nullable *)
-Definition reset_nullable (rs:RES.t): bool :=
-  RES.exists_ nullable rs.
+(* Definition reset_nullable (rs:RES.t): bool := *)
+(*   RES.exists_ nullable rs. *)
 
 Fixpoint always_rejects (g:regexp) : bool := 
   match g with 
@@ -329,88 +437,13 @@ Fixpoint always_rejects (g:regexp) : bool :=
 Definition reset_always_rejects (rs:RES.t): bool :=
   RES.for_all always_rejects rs.
 
-(* todo: add opt_ag as in Parser.v *)
-
-(* todo: organize the following *)
-Definition rx_pair := RES.rs_xf_pair.
-Require Import Xform.
-
-Axiom in_re_set: 
-  forall s:RES.t, list char_t -> interp (RES.re_set_type s) -> Prop.
-
-Definition in_re_set_xform
-           t (rx:RES.rs_xf_pair (List_t t)) s (v:interp t) := 
-  let (rs, f) := rx in
-  exists v', in_re_set rs s v' /\ In v (xinterp f v').
-
-Definition singleton_xform (r:regexp) : RES.rs_xf_pair (List_t (regexp_type r)) :=
-  existT _ (RES.singleton r) 
-    (xcons (xmatch xzero (xmatch xid xzero)) xempty).
-
-Lemma singleton_xform_erase: forall r, 
-  projT1 (@singleton_xform r) = (RES.singleton r).
-Admitted.
-
-Lemma singleton_xform_corr: forall r s v,
-  in_re_set_xform (singleton_xform r) s v <-> in_regexp r s v.
-Admitted.
-
-Axiom cat_re_xform: forall ty,
-  rx_pair (List_t ty) -> 
-  forall r:regexp, rx_pair (List_t (Pair_t ty (regexp_type r))).
-
-Lemma cat_re_xform_erase: forall t rx1 r,
-  projT1 (@cat_re_xform t rx1 r) = set_cat_re (projT1 rx1) r.
-Admitted.
-
-Lemma cat_re_xform_corr: forall t (rx:RES.rs_xf_pair (List_t t)) r s v,
-  in_re_set_xform (cat_re_xform rx r) s v <->
-  exists s1 s2 v1 v2, s = s1++s2 /\ v=(v1,v2) /\
-    in_re_set_xform rx s1 v1 /\ in_regexp r s2 v2.
-Admitted.
-
-Lemma empty_xform_corr: forall t s v,
-   ~ in_re_set_xform (RES.empty_xform (List_t t)) s v.
-Admitted.
-
-Lemma union_xform_corr: forall t (rx1 rx2: RES.rs_xf_pair (List_t t)) s v,
-  in_re_set_xform (RES.union_xform rx1 rx2) s v
-  <-> in_re_set_xform rx1 s v \/ in_re_set_xform rx2 s v.
-Admitted.
-  
-(* Definition xmatchlist {t1 t2}: *)
-(*   (Unit_t ->> t2) -> (Pair_t t1 (List_t t1) ->> t2) -> (List_t t1 ->> t2) :=  *)
-
-Lemma xcross_corr {t1 t2} (vs: interp (Pair_t (List_t t1) (List_t t2))):
-  xinterp xcross vs = List.list_prod (fst vs) (snd vs).
-Admitted.
-(* Proof. unfold xcross. rewrite xopt_corr. rewrite xcomp_corr. *)
-(*   destruct vs. simpl. fold interp. simpl. *)
-
-(* Proof. unfold xcross. rewrite xopt_corr. rewrite xcomp_corr. *)
-(*   compute [xinterp]. *)
-(*   rewrite xflatten_corr. fold interp. *)
-(*   rewrite xmapenv_corr. *)
-(*   compute [xinterp]. fold interp. *)
-(*   destruct vs. simpl. *)
-
-(* Lemma xmapenv_corr {t1 t2 t3} (f:Pair_t t1 t2->>t3) v :  *)
-(*   xinterp (xmapenv f) v = List.map (fun x => xinterp f (fst v,x)) (snd v). *)
-
-(* in_combine_l: *)
-(*   forall (A B : Type) (l : list A) (l' : list B) (x : A) (y : B), *)
-(*   In (x, y) (combine l l') -> In x l *)
-(* in_combine_r: *)
-(*   forall (A B : Type) (l : list A) (l' : list B) (x : A) (y : B), *)
-(*   In (x, y) (combine l l') -> In y l' *)
-
-Local Hint Resolve in_map.
-
-
+(* todo: add calls to opt_ag to nullable_xform and pdrv_xform as in Parser.v *)
 
 Definition bool_type (b:bool) := 
   match b with true => Unit_t | false => Void_t end.
 
+(** nullable (r) returns (true, f) iff r can match the empty string and 
+    f returns all values that are the results of parsing the empty string. *)
 Fixpoint nullable_xform (r:regexp) : 
   {b:bool & bool_type b ->> List_t (regexp_type r)} :=
   match r return {b:bool & bool_type b ->> List_t (regexp_type r)} with
@@ -437,9 +470,9 @@ Fixpoint nullable_xform (r:regexp) :
     | Star r1 => existT _ true (xcons xempty xempty)
   end.
 
-(** Partial derivatives of a regular grammar w.r.t. a char.  The following
+(** Partial derivatives of a regular grammar w.r.t. a char. The following
   equations are for the case of a regexps.  For regular grammars, we also
-  need to add xforms to get the correct parser results.
+  need to add xforms to get the list of parsing results.
 
   pdrv(a, void) = pdrv(a, epsilon) = {}
   pdrv(a, b) = if a=b then {epsilon} else {}
@@ -456,12 +489,10 @@ Fixpoint pdrv_xform (a:char_t) (r:regexp): rx_pair (List_t (regexp_type r)) :=
       if char_eq_dec a b then
         let (rs,f) := singleton_xform Eps in
           existT _ rs (xcomp f (xmap (xchar a)))
-          (* existT _ rs (xcons (xcomp f (xchar a)) xempty) *)
       else @RES.empty_xform _
     | Any => 
       let (rs,f) := singleton_xform Eps in
           existT _ rs (xcomp f (xmap (xchar a)))
-        (* existT _ rs (xcons (xcomp f (xchar a)) xempty) *)
     | Alt r1 r2 => 
       let (rs1, f1) := pdrv_xform a r1 in
       let (rs2, f2) := pdrv_xform a r2 in
@@ -474,181 +505,13 @@ Fixpoint pdrv_xform (a:char_t) (r:regexp): rx_pair (List_t (regexp_type r)) :=
           let (rs2, f2) := pdrv_xform a r2 in
           RES.union_xform rxc
             (existT _ rs2 (xcomp f2 (xcomp (xpair (xcomp xunit fnull) xid) xcross)))
-            (* (existT _ rs2 (xcomp (xpair (xcomp xunit fnull) f2) xcross)) *)
         | existT false _ => rxc
       end
-
     | Star r1 => 
       let (rsc, fc) := cat_re_xform (pdrv_xform a r1) (Star r1) in
         existT _ rsc (xcomp fc (xmap (xcons xfst xsnd)))
-        (* existT _ rsc (xcomp fc (xcons xfst xsnd)) *)
   end.
 
-
-(* todo: move the following to regexp.v *)
-
-(** Inversion principles for [regexp]s. *)
-Lemma inv_eps : forall s v, in_regexp Eps s v -> s = nil /\ v = tt.
-Proof. intros. inversion H. crush. Qed.
-
-Lemma inv_zero : forall s v, in_regexp Zero s v -> False.
-Proof. intros. inversion H. Qed.
-
-Lemma inv_char : forall c s v, in_regexp (Char c) s v -> s = c::nil /\ v = c.
-Proof.  intros. inversion H. subst. crush. Qed.
-
-Lemma inv_any : forall s v, in_regexp Any s v -> s = v::nil.
-Proof.  intros. inversion H. crush. Qed.
-
-Lemma inv_cat : forall r1 r2 s v, in_regexp (Cat r1 r2) s v -> 
-  exists s1, exists s2, exists v1, exists v2, 
-    in_regexp r1 s1 v1 /\ in_regexp r2 s2 v2 /\ s = s1++s2 /\ v = (v1,v2).
-Proof.
-  intros ; inversion H ; subst ; crush. exists s1. exists s2. exists v1. exists v2.
-  auto.
-Qed.
-
-Lemma inv_cat_nil : forall r1 r2 v, in_regexp (Cat r1 r2) nil v -> 
-  exists v1, exists v2, in_regexp r1 nil v1 /\ in_regexp r2 nil v2 /\ v = (v1,v2).
-Proof. intros. apply inv_cat in H.
-  destruct H as [s1 [s2 [v1 [v2 H1]]]].
-  sim. exists v1, v2.
-  symmetry in H1. apply app_eq_nil in H1.
-  crush.
-Qed.
-
-Lemma inv_alt : forall r1 r2 s v, in_regexp (Alt r1 r2) s v -> 
-  (exists v1, in_regexp r1 s v1 /\ v = inl _ v1) \/
-  (exists v2, in_regexp r2 s v2 /\ v = inr _ v2) .
-Proof. intros ; inversion H ; subst ; crush. Qed.
-
-Lemma inv_star: forall r s v, in_regexp (Star r) s v -> 
-  (s = nil /\ v = nil) \/
-  (exists s1 s2 v1 v2, 
-     in_regexp r s1 v1 /\ in_regexp (Star r) s2 v2 /\
-     s1 <> nil /\ s = s1++s2 /\ v=v1::v2).
-Proof. intros. inversion H; try crush. 
-  right. exists s1, s2, v1, v2. crush.
-Qed.
-
-Lemma inv_star_nil: forall r v, in_regexp (Star r) nil v -> v = nil.
-Proof. intros. apply inv_star in H.
-  destruct H. crush.
-  sim. destruct x; crush.
-Qed.
-
-
-(** Inversion tactic for [regexp]. *)
-Ltac in_regexp_inv := 
-  match goal with 
-    | [ H: in_regexp Zero _ _ |- _ ] => contradiction (inv_zero H)
-    | [ H : in_regexp Eps _ _ |- _ ] => 
-      generalize (inv_eps H) ; clear H ; crush
-    | [ H : in_regexp (Char _) _ _ |- _] => 
-      generalize (inv_char H) ; clear H ; crush
-    | [ H : in_regexp Any _ _ |- _] => 
-      generalize (inv_any H) ; clear H ; crush
-    | [ H : in_regexp (Cat _ _) nil _ |- _] => 
-      generalize (inv_cat_nil H) ; clear H ; crush
-    | [ H : in_regexp (Cat _ _) _ _ |- _] => 
-      generalize (inv_cat H) ; clear H ; crush
-    | [ H : in_regexp (Alt _ _) _ _ |- _] => 
-      generalize (inv_alt H) ; clear H ;  crush
-    | [ H : in_regexp (Star _) nil _ |- _] => 
-      generalize (inv_star_nil H) ; clear H ;  crush
-    | [ H : in_regexp (Star _) _ _ |- _] => 
-      generalize (inv_star H) ; clear H ;  crush
-    (* | [ H : match split_regexp ?g with | existT _ _ => _ end |- _ ] =>  *)
-    (*   let p := fresh "p" in *)
-    (*     remember (split_regexp g) as p ; destruct p ; simpl in * *)
-  end.
-
-Opaque xcross xmap xapp xcomp.
-Ltac xinterp_simpl :=
-  repeat match goal with
-    | [|- context[xcomp ?X1 ?X2]] => rewrite (xcomp_corr X1 X2); simpl
-    | [H:context[xcomp ?X1 ?X2] |- _] => 
-      rewrite (xcomp_corr X1 X2) in H; simpl in H
-    | [|- context[xinterp (xpair _ _) _]] => rewrite xpair_corr; simpl
-    | [H:context[xinterp (xpair _ _) _] |- _] => 
-      rewrite xpair_corr in H; simpl in H
-    | [|- context[xinterp xcross _]] => rewrite xcross_corr; simpl
-    | [H:context[xinterp xcross _] |- _] => 
-      rewrite xcross_corr in H; simpl in H
-    | [|- context [xinterp xapp (_,_)]] => rewrite xapp_corr; simpl
-    | [H:context [xinterp xapp (_,_)] |- _] => 
-      rewrite xapp_corr in H; simpl in H
-    | [|- context [xinterp (xmap _) ?V]] => 
-      rewrite (@xmap_corr _ _ _ V); simpl
-    | [H:context [xinterp (xmap _) ?V] |- _] => 
-      rewrite (@xmap_corr _ _ _ V) in H; simpl in H
-  end.
-
-Local Ltac findcontra :=
-  match goal with 
-    | [H1: forall v, ~ in_regexp ?R ?S v, H: in_regexp ?R ?S ?V |- _] => 
-      contradict H; crush
-  end.
-
-Local Hint Resolve in_prod in_or_app.
-
-Lemma nullable_xform_corr: forall r,
-  match nullable_xform r with
-    | existT true f => 
-      (exists v, in_regexp r nil v) /\
-      (forall v, in_regexp r nil v -> In v (xinterp f tt)) /\
-      (forall v, In v (xinterp f tt) -> in_regexp r nil v)
-    | existT false f => forall v, ~ in_regexp r nil v
-  end.
-Proof. induction r; fold interp in *.
-  Case "Eps". crush.
-  Case "Zero". intro. destruct v.
-  Case "Char". intro. intro. in_regexp_inv.
-  Case "Any". intro. intro. in_regexp_inv.
-  Case "Cat". simpl.
-    destruct (nullable_xform r1) as [x1 f1]; destruct x1;
-    destruct (nullable_xform r2) as [x2 f2]; destruct x2;
-    try (intros; intro; in_regexp_inv; findcontra).
-    split; [crush | idtac].
-      intros. split; intros.
-      SCase "->". in_regexp_inv. xinterp_simpl; crush_hyp.
-      SCase "<-".
-        xinterp_simpl. destruct v as [v1 v2].
-        rewrite in_prod_iff in H. crush.
-  Case "Alt". simpl.
-    destruct (nullable_xform r1) as [x1 f1]; destruct x1;
-    destruct (nullable_xform r2) as [x2 f2]; destruct x2.
-    SCase "true true".
-      split; [crush | idtac].
-      xinterp_simpl.
-      split; intros. 
-        in_regexp_inv; crush.
-        apply in_app_or in H; destruct H;
-          apply Coqlib.list_in_map_inv in H; crush.
-    SCase "true false".
-      xinterp_simpl. crush. 
-        in_regexp_inv; findcontra.
-        apply Coqlib.list_in_map_inv in H. crush.
-    SCase "false true".
-      xinterp_simpl. crush. 
-        in_regexp_inv; findcontra.
-        apply Coqlib.list_in_map_inv in H. crush.
-    SCase "false false".
-      intros. intro. in_regexp_inv; crush_hyp.
-  Case "Star". simpl. 
-    crush. in_regexp_inv.
-Qed.
-(* This one can be proved from the above one *)
-Lemma nullable_xform_corr2: forall r v,
-  in_regexp r nil v -> 
-  match nullable_xform r with
-    | existT true f => In v ((xinterp f) tt)
-    | existT false f => False
-  end.
-Proof. intros. generalize (nullable_xform_corr r); intro.
-  destruct (nullable_xform r) as [x f].
-  destruct x; crush_hyp.
-Qed.
 
 (* todo: bring back pdrv_set and wpdrv *)
 (** Partial derivatives over a regexp set; the result of the union 
@@ -666,8 +529,6 @@ Qed.
 (*   end. *)
 
 (** ** Relating partial derivatives to prebase *)
-Opaque RES.union_xform RES.singleton_xform singleton_xform.
-
 Lemma pdrv_subset_prebase: 
   forall a r, RES.Subset (projT1 (pdrv_xform a r)) (prebase r).
 Proof. induction r; simpl; try (apply RESP.subset_refl).
@@ -731,8 +592,7 @@ Qed.
 (*   crush. *)
 (* Qed. *)
 
-Lemma in_re_set_empty : forall s v, not (in_re_set RES.empty s v).
-Admitted.
+(* Lemma in_re_set_empty : forall s v, not (in_re_set RES.empty s v). *)
 (* Proof. unfold in_re_set. intros. intro H. *)
 (*   destruct H as [r [H2 _]]. *)
 (*   apply RESP.Dec.F.empty_iff in H2. crush. *)
@@ -808,14 +668,17 @@ Admitted.
 (** ** Correctness of partial derivatives:
       (a::l) in [[r]] iff l in [[pdrv(a,r)]] *)
 Section PDRV_CORRECT.
+  Hint Rewrite app_nil_l in_prod_iff.
 
   Local Ltac lprover :=
     repeat match goal with
       | [H: _ :: _ = nil |- _] => inversion H
-      | [H: in_re_set RES.empty _ _ |- _] =>
+      | [H:in_re_set RES.empty _ _ |- _] =>
         contradiction (in_re_set_empty H)
       | [H:in_re_set_xform (RES.empty_xform (List_t _)) _ _ |- _] =>
         contradiction (empty_xform_corr H)
+      | [H:in_re_set_xform (singleton_xform ?r) _ _ |- _] => 
+        apply (singleton_xform_corr r) in H
       (* | [H: in_re_set (RES.singleton _) _ |- _] => *)
       (*   apply in_re_set_singleton in H *)
       (* | [|- in_re_set (RES.singleton _) _] => *)
@@ -828,111 +691,85 @@ Section PDRV_CORRECT.
       | _ => in_regexp_inv
     end.
 
-  (* todo: remove *)
+  Local Ltac in_regexp_contra :=
+  match goal with 
+    | [H1: forall v, ~ in_regexp ?R ?S v, H: in_regexp ?R ?S ?V |- _] => 
+      contradict H; crush
+  end.
 
+  Lemma nullable_xform_corr: forall r,
+    match nullable_xform r with
+      | existT true f => 
+        (exists v, in_regexp r nil v) /\
+        (forall v, in_regexp r nil v -> In v (xinterp f tt)) /\
+        (forall v, In v (xinterp f tt) -> in_regexp r nil v)
+      | existT false f => forall v, ~ in_regexp r nil v
+    end.
+  Proof. induction r; fold interp in *.
+    Case "Eps". crush.
+    Case "Zero". intro. destruct v.
+    Case "Char". intro. intro. in_regexp_inv.
+    Case "Any". intro. intro. in_regexp_inv.
+    Case "Cat". simpl.
+      destruct (nullable_xform r1) as [x1 f1]; destruct x1;
+      destruct (nullable_xform r2) as [x2 f2]; destruct x2;
+      try (intros; intro; in_regexp_inv; in_regexp_contra).
+      split; [crush | idtac].
+        intros. split; intros.
+        SCase "->". in_regexp_inv. xinterp_simpl; crush_hyp.
+        SCase "<-". xinterp_simpl. destruct v as [v1 v2]. crush.
+    Case "Alt". simpl.
+      destruct (nullable_xform r1) as [x1 f1]; destruct x1;
+      destruct (nullable_xform r2) as [x2 f2]; destruct x2.
+      SCase "true true".
+        split; [crush | idtac].
+        xinterp_simpl.
+        split; intros. 
+          in_regexp_inv.
+          match goal with
+            | [H:In v (map inl _ ++ map inr _) |- _] =>
+              apply in_app_or in H; destruct H;
+              apply Coqlib.list_in_map_inv in H; crush
+          end.
+      SCase "true false".
+        xinterp_simpl. crush. 
+          in_regexp_inv; in_regexp_contra.
+          apply Coqlib.list_in_map_inv in H. crush.
+      SCase "false true".
+        xinterp_simpl. crush. 
+          in_regexp_inv; in_regexp_contra.
+          apply Coqlib.list_in_map_inv in H. crush.
+      SCase "false false".
+        intros. intro. in_regexp_inv; crush_hyp.
+    Case "Star". simpl. 
+      crush. in_regexp_inv.
+  Qed.
+
+  Lemma nullable_xform_corr2: forall r v,
+    in_regexp r nil v -> 
+    match nullable_xform r with
+      | existT true f => In v ((xinterp f) tt)
+      | existT false f => False
+    end.
+  Proof. intros. generalize (nullable_xform_corr r); intro.
+    destruct (nullable_xform r) as [x f].
+    destruct x; crush_hyp.
+  Qed.
+
+  (* todo: revise the following *)
   (* Instance nullable_proper: Proper (RES.E.eq ==> eq) nullable. *)
   (* Proof. unfold Proper, respectful. intros. *)
   (*   apply compare_re_eq_leibniz in H. crush. *)
   (* Qed. *)
-    
-  (* Lemma nullable_corr : *)
-  (*   forall r, nullable r = true <-> in_re r nil. *)
-  (* Proof. induction r. *)
-  (*   Case "Eps".  lprover. *)
-  (*   Case "Zero". lprover. *)
-  (*   Case "Char". lprover. *)
-  (*   Case "Any". lprover. *)
-  (*   Case "Cat". split. *)
-  (*     SCase "->". simpl; intro; bool_elim_tac. crush. *)
-  (*     SCase "<-". intro; inversion_clear H. *)
-  (*       symmetry in H2. *)
-  (*       apply app_eq_nil in H2. *)
-  (*       simpl; sim; subst. bool_intro_tac; auto. *)
-  (*   Case "Alt". split. *)
-  (*     SCase "->". simpl; intro; bool_elim_tac; crush. *)
-  (*     SCase "<-". intro; simpl. apply orb_true_iff. *)
-  (*       inversion H; crush. *)
-  (*   Case "Star". crush. *)
-  (* Qed. *)
 
-Lemma in_re_set_xform_intro: forall t (rx:RES.rs_xf_pair (List_t t)) s v v',
-  in_re_set (projT1 rx) s v' -> In v (xinterp (projT2 rx) v') -> 
-    in_re_set_xform rx s v.
-Proof. intros. unfold in_re_set_xform. destruct rx as [rs f].  
-       exists v'; crush.
-Qed.
-
-Lemma in_re_set_xform_elim: forall t (rx:RES.rs_xf_pair (List_t t)) s v,
-  in_re_set_xform rx s v -> 
-    exists v', in_re_set (projT1 rx) s v' /\ In v (xinterp (projT2 rx) v').
-Proof. unfold in_re_set_xform; intros. destruct rx as [rs f]. crush. Qed.
-
-(* Lemma in_re_set_xform_comp:  *)
-(*   forall t1 t2 (rx:RES.rs_xf_pair (List_t t1)) s (v: interp t1) (f:t1 ->> t2), *)
-(*   in_re_set_xform rx s v ->  *)
-(*     in_re_set_xform (existT _ (projT1 rx) (xcomp (projT2 rx) (xmap f))) *)
-(*                     s (xinterp f v). *)
-(* Proof. intros. *)
-(*   apply in_re_set_xform_elim in H. *)
-(*   destruct H as [v' H]. exists v'; crush. *)
-(*   xinterp_simpl. apply in_map. trivial. *)
-(* Qed. *)
-
-(* Lemma in_re_set_xform_comp:  *)
-(*   forall t1 t2 (rx:RES.rs_xf_pair (List_t t1)) s (g:t1 ->> t2) (v: interp t1) v', *)
-(*   in_re_set_xform rx s v -> v' = xinterp g v -> *)
-(*   in_re_set_xform (let (rs, f) := rx in existT _ rs (xcomp f (xmap g))) s v'. *)
-(* Proof. intros. *)
-(*   apply in_re_set_xform_elim in H. *)
-(*   destruct H as [v1 H]. destruct rx as [rs f]. *)
-(*   exists v1; crush. *)
-(*   xinterp_simpl. apply in_map. trivial. *)
-(* Qed. *)
-
-Lemma in_re_set_xform_elim2: 
-  forall t rs (f: RES.re_set_type rs ->> (List_t t)) s v,
-  in_re_set_xform (existT _ rs f) s v -> 
-    exists v', in_re_set rs s v' /\ In v (xinterp f v').
-Proof. intros. generalize in_re_set_xform_elim. crush. Qed.
-
-Lemma in_re_set_xform_comp: 
-  forall t1 t2 (rx:RES.rs_xf_pair (List_t t1)) s (g:t1 ->> t2) v' rs f,
-  rx = existT _ rs f ->
-  (in_re_set_xform (existT _ rs (xcomp f (xmap g))) s v' <->
-   exists v,  in_re_set_xform rx s v /\ v' = xinterp g v).
-Proof. intros. 
-  split; intros.
-  Case "->".
-    apply in_re_set_xform_elim2 in H0. 
-    destruct H0 as [v1 H0]. 
-    xinterp_simpl. sim.
-    apply Coqlib.list_in_map_inv in H1. crush.
-  Case "<-". destruct H0 as [v H0]. sim.
-    subst rx.
-    apply in_re_set_xform_elim2 in H0.
-    destruct H0 as [v1 H0]. 
-    exists v1; crush.
-    xinterp_simpl. crush. 
-Qed.
-
-Lemma in_re_set_xform_comp2: 
-  forall t1 t2 (rx:RES.rs_xf_pair (List_t t1)) s (g:t1 ->> t2) v',
-  in_re_set_xform (let (rs, f) := rx in existT _ rs (xcomp f (xmap g))) s v' <->
-  exists v,  in_re_set_xform rx s v /\ v' = xinterp g v.
-Proof. intros. destruct rx as [rs f]. apply in_re_set_xform_comp. trivial. Qed.
-
-(* TBC*)
-
-Hint Rewrite app_nil_l.
-Local Hint Resolve in_prod.
+  Hint Extern 3 (in_re_set_xform (singleton_xform ?r) ?s ?v) =>
+    apply singleton_xform_corr.
 
   Lemma pdrv_xform_corr : forall r a s v, 
      in_regexp r (a :: s) v <-> in_re_set_xform (pdrv_xform a r) s v.
   Proof. induction r.
-    Case "Eps".
-      simpl; split; intros; sim; lprover.
-    Case "Zero".
-      simpl. split; intros; sim; lprover.
+    Case "Eps". simpl; split; intros; sim; lprover.
+    Case "Zero". simpl. split; intros; sim; lprover.
     Case "Char".
       intros; simpl.
       destruct (char_eq_dec a c).
@@ -940,46 +777,38 @@ Local Hint Resolve in_prod.
         rewrite in_re_set_xform_comp2.
         split; intros.
           in_regexp_inv.
-            exists tt.
-            split; [apply (singleton_xform_corr); crush | trivial].
-          destruct H as [v' H]. sim.
-            apply (singleton_xform_corr Eps) in H.
-            in_regexp_inv.
+          sim; lprover.
       SCase "a<>c". split; intros; lprover.
     Case "Any". simpl; intros. rewrite in_re_set_xform_comp2.
       split; intros.
-      in_regexp_inv. exists tt.
-        split; [apply (singleton_xform_corr); crush | trivial].
-      destruct H as [v' H]. sim.
-        apply (singleton_xform_corr Eps) in H.
-        in_regexp_inv.
+      in_regexp_inv. 
+      sim; lprover.
     Case "Cat". simpl; intros.
       remember_rev (cat_re_xform (pdrv_xform a r1) r2) as cx. 
       destruct cx as [rsc fc].
-      generalize (nullable_xform_corr r1); intro H6.
+      generalize (nullable_xform_corr r1); intro H10.
       remember_rev (nullable_xform r1) as nr. destruct nr as [n fnull].
       remember_rev (pdrv_xform a r2) as pr2. destruct pr2 as [rs2 f2].
       split; intros.
       SCase "->".
-        apply inv_cat in H. destruct H as [s1 [s2 [v1 [v2]]]]. sim. subst.
+        apply inv_cat in H. destruct H as [s1 [s2 [v1 [v2]]]]. crush.
         destruct s1 as [| b s1'].
         SSCase "s1=nil".
-          rewrite app_nil_l in H1.
           destruct n.
           SSSCase "nullable r1".
             rewrite union_xform_corr. right.
             assert (H4:in_re_set_xform (pdrv_xform a r2) s v2).
               apply IHr2; crush.
             rewrite Hpr2 in H4.
-            apply in_re_set_xform_elim in H4. destruct H4 as [v' H4]. simpl in H4.
-            exists v'. xinterp_simpl. crush.
-          SSSCase "~ (nullable r1)". contradict H. crush.
+            apply in_re_set_xform_elim2 in H4.
+            destruct H4 as [v' H4]. exists v'. xinterp_simpl. crush.
+          SSSCase "~ (nullable r1)". in_regexp_contra.
         SSCase "s1=b::s1'".
           destruct n;
             [rewrite union_xform_corr; left | idtac];
             rewrite <- Hcx;
             apply cat_re_xform_corr; exists s1', s2, v1, v2;
-            sim; try crush; apply IHr1; crush.
+            clear H10 IHr2 Hpr2; crush_hyp.
       SCase "<-".
         destruct n.
         SSCase "nullable r1".
@@ -988,28 +817,26 @@ Local Hint Resolve in_prod.
           SSSCase "s in (pdrv a r1) $ r2".
             rewrite <- Hcx in H.
             apply cat_re_xform_corr in H.
-            destruct H as [s1 [s2 [v1 [v2 H]]]]. sim.
+            destruct H as [s1 [s2 [v1 [v2 H]]]]. 
             apply InCat with (s1:= (a::s1)) (s2:=s2) (v1:=v1) (v2:=v2); crush.
           SSSCase "s in (pdrv a r2)".
             destruct v as [v1 v2].
-            apply in_re_set_xform_elim in H. simpl in H.
-            destruct H as [v' H]. sim.
-            xinterp_simpl. 
-            apply in_prod_iff in H0. sim.
-            assert (in_regexp r2 (a::s) v2).
-              apply IHr2. rewrite Hpr2. exists v'. crush.
+            apply in_re_set_xform_elim2 in H.
+            destruct H as [v' H]. 
+            xinterp_simpl. sim.
+            apply in_prod_iff in H0.
             apply InCat with (s1:=nil) (s2:=a::s) (v1:=v1) (v2:=v2); crush.
         SSCase "not (nullable r1)".
           rewrite <- Hcx in H.
           apply cat_re_xform_corr in H; fold interp in *.
-          destruct H as [s1 [s2 [v1 [v2 H]]]]. sim.
+          destruct H as [s1 [s2 [v1 [v2 H]]]]. 
           apply InCat with (s1:= (a::s1)) (s2:=s2) (v1:=v1) (v2:=v2); crush.
     Case "Alt". simpl; intros.
       remember_rev (pdrv_xform a r1) as pr1. destruct pr1 as [rs1 f1].
       remember_rev (pdrv_xform a r2) as pr2. destruct pr2 as [rs2 f2].
       rewrite union_xform_corr.
       split; intros.
-      SCase "->". 
+      SCase "->".
         in_regexp_inv; 
            [left; apply IHr1 in H; rewrite Hpr1 in H | 
             right; apply IHr2 in H; rewrite Hpr2 in H];
@@ -1022,32 +849,24 @@ Local Hint Resolve in_prod.
           xinterp_simpl; apply Coqlib.list_in_map_inv in H0;
           sim; [eapply InAlt_l | eapply InAlt_r]; crush.
     Case "Star". simpl; intros.
-      remember_rev (cat_re_xform (pdrv_xform a r) (Star r)) as cx. 
-      destruct cx as [rsc fc].
+      rewrite in_re_set_xform_comp2.
       split; intros.
       SCase "->".
         in_regexp_inv.
-        destruct x; [congruence | idtac].
-        crush.
-        assert (H4:in_re_set_xform (cat_re_xform (pdrv_xform c r) (Star r))
-                                (x ++ x0) (x1,x2)).
-          apply cat_re_xform_corr. exists x, x0, x1, x2. crush_hyp.
-        apply in_re_set_xform_elim in H4. rewrite Hcx in H4. simpl in H4.
-        destruct H4 as [v' H4].
-        exists v'. crush. 
-        xinterp_simpl. change (x1::x2) with ((fun x3 => fst x3::snd x3) (x1,x2)).
-        apply in_map. trivial.
+        exists (x1, x2); split; [idtac | trivial].
+        apply cat_re_xform_corr with (r:=Star r).
+        destruct x as [|b x']; [crush | idtac].
+        exists x', x0, x1, x2. crush_hyp.
       SCase "<-".
-        rewrite in_re_set_xform_comp in H; try eassumption.
-        destruct H as [v0 H]. sim.
-        rewrite (@cat_re_xform_corr _ (pdrv_xform a r) (Star r)) in H.
-        fold interp in H.
-        destruct H as [s1 [s2 [v1 [v2 H]]]]. sim.
-        subst. simpl.
+        destruct H as [[v1 v2] [H2 H4]].
+        apply cat_re_xform_corr with (r:=Star r) in H2.
+        destruct H2 as [s1 [s2 H2]].
         apply InStar_cons with (s1:= (a::s1)) (s2:=s2) (v1:=v1) (v2:=v2); crush.
   Qed.
 
 End PDRV_CORRECT.
+
+
 
 
 

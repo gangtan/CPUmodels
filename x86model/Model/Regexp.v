@@ -4,6 +4,8 @@ Require Import Xform.
 Require Import CommonTacs.
 Require Import Structures.OrdersAlt.
 
+Set Implicit Arguments.
+
 Inductive regexp : Set := 
 | Eps : regexp
 | Zero : regexp
@@ -45,6 +47,79 @@ Inductive in_regexp : forall a, list char_t -> interp (regexp_type a) -> Prop :=
       in_regexp a s1 v1 -> in_regexp (Star a) s2 v2 -> 
       s1 <> nil -> s = s1 ++ s2 -> v = v1::v2 -> in_regexp (Star a) s v.
 Hint Constructors in_regexp.
+
+(** * Inversion principles for [regexp]s. *)
+
+Lemma inv_eps : forall s v, in_regexp Eps s v -> s = nil /\ v = tt.
+Proof. intros. inversion H. crush. Qed.
+
+Lemma inv_zero : forall s v, in_regexp Zero s v -> False.
+Proof. intros. inversion H. Qed.
+
+Lemma inv_char : forall c s v, in_regexp (Char c) s v -> s = c::nil /\ v = c.
+Proof.  intros. inversion H. subst. crush. Qed.
+
+Lemma inv_any : forall s v, in_regexp Any s v -> s = v::nil.
+Proof.  intros. inversion H. crush. Qed.
+
+Lemma inv_cat : forall r1 r2 s v, in_regexp (Cat r1 r2) s v -> 
+  exists s1, exists s2, exists v1, exists v2, 
+    in_regexp r1 s1 v1 /\ in_regexp r2 s2 v2 /\ s = s1++s2 /\ v = (v1,v2).
+Proof.
+  intros ; inversion H ; subst ; crush. exists s1. exists s2. exists v1. exists v2.
+  auto.
+Qed.
+
+Lemma inv_cat_nil : forall r1 r2 v, in_regexp (Cat r1 r2) nil v -> 
+  exists v1, exists v2, in_regexp r1 nil v1 /\ in_regexp r2 nil v2 /\ v = (v1,v2).
+Proof. intros. apply inv_cat in H.
+  destruct H as [s1 [s2 [v1 [v2 H1]]]].
+  sim. exists v1, v2.
+  symmetry in H1. apply app_eq_nil in H1.
+  crush.
+Qed.
+
+Lemma inv_alt : forall r1 r2 s v, in_regexp (Alt r1 r2) s v -> 
+  (exists v1, in_regexp r1 s v1 /\ v = inl _ v1) \/
+  (exists v2, in_regexp r2 s v2 /\ v = inr _ v2) .
+Proof. intros ; inversion H ; subst ; crush. Qed.
+
+Lemma inv_star: forall r s v, in_regexp (Star r) s v -> 
+  (s = nil /\ v = nil) \/
+  (exists s1 s2 v1 v2, 
+     in_regexp r s1 v1 /\ in_regexp (Star r) s2 v2 /\
+     s1 <> nil /\ s = s1++s2 /\ v=v1::v2).
+Proof. intros. inversion H; try crush. 
+  right. exists s1, s2, v1, v2. crush.
+Qed.
+
+Lemma inv_star_nil: forall r v, in_regexp (Star r) nil v -> v = nil.
+Proof. intros. apply inv_star in H.
+  destruct H. crush.
+  sim. destruct x; crush.
+Qed.
+
+(** Inversion tactic for [regexp]. *)
+Ltac in_regexp_inv := 
+  match goal with 
+    | [ H: in_regexp Zero _ _ |- _ ] => contradiction (inv_zero H)
+    | [ H : in_regexp Eps _ _ |- _ ] => 
+      generalize (inv_eps H) ; clear H ; crush
+    | [ H : in_regexp (Char _) _ _ |- _] => 
+      generalize (inv_char H) ; clear H ; crush
+    | [ H : in_regexp Any _ _ |- _] => 
+      generalize (inv_any H) ; clear H ; crush
+    | [ H : in_regexp (Cat _ _) nil _ |- _] => 
+      generalize (inv_cat_nil H) ; clear H ; crush
+    | [ H : in_regexp (Cat _ _) _ _ |- _] => 
+      generalize (inv_cat H) ; clear H ; crush
+    | [ H : in_regexp (Alt _ _) _ _ |- _] => 
+      generalize (inv_alt H) ; clear H ;  crush
+    | [ H : in_regexp (Star _) nil _ |- _] => 
+      generalize (inv_star_nil H) ; clear H ;  crush
+    | [ H : in_regexp (Star _) _ _ |- _] => 
+      generalize (inv_star H) ; clear H ;  crush
+  end.
 
 (** * Ordering for regexps *)
 
