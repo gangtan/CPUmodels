@@ -60,7 +60,7 @@ Module RESP := MSetProperties.Properties RES.
 
 (** ** Abbreviations and definitions for [RESet] *)
 
-Definition rx_pair := RES.rs_xf_pair.
+Definition rs_xf_pair := RES.rs_xf_pair.
 
 Local Ltac re_set_simpl :=
   repeat 
@@ -109,7 +109,11 @@ Definition set_cat_re (s:RES.t) (r:regexp): RES.t :=
 Notation "s $ r" := (set_cat_re s r) (at level 60, no associativity).
 
 (**************************************************************************)
-(* Some assumed axioms; these should be later proved in other files *)
+
+(* Some definitions and assumed axioms; these should be later moved and
+   proved to other files *)
+
+Definition re_xf_pair (ty:type) := {r : regexp & regexp_type r ->> ty }.
 
 Axiom in_re_set: 
   forall s:RES.t, list char_t -> interp (RES.re_set_type s) -> Prop.
@@ -164,8 +168,63 @@ Lemma xcross_corr {t1 t2} (vs: interp (Pair_t (List_t t1) (List_t t2))):
   xinterp xcross vs = List.list_prod (fst vs) (snd vs).
 Admitted.
 
+Lemma xflatten_corr2 {t} (vs: interp (List_t (List_t t))):
+  xinterp xflatten vs = Coqlib.list_flatten vs.
+Admitted.
+
+(* The following type is slightly different from the one in RESet.v, but
+   is isomorphic *)
+Axiom fold_xform: forall (ty:type) (A:Type) (comb: re_xf_pair ty -> A -> A),
+                    (rs_xf_pair ty) -> A -> A.
+
+Lemma fold_xform_erase: forall ty A (comb1:re_xf_pair ty -> A -> A) comb2 rx v,
+  (forall rex v, comb1 rex v = comb2 (projT1 rex) v) ->
+  fold_xform comb1 rx v = RES.fold comb2 (projT1 rx) v. 
+Admitted.
+
+Lemma fold_xform_rec: 
+  forall (ty:type) (A : Type) (P : rs_xf_pair ty -> A -> Type) (f : re_xf_pair ty -> A -> A)
+         (i : A) (rx : rs_xf_pair ty),
+    (forall rx' : rs_xf_pair ty, RES.Empty (projT1 rx') -> P rx' i) ->
+    (forall (rex : re_xf_pair ty) (a : A) (rx' rx'' : rs_xf_pair ty),
+       RES.In (projT1 rex) (projT1 rx) ->
+       ~ RES.In (projT1 rex) (projT1 rx') -> RESP.Add (projT1 rex) (projT1 rx') (projT1 rx'') ->
+       P rx' a -> P rx'' (f rex a)) ->
+    P rx (fold_xform f rx i).
+Admitted.
+
+(* todo: not sure how to state a correctness theorem for fold_xform *)
+
+Definition in_re_xform t (rex:re_xf_pair (List_t t)) s (v:interp t) := 
+  let (r, f) := rex in exists v', in_regexp r s v' /\ In v (xinterp f v').
+
+Lemma in_re_xform_intro: forall t (rex:re_xf_pair (List_t t)) s v v',
+  in_regexp (projT1 rex) s v' -> In v (xinterp (projT2 rex) v') -> 
+    in_re_xform rex s v.
+Proof. intros. unfold in_re_xform. destruct rex as [r f].  
+       exists v'; crush.
+Qed.
+
+Lemma in_re_xform_intro2: 
+  forall t r (f:regexp_type r ->> (List_t t)) s v v',
+  in_regexp r s v' -> In v (xinterp f v') -> 
+    in_re_xform (existT _ r f) s v.
+Proof. generalize in_re_xform_intro; crush. Qed.
+
+Lemma in_re_xform_elim: forall t (rex:re_xf_pair (List_t t)) s v,
+  in_re_xform rex s v -> 
+    exists v', in_regexp (projT1 rex) s v' /\ In v (xinterp (projT2 rex) v').
+Proof. unfold in_re_xform; intros. destruct rex as [r f]. crush. Qed.
+
+Lemma in_re_xform_elim2: 
+  forall t r (f: regexp_type r ->> (List_t t)) s v,
+  in_re_xform (existT _ r f) s v -> 
+    exists v', in_regexp r s v' /\ In v (xinterp f v').
+Proof. generalize in_re_xform_elim. crush. Qed.
+
+
 Opaque RES.union_xform RES.singleton_xform singleton_xform.
-Opaque xcross xmap xapp xcomp.
+Opaque xcross xmap xapp xcomp xflatten.
 
 Ltac xinterp_simpl :=
   repeat match goal with
@@ -185,6 +244,9 @@ Ltac xinterp_simpl :=
       rewrite (@xmap_corr _ _ _ V); simpl
     | [H:context [xinterp (xmap _) ?V] |- _] => 
       rewrite (@xmap_corr _ _ _ V) in H; simpl in H
+    | [|- context[xinterp xflatten _]] => rewrite xflatten_corr2; simpl
+    | [H:context[xinterp xflatten _] |- _] => 
+      rewrite xflatten_corr2 in H; simpl in H
   end.
 
 Lemma in_re_set_xform_intro: forall t (rx:RES.rs_xf_pair (List_t t)) s v v',
@@ -237,9 +299,10 @@ Lemma in_re_set_xform_comp2:
   exists v,  in_re_set_xform rx s v /\ v' = xinterp g v.
 Proof. intros. destruct rx as [rs f]. apply in_re_set_xform_comp. trivial. Qed.
 
-
 (* End of assumed axioms *)
 (**************************************************************************)
+
+
 
 (** * The notion of prebase of a regexp and partial-derivative sets.
 
@@ -482,8 +545,8 @@ Fixpoint nullable_xform (r:regexp) :
     pdrv(a, r1)r2, otherwise
   pdrv(a, r_star) = pdrv(a,r)r_star
 *)
-Fixpoint pdrv_xform (a:char_t) (r:regexp): rx_pair (List_t (regexp_type r)) := 
-  match r return rx_pair (List_t (regexp_type r)) with
+Fixpoint pdrv_xform (a:char_t) (r:regexp): rs_xf_pair (List_t (regexp_type r)) := 
+  match r return rs_xf_pair (List_t (regexp_type r)) with
     | Eps | Zero => @RES.empty_xform _
     | Char b => 
       if char_eq_dec a b then
@@ -512,13 +575,27 @@ Fixpoint pdrv_xform (a:char_t) (r:regexp): rx_pair (List_t (regexp_type r)) :=
         existT _ rsc (xcomp fc (xmap (xcons xfst xsnd)))
   end.
 
+Definition pdrv a r := projT1 (pdrv_xform a r).
 
-(* todo: bring back pdrv_set and wpdrv *)
+(** pdrv_rex_xform performs partial derviative calculation, similar to
+    pdrv_xform. However, it takes a re_xf_pair as input instead a regexp *)
+Definition pdrv_rex_xform (ty:type) (a:char_t) (rex:re_xf_pair (List_t ty)) :
+  rs_xf_pair (List_t ty) := 
+  let (r, f) := rex in
+  let (rs, frs) := pdrv_xform a r in
+  existT _ rs (xcomp frs (xcomp (xmap f) xflatten)).
+
 (** Partial derivatives over a regexp set; the result of the union 
     of taking partial derivatives on every regexp in the set *)
+Definition pdrv_set_xform (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) :
+  rs_xf_pair (List_t ty) :=
+  fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex_xform a rex) rx1)
+             rx (@RES.empty_xform (List_t ty)).
+
 (* Definition pdrv_set (a:char_t) (rs:RES.t) : RES.t := *)
 (*   RES.fold (fun r rs1 => RES.union (pdrv a r) rs1) rs RES.empty. *)
 
+(* todo: bring back wpdrv *)
 (** Word partial derivatives; 
   wpdrv(nil, rs) = rs
   wpdrv(a cons w, rs) = wpdrv(w, pdrv_set(a, rs)) *)
@@ -530,8 +607,8 @@ Fixpoint pdrv_xform (a:char_t) (r:regexp): rx_pair (List_t (regexp_type r)) :=
 
 (** ** Relating partial derivatives to prebase *)
 Lemma pdrv_subset_prebase: 
-  forall a r, RES.Subset (projT1 (pdrv_xform a r)) (prebase r).
-Proof. induction r; simpl; try (apply RESP.subset_refl).
+  forall a r, RES.Subset (pdrv a r) (prebase r).
+Proof. unfold pdrv; induction r; simpl; try (apply RESP.subset_refl).
   Case "Char".
     destruct_head; [apply RESP.subset_refl | apply RESP.subset_empty].
   Case "Cat".
@@ -564,7 +641,7 @@ Proof. induction r; simpl; try (apply RESP.subset_refl).
 Qed.
 
 Lemma pdrv_subset_pdset: 
-  forall a r, RES.Subset (projT1 (pdrv_xform a r)) (pdset r).
+  forall a r, RES.Subset (pdrv a r) (pdset r).
 Proof. unfold pdset; intros. 
   apply RESP.subset_add_2. apply pdrv_subset_prebase.
 Qed.
@@ -864,62 +941,84 @@ Section PDRV_CORRECT.
         apply InStar_cons with (s1:= (a::s1)) (s2:=s2) (v1:=v1) (v2:=v2); crush.
   Qed.
 
+  Lemma pdrv_rex_xform_corr: forall t (rex:re_xf_pair (List_t t)) a s v,
+    in_re_xform rex (a::s) v <-> in_re_set_xform (pdrv_rex_xform a rex) s v.
+  Proof. intros.
+    unfold pdrv_rex_xform. destruct rex as [r f].
+    remember_rev (pdrv_xform a r) as px. destruct px as [rs frs]. simpl.
+    intros; split; intros.
+    Case "->". destruct H as [v' [H2 H4]].
+      apply pdrv_xform_corr in H2.
+      rewrite Hpx in H2.
+      apply in_re_set_xform_elim2 in H2. destruct H2 as [v1 H2].
+      exists v1. 
+      split; [crush | idtac].
+      xinterp_simpl. apply Coqlib.in_flatten_iff; crush.
+    Case "<-". destruct H as [v' [H2 H4]].
+      xinterp_simpl. apply Coqlib.in_flatten_iff in H4.
+      destruct H4 as [l [H4 H6]].
+      apply in_map_iff in H4. destruct H4 as [v1 [H4 H8]].
+      exists v1. rewrite pdrv_xform_corr. crush.
+  Qed.
+
 End PDRV_CORRECT.
-
-
-
-
-
-
-
 
 (* todo: the following defs and proofs haven't been migrated to the case of parsers yet *)
 
 
+(* todo: restore the following lemmas *)
 
-Lemma reset_nullable_corr rs: reset_nullable rs = true <-> in_re_set rs nil.
-Proof. unfold reset_nullable, in_re_set. 
-    generalize (nullable_proper); intro.
-    split; intro.
-    Case "->".
-      apply RES.exists_spec in H0; [idtac | trivial].
-      unfold RES.Exists in H0.
-      generalize nullable_corr; crush_hyp.
-    Case "<-".
-      apply RES.exists_spec; [trivial | idtac].
-      unfold RES.Exists.
-      generalize nullable_corr; crush_hyp.
-Qed.
+(* Lemma reset_nullable_corr rs: reset_nullable rs = true <-> in_re_set rs nil. *)
+(* Proof. unfold reset_nullable, in_re_set.  *)
+(*     generalize (nullable_proper); intro. *)
+(*     split; intro. *)
+(*     Case "->". *)
+(*       apply RES.exists_spec in H0; [idtac | trivial]. *)
+(*       unfold RES.Exists in H0. *)
+(*       generalize nullable_corr; crush_hyp. *)
+(*     Case "<-". *)
+(*       apply RES.exists_spec; [trivial | idtac]. *)
+(*       unfold RES.Exists. *)
+(*       generalize nullable_corr; crush_hyp. *)
+(* Qed. *)
       
 (** [always_rejects] is correct. *)
-Lemma always_rejects_corr (r:regexp) : 
-  always_rejects r = true -> forall ls, ~ in_re r ls.
-Proof.
-  induction r; crush.
-  Case "Zero". intro H2. inversion H2.
-  Case "Cat". intro H2.
-    apply orb_prop in H.
-    destruct H; inversion H2; crush_hyp.
-  Case "Alt". intro H2.
-    apply andb_prop in H. inversion H2; crush_hyp.
-Qed.
+(* Lemma always_rejects_corr (r:regexp) :  *)
+(*   always_rejects r = true -> forall ls, ~ in_re r ls. *)
+(* Proof. *)
+(*   induction r; crush. *)
+(*   Case "Zero". intro H2. inversion H2. *)
+(*   Case "Cat". intro H2. *)
+(*     apply orb_prop in H. *)
+(*     destruct H; inversion H2; crush_hyp. *)
+(*   Case "Alt". intro H2. *)
+(*     apply andb_prop in H. inversion H2; crush_hyp. *)
+(* Qed. *)
 
-Instance always_rejects_proper: Proper (RES.E.eq ==> eq) always_rejects.
-Proof. unfold Proper, respectful. intros.
-  apply compare_re_eq_leibniz in H. crush.
-Qed.
+(* Instance always_rejects_proper: Proper (RES.E.eq ==> eq) always_rejects. *)
+(* Proof. unfold Proper, respectful. intros. *)
+(*   apply compare_re_eq_leibniz in H. crush. *)
+(* Qed. *)
 
-Lemma reset_always_rejects_corr rs: 
-  reset_always_rejects rs = true -> forall ls, ~ in_re_set rs ls.
-Proof. unfold reset_always_rejects, in_re_set. intros. intro H2.
-  apply RES.for_all_spec in H; [idtac | apply always_rejects_proper].
-  unfold RES.For_all in H. 
-  generalize always_rejects_corr. crush_hyp.
-Qed.
+(* Lemma reset_always_rejects_corr rs:  *)
+(*   reset_always_rejects rs = true -> forall ls, ~ in_re_set rs ls. *)
+(* Proof. unfold reset_always_rejects, in_re_set. intros. intro H2. *)
+(*   apply RES.for_all_spec in H; [idtac | apply always_rejects_proper]. *)
+(*   unfold RES.For_all in H.  *)
+(*   generalize always_rejects_corr. crush_hyp. *)
+(* Qed. *)
 
 
 (* Definition reset_always_rejects (rs:RES.t): bool := *)
 (*   RES.for_all always_rejects rs. *)
+
+
+
+
+
+(* the rest hasn't been migrated *)
+
+
 
 
 
@@ -932,7 +1031,7 @@ Proof. split.
   Case "->". unfold pdrv_set.
     apply RESP.fold_rec_nodep; intros.
     SCase "rs=empty". re_set_simpl.
-    SCase "rs nonempty". 
+    SCase "rs nonempty".
       apply RESP.FM.union_1 in H1; destruct H1; crush.
   Case "<-". unfold pdrv_set.
     apply RESP.fold_rec_bis; intros.
@@ -943,6 +1042,37 @@ Proof. split.
           apply compare_re_eq_leibniz in H2. crush.
         crush.
 Qed.
+
+
+
+
+(* TBC *)
+
+
+(* The following lemmas are only used in the termination proof, which does
+   not care about the xforms. Therefore, it's okay we erase all xforms in
+   the statements of the lemmas. *)
+
+Lemma pdrv_set_in: forall rs r a,
+  RES.In r (projT1 (pdrv_set_xform a rs)) <->
+  exists r', RES.In r' rs /\ RES.In r (projT1 (pdrv_xform a r')).
+
+Lemma pdrv_set_trans: forall r (rx:rs_xf_pair (List_t (regexp_type r))) a, 
+  RES.Subset (projT1 rx) (pdset r) -> 
+  RES.Subset (projT1 (@pdrv_set_xform (regexp_type r) a rx)) (pdset r).
+Proof. intros. intro r1; intro H2.
+  apply pdrv_set_in in H2. destruct H2 as [r' [H4 H6]].
+  apply pdrv_subset_pdset in H6.
+  eauto using pdset_trans.
+Qed.
+
+
+(* Definition pdrv_set_xform (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) : *)
+(*   rs_xf_pair (List_t ty) := *)
+(*   fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex_xform a rex) rx1) *)
+(*              rx (@RES.empty_xform (List_t ty)). *)
+
+
 
 Lemma pdrv_set_trans: forall rs r a, 
   RES.Subset rs (pdset r) -> RES.Subset (pdrv_set a rs) (pdset r).

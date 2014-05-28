@@ -1001,6 +1001,34 @@ Proof. induction ts1. auto.
   simpl; rewrite app_ass; f_equal; auto.
 Qed.
 
+(** Definition and properties of list_flatten *)
+
+Definition list_flatten(A:Type)(xs:list (list A)) : list A := 
+  List.fold_right (@List.app A) nil xs.
+
+Lemma in_flatten_iff: forall (A:Type) ls (x:A),
+  In x (list_flatten ls) <-> exists l, In l ls /\ In x l.
+Proof. induction ls. 
+  (* base case *)
+  simpl. split; intro H.
+    destruct H. 
+    destruct H as [l [H H2]]; destruct H.
+  (* inductive case *)
+  intro. simpl. rewrite in_app.
+  split; intros.
+    destruct H. eauto. 
+      apply IHls in H. destruct H as [l [H H2]]. eauto.
+    destruct H as [l [[|] H2]]. subst. eauto.
+      right. apply IHls. eauto.
+Qed.
+
+(** List flattening can be factored out of list append. *)
+Lemma flatten_distr: forall (A:Type)(x y:list (list A)),  
+  (list_flatten x) ++ (list_flatten y) = list_flatten (x ++ y).
+Proof.
+  induction x. auto. intros. simpl. rewrite app_ass. rewrite IHx. auto.
+Qed.
+
 (** find an index of an element in a list w.r.t. an equivalence relation *)
 
 Section FIND_INDEX.
@@ -1469,14 +1497,4 @@ Proof.
 Qed.
 
 End DECIDABLE_EQUALITY.
-
-Definition list_flatten(A:Type)(xs:list (list A)) : list A := 
-  List.fold_right (@List.app A) nil xs.
-
-(** List flattening can be factored out of list append. *)
-Lemma flatten_distr: forall (A:Type)(x y:list (list A)),  
-  (list_flatten x) ++ (list_flatten y) = list_flatten (x ++ y).
-Proof.
-  induction x. auto. intros. simpl. rewrite app_ass. rewrite IHx. auto.
-Qed.
 
