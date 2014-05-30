@@ -13,6 +13,7 @@
 
 Require Import Coq.Program.Equality.
 Require Import Coq.Classes.Morphisms.
+Require Import Coq.Program.Basics.
 (* Require Import Coq.Init.Logic. *)
 Require Import List.
 Require Import Arith.
@@ -172,6 +173,31 @@ Lemma xflatten_corr2 {t} (vs: interp (List_t (List_t t))):
   xinterp xflatten vs = Coqlib.list_flatten vs.
 Admitted.
 
+Definition in_re_xform t (rex:re_xf_pair (List_t t)) s (v:interp t) := 
+  let (r, f) := rex in exists v', in_regexp r s v' /\ In v (xinterp f v').
+
+Axiom add_xform: 
+  forall ty (rex: re_xf_pair (List_t ty)) (rx: rs_xf_pair (List_t ty)), 
+    rs_xf_pair (List_t ty).
+
+Lemma add_xform_erase: forall ty (rex:re_xf_pair (List_t ty)) rx,
+  projT1 (add_xform rex rx) = RES.add (projT1 rex) (projT1 rx).
+Admitted.
+
+Lemma add_xform_corr: forall ty (rex:re_xf_pair (List_t ty)) rx s v,
+  in_re_set_xform (add_xform rex rx) s v <->
+  in_re_xform rex s v \/ in_re_set_xform rx s v.
+Admitted.
+
+Definition rx_equal ty (rx1 rx2: rs_xf_pair (List_t ty)) := 
+  forall s v, in_re_set_xform rx1 s v <-> in_re_set_xform rx2 s v.
+
+Instance in_re_set_xform_equal ty: 
+  Proper ((@rx_equal ty) ==> eq ==> eq ==> iff) (@in_re_set_xform ty).
+Proof. intros rx1 rx2 H1 s1 s2 H2 v1 v2 H3.
+  unfold rx_equal in H1. rewrite H1. crush.
+Qed.
+
 (* The following type is slightly different from the one in RESet.v, but
    is isomorphic *)
 Axiom fold_xform: forall (ty:type) (A:Type) (comb: re_xf_pair ty -> A -> A),
@@ -185,20 +211,19 @@ Lemma fold_xform_erase: forall ty
 Admitted.
 
 Lemma fold_xform_rec: 
-  forall (ty:type) (A : Type) (P : rs_xf_pair ty -> A -> Type) (f : re_xf_pair ty -> A -> A)
-         (i : A) (rx : rs_xf_pair ty),
-    (forall rx' : rs_xf_pair ty, RES.Empty (projT1 rx') -> P rx' i) ->
-    (forall (rex : re_xf_pair ty) (a : A) (rx' rx'' : rs_xf_pair ty),
+  forall (ty:type) (A : Type) (P : rs_xf_pair (List_t ty) -> A -> Type)
+         (f : re_xf_pair (List_t ty) -> A -> A)
+         (i : A) (rx : rs_xf_pair (List_t ty)),
+    (forall (rx1 rx2:rs_xf_pair (List_t ty)) (a : A), 
+       rx_equal rx1 rx2 -> P rx1 a -> P rx2 a) ->
+    P (@RES.empty_xform (List_t ty)) i ->
+    (forall (rex : re_xf_pair (List_t ty)) (a : A) 
+            (rx' rx'' : rs_xf_pair (List_t ty)),
        RES.In (projT1 rex) (projT1 rx) ->
-       ~ RES.In (projT1 rex) (projT1 rx') -> RESP.Add (projT1 rex) (projT1 rx') (projT1 rx'') ->
-       P rx' a -> P rx'' (f rex a)) ->
+       ~ RES.In (projT1 rex) (projT1 rx') ->
+       P rx' a -> P (add_xform rex rx') (f rex a)) ->
     P rx (fold_xform f rx i).
 Admitted.
-
-(* todo: not sure how to state a correctness theorem for fold_xform *)
-
-Definition in_re_xform t (rex:re_xf_pair (List_t t)) s (v:interp t) := 
-  let (r, f) := rex in exists v', in_regexp r s v' /\ In v (xinterp f v').
 
 Lemma in_re_xform_intro: forall t (rex:re_xf_pair (List_t t)) s v v',
   in_regexp (projT1 rex) s v' -> In v (xinterp (projT2 rex) v') -> 
@@ -1054,45 +1079,52 @@ Proof. intros. unfold pdrv_set. unfold pdrv_set_xform.
     f_equal. apply pdrv_rex_xform_erase.
 Qed.
   
-(* TBC *)
-
 Lemma pdrv_set_trans: forall r (rx:rs_xf_pair (List_t (regexp_type r))) a, 
   RES.Subset (projT1 rx) (pdset r) -> 
-  RES.Subset (projT1 (@pdrv_set_xform (regexp_type r) a rx)) (pdset r).
+  RES.Subset (pdrv_set a rx) (pdset r).
 Proof. intros. intro r1; intro H2.
   apply pdrv_set_in in H2. destruct H2 as [r' [H4 H6]].
   apply pdrv_subset_pdset in H6.
   eauto using pdset_trans.
 Qed.
 
+(* todo: to be restored *)
+(* Instance pdrv_set_subset:  *)
+(*   forall a, Proper (RES.Equal ==> RES.Subset) (pdrv_set a). *)
+(* Proof. unfold Proper, respectful. intros a rs1 rs2 H r H2. *)
+(*   apply pdrv_set_in in H2. sim. *)
+(*   apply pdrv_set_in. exists x. rewrite <- H. crush. *)
+(* Qed. *)
 
-(* Definition pdrv_set_xform (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) : *)
-(*   rs_xf_pair (List_t ty) := *)
-(*   fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex_xform a rex) rx1) *)
-(*              rx (@RES.empty_xform (List_t ty)). *)
+(* Instance pdrv_set_equal:  *)
+(*   forall a, Proper (RES.Equal ==> RES.Equal) (pdrv_set a). *)
+(* Proof. unfold Proper, respectful. intros a rs1 rs2 H. *)
+(*   apply RESP.subset_antisym; rewrite H; reflexivity. *)
+(* Qed. *)
+
+(* TBC *)
 
 
-
-Lemma pdrv_set_trans: forall rs r a, 
-  RES.Subset rs (pdset r) -> RES.Subset (pdrv_set a rs) (pdset r).
-Proof. intros. intro r1; intro H2.
-  apply pdrv_set_in in H2. destruct H2 as [r' [H4 H6]].
-  apply pdrv_subset_pdset in H6.
-  eauto using pdset_trans.
+Lemma pdrv_set_xform_corr: forall ty a (rx:rs_xf_pair (List_t ty)) s v,
+  in_re_set_xform (pdrv_set_xform a rx) s v <-> 
+  in_re_set_xform rx (a::s) v.
+Proof. intros. unfold pdrv_set_xform.
+  apply fold_xform_rec.
+  Case "equality respecting".
+    intros. rewrite H0. apply H.
+  Case "->".
+    split; intros; contradict H;  generalize empty_xform_corr; crush.
+  Case "<-".
+    intros.
+    rewrite union_xform_corr.
+    rewrite add_xform_corr.
+    rewrite pdrv_rex_xform_corr.
+    crush.
 Qed.
 
-Instance pdrv_set_subset: 
-  forall a, Proper (RES.Equal ==> RES.Subset) (pdrv_set a).
-Proof. unfold Proper, respectful. intros a rs1 rs2 H r H2.
-  apply pdrv_set_in in H2. sim.
-  apply pdrv_set_in. exists x. rewrite <- H. crush.
-Qed.
 
-Instance pdrv_set_equal: 
-  forall a, Proper (RES.Equal ==> RES.Equal) (pdrv_set a).
-Proof. unfold Proper, respectful. intros a rs1 rs2 H.
-  apply RESP.subset_antisym; rewrite H; reflexivity.
-Qed.
+
+
 
 Lemma pdrv_set_corr rs a s:
   in_re_set (pdrv_set a rs) s <-> in_re_set rs (a::s).
