@@ -177,9 +177,11 @@ Admitted.
 Axiom fold_xform: forall (ty:type) (A:Type) (comb: re_xf_pair ty -> A -> A),
                     (rs_xf_pair ty) -> A -> A.
 
-Lemma fold_xform_erase: forall ty A (comb1:re_xf_pair ty -> A -> A) comb2 rx v,
-  (forall rex v, comb1 rex v = comb2 (projT1 rex) v) ->
-  fold_xform comb1 rx v = RES.fold comb2 (projT1 rx) v. 
+Lemma fold_xform_erase: forall ty
+  (comb1:re_xf_pair ty -> rs_xf_pair ty -> rs_xf_pair ty) 
+  (comb2:regexp -> RES.t -> RES.t) rx ini_rx,
+  (forall rex rx, projT1 (comb1 rex rx) = comb2 (projT1 rex) (projT1 rx)) ->
+  projT1 (fold_xform comb1 rx ini_rx) = RES.fold comb2 (projT1 rx) (projT1 ini_rx).
 Admitted.
 
 Lemma fold_xform_rec: 
@@ -592,8 +594,8 @@ Definition pdrv_set_xform (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) :
   fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex_xform a rex) rx1)
              rx (@RES.empty_xform (List_t ty)).
 
-(* Definition pdrv_set (a:char_t) (rs:RES.t) : RES.t := *)
-(*   RES.fold (fun r rs1 => RES.union (pdrv a r) rs1) rs RES.empty. *)
+Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) :=
+  projT1 (pdrv_set_xform a rx).
 
 (* todo: bring back wpdrv *)
 (** Word partial derivatives; 
@@ -963,9 +965,6 @@ Section PDRV_CORRECT.
 
 End PDRV_CORRECT.
 
-(* todo: the following defs and proofs haven't been migrated to the case of parsers yet *)
-
-
 (* todo: restore the following lemmas *)
 
 (* Lemma reset_nullable_corr rs: reset_nullable rs = true <-> in_re_set rs nil. *)
@@ -1013,27 +1012,36 @@ End PDRV_CORRECT.
 (*   RES.for_all always_rejects rs. *)
 
 
+(* todo: the following defs and proofs haven't been migrated to the case of parsers yet *)
 
+(** ** Properties of [pdrv_set_xform] and [wpdrv] *)
 
+Lemma pdrv_rex_xform_erase: forall ty a (rex: re_xf_pair (List_t ty)),
+  projT1 (pdrv_rex_xform a rex) = pdrv a (projT1 rex).
+Proof. intros. unfold pdrv_rex_xform, pdrv.
+  destruct rex as [r f]. 
+  remember (pdrv_xform a r) as pa; destruct pa as [rs frs].
+  simpl. rewrite <- Heqpa. trivial.
+Qed.
 
-(* the rest hasn't been migrated *)
+(* The following lemmas are only used in the termination proof, which does
+   not care about the xforms. Therefore, it's okay we erase all xforms in
+   the statements of the lemmas. *)
 
-
-
-
-
-(** ** Properties of [pdrv_set] and [wpdrv] *)
-
-Lemma pdrv_set_in: forall rs r a,
-  RES.In r (pdrv_set a rs) <->
-  exists r', RES.In r' rs /\ RES.In r (pdrv a r').
-Proof. split.
-  Case "->". unfold pdrv_set.
+Lemma pdrv_set_in: forall ty (rx:rs_xf_pair (List_t ty)) r a,
+  RES.In r (pdrv_set a rx) <->
+  exists r', RES.In r' (projT1 rx) /\ RES.In r (pdrv a r').
+Proof. intros. unfold pdrv_set. unfold pdrv_set_xform. 
+  rewrite fold_xform_erase
+    with (comb2:=fun r rs1 => RES.union (pdrv a r) rs1).
+  split.
+  Case "->". 
+    simpl.
     apply RESP.fold_rec_nodep; intros.
     SCase "rs=empty". re_set_simpl.
     SCase "rs nonempty".
       apply RESP.FM.union_1 in H1; destruct H1; crush.
-  Case "<-". unfold pdrv_set.
+  Case "<-".
     apply RESP.fold_rec_bis; intros.
       sim. apply H0. exists x. crush.
       sim; re_set_simpl.
@@ -1041,21 +1049,12 @@ Proof. split.
         apply RESP.FM.add_iff in H2; destruct H2.
           apply compare_re_eq_leibniz in H2. crush.
         crush.
+  Case "assumption of fold_xform_erase".
+    intros. rewrite RES.union_xform_erase.
+    f_equal. apply pdrv_rex_xform_erase.
 Qed.
-
-
-
-
+  
 (* TBC *)
-
-
-(* The following lemmas are only used in the termination proof, which does
-   not care about the xforms. Therefore, it's okay we erase all xforms in
-   the statements of the lemmas. *)
-
-Lemma pdrv_set_in: forall rs r a,
-  RES.In r (projT1 (pdrv_set_xform a rs)) <->
-  exists r', RES.In r' rs /\ RES.In r (projT1 (pdrv_xform a r')).
 
 Lemma pdrv_set_trans: forall r (rx:rs_xf_pair (List_t (regexp_type r))) a, 
   RES.Subset (projT1 rx) (pdset r) -> 

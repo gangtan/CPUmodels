@@ -24,7 +24,7 @@ Module Type RESetXform.
 
   Definition rs_xf_pair (ty:type) := {rs : t & re_set_type rs ->> ty }.
 
-  (* the following type for union_xofrm is motivated by the case of doing
+  (* the following type for union_xform is motivated by the case of doing
      partial derivatives over r1+r2
         pdrv(a, r1+r2) =
           let (rs1, f1) = pdrv(a, r1) in
