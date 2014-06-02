@@ -12,14 +12,15 @@
 (** In this section, we build a table-driven DFA parser for a [grammar]. *)
 
 Require Import Coq.Program.Equality.
-Require Import Coq.Classes.Morphisms.
-Require Import Coq.Program.Basics.
+(* Require Import Coq.Classes.Morphisms. *)
+(* Require Import Coq.Program.Basics. *)
 (* Require Import Coq.Init.Logic. *)
+(* Require Import Eqdep. *)
+Require Import Coq.Lists.SetoidList.
 Require Import List.
 Require Import Arith.
 Require Import Bool.
 Require Import MSetsMore.
-Require Import Eqdep.
 Require Import ZArith.
 
 Require Import Regexp.
@@ -29,6 +30,8 @@ Require Import Xform.
 
 Require Import CommonTacs.
 Set Implicit Arguments.
+
+
 
 Local Ltac false_elim :=
   match goal with
@@ -162,6 +165,8 @@ Lemma union_xform_corr: forall t (rx1 rx2: RES.rs_xf_pair (List_t t)) s v,
   <-> in_re_set_xform rx1 s v \/ in_re_set_xform rx2 s v.
 Admitted.
   
+Definition xsingleton {t} : t ->> List_t t := @xcons t t xid xempty.
+
 (* Definition xmatchlist {t1 t2}: *)
 (*   (Unit_t ->> t2) -> (Pair_t t1 (List_t t1) ->> t2) -> (List_t t1 ->> t2) :=  *)
 
@@ -188,6 +193,9 @@ Lemma add_xform_corr: forall ty (rex:re_xf_pair (List_t ty)) rx s v,
   in_re_set_xform (add_xform rex rx) s v <->
   in_re_xform rex s v \/ in_re_set_xform rx s v.
 Admitted.
+
+Definition rx_imply ty (rx1 rx2: rs_xf_pair (List_t ty)) := 
+  forall s v, in_re_set_xform rx1 s v -> in_re_set_xform rx2 s v.
 
 Definition rx_equal ty (rx1 rx2: rs_xf_pair (List_t ty)) := 
   forall s v, in_re_set_xform rx1 s v <-> in_re_set_xform rx2 s v.
@@ -326,10 +334,24 @@ Lemma in_re_set_xform_comp2:
   exists v,  in_re_set_xform rx s v /\ v' = xinterp g v.
 Proof. intros. destruct rx as [rs f]. apply in_re_set_xform_comp. trivial. Qed.
 
+Definition erase (ty:type) (rx:rs_xf_pair ty): RES.t := projT1 rx.
+Notation "| rx |" := (erase rx) (at level 40, no associativity).
+
+(** Equality of the RESets in [rs_xf_pair]s *)
+Definition erase_subset ty1 ty2 (rx1:rs_xf_pair ty1) (rx2:rs_xf_pair ty2) :=
+  RES.Subset (|rx1|) (|rx2|).
+Definition erase_eq ty1 ty2 (rx1:rs_xf_pair ty1) (rx2:rs_xf_pair ty2) :=
+  RES.Equal (|rx1|) (|rx2|).
+
+Lemma erase_subset_antisym: 
+  forall ty1 ty2 (rx1: rs_xf_pair (List_t ty1)) (rx2: rs_xf_pair (List_t ty2)),
+  erase_subset rx1 rx2 -> erase_subset rx2 rx1 -> erase_eq rx1 rx2.
+Proof. unfold erase_subset, erase_eq. intros.
+  apply RESP.subset_antisym; trivial.
+Qed.
+
 (* End of assumed axioms *)
 (**************************************************************************)
-
-
 
 (** * The notion of prebase of a regexp and partial-derivative sets.
 
@@ -527,27 +549,27 @@ Fixpoint always_rejects (g:regexp) : bool :=
 Definition reset_always_rejects (rs:RES.t): bool :=
   RES.for_all always_rejects rs.
 
-(* todo: add calls to opt_ag to nullable_xform and pdrv_xform as in Parser.v *)
+(* todo: add calls to opt_ag to nullable and pdrv as in Parser.v *)
 
 Definition bool_type (b:bool) := 
   match b with true => Unit_t | false => Void_t end.
 
 (** nullable (r) returns (true, f) iff r can match the empty string and 
     f returns all values that are the results of parsing the empty string. *)
-Fixpoint nullable_xform (r:regexp) : 
+Fixpoint nullable (r:regexp) : 
   {b:bool & bool_type b ->> List_t (regexp_type r)} :=
   match r return {b:bool & bool_type b ->> List_t (regexp_type r)} with
     | Zero => existT _ false xzero
     | Eps => existT _ true (xcons xid xempty)
     | Char _ | Any => existT _ false xzero
     | Cat r1 r2 => 
-      match nullable_xform r1, nullable_xform r2 with
+      match nullable r1, nullable r2 with
         | existT true f1, existT true f2 => 
           existT _ true (xcomp (xpair f1 f2) xcross)
         | _, _ => existT _ false xzero
       end
     | Alt r1 r2 => 
-      match nullable_xform r1, nullable_xform r2 with
+      match nullable r1, nullable r2 with
         | existT true f1, existT true f2 => 
           existT _ true
             (xcomp (xpair (xcomp f1 (xmap xinl)) (xcomp f2 (xmap xinr))) xapp)
@@ -572,7 +594,7 @@ Fixpoint nullable_xform (r:regexp) :
     pdrv(a, r1)r2, otherwise
   pdrv(a, r_star) = pdrv(a,r)r_star
 *)
-Fixpoint pdrv_xform (a:char_t) (r:regexp): rs_xf_pair (List_t (regexp_type r)) := 
+Fixpoint pdrv (a:char_t) (r:regexp): rs_xf_pair (List_t (regexp_type r)) := 
   match r return rs_xf_pair (List_t (regexp_type r)) with
     | Eps | Zero => @RES.empty_xform _
     | Char b => 
@@ -584,68 +606,69 @@ Fixpoint pdrv_xform (a:char_t) (r:regexp): rs_xf_pair (List_t (regexp_type r)) :
       let (rs,f) := singleton_xform Eps in
           existT _ rs (xcomp f (xmap (xchar a)))
     | Alt r1 r2 => 
-      let (rs1, f1) := pdrv_xform a r1 in
-      let (rs2, f2) := pdrv_xform a r2 in
+      let (rs1, f1) := pdrv a r1 in
+      let (rs2, f2) := pdrv a r2 in
         RES.union_xform (existT _ rs1 (xcomp f1 (xmap xinl)))
                         (existT _ rs2 (xcomp f2 (xmap xinr)))
     | Cat r1 r2 => 
-      let rxc := cat_re_xform (pdrv_xform a r1) r2 in
-      match nullable_xform r1 with
+      let rxc := cat_re_xform (pdrv a r1) r2 in
+      match nullable r1 with
         | existT true fnull => 
-          let (rs2, f2) := pdrv_xform a r2 in
+          let (rs2, f2) := pdrv a r2 in
           RES.union_xform rxc
             (existT _ rs2 (xcomp f2 (xcomp (xpair (xcomp xunit fnull) xid) xcross)))
         | existT false _ => rxc
       end
     | Star r1 => 
-      let (rsc, fc) := cat_re_xform (pdrv_xform a r1) (Star r1) in
+      let (rsc, fc) := cat_re_xform (pdrv a r1) (Star r1) in
         existT _ rsc (xcomp fc (xmap (xcons xfst xsnd)))
   end.
 
-Definition pdrv a r := projT1 (pdrv_xform a r).
-
-(** pdrv_rex_xform performs partial derviative calculation, similar to
-    pdrv_xform. However, it takes a re_xf_pair as input instead a regexp *)
-Definition pdrv_rex_xform (ty:type) (a:char_t) (rex:re_xf_pair (List_t ty)) :
+(** pdrv_rex performs partial derviative calculation, similar to
+    pdrv. However, it takes a re_xf_pair as input instead a regexp *)
+Definition pdrv_rex (ty:type) (a:char_t) (rex:re_xf_pair (List_t ty)) :
   rs_xf_pair (List_t ty) := 
   let (r, f) := rex in
-  let (rs, frs) := pdrv_xform a r in
+  let (rs, frs) := pdrv a r in
   existT _ rs (xcomp frs (xcomp (xmap f) xflatten)).
 
 (** Partial derivatives over a regexp set; the result of the union 
     of taking partial derivatives on every regexp in the set *)
-Definition pdrv_set_xform (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) :
+Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) :
   rs_xf_pair (List_t ty) :=
-  fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex_xform a rex) rx1)
+  fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex a rex) rx1)
              rx (@RES.empty_xform (List_t ty)).
 
-Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) :=
-  projT1 (pdrv_set_xform a rx).
+(* Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) := *)
+(*   projT1 (pdrv_set_xform a rx). *)
 
-(* todo: bring back wpdrv *)
 (** Word partial derivatives; 
-  wpdrv(nil, rs) = rs
-  wpdrv(a cons w, rs) = wpdrv(w, pdrv_set(a, rs)) *)
-(* Fixpoint wpdrv (s:list char_t) (rs:RES.t) : RES.t :=  *)
-(*   match s with *)
-(*     | nil => rs *)
-(*     | a :: s' => wpdrv s' (pdrv_set a rs) *)
-(*   end. *)
+    wpdrv(nil, rs) = rs
+    wpdrv(a cons w, rs) = wpdrv(w, pdrv_set(a, rs)) *)
+Fixpoint wpdrv ty (s:list char_t) (rx:rs_xf_pair (List_t ty)): 
+  rs_xf_pair (List_t ty) := 
+  match s with
+    | nil => rx
+    | a:: s' => wpdrv s' (pdrv_set a rx)
+  end.
+
+Definition wpdrv_re_set s (rs:RES.t) : rs_xf_pair (List_t (RES.re_set_type rs))
+  := wpdrv s (existT _ rs xsingleton).
 
 (** ** Relating partial derivatives to prebase *)
 Lemma pdrv_subset_prebase: 
-  forall a r, RES.Subset (pdrv a r) (prebase r).
-Proof. unfold pdrv; induction r; simpl; try (apply RESP.subset_refl).
+  forall a r, RES.Subset (|pdrv a r|) (prebase r).
+Proof. unfold erase; induction r; simpl; try (apply RESP.subset_refl).
   Case "Char".
     destruct_head; [apply RESP.subset_refl | apply RESP.subset_empty].
   Case "Cat".
-    remember_rev (cat_re_xform (pdrv_xform a r1) r2) as crx.
+    remember_rev (cat_re_xform (pdrv a r1) r2) as crx.
     destruct crx as [rsc fc].
-    assert (H4: rsc = projT1 (pdrv_xform a r1) $ r2).
+    assert (H4: rsc = projT1 (pdrv a r1) $ r2).
       rewrite <- cat_re_xform_erase. rewrite Hcrx. trivial.
-    destruct (nullable_xform r1) as [b fnull]; destruct b.
+    destruct (nullable r1) as [b fnull]; destruct b.
     SCase "b=true".
-      destruct (pdrv_xform a r2) as [rs2 f2].
+      destruct (pdrv a r2) as [rs2 f2]. simpl.
       rewrite RES.union_xform_erase. simpl.
       rewrite H4. 
       apply RESP.FM.union_s_m. auto using set_cat_re_subset. trivial.
@@ -654,21 +677,21 @@ Proof. unfold pdrv; induction r; simpl; try (apply RESP.subset_refl).
         eapply set_cat_re_subset. eassumption.
       apply RESP.union_subset_1.
   Case "Alt". 
-    destruct (pdrv_xform a r1) as [rs1 f1].
-    destruct (pdrv_xform a r2) as [rs2 f2].
+    destruct (pdrv a r1) as [rs1 f1].
+    destruct (pdrv a r2) as [rs2 f2].
     rewrite RES.union_xform_erase.
     apply RESP.FM.union_s_m; assumption.
   Case "Star". 
-    remember_rev (cat_re_xform (pdrv_xform a r) (Star r)) as crx.
+    remember_rev (cat_re_xform (pdrv a r) (Star r)) as crx.
     destruct crx as [rsc fc].
-    assert (H4: rsc = projT1 (pdrv_xform a r) $ (Star r)).
+    assert (H4: rsc = projT1 (pdrv a r) $ (Star r)).
       rewrite <- cat_re_xform_erase. rewrite Hcrx. trivial.
     simpl. rewrite H4.
     apply RESF.map_subset. assumption.
 Qed.
 
 Lemma pdrv_subset_pdset: 
-  forall a r, RES.Subset (pdrv a r) (pdset r).
+  forall a r, RES.Subset (|pdrv a r|) (pdset r).
 Proof. unfold pdset; intros. 
   apply RESP.subset_add_2. apply pdrv_subset_prebase.
 Qed.
@@ -796,13 +819,13 @@ Section PDRV_CORRECT.
     end.
 
   Local Ltac in_regexp_contra :=
-  match goal with 
-    | [H1: forall v, ~ in_regexp ?R ?S v, H: in_regexp ?R ?S ?V |- _] => 
-      contradict H; crush
-  end.
+    match goal with 
+      | [H1: forall v, ~ in_regexp ?R ?S v, H: in_regexp ?R ?S ?V |- _] => 
+        contradict H; crush
+    end.
 
-  Lemma nullable_xform_corr: forall r,
-    match nullable_xform r with
+  Lemma nullable_corr: forall r,
+    match nullable r with
       | existT true f => 
         (exists v, in_regexp r nil v) /\
         (forall v, in_regexp r nil v -> In v (xinterp f tt)) /\
@@ -815,16 +838,16 @@ Section PDRV_CORRECT.
     Case "Char". intro. intro. in_regexp_inv.
     Case "Any". intro. intro. in_regexp_inv.
     Case "Cat". simpl.
-      destruct (nullable_xform r1) as [x1 f1]; destruct x1;
-      destruct (nullable_xform r2) as [x2 f2]; destruct x2;
+      destruct (nullable r1) as [x1 f1]; destruct x1;
+      destruct (nullable r2) as [x2 f2]; destruct x2;
       try (intros; intro; in_regexp_inv; in_regexp_contra).
       split; [crush | idtac].
         intros. split; intros.
         SCase "->". in_regexp_inv. xinterp_simpl; crush_hyp.
         SCase "<-". xinterp_simpl. destruct v as [v1 v2]. crush.
     Case "Alt". simpl.
-      destruct (nullable_xform r1) as [x1 f1]; destruct x1;
-      destruct (nullable_xform r2) as [x2 f2]; destruct x2.
+      destruct (nullable r1) as [x1 f1]; destruct x1;
+      destruct (nullable r2) as [x2 f2]; destruct x2.
       SCase "true true".
         split; [crush | idtac].
         xinterp_simpl.
@@ -849,14 +872,14 @@ Section PDRV_CORRECT.
       crush. in_regexp_inv.
   Qed.
 
-  Lemma nullable_xform_corr2: forall r v,
+  Lemma nullable_corr2: forall r v,
     in_regexp r nil v -> 
-    match nullable_xform r with
+    match nullable r with
       | existT true f => In v ((xinterp f) tt)
       | existT false f => False
     end.
-  Proof. intros. generalize (nullable_xform_corr r); intro.
-    destruct (nullable_xform r) as [x f].
+  Proof. intros. generalize (nullable_corr r); intro.
+    destruct (nullable r) as [x f].
     destruct x; crush_hyp.
   Qed.
 
@@ -869,8 +892,8 @@ Section PDRV_CORRECT.
   Hint Extern 3 (in_re_set_xform (singleton_xform ?r) ?s ?v) =>
     apply singleton_xform_corr.
 
-  Lemma pdrv_xform_corr : forall r a s v, 
-     in_regexp r (a :: s) v <-> in_re_set_xform (pdrv_xform a r) s v.
+  Lemma pdrv_corr : forall r a s v, 
+     in_regexp r (a :: s) v <-> in_re_set_xform (pdrv a r) s v.
   Proof. induction r.
     Case "Eps". simpl; split; intros; sim; lprover.
     Case "Zero". simpl. split; intros; sim; lprover.
@@ -888,11 +911,11 @@ Section PDRV_CORRECT.
       in_regexp_inv. 
       sim; lprover.
     Case "Cat". simpl; intros.
-      remember_rev (cat_re_xform (pdrv_xform a r1) r2) as cx. 
+      remember_rev (cat_re_xform (pdrv a r1) r2) as cx. 
       destruct cx as [rsc fc].
-      generalize (nullable_xform_corr r1); intro H10.
-      remember_rev (nullable_xform r1) as nr. destruct nr as [n fnull].
-      remember_rev (pdrv_xform a r2) as pr2. destruct pr2 as [rs2 f2].
+      generalize (nullable_corr r1); intro H10.
+      remember_rev (nullable r1) as nr. destruct nr as [n fnull].
+      remember_rev (pdrv a r2) as pr2. destruct pr2 as [rs2 f2].
       split; intros.
       SCase "->".
         apply inv_cat in H. destruct H as [s1 [s2 [v1 [v2]]]]. crush.
@@ -901,7 +924,7 @@ Section PDRV_CORRECT.
           destruct n.
           SSSCase "nullable r1".
             rewrite union_xform_corr. right.
-            assert (H4:in_re_set_xform (pdrv_xform a r2) s v2).
+            assert (H4:in_re_set_xform (pdrv a r2) s v2).
               apply IHr2; crush.
             rewrite Hpr2 in H4.
             apply in_re_set_xform_elim2 in H4.
@@ -936,8 +959,8 @@ Section PDRV_CORRECT.
           destruct H as [s1 [s2 [v1 [v2 H]]]]. 
           apply InCat with (s1:= (a::s1)) (s2:=s2) (v1:=v1) (v2:=v2); crush.
     Case "Alt". simpl; intros.
-      remember_rev (pdrv_xform a r1) as pr1. destruct pr1 as [rs1 f1].
-      remember_rev (pdrv_xform a r2) as pr2. destruct pr2 as [rs2 f2].
+      remember_rev (pdrv a r1) as pr1. destruct pr1 as [rs1 f1].
+      remember_rev (pdrv a r2) as pr2. destruct pr2 as [rs2 f2].
       rewrite union_xform_corr.
       split; intros.
       SCase "->".
@@ -966,26 +989,6 @@ Section PDRV_CORRECT.
         apply cat_re_xform_corr with (r:=Star r) in H2.
         destruct H2 as [s1 [s2 H2]].
         apply InStar_cons with (s1:= (a::s1)) (s2:=s2) (v1:=v1) (v2:=v2); crush.
-  Qed.
-
-  Lemma pdrv_rex_xform_corr: forall t (rex:re_xf_pair (List_t t)) a s v,
-    in_re_xform rex (a::s) v <-> in_re_set_xform (pdrv_rex_xform a rex) s v.
-  Proof. intros.
-    unfold pdrv_rex_xform. destruct rex as [r f].
-    remember_rev (pdrv_xform a r) as px. destruct px as [rs frs]. simpl.
-    intros; split; intros.
-    Case "->". destruct H as [v' [H2 H4]].
-      apply pdrv_xform_corr in H2.
-      rewrite Hpx in H2.
-      apply in_re_set_xform_elim2 in H2. destruct H2 as [v1 H2].
-      exists v1. 
-      split; [crush | idtac].
-      xinterp_simpl. apply Coqlib.in_flatten_iff; crush.
-    Case "<-". destruct H as [v' [H2 H4]].
-      xinterp_simpl. apply Coqlib.in_flatten_iff in H4.
-      destruct H4 as [l [H4 H6]].
-      apply in_map_iff in H4. destruct H4 as [v1 [H4 H8]].
-      exists v1. rewrite pdrv_xform_corr. crush.
   Qed.
 
 End PDRV_CORRECT.
@@ -1037,28 +1040,42 @@ End PDRV_CORRECT.
 (*   RES.for_all always_rejects rs. *)
 
 
-(* todo: the following defs and proofs haven't been migrated to the case of parsers yet *)
+(** ** Properties of [pdrv_rex], [pdrv_set], and [wpdrv] *)
 
-(** ** Properties of [pdrv_set_xform] and [wpdrv] *)
-
-Lemma pdrv_rex_xform_erase: forall ty a (rex: re_xf_pair (List_t ty)),
-  projT1 (pdrv_rex_xform a rex) = pdrv a (projT1 rex).
-Proof. intros. unfold pdrv_rex_xform, pdrv.
+Lemma pdrv_rex_erase: forall ty a (rex: re_xf_pair (List_t ty)),
+  |pdrv_rex a rex| = |pdrv a (projT1 rex)|.
+Proof. intros. unfold pdrv_rex.
   destruct rex as [r f]. 
-  remember (pdrv_xform a r) as pa; destruct pa as [rs frs].
+  remember (pdrv a r) as pa; destruct pa as [rs frs].
   simpl. rewrite <- Heqpa. trivial.
 Qed.
 
-(* The following lemmas are only used in the termination proof, which does
-   not care about the xforms. Therefore, it's okay we erase all xforms in
-   the statements of the lemmas. *)
+Lemma pdrv_rex_corr: forall t (rex:re_xf_pair (List_t t)) a s v,
+  in_re_xform rex (a::s) v <-> in_re_set_xform (pdrv_rex a rex) s v.
+Proof. intros.
+    unfold pdrv_rex. destruct rex as [r f].
+    remember_rev (pdrv a r) as px. destruct px as [rs frs]. simpl.
+    intros; split; intros.
+    Case "->". destruct H as [v' [H2 H4]].
+      apply pdrv_corr in H2.
+      rewrite Hpx in H2.
+      apply in_re_set_xform_elim2 in H2. destruct H2 as [v1 H2].
+      exists v1. 
+      split; [crush | idtac].
+      xinterp_simpl. apply Coqlib.in_flatten_iff; crush.
+    Case "<-". destruct H as [v' [H2 H4]].
+      xinterp_simpl. apply Coqlib.in_flatten_iff in H4.
+      destruct H4 as [l [H4 H6]].
+      apply in_map_iff in H4. destruct H4 as [v1 [H4 H8]].
+      exists v1. rewrite pdrv_corr. crush.
+Qed.
 
 Lemma pdrv_set_in: forall ty (rx:rs_xf_pair (List_t ty)) r a,
-  RES.In r (pdrv_set a rx) <->
-  exists r', RES.In r' (projT1 rx) /\ RES.In r (pdrv a r').
-Proof. intros. unfold pdrv_set. unfold pdrv_set_xform. 
+  RES.In r (|pdrv_set a rx|) <->
+  exists r', RES.In r' (|rx|) /\ RES.In r (|pdrv a r'|).
+Proof. intros. unfold erase. unfold pdrv_set. 
   rewrite fold_xform_erase
-    with (comb2:=fun r rs1 => RES.union (pdrv a r) rs1).
+    with (comb2:=fun r rs1 => RES.union (|pdrv a r|) rs1).
   split.
   Case "->". 
     simpl.
@@ -1076,111 +1093,96 @@ Proof. intros. unfold pdrv_set. unfold pdrv_set_xform.
         crush.
   Case "assumption of fold_xform_erase".
     intros. rewrite RES.union_xform_erase.
-    f_equal. apply pdrv_rex_xform_erase.
+    f_equal. apply pdrv_rex_erase.
 Qed.
-  
-Lemma pdrv_set_trans: forall r (rx:rs_xf_pair (List_t (regexp_type r))) a, 
-  RES.Subset (projT1 rx) (pdset r) -> 
-  RES.Subset (pdrv_set a rx) (pdset r).
+
+Lemma pdrv_set_trans: forall ty r (rx:rs_xf_pair (List_t ty)) a, 
+  RES.Subset (|rx|) (pdset r) -> 
+  RES.Subset (|pdrv_set a rx|) (pdset r).
 Proof. intros. intro r1; intro H2.
   apply pdrv_set_in in H2. destruct H2 as [r' [H4 H6]].
   apply pdrv_subset_pdset in H6.
   eauto using pdset_trans.
 Qed.
 
-(* todo: to be restored *)
-(* Instance pdrv_set_subset:  *)
-(*   forall a, Proper (RES.Equal ==> RES.Subset) (pdrv_set a). *)
-(* Proof. unfold Proper, respectful. intros a rs1 rs2 H r H2. *)
-(*   apply pdrv_set_in in H2. sim. *)
-(*   apply pdrv_set_in. exists x. rewrite <- H. crush. *)
-(* Qed. *)
+Lemma pdrv_set_erase_subset: 
+  forall ty1 ty2 a (rx1:rs_xf_pair (List_t ty1)) (rx2:rs_xf_pair (List_t ty2)),
+    erase_eq rx1 rx2 ->
+    erase_subset (pdrv_set a rx1) (pdrv_set a rx2).
+Proof. unfold erase_eq. 
+  intros ty1 ty2 a rs1 rs2 H r H2.
+  apply pdrv_set_in in H2. sim.
+  apply pdrv_set_in. exists x. rewrite <- H. crush.
+Qed.
 
-(* Instance pdrv_set_equal:  *)
-(*   forall a, Proper (RES.Equal ==> RES.Equal) (pdrv_set a). *)
-(* Proof. unfold Proper, respectful. intros a rs1 rs2 H. *)
-(*   apply RESP.subset_antisym; rewrite H; reflexivity. *)
-(* Qed. *)
+Lemma pdrv_set_erase_eq:
+  forall ty1 ty2 a (rx1:rs_xf_pair (List_t ty1)) (rx2:rs_xf_pair (List_t ty2)),
+    erase_eq rx1 rx2 ->
+    erase_eq (pdrv_set a rx1) (pdrv_set a rx2).
+Proof.  intros. apply erase_subset_antisym.
+  apply pdrv_set_erase_subset. trivial.
+  apply pdrv_set_erase_subset. unfold erase_eq in *. symmetry. trivial.
+Qed.
 
-(* TBC *)
-
-
-Lemma pdrv_set_xform_corr: forall ty a (rx:rs_xf_pair (List_t ty)) s v,
-  in_re_set_xform (pdrv_set_xform a rx) s v <-> 
+Lemma pdrv_set_corr: forall ty a (rx:rs_xf_pair (List_t ty)) s v,
+  in_re_set_xform (pdrv_set a rx) s v <-> 
   in_re_set_xform rx (a::s) v.
-Proof. intros. unfold pdrv_set_xform.
+Proof. intros. unfold pdrv_set.
   apply fold_xform_rec.
   Case "equality respecting".
-    intros. rewrite H0. apply H.
-  Case "->".
-    split; intros; contradict H;  generalize empty_xform_corr; crush.
-  Case "<-".
+    intros. rewrite H0. trivial.
+  Case "base".
+    split; intro H; contradict H; generalize empty_xform_corr; crush.
+  Case "inductive case".
     intros.
     rewrite union_xform_corr.
     rewrite add_xform_corr.
-    rewrite pdrv_rex_xform_corr.
+    rewrite pdrv_rex_corr.
     crush.
 Qed.
 
-
-
-
-
-Lemma pdrv_set_corr rs a s:
-  in_re_set (pdrv_set a rs) s <-> in_re_set rs (a::s).
-Proof. unfold in_re_set. split; intros.
-  Case "->".
-    destruct H as [r [H2 H4]].
-    apply pdrv_set_in in H2.
-    destruct H2 as [r' [H6 H8]].
-    assert (H10:in_re_set (pdrv a r') s).
-      unfold in_re_set. crush.
-    apply pdrv_corr in H10.
-    exists r'. crush.
-  Case "<-".
-    destruct H as [r [H2 H4]].
-    apply pdrv_corr in H4.
-    unfold in_re_set in H4.
-    destruct H4 as [r' [H6 H8]].
-    assert (RES.In r' (pdrv_set a rs)).
-      apply pdrv_set_in. crush.
-    crush.
+Lemma wpdrv_app: forall ty w1 w2 (rx:rs_xf_pair (List_t ty)),
+  wpdrv (w1 ++ w2) rx = wpdrv w2 (wpdrv w1 rx). 
+Proof. induction w1; intros. 
+  simpl; trivial.
+  simpl. rewrite IHw1. trivial.
 Qed.
 
-Lemma wpdrv_corr: forall s1 s2 rs, 
-  in_re_set (wpdrv s1 rs) s2 <-> in_re_set rs (s1 ++ s2).
+Lemma wpdrv_corr: forall ty s1 s2 (rx:rs_xf_pair (List_t ty)) v, 
+  in_re_set_xform (wpdrv s1 rx) s2 v <-> in_re_set_xform rx (s1 ++ s2) v.
 Proof. induction s1. crush.
   intros. simpl.
   split; intros.
     apply IHs1 in H. apply pdrv_set_corr in H. trivial.
     apply IHs1. apply pdrv_set_corr. trivial.
 Qed.
-  
-Lemma wpdrv_pdset_trans : forall w rs r, 
-  RES.Subset rs (pdset r) -> RES.Subset (wpdrv w rs) (pdset r).
+
+Lemma wpdrv_pdset_trans : forall ty w (rx:rs_xf_pair (List_t ty)) r, 
+  RES.Subset (|rx|) (pdset r) -> 
+  RES.Subset (|wpdrv w rx|) (pdset r).
 Proof. induction w; [auto | idtac].
   intros; simpl; eauto using pdrv_set_trans.
 Qed.
 
+(* todo: a trivial lemma; maybe remove *)
+Lemma wpdrv_re_set_pdset_trans : forall w rs r,
+  RES.Subset rs (pdset r) -> RES.Subset (|wpdrv_re_set w rs|) (pdset r).
+Proof. generalize wpdrv_pdset_trans. crush. Qed.
+
 Theorem wpdrv_subset_pdset : forall w r,
-  RES.Subset (wpdrv w (RES.singleton r)) (pdset r).
+  RES.Subset (| wpdrv_re_set w (RES.singleton r) |) (pdset r).
 Proof.  intros; apply wpdrv_pdset_trans.
   unfold pdset. intro r'; intros.
   apply RESP.FM.singleton_iff in H.
   auto with set.
 Qed.
 
-Instance wpdrv_set_equal:
-  forall s, Proper (RES.Equal ==> RES.Equal) (wpdrv s).
-Proof. unfold Proper, respectful. induction s. crush.
-  intros. simpl. apply IHs. rewrite H. reflexivity.
-Qed.
-
-Lemma wpdrv_app: forall w1 w2 rs,
-  wpdrv (w1 ++ w2) rs = wpdrv w2 (wpdrv w1 rs). 
-Proof. induction w1; intros. 
-  simpl; trivial.
-  simpl. rewrite IHw1. trivial.
+Lemma wpdrv_erase_eq:
+  forall ty1 ty2 s (rx1:rs_xf_pair (List_t ty1)) (rx2:rs_xf_pair (List_t ty2)),
+    erase_eq rx1 rx2 ->
+    erase_eq (wpdrv s rx1) (wpdrv s rx2).
+Proof. induction s. crush.
+  intros. simpl. apply IHs. apply pdrv_set_erase_eq. trivial.
 Qed.
 
 (** * Define [RESetSet], which is a set of RES. 
@@ -1263,6 +1265,12 @@ Module RESetSet.
       exists (singleton elm). crush.
   Qed.
 
+  (* todo: merge this with in_regexp_contra and move to commontacs.v *)
+  Ltac find_contra :=
+    match goal with
+      | [H1:?p, H2:~ ?p |- _] => contradict H1; trivial
+    end.
+
   Lemma add_set_elements: forall s2 s1,
     disjoint s1 s2 -> elements (add_set s1 s2) = elements s1 ++ elements s2.
   Proof. unfold add_set, disjoint, fold, POW.MM.In.
@@ -1280,7 +1288,7 @@ Module RESetSet.
         destruct H2.
         SCase "x=a".
           rewrite H1 in H4.
-          inversion ok2. congruence.
+          inversion ok2. find_contra.
         SCase "x in s1". split; auto.
       assert (POW.MM.Raw.Ok ls2).
         inversion ok2. assumption.
@@ -1322,7 +1330,7 @@ Module RESetSet.
   Lemma get_element_some_lt: forall n s e,
     get_element n s = Some e -> n < cardinal s.
   Proof. unfold get_element, cardinal, Raw.cardinal. 
-     eauto using nth_error_some_lt.
+     eauto using Coqlib.nth_error_some_lt.
   Qed.
 
   Lemma get_element_eq: forall s1 s2 n,
@@ -1333,7 +1341,7 @@ Module RESetSet.
     elements_ext s1 s2 -> n < cardinal s1
       -> get_element n s2 = get_element n s1.
   Proof. unfold elements_ext, get_element. intros. sim.
-    rewrite H. generalize nth_error_app_lt. crush.
+    rewrite H. generalize Coqlib.nth_error_app_lt. crush.
   Qed. 
 
   Lemma get_element_add: forall n s e1 e,
@@ -1379,7 +1387,7 @@ Module RESetSet.
     get_index e s = Some n -> n < cardinal s.
   Proof. intros. apply get_index_spec in H.
     unfold Coqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
-    apply nth_error_some_lt in H2. auto.
+    apply Coqlib.nth_error_some_lt in H2. auto.
   Qed.
 
   Lemma get_index_add_monotone: forall e e1 s n,
@@ -1401,14 +1409,14 @@ Module RESetSet.
         apply get_index_spec; unfold Coqlib.first_occur.
         rewrite H. rewrite Coqlib.firstn_eq_lt by trivial.
         split; [crush | idtac].
-          exists x. rewrite nth_error_app_lt by trivial. crush.
+          exists x. rewrite Coqlib.nth_error_app_lt by trivial. crush.
       SCase "<-".
         sim. apply get_index_spec in H1. apply get_index_spec.
         unfold Coqlib.first_occur in *.
         sim. 
           erewrite <- Coqlib.firstn_eq_lt by trivial.
             rewrite H in H1. eassumption.
-          exists x. erewrite <- nth_error_app_lt by trivial.
+          exists x. erewrite <- Coqlib.nth_error_app_lt by trivial.
             rewrite H in H2. crush.
   Qed.
 
@@ -1437,36 +1445,46 @@ Module RESetSet.
 
 End RESetSet.
 
-
 (* seems to need this to get around of a coq bug *)
 Module RESS := RESetSet.
 Module RESSP :=MSetProperties.WProperties RESetSet.
 Module RESSMP :=WMoreProperties RESetSet.
 
+
+
+
+(* todo: the following defs and proofs haven't been migrated to the case of parsers yet *)
+
 Section DFA.
+  (** Our [DFA] (really a deterministic finite-state transducer) has a number
+     of states [n].  Each state corresponds to an [astgram], and in particular
+     dfa_states[0] corresponds to the original grammar, and each other state
+     corresponds to the derivative of dfa_states[0] with respect to some string
+     of tokens [t1,...,tn].  We transition from states using the transition table.
+     In particular, if we are in state [i], given input token [t], we compute
+     our next state as [next_state] of [transition[i][t]].  The [next_xform] in 
+     [transition[i][t]] says how to transform AST values extracted from 
+     [next_state(transition[i][t])] to the type of AST values in [states[i]].  
+     The [accept] row records which states are accepting states, while the
+     [rejects] row records which states are failing states.  
+     *)
 
   (** The initial regexp from which we will build the DFA *)
   Variable r: regexp.
-
-  Record DFA := { 
-    dfa_num_states : nat ; 
-    dfa_states : RESS.t ; 
-    dfa_transition : list (list nat) ; 
-    dfa_accepts : list bool ;
-    dfa_rejects : list bool
-  }.
-
-  Hint Rewrite Coqlib.nth_error_app_eq using omega.
 
   (** A state is a set of regexps, corresponding to partial derivatives of
       the starting regexp w.r.t. some word. *)
   Definition state := RES.t.
 
-  (** a set of states *) 
+  (** a set of states; can use something more efficient than lists *) 
   Definition states := RESS.t.
 
-  Definition state_is_wf (s:state) : Prop := 
-    exists w, RES.Equal s (wpdrv w (RES.singleton r)).
+  (* todo: remove *)
+  (* Definition states_t := list astgram. *)
+  (* Notation "s .[ i ] " := (nth i s aZero) (at level 40). *)
+
+  Definition state_is_wf (s:state) : Prop :=
+    exists w, RES.Equal s (| wpdrv_re_set w (RES.singleton r) |).
   Definition wf_state := {s:state | state_is_wf s}.
 
   Definition states_are_wf (ss: states) : Prop := RESS.For_all state_is_wf ss.
@@ -1480,648 +1498,296 @@ Section DFA.
   Definition wfs_ext (ss1 ss2: wf_states) := 
     exists ss, elements_wfs ss2 = elements_wfs ss1 ++ elements_wfs ss.
 
-  Instance state_wf_imp: Proper (RES.Equal ==> impl) state_is_wf.
+  Instance state_wf_imp: Proper (RESet.Equal ==> impl) state_is_wf.
   Proof. unfold Proper, respectful, impl. intros s1 s2; intros.
     destruct H0 as [w H2].
     exists w. rewrite <- H. trivial.
   Qed.
     
-  Instance state_wf_equal: Proper (RES.Equal ==> iff) state_is_wf.
+  Instance state_wf_equal: Proper (RESet.Equal ==> iff) state_is_wf.
   Proof. unfold Proper, respectful. intros s1 s2 H.
     split; apply state_wf_imp; [trivial | symmetry; trivial].
   Qed.
 
-  Definition wpdrv_wf (w: list char_t) (s: wf_state): wf_state.
-    refine (exist _ (wpdrv w (proj1_sig s)) _).
-    unfold state_is_wf; intros. 
+  (** A pair of well-formed states and xforms *)
+  Definition wfs_xf_pair (ty:type) := 
+    {s: wf_state & RES.re_set_type (proj1_sig s) ->> ty}.
+
+  Definition wpdrv_wf (w: list char_t) (s: wf_state): 
+    wfs_xf_pair (List_t (RES.re_set_type (proj1_sig s))).
+    refine (existT _ (exist _ (| wpdrv_re_set w (proj1_sig s) |) _) _).
+    simpl. apply (projT2 (wpdrv_re_set w (proj1_sig s))).
+    Grab Existential Variables.
+    simpl.
+    unfold state_is_wf; intros.
     destruct s as [s [w1 H]].
-    exists (w1++w).
-    rewrite wpdrv_app. simpl. rewrite H. reflexivity.
+    unfold wpdrv. simpl in *.
+    exists (w1++w). unfold wpdrv_re_set.
+    rewrite wpdrv_app.
+    apply wpdrv_erase_eq. trivial.
   Defined.
 
-  Definition emp_wfs: wf_states.
-    refine (exist _ RESS.empty _).
-    unfold states_are_wf, RESS.For_all. intros.
-    apply RESSP.FM.empty_iff in H. destruct H.
-  Defined.
+  (* Recursive Extraction wpdrv_wf. *)
 
-  Definition singleton_wfs (s:wf_state): wf_states.
-    refine (exist _ (RESS.singleton (proj1_sig s)) _).
-    unfold states_are_wf, RESS.For_all. intros.
-    apply RESSP.FM.singleton_1 in H.
-    generalize (proj2_sig s). intro. rewrite <- H. trivial.
-  Defined.    
-    
-  Definition add_wfs (s:wf_state) (ss:wf_states): wf_states.
-    refine (exist _ (RESS.add (proj1_sig s) (proj1_sig ss)) _).
-    unfold states_are_wf; intros.
-    unfold RESS.For_all. intros.
-    destruct s as [s H2].
-    destruct ss as [ss H4].
-    apply RESSP.FM.add_iff in H. destruct H.
-      simpl in H. rewrite <- H. trivial.
-      apply H4. trivial.
-  Defined.
+  (* TBC *)
 
-  Definition add_set_wfs (ss1 ss2:wf_states): wf_states.
-    refine (exist _ (RESS.add_set (proj1_sig ss1) (proj1_sig ss2)) _).
-    unfold RESS.add_set.
-    apply RESSP.fold_rec_bis. crush.
-      apply (proj2_sig ss1).
-      intros.
-      unfold states_are_wf.
-      intros y H2.
-      apply RESSP.FM.add_iff in H2.
-      destruct H2. 
-        rewrite <- H2. apply (proj2_sig ss2). trivial.
-        auto.
-  Defined.
+  (* Definition emp_wfs: wf_states. *)
+  (*   refine (exist _ RESS.empty _). *)
+  (*   unfold states_are_wf, RESS.For_all. intros. *)
+  (*   apply RESSP.FM.empty_iff in H. destruct H. *)
+  (* Defined. *)
 
-  Hint Rewrite RESS.add_set_empty.
+  (* Definition singleton_wfs (s:wf_state): wf_states. *)
+  (*   refine (exist _ (RESS.singleton (proj1_sig s)) _). *)
+  (*   unfold states_are_wf, RESS.For_all. intros. *)
+  (*   apply RESSP.FM.singleton_1 in H. *)
+  (*   generalize (proj2_sig s). intro. rewrite <- H. trivial. *)
+  (* Defined.     *)
 
-  Instance wfs_ext_refl: Reflexive wfs_ext.
-  Proof. unfold wfs_ext. intro. exists emp_wfs; crush. Qed.
+  (* Definition add_wfs (s:wf_state) (ss:wf_states): wf_states. *)
+  (*   refine (exist _ (RESS.add (proj1_sig s) (proj1_sig ss)) _). *)
+  (*   unfold states_are_wf; intros. *)
+  (*   unfold RESS.For_all. intros. *)
+  (*   destruct s as [s H2]. *)
+  (*   destruct ss as [ss H4]. *)
+  (*   apply RESSP.FM.add_iff in H. destruct H. *)
+  (*     simpl in H. rewrite <- H. trivial. *)
+  (*     apply H4. trivial. *)
+  (* Defined. *)
 
-  Instance wfs_ext_trans: Transitive wfs_ext.
-  Proof. unfold wfs_ext. intros ss1 ss2 ss3 H1 H2.
-    destruct H1 as [ss1' H4].
-    destruct H2 as [ss2' H8].
-    assert (RESS.Subset (proj1_sig ss1') (proj1_sig ss2)).
-      eapply RESSMP.elements_app_subset2; eassumption.
-    use_lemma RESSMP.elements_app_disjoint by eassumption.
-    assert (RESS.disjoint (proj1_sig ss1') (proj1_sig ss2')).
-      rewrite H. assumption.
-    exists (add_set_wfs ss1' ss2').
-    unfold add_set_wfs, elements_wfs in *. simpl in *.
-    rewrite RESS.add_set_elements by assumption.
-    crush.
-  Qed.
+  (* Definition add_set_wfs (ss1 ss2:wf_states): wf_states. *)
+  (*   refine (exist _ (RESS.add_set (proj1_sig ss1) (proj1_sig ss2)) _). *)
+  (*   unfold RESS.add_set. *)
+  (*   apply RESSP.fold_rec_bis. crush. *)
+  (*     apply (proj2_sig ss1). *)
+  (*     intros. *)
+  (*     unfold states_are_wf. *)
+  (*     intros y H2. *)
+  (*     apply RESSP.FM.add_iff in H2. *)
+  (*     destruct H2.  *)
+  (*       rewrite <- H2. apply (proj2_sig ss2). trivial. *)
+  (*       auto. *)
+  (* Defined. *)
 
-  Lemma wfs_ext_elements_ext ss ss':
-    wfs_ext ss ss' -> RESS.elements_ext (proj1_sig ss) (proj1_sig ss').
-  Proof. unfold wfs_ext, RESS.elements_ext. crush. Qed.
-
-  Lemma get_element_wfs_ext n ss ss': 
-    wfs_ext ss ss' -> n < cardinal_wfs ss
-      -> RESS.get_element n (proj1_sig ss') = RESS.get_element n (proj1_sig ss).
-  Proof. intros. apply wfs_ext_elements_ext in H. 
-    apply RESS.get_element_ext; auto.
-  Qed.
-
-  Lemma get_element_wfs_ext2: forall ss1 ss2 n e,
-    wfs_ext ss1 ss2 -> RESS.get_element n (proj1_sig ss1) = Some e
-      -> RESS.get_element n (proj1_sig ss2) = Some e.
-  Proof. intros. use_lemma RESS.get_element_some_lt by eassumption.
-    erewrite get_element_wfs_ext; eassumption.
-  Qed.
-
-  Definition get_index_wfs (s:wf_state) (ss:wf_states): option nat :=
-    RESS.get_index (proj1_sig s) (proj1_sig ss).
-
-  Definition get_element_wfs (n:nat) (ss:wf_states):
-    {s:state | state_is_wf s /\ RESS.get_element n (proj1_sig ss) = Some s}
-    + {n >= cardinal_wfs ss}.
-    refine (match RESS.get_element_2 n (proj1_sig ss) with
-              | inleft s => inleft (exist _ (proj1_sig s) _)
-              | inright H => inright _ 
-           end).
-    Case "state_is_wf s".
-      destruct ss as [ss H2].
-        destruct s as [s H4]. simpl in *.
-        split.
-          apply H2.
-          apply Coqlib.nth_error_in in H4.
-          assert (InA RES.Equal s (RESS.elements ss)).
-            apply In_InA. apply RES.eq_equiv. assumption.
-          apply RESS.elements_spec1. trivial.
-        trivial.
-    Case "n>=|ss|".
-      apply nth_error_none in H. trivial.
-  Defined.
-
-  Opaque RESS.elements. 
-  Lemma wfs_ext_add s ss1 ss2: 
-    RESS.mem (proj1_sig s) (proj1_sig ss1) = false
-    -> wfs_ext (add_wfs s ss1) ss2 -> wfs_ext ss1 ss2.
-  Proof. unfold wfs_ext, elements_wfs. intros.
-    destruct H0 as [ss H2].
-    use_lemma RESSMP.elements_app_disjoint by eassumption.
-    unfold add_set_wfs, add_wfs in *. simpl in *.
-    rewrite RESS.add_elements_2 in H2 by assumption.
-    exists (add_set_wfs (singleton_wfs s) ss).
-    use_lemma RESS.disjoint_add_add_set by eassumption.
-    use_lemma RESS.disjoint_add_singleton by eassumption.
-    simpl. rewrite RESS.add_set_elements by assumption.
-    crush.
-  Qed.
-
-  Lemma get_element_add_wfs_ext s ss ss' : 
-    wfs_ext (add_wfs s ss) ss' 
-      -> RESS.mem (proj1_sig s) (proj1_sig ss) = false
-      -> RESS.get_element (cardinal_wfs ss) (proj1_sig ss') = Some (proj1_sig s).
-  Proof. unfold wfs_ext, elements_wfs, add_wfs, cardinal_wfs. simpl. intros.
-    destruct H as [ss1 H2].
-    unfold RESS.get_element.
-    rewrite RESS.add_elements_2 in H2 by assumption.
-    rewrite H2.
-    rewrite app_ass.
-    assert (H12:cardinal_wfs ss = length (RESS.elements (proj1_sig ss))).
-      unfold cardinal_wfs. rewrite POW.MM.cardinal_spec. omega.
-    rewrite Coqlib.nth_error_app_eq by crush.
-    rewrite <- app_comm_cons. 
-    crush.
-  Qed.
-  Transparent RESS.elements. 
+  (* Hint Rewrite RESS.add_set_empty. *)
 
 
-  (** Generate the transition matrix row for the state s.  In general, this
-      will add new states. *)
-  Fixpoint gen_row' (n:nat) (s:wf_state) (ss:wf_states) (tk_id:token_id) : 
-    (wf_states * list nat) :=
-    match n with
-      | 0 => (ss, nil)
-      | S n' =>
-        let s1 := wpdrv_wf (token_id_to_chars tk_id) s in
-        match get_index_wfs s1 ss with
-          | Some n =>
-            let (ss1, row) := gen_row' n' s ss (1 + tk_id) in
-            (ss1, n :: row)
-          | None =>
-            let (ss1, row) := gen_row' n' s (add_wfs s1 ss) (1 + tk_id) in
-            (ss1, cardinal_wfs ss :: row)
-        end
+
+
+  
+
+
+
+  (** Entries in the transition matrix *)
+  Record entry_t(row:nat)(states:states_t) := 
+    { (** which state do we go to next *)
+      next_state : nat ; 
+      (** the [next_state] is in bounds with respect to the number of states *)
+      next_state_lt : next_state < length states ; 
+      (** how do we transform ASTs from the next state back to this state *)
+      next_xform : 
+        interp (astgram_type (states.[next_state])) -> interp (astgram_type (states.[row])) 
+    }.
+
+  (** Rows in the transition matrix -- an entry for each token *)  
+  Definition row_t(i:nat)(s:states_t) := list (entry_t i s).
+
+  (** This predicate captures the fact that the ith entry in a row holds
+      the derivative of that row's corresponding [astgram] with respect
+      to the ith token. *)
+  Definition row_wf(gpos:nat)(s:states_t)(r:row_t gpos s)(i:nat)(t:token_id) :=
+    match nth_error r i with 
+      | Some e => 
+        exists x, derivs_and_split (s.[gpos]) (token_id_to_chars t) = 
+                  existT _ (s.[next_state e]) x /\ 
+                  xinterp x = (next_xform e)
+      | None => True
     end.
 
-  Definition gen_row (s:wf_state) (ss:wf_states) : (wf_states * list nat) := 
-    gen_row' num_tokens s ss 0.
+  Record transition_t(s:states_t) := {
+    (** which row are we talking about *)
+    row_num : nat ; 
+    (** the row's index is in range for the number of states we have *)
+    row_num_lt : row_num < length s ;
+    (** what are the transition entries *)
+    row_entries : list (entry_t row_num s) ;
+    (** the list of values we get from this state when it is an accepting state *)
+    row_nils : list (interp (astgram_type (s.[row_num]))) ; 
+    (** have an entry in the row for each token *)
+    row_entries_len : length row_entries = num_tokens ;
+    (** each entry is the appropriate derivative *)
+    row_entries_wf: forall i, row_wf row_entries i i ;
+    (** the row_nils are what you get when you run [astgram_extract_nil] on the
+        row's [astgram]. *)
+    row_nils_wf : row_nils = astgram_extract_nil (s.[row_num])
+  }.
 
-  (** A relation that puts an upper bound on nats *)
-  Definition limit_nat (m:nat) : relation nat :=
-    fun n1 n2: nat => m - n1 < m - n2.
+  (** The transition matrix is then a list of rows *)
+  Definition transitions_t(s:states_t) := list (transition_t s).
 
-  Lemma limit_nat_wf_helper :
-    forall n k m, m - k < n -> Acc (limit_nat m) k.
-  Proof. induction n; intros; [omega | idtac].
-    apply Acc_intro; intros. unfold limit_nat in H0.
-    apply IHn. omega.
-  Defined.
-
-  Lemma limit_nat_wf: 
-    forall m, well_founded (limit_nat m).
-  Proof. intros. intro n.
-    apply Acc_intro; intros.
-    unfold limit_nat in H.
-    eauto using limit_nat_wf_helper.
-  Defined.
-
-  (* max number of partial derivatives of r *)
-  Definition max_pdrv := NPeano.pow 2 (1 + num_of_syms r).
-    (* Pos.add 1 (shift_nat (1 + num_of_syms r) 1). *)
-
-  (** The termination metric for function [build_table'] *)
-  Definition build_table_metric := limit_nat max_pdrv.
-
-  Lemma states_upper_bound: forall (ss: wf_states),
-    cardinal_wfs ss <= max_pdrv.
-  Proof. intros.
-    destruct ss as [ss H].
-    assert (H2: RESS.Subset ss (POW.powerset (pdset r))).
-      intros s H2. apply POW.powerset_spec.
-      apply H in H2. unfold wf_state in H2.
-      destruct H2 as [w H2].
-      rewrite H2. apply wpdrv_subset_pdset.
-    apply RESSP.subset_cardinal in H2.
-    rewrite POW.powerset_cardinal in H2.
-    assert (NPeano.pow 2 (RES.cardinal (pdset r)) <= 
-            NPeano.pow 2 (1 + num_of_syms r)).
-      apply NPeano.Nat.pow_le_mono_r. omega.
-      apply pdset_upper_bound.
-    unfold max_pdrv.
-    unfold cardinal_wfs. simpl in *.
-    omega.
-  Qed.
-
-  Lemma build_table_metric_dec : forall n ss,
-    n < cardinal_wfs ss -> build_table_metric (S n) n.
-  Proof. intros. unfold build_table_metric, limit_nat.
-    apply plus_lt_reg_l with (p:= S n).
-    assert (S n <= max_pdrv). 
-     generalize (states_upper_bound ss).
-      omega.
-    repeat rewrite NPeano.Nat.add_sub_assoc by omega.
-    repeat rewrite NPeano.Nat.add_sub_swap by omega.
-    omega.
-  Qed.
-
-  (** Build a transition table by closing off the reachable states.  The
-      invariant is that we've closed the table up to the [next_state] and
-      have generated the appropriate transition rows for the states in the
-      range 0..next_state-1.  So we first check to see if [next_state] is
-      outside the range of states, and if so, we are done.  Otherwise, we
-      generate the transition row for the derivative at the position
-      [next_state], add it to the list of rows, and then move on to the
-      next position in the list of states.  Note that when we generate the
-      transition row, we may end up adding new states.  *)
-  Unset Implicit Arguments.
-  Require Import Coq.Program.Wf.
-  Definition extract_wf_state (ss: wf_states) (n:nat)
-             (s: {s:state | state_is_wf s
-                            /\ RESS.get_element n (proj1_sig ss) = Some s})
-    : wf_state.
-    destruct s. destruct a.
-    refine (exist _ x _).
-    apply H.
-  Defined.
-  Program Fixpoint build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat)
-           {wf build_table_metric next_state} :
-    wf_states * list (list nat) :=
-    match get_element_wfs next_state ss with
-       | inleft s => 
-         let (ss1, row1) := gen_row (extract_wf_state _ _ s) ss in
-         build_table' ss1 (rows ++ (row1::nil)) (1 + next_state)
-       | inright _ => (ss, rows)
+  Record DFA := {
+    (** number of states in the DFA *)
+    dfa_num_states : nat ; 
+    (** the list of [astgram]s for the states *)
+    dfa_states : states_t ; 
+    dfa_states_len : length dfa_states = dfa_num_states ; 
+    (** the transition matrix for the DFA -- see above. *)
+    dfa_transition : transitions_t dfa_states ; 
+    (** the number of states equals the number of rows. *)
+    dfa_transition_len : length dfa_transition = dfa_num_states ; 
+    (** the [row_num] of the ith row should be i *)
+    dfa_transition_r : forall i, match nth_error dfa_transition i with 
+                                   | Some r => row_num r = i
+                                   | None => True
+                                 end ;
+    (** which states are accepting states -- no longer used *)
+    dfa_accepts : list bool ; 
+    dfa_accepts_len : length dfa_accepts = dfa_num_states ; 
+    (** which states are failure states -- no longer used *)
+    dfa_rejects : list bool ;
+    dfa_rejects_len : length dfa_rejects = dfa_num_states
+  }.
+  
+  (** Instead of working directly in terms of lists of [char_p]'s, we instead
+     work in terms of [token_id]'s where a [token_id] is just a [nat] in the
+     range 0..[num_tokens]-1.  We assume that each [token_id] can be mapped
+     to a list of [char_p]'s.  For example, in the x86 parser, our characters
+     are bits, but our tokens represent bytes in the range 0..255.  So the
+     [token_id_to_chars] function should extract the n bits corresponding to the
+     byte value.  *)
+  (** Find the index of an [astgram] in the list of [states]. *)
+  Fixpoint find_index' (g:astgram) (n:nat) (states:states_t) : option nat := 
+    match states with 
+      | nil => None
+      | h::t => if astgram_dec g h then Some n else find_index' g (1+n) t
     end.
-  Next Obligation.
-    destruct Heq_anonymous.
-    apply RESS.get_element_some_lt in e.
-    eauto using build_table_metric_dec.
-  Defined.
-  Next Obligation.
-    apply measure_wf. apply limit_nat_wf.
-  Defined.
-  Set Implicit Arguments.
 
-  (* gtan: the following QED doesn't finish for some reason *)
-  (* Unset Implicit Arguments. *)
-  (* Require Import Coq.Program.Wf. *)
-  (* Require Import Recdef. *)
-  (* Function build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat) *)
-  (*          {wf build_table_metric next_state} : *)
-  (*   wf_states * list (list nat) := *)
-  (*   match get_element_wfs next_state ss with *)
-  (*      | inleft s =>  *)
-  (*        let gr := gen_row (extract_wf_state _ _ s) ss in *)
-  (*        build_table' (fst gr) (rows ++ ((snd gr)::nil)) (1 + next_state) *)
-  (*      | inright _ => (ss, rows) *)
-  (*   end. *)
-  (* Case "descreasing metric". *)
-  (*   intros. *)
-  (*   clear teq. *)
-  (*   destruct s as [s [H H2]]. *)
-  (*   eauto using build_table_metric_dec. *)
-  (* Case "measure wf". *)
-  (*   apply limit_nat_wf. *)
-  (* Qed. *)
-  (* Set Implicit Arguments. *)
+  Definition find_index (g:astgram) (states:states_t) : option nat := 
+    find_index' g 0 states.
 
-  Import WfExtensionality.
-  Lemma build_table'_unfold (ss:wf_states) rows next_state:
-    build_table' ss rows next_state  =
-    match get_element_wfs next_state ss with
-       | inleft s => 
-         let (ss1, row1) := gen_row (extract_wf_state _ _ s) ss in
-         build_table' ss1 (rows ++ (row1::nil)) (1 + next_state)
-       | inright _ => (ss, rows)
+  (** Find the index of an [astgram] in the list of [states].  We return
+     a delta to add to the states in case the [astgram] is not there and
+     we need to add it. *)
+  Definition find_or_add (g:astgram) (states:states_t) : states_t * nat := 
+    match find_index g states with 
+      | None => ((g::nil), length states)
+      | Some i => (nil, i)
     end.
+
+  (** Various helper lemmas regarding [nth] and [nth_error] -- these
+      should probably be put in another file. *)
+  Lemma nth_lt : forall xs ys n, n < length xs -> (xs ++ ys).[n] = xs.[n].
   Proof.
-   unfold build_table' at 1.
-   unfold_sub build_table'_func 
-     (build_table'_func 
-        (existT (fun _ : wf_states => {_ : list (list nat) & nat}) ss
-                (existT (fun _ : list (list nat) => nat) rows next_state))).
-   simpl.
-   destruct (get_element_wfs next_state ss); trivial.  
+    induction xs ; mysimp. assert False. omega. contradiction. 
+    destruct n. auto. apply IHxs. omega.
   Qed.
 
-  (* Recursive Extraction build_table'. *)
-
-  Definition ini_state: wf_state.
-    refine (exist _ (RES.singleton r) _).
-    exists nil. simpl. reflexivity. 
-  Defined.
-
-  Definition ini_states: wf_states.
-    refine (exist _ (RESS.singleton (proj1_sig ini_state)) _).
-    intros s H.
-    apply RESSP.FM.singleton_1 in H. rewrite <- H.
-    apply (proj2_sig ini_state).
-  Defined.
-
-  (** We start with the initial [regexp] in state 0 and then try to close 
-      off the table. *)
-  Definition build_table := 
-    build_table' ini_states nil 0. 
- 
-  Definition build_accept_table (ss:wf_states) : list bool := 
-    List.map reset_nullable (RESS.elements (proj1_sig ss)).
-
-  Definition build_rejects (ss:wf_states) : list bool := 
-    List.map reset_always_rejects (RESS.elements (proj1_sig ss)).
-
-  Definition build_dfa: DFA := 
-    match build_table with 
-      | (wstates, table) => 
-         {| dfa_num_states := cardinal_wfs wstates ; 
-            dfa_states := proj1_sig wstates ; 
-            dfa_transition := table ;
-            dfa_accepts := build_accept_table wstates ; 
-            dfa_rejects := build_rejects wstates |}
-    end.
-
-  (** This is the main loop-invariant for [gen_row'].  Given a state [s],
-      a list of states [ss], and a token number [n], running [gen_row' n s ss
-      (num_tokens - n)] yields a list of states [ss2] and transition-table
-      [row2] such that the length of [row2] is [n], [ss2] is an extension of
-      [ss], and for all [i], the [ith] element of [ss2] is the [wpdrv]
-      of [s] with respect to the token [i+num_tokens-n]. *)
-  Lemma gen_row'_prop: forall n s ss,
-    n <= num_tokens -> 
-    match gen_row' n s ss (num_tokens - n) with 
-      | (ss2, row2) => 
-        length row2 = n /\ wfs_ext ss ss2 /\
-        forall i, 
-          i < n -> 
-          match RESS.get_element (nth i row2 num_tokens) (proj1_sig ss2) with
-            | Some s' => 
-              RES.Equal s'
-                (wpdrv (token_id_to_chars (i + num_tokens - n)) (proj1_sig s))
-            | None => False
-          end
-    end.
-  Proof. induction n.
-    Case "base". intros. compute [gen_row'].
-      repeat split; crush. reflexivity.
-    Case "S n". intros.
-      remember_destruct_head as gr.
-      Opaque token_id_to_chars num_tokens.
-      simpl in Hgr.
-      replace (S (num_tokens - S n)) with (num_tokens - n) in Hgr by omega.
-      remember (wpdrv_wf (token_id_to_chars (num_tokens - S n)) s) as s'.
-      remember_rev (get_index_wfs s' ss) as gi.
-      destruct gi.
-      SCase "s' in ss".
-        remember_destruct_head in Hgr as grr.
-        use_lemma (IHn s ss) by omega.
-        rewrite Hgrr in H0.
-        split. crush.
-          destruct H0 as [H2 [H4 H8]].
-          split. crush. 
-          destruct i; intros.
-          SSCase "i=0".
-            apply RESS.get_index_get_element in Hgi.
-            destruct Hgi as [e' [H10 H12]].
-            crush. erewrite get_element_wfs_ext2 by eassumption.
-            crush. reflexivity.
-          SSCase "S i". 
-            use_lemma (H8 i) by omega. crush.
-      SCase "s' notin ss".
-        remember_destruct_head in Hgr as grr.
-        use_lemma (IHn s (add_wfs s' ss)) by omega.
-        rewrite Hgrr in H0.
-        split. crush. 
-          inversion Hgr. subst w0 l. clear Hgr.
-          destruct H0 as [H2 [H4 H8]].
-          use_lemma RESS.get_index_none by crush.
-          split. eapply wfs_ext_add; eassumption.
-            destruct i; intro.
-            SSSCase "i=0". simpl.  
-              erewrite get_element_add_wfs_ext by eassumption.
-              crush. reflexivity.
-            SSSCase "S i".
-              use_lemma (H8 i) by omega. crush.
-  Qed.
-
-  Lemma gen_row_prop: forall s ss,
-    match gen_row s ss with 
-      | (ss2, row2) => 
-        length row2 = num_tokens /\ wfs_ext ss ss2 /\
-        forall i, 
-          i < num_tokens -> 
-          match RESS.get_element (nth i row2 num_tokens) (proj1_sig ss2) with
-            | Some s' => 
-              RES.Equal s' (wpdrv (token_id_to_chars i) (proj1_sig s))
-            | None => False
-          end
-    end.
-  Proof. unfold gen_row. intros.
-    use_lemma (@gen_row'_prop num_tokens s ss) by omega.
-    rewrite minus_diag in H.
-    remember_destruct_head as gr.
-    crush.
-    use_lemma (H2 i) by assumption. 
-    replace (i+num_tokens-num_tokens) with i in H3 by omega.
-    crush.
-  Qed.
-
-  (** This is the main invariant for the [build_table] routine.  Given a well-formed
-      list of states [ss] and a list of transition-table rows [rows], then for 
-      all [i < n], [ss(i)] and [r(i)] are defined, and the row [r(i)] is well-formed
-      with respect to the state [ss(i)]. *)
-  Definition build_table_inv (ss: wf_states) (rows: list (list nat)) n := 
-     forall i, i < n -> 
-       match RESS.get_element i (proj1_sig ss), nth_error rows i with 
-         | Some s, Some row => 
-           length row = num_tokens /\ 
-           forall j, j < num_tokens -> 
-             match RESS.get_element (nth j row num_tokens) (proj1_sig ss) with 
-               | Some s' => 
-                 RES.Equal s' (wpdrv (token_id_to_chars j) s)
-               | None => False
-             end
-         | _, _ => False
-       end.
-
-  Lemma build_table_inv_imp ss rows n :
-    build_table_inv ss rows n -> n <= cardinal_wfs ss /\ n <= length rows.
-  Proof. 
-    unfold build_table_inv ; destruct n. 
-      auto with arith.
-      intros. assert (n < S n) by omega.
-        generalize (H n H0).
-        remember_destruct_head as ge; [idtac | crush].
-        remember_destruct_head as ne; [idtac | crush].
-        intros.
-        apply RESS.get_element_some_lt in Hge.
-        apply nth_error_some_lt in Hne.
-        crush.
-  Qed.
-
-  Lemma gen_row_build_table_inv n ss
-        ss1 rows row1:
-    n = length rows ->
-    match get_element_wfs n ss with
-      | inleft s =>
-        gen_row (extract_wf_state ss n s) ss = (ss1, row1)
-         -> build_table_inv ss rows n
-         -> build_table_inv ss1 (rows ++ row1 :: nil) (1 + n)
-      | inright _ => True
-    end.
+  Lemma find_index_some' g s j n : find_index' g j s = Some n -> (n - j) < length s.
   Proof.
-    remember_rev (get_element_wfs n ss) as gew.
-    destruct gew; [idtac | crush]. clear Hgew.
-    intros.
-    use_lemma build_table_inv_imp by eassumption.
-    unfold build_table_inv in *.
-    use_lemma (gen_row_prop (extract_wf_state ss n s) ss) by eassumption.
-    rewrite H0 in H3.
-    intros.
-    destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H4)); sim.
-    Case "i<n".
-      rewrite (get_element_wfs_ext H6) by omega.
-      rewrite nth_error_app_lt by omega.
-      use_lemma H1 by eassumption.
-      remember_destruct_head as ge; [idtac | crush].
-      remember_destruct_head as ne; [idtac | crush].
-      split. crush.
-        intros. sim.
-        use_lemma H11 by eassumption.
-        remember_destruct_head in H12 as ge2; [idtac | crush].
-        use_lemma get_element_wfs_ext2 by eassumption.
-        crush. reflexivity.
-    Case "i=n". subst i.
-      destruct s as [s [H20 H22]].
-      assert (n < cardinal_wfs ss).
-        use_lemma RESS.get_element_some_lt by eassumption. 
-        unfold cardinal_wfs. trivial.
-      rewrite (get_element_wfs_ext H6) by assumption.
-      crush.
+    intro g. unfold find_index. induction s ; simpl ; intros. discriminate.
+    destruct (astgram_dec g a). injection H ; intros ; subst. 
+    assert (n - n = 0). auto with arith. rewrite H0. auto with arith.
+    specialize (IHs _ _ H). omega.
+  Qed.
+  
+  Lemma find_index_some g s n : find_index g s = Some n -> n < length s.
+  Proof.
+    intros. generalize (find_index_some' _ _ _ H). assert (n - 0 = n). auto with arith.
+    rewrite H0. auto.
   Qed.
 
-     
-   (** This lemma establishes that the [build_table'] loop maintains the
-       [build_table_inv] and only adds to the states and rows of the table. *)
-  Lemma build_table'_prop: forall n ss rows,
-     n = length rows -> build_table_inv ss rows n ->
-     match build_table' ss rows n with 
-       | (ss', rows') => 
-         length rows' = cardinal_wfs ss' /\ 
-         build_table_inv ss' rows' (length rows') /\ 
-         wfs_ext ss ss' /\ exists rows1, rows' = rows ++ rows1
-     end.
-  Proof. induction n using (well_founded_ind (limit_nat_wf max_pdrv)).
-    intros. remember_head as gw.
-    destruct gw as [ss' rows'].
-    rewrite build_table'_unfold in Hgw.
-    remember_rev (get_element_wfs n ss) as ge.
-    destruct ge.
-    Case "ss[n] exists".
-      remember_head in Hgw as gr.
-      destruct gr as [ss1 row1].
-      use_lemma (@gen_row_build_table_inv n ss ss1 rows row1) by eassumption.
-      rewrite Hge in H2.
-      use_lemma (gen_row_prop (extract_wf_state ss n s) ss) by eassumption.
-      rewrite Hgr in H3.
-      remember (rows ++ row1 :: nil) as rows1.
-      assert (n < cardinal_wfs ss).
-        destruct s as [s [H8 H10]]. 
-        use_lemma RESS.get_element_some_lt by eassumption. trivial.
-      use_lemma build_table_metric_dec by eassumption. 
-      assert (S n = length rows1) by crush.
-      assert (build_table_inv ss1 rows1 (1 + n)) by crush.
-      use_lemma H by eassumption.
-      simpl in Hgw.
-      rewrite Hgw in H8.
-      crush. reflexivity.
-    Case "ss[n] not exists".
-      use_lemma build_table_inv_imp by eassumption.
-      crush. reflexivity.
-        exists nil. crush.
+  Lemma nth_error_some n s r : nth_error s n = Some r -> s.[n] = r.
+    induction n ; simpl ; intros ; destruct s. discriminate. injection H.
+    intros ; subst. auto. discriminate. simpl. apply IHn. auto.
   Qed.
 
-  Lemma build_table_inv_ini: build_table_inv ini_states nil 0.
-  Proof. unfold build_table_inv. crush. Qed.
+  Definition app_length_lt A n (s1 s2:list A) : n < length s1 -> n < length (s1 ++ s2).
+    intros. rewrite app_length. omega.
+  Qed.
 
-  Lemma build_table_prop :
-    match build_table with
-      | (ss, rows) => 
-        length rows = cardinal_wfs ss /\
-        build_table_inv ss rows (length rows) /\
-        wfs_ext ini_states ss
+  (** End helper lemmas. *)
+
+  (** Simple facts about [find_index] and [find_or_add_index]. *)
+  Lemma find_index'_mono g s j n : find_index' g j s = Some n -> n >= j.
+    induction s ; simpl ; intros. discriminate. destruct (astgram_dec g a). 
+    injection H ; intros ; subst ; auto. specialize (IHs _ _ H). omega.
+  Qed.
+
+  Lemma find_index_prop' g s j n : 
+    find_index' g j s = Some (n + j) -> s.[n] = g.
+  Proof.
+    intro g. induction s ; simpl ; intros. discriminate. destruct (astgram_dec g a).
+    injection H. intros. assert (n = 0). omega. rewrite H1. auto.
+    generalize (find_index'_mono _ _ _ H). intros. destruct n. assert False. omega.
+    contradiction. specialize (IHs (S j) n).
+    assert (n + S j = S n + j). omega. rewrite H1 in IHs. specialize (IHs H). auto.
+  Qed.
+
+  Lemma find_index_prop g s n : find_index g s = Some n -> s.[n] = g.
+    intros. unfold find_index in *. assert (n = n + 0). omega. rewrite H0 in H.
+    apply (find_index_prop' _ _ _ _ H).
+  Qed.
+
+  Lemma find_or_add_app : forall g' s s2,
+    g' = (s ++ (fst (find_or_add g' s)) ++ s2).[snd (find_or_add g' s)].
+  Proof.
+    intros. unfold find_or_add. remember (find_index g' s) as popt. destruct popt ; simpl.
+    Focus 2. simpl. rewrite app_nth2. assert (length s - length s = 0). omega.
+    rewrite H. auto. auto. rewrite nth_lt. 
+    rewrite (find_index_prop g' s (eq_sym Heqpopt)). auto.  
+    apply (find_index_some g'). auto.
+  Qed.
+
+  (** Returns [true] iff the [astgram] accepts the empty string. *)
+  Fixpoint accepts_null (g:astgram) : bool := 
+    match g with 
+      | aEps => true
+      | aChar _ => false
+      | aAny => false
+      | aZero => false
+      | aAlt g1 g2 => accepts_null g1 || accepts_null g2
+      | aCat g1 g2 => accepts_null g1 && accepts_null g2
+      | aStar _ => true
     end.
-  Proof. generalize build_table_inv_ini. intro. unfold build_table. 
-    generalize (@build_table'_prop 0 ini_states nil). intro.
-    use_lemma H0 by crush.
-    remember_destruct_head as bt. crush.
-  Qed.
 
-  (** This predicate captures the notion of a correct [DFA] with respect to
-      an initial regexp [r].  In essence, it says that the lengths of all of
-      the lists is equal to [dfa_num_states d], that {r} is at [dfa_states(0)],
-      each row of the [dfa_transition] table is well-formed, that 
-      [accepts(i)] holds iff the corresponding state accepts the empty string,
-      and when [rejects(i)] is true, the corresponding state rejects all strings. *)
-  Definition wf_dfa (d:DFA) := 
-    let num_states := dfa_num_states d in
-    let states := dfa_states d in 
-    let transition := dfa_transition d in 
-    let accepts := dfa_accepts d in 
-    let rejects := dfa_rejects d in 
-    num_states = RESS.cardinal states /\ 
-    num_states = length transition /\ 
-    num_states = length accepts /\ 
-    num_states = length rejects /\ 
-    RESS.get_element 0 states = Some (proj1_sig ini_state) /\
-    forall i, i < num_states -> 
-      match RESS.get_element i states with
-        | Some s =>
-          let acc := nth i accepts false in 
-          let rej := nth i rejects false in 
-          let row := nth i transition nil in 
-          length row = num_tokens /\
-          (acc = true <-> in_re_set s nil) /\
-          (rej = true -> forall ls, ~ in_re_set s ls) /\
-          (forall j, j < num_tokens ->
-            nth j row num_tokens < num_states /\
-            match RESS.get_element (nth j row num_tokens) states with
-              | Some s' => 
-                RES.Equal s' (wpdrv (token_id_to_chars j) s)
-              | None => False
-            end)
-        | None => False
-      end.
+  (** Build a map saying which states are accepting states *)
+  Definition build_accept_table (s:states_t) : list bool := 
+    List.map accepts_null s.
 
-  Hint Rewrite Coqlib.list_length_map.
+  (** Returns [true] iff the [astgram] rejects all strings. *)
+  Fixpoint always_rejects (g:astgram) : bool := 
+    match g with 
+      | aEps => false
+      | aChar _ => false
+      | aAny => false
+      | aZero => true
+      | aAlt g1 g2 => always_rejects g1 && always_rejects g2
+      | aCat g1 g2 => always_rejects g1 || always_rejects g2
+      | aStar _ => false
+    end.
 
-  (** [build_dfa] is correct. *)
-  Lemma build_dfa_wf: wf_dfa build_dfa.
-  Proof. generalize build_table_prop. 
-    unfold build_dfa, build_table. intros.
-    remember_head as bt. 
-    destruct bt as [ss rows]. 
-    unfold wf_dfa. simpl.
-    unfold build_accept_table, build_rejects.
-    crush.
-    erewrite get_element_wfs_ext by crush; crush.
-    unfold build_table_inv in *.
-    use_lemma H1 by crush.
-    remember_destruct_head as ge; [idtac | false_elim].
-    remember_destruct_head in H3 as ne; [idtac | false_elim].
-    split. erewrite Coqlib.nth_error_some_nth by eassumption; crush.
-    split.
-    Case "accept states correct".
-      change false with (reset_nullable RES.empty).
-      rewrite map_nth.
-      erewrite Coqlib.nth_error_some_nth by eassumption.
-      apply reset_nullable_corr.
-    split.
-    Case "reject states correct".
-      change false with (reset_always_rejects (RES.singleton Eps)).
-      rewrite map_nth.
-      erewrite Coqlib.nth_error_some_nth by eassumption.
-      apply reset_always_rejects_corr.
-    Case "invariant forall j, ...".
-      intros. destruct H3 as [H5 H6].
-      use_lemma H6 by eassumption.
-      remember_destruct_head in H3 as ge2; [idtac | false_elim].
-      assert (H8: nth i rows nil = l).
-        auto using Coqlib.nth_error_some_nth. 
-      rewrite H8.
-      use_lemma RESS.get_element_some_lt by eassumption.
-      split. assumption.
-        rewrite Hge2. crush.
-  Qed.
+  (** Build a map saying which states are rejecting states *)
+  Definition build_reject_table (s:states_t) : list bool := 
+    List.map always_rejects s.
 
-End DFA.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 (* Definition test0:= Eps. *)
 (* Definition test1 := Char true. *)
@@ -2304,3 +1970,12 @@ End DFA_RECOGNIZE.
 Require Import Parser.
 Definition par2rec t (g:grammar t) : regexp := 
   let (ag, _) := split_regexp g in ag.
+
+
+stuff that need to be copied from Parser.v
+  - def of grammar, in_grammar
+  - inversion lemmas for grammars such as EpsInv
+  - the split function from a grammar to a regexp and an xform
+  - optimization constructors for grammars
+  - optimizing constructors for regexps
+  - def of naive_parse and its correctness proofs.
