@@ -711,12 +711,40 @@ Proof.
   induction vs ; simpl ; fold interp in *; auto. 
 Qed.
 
+Lemma xflatten_corr2 {t} (vs: interp (List_t (List_t t))) : 
+  xinterp xflatten vs = Coqlib.list_flatten vs.
+Proof.
+  rewrite xflatten_corr. fold interp. 
+  assert ((fun a b : list (interp t) =>
+            fold_right (fun x y => x :: y) b a) = @List.app (interp t)).
+  apply Coqlib.extensionality. intro. apply Coqlib.extensionality. intro y.
+  generalize x ; clear x. induction y. induction x ; auto.
+  simpl. rewrite IHx. auto. induction x. auto. simpl. rewrite IHx. auto.
+  rewrite H. auto.
+Qed.
+
 (** Compute the cross product of two lists.  For instance, the
       cross product of (1::2::nil, true::false::nil) is 
       (1,true)::(1,false)::(2,true)::(2,false)::nil.
  *)
 Definition xcross {t1 t2} : Pair_t (List_t t1) (List_t t2) ->> List_t (Pair_t t1 t2) := 
   xopt (xcomp (xmapenv (xcomp (xpair xsnd xfst) (xmapenv (xpair xsnd xfst)))) xflatten).
+
+Lemma xcross_corr t1 t2 (p : interp (Pair_t (List_t t1) (List_t t2))) : 
+  xinterp xcross p = 
+  Coqlib.list_flatten (List.map (fun y => List.map (fun x => (x,y)) (fst p)) (snd p)).
+Proof.
+  Opaque xflatten xmapenv xpair.
+  destruct p. fold interp. unfold xcross. rewrite xopt_corr. rewrite xcomp_corr. simpl.
+  rewrite xflatten_corr2. rewrite xmapenv_corr. fold interp. 
+  match goal with | [ |- list_flatten ?e1 = list_flatten ?e2 ] => replace e1 with e2 end.
+  auto. simpl.
+  match goal with | [ |- map ?e1 _ = map ?e2 _ ] => replace e1 with e2 ; auto end. 
+  apply extensionality. intro. rewrite xcomp_corr. simpl.
+  rewrite xmapenv_corr. fold interp. simpl. 
+  rewrite xpair_corr. simpl. 
+  match goal with | [ |- map ?e1 _ = map ?e2 _ ] => replace e1 with e2 ; auto end.
+Qed.
 
 (** Lift a continuation to work on a list of values, and then
       concatenate all of the results. *)
