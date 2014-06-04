@@ -25,6 +25,9 @@ Module Type WMOREPROPERTIES (M:WSets).
   Declare Instance disjoint_subset: 
     Proper (flip M.Subset ==> flip M.Subset ==> impl) disjoint.
 
+  Parameter disjoint_singleton: forall s e,
+    M.mem e s = false -> disjoint s (M.singleton e).
+
   Parameter disjoint_symm: forall s1 s2, disjoint s1 s2 -> disjoint s2 s1.
     
   Parameter disjoint_empty: forall s, disjoint s M.empty.
@@ -89,6 +92,18 @@ Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
   Lemma disjoint_empty: forall s, disjoint s M.empty.
   Proof. unfold disjoint. intros. intro. destruct H. 
     apply P.FM.empty_iff in H0. trivial.
+  Qed.
+
+  Lemma disjoint_singleton: forall s e,
+    M.mem e s = false -> disjoint s (M.singleton e).
+  Proof. intros. apply disjoint_spec.
+    apply P.subset_antisym; [idtac | apply P.subset_empty].
+    unfold M.Subset. intros e1 H2.
+    apply M.inter_spec in H2.
+    rewrite M.singleton_spec in H2. destruct H2 as [H2 H4].
+    rewrite <- H4 in H.
+    apply M.mem_spec in H2.
+    crush.
   Qed.
 
   Lemma inclA_subset s1 s2:

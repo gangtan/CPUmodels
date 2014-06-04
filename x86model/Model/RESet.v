@@ -22,7 +22,22 @@ Module Type RESetXform.
       grammar *)
   Parameter re_set_type: t -> type.
 
-  Definition rs_xf_pair (ty:type) := {rs : t & re_set_type rs ->> ty }.
+  Definition rs_xf_pair (ty:type) := {rs : t & re_set_type rs ->> List_t ty }.
+
+  Definition re_xf_pair (ty:type) := {r : regexp & regexp_type r ->> List_t ty}.
+
+  Parameter in_re_set: 
+    forall (rs:t), list char_t -> interp (re_set_type rs) -> Prop.
+
+  Definition in_re_xform ty (rx : re_xf_pair ty) s (v:interp ty) := 
+    let (r,x) := rx in 
+    exists v', in_regexp r s v' /\ List.In v (xinterp x v').
+
+  Definition in_re_set_xform ty (rx : rs_xf_pair ty) s (v:interp ty) := 
+    let (rs, f) := rx in 
+    exists v', in_re_set rs s v' /\ List.In v (xinterp f v').
+
+  Parameter in_re_set_empty : forall rs v, not (in_re_set empty rs v).
 
   (* the following type for union_xform is motivated by the case of doing
      partial derivatives over r1+r2
@@ -32,17 +47,24 @@ Module Type RESetXform.
             union_xform (rs1, f1) (rs2, f2)
   *)
   Parameter union_xform: forall ty1,
-    rs_xf_pair (List_t ty1) -> rs_xf_pair (List_t ty1) -> rs_xf_pair (List_t ty1).
+    rs_xf_pair ty1 -> rs_xf_pair ty1 -> rs_xf_pair ty1.
   (* note: def equality may not be necessary here *)
   Parameter union_xform_erase: forall ty1 rx1 rx2,
     projT1 (@union_xform ty1 rx1 rx2) = union (projT1 rx1) (projT1 rx2).
+  Parameter union_xform_corr: forall ty rs1 rs2 str v,
+    in_re_set_xform (@union_xform ty rs1 rs2) str v <-> 
+    in_re_set_xform rs1 str v \/ in_re_set_xform rs2 str v.
 
   Parameter empty_xform: forall ty, rs_xf_pair ty.
   Parameter empty_xform_erase: forall ty, projT1 (@empty_xform ty) = empty.
+  Parameter empty_xform_corr: forall ty (s : list char_t) (v : interp ty),
+    ~ in_re_set_xform (empty_xform ty) s v.
 
   Parameter singleton_xform: forall r:regexp, rs_xf_pair (regexp_type r).
   Parameter singleton_xform_erase: forall r, 
     projT1 (@singleton_xform r) = (singleton r).
+  Parameter singleton_xform_corr : forall r s v, 
+    in_re_set_xform (singleton_xform r) s v <-> in_regexp r s v.
 
 
   (* note: the following operation is motivated by the case of doing
@@ -1130,25 +1152,25 @@ fix fold (A : Type) (f : Raw.elt -> A -> A) (t : Raw.tree)
   end
      : forall A : Type, (Raw.elt -> A -> A) -> Raw.tree -> A -> A
 *)
-  Lemma map_tree_xform_unfold ty g i l v r fs : 
-    (@map_tree_xform ty (Raw.Node i l v r) fs g) = 
-    let (s1,f1) := @map_tree_xform ty l (xcomp xinl fs) g in 
-    let (v',fv') := g v (xcomp (xcomp xinl xinr) fs) in
-    let (s2,f2) := add_xform_tree v' fv' s1 f1 in 
+  (* Lemma map_tree_xform_unfold ty g i l v r fs :  *)
+  (*   (@map_tree_xform ty (Raw.Node i l v r) fs g) =  *)
+  (*   let (s1,f1) := @map_tree_xform ty l (xcomp xinl fs) g in  *)
+  (*   let (v',fv') := g v (xcomp (xcomp xinl xinr) fs) in *)
+  (*   let (s2,f2) := add_xform_tree v' fv' s1 f1 in  *)
     
 
-  Lemma map_tree_xform_erase ty g1 g2 : 
-    (forall r (f:regexp_type r ->> List_t ty), projT1 (g1 r f) = g2 r) -> 
-    forall s fs, 
-    projT1 (@map_tree_xform ty s fs g1) = 
-    Raw.fold (fun r s' => Raw.add (g2 r) s') s Raw.Leaf.
-  Proof.
-    intro H. induction s ; intro. auto. simpl.
-    unfold map_tree_xform. 
+  (* Lemma map_tree_xform_erase ty g1 g2 :  *)
+  (*   (forall r (f:regexp_type r ->> List_t ty), projT1 (g1 r f) = g2 r) ->  *)
+  (*   forall s fs,  *)
+  (*   projT1 (@map_tree_xform ty s fs g1) =  *)
+  (*   Raw.fold (fun r s' => Raw.add (g2 r) s') s Raw.Leaf. *)
+  (* Proof. *)
+  (*   intro H. induction s ; intro. auto. simpl. *)
+  (*   unfold map_tree_xform.  *)
   
-  Definition cat_re_xform : 
-    forall ty, rs_xf_pair (List_t ty) -> 
-               forall r:regexp, rs_xf_pair (Pair_t ty (regexp_type r)).
+  (* Definition cat_re_xform :  *)
+  (*   forall ty, rs_xf_pair (List_t ty) ->  *)
+  (*              forall r:regexp, rs_xf_pair (Pair_t ty (regexp_type r)). *)
 
 
 End RESETXFORM.

@@ -927,17 +927,25 @@ Proof. induction n.
 Qed.
 
 (** Properties of firstn *)
-Lemma firstn_list_app : forall (A:Type) n (l1 l2:list A),
-  length l1 = n -> firstn n (l1 ++ l2) = l1.
-Proof. induction n. 
-  destruct l1. auto.
-    simpl; intros. inversion H.
-  destruct l1. intros. inversion H.
-    intros.
-      rewrite <- app_comm_cons.
-      simpl. f_equal. auto.
+Lemma firstn_full_length A (l: list A): firstn (length l) l = l.
+Proof. induction l. trivial. simpl. rewrite IHl. trivial.
 Qed.
 
+Lemma firstn_list_app_lt:
+  forall (A : Type) (n : nat) (l1 l2 : list A),
+    n <= length l1 -> firstn n (l1 ++ l2) = firstn n l1.
+Proof. induction n. auto.
+  destruct l1. intros. inversion H.
+    intros. rewrite <- app_comm_cons.
+    simpl. f_equal. apply IHn. simpl in H. omega.
+Qed.
+
+Lemma firstn_list_app : forall (A:Type) n (l1 l2:list A),
+  length l1 = n -> firstn n (l1 ++ l2) = l1.
+Proof. intros. rewrite firstn_list_app_lt by omega.
+  rewrite <- H. apply firstn_full_length. 
+Qed.
+  
 Lemma nth_firstn : forall n (A:Type) i (l:list A) default,
   (i < n) -> nth i (firstn n l) default = nth i l default.
 Proof. induction n. intros. contradict H. omega.
@@ -1078,6 +1086,19 @@ Section FIND_INDEX.
     omega.
   Qed.
       
+  Lemma first_occur_app: forall x l l' n,
+    first_occur x l n -> first_occur x (l++l') n.
+  Proof. unfold first_occur; intros.
+    destruct H as [H2 [y [H4 H6]]].
+    assert (n < length l).
+      eapply nth_error_some_lt; eassumption.
+    rewrite firstn_list_app_lt by omega.
+    split. assumption.
+    exists y. 
+    rewrite nth_error_app_lt by assumption.
+    auto.
+  Qed.
+    
   Lemma find_index'_spec: forall x l2 l1 n, 
     ~ InA eqA x l1 ->
     (find_index' x (length l1) l2 = Some n <-> first_occur x (l1 ++ l2) n).
