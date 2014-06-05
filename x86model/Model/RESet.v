@@ -22,22 +22,7 @@ Module Type RESetXform.
       grammar *)
   Parameter re_set_type: t -> type.
 
-  Definition rs_xf_pair (ty:type) := {rs : t & re_set_type rs ->> List_t ty }.
-
-  Definition re_xf_pair (ty:type) := {r : regexp & regexp_type r ->> List_t ty}.
-
-  Parameter in_re_set: 
-    forall (rs:t), list char_t -> interp (re_set_type rs) -> Prop.
-
-  Definition in_re_xform ty (rx : re_xf_pair ty) s (v:interp ty) := 
-    let (r,x) := rx in 
-    exists v', in_regexp r s v' /\ List.In v (xinterp x v').
-
-  Definition in_re_set_xform ty (rx : rs_xf_pair ty) s (v:interp ty) := 
-    let (rs, f) := rx in 
-    exists v', in_re_set rs s v' /\ List.In v (xinterp f v').
-
-  Parameter in_re_set_empty : forall rs v, not (in_re_set empty rs v).
+  Definition rs_xf_pair (ty:type) := {rs : t & re_set_type rs ->> ty }.
 
   (* the following type for union_xform is motivated by the case of doing
      partial derivatives over r1+r2
@@ -47,24 +32,17 @@ Module Type RESetXform.
             union_xform (rs1, f1) (rs2, f2)
   *)
   Parameter union_xform: forall ty1,
-    rs_xf_pair ty1 -> rs_xf_pair ty1 -> rs_xf_pair ty1.
+    rs_xf_pair (List_t ty1) -> rs_xf_pair (List_t ty1) -> rs_xf_pair (List_t ty1).
   (* note: def equality may not be necessary here *)
   Parameter union_xform_erase: forall ty1 rx1 rx2,
     projT1 (@union_xform ty1 rx1 rx2) = union (projT1 rx1) (projT1 rx2).
-  Parameter union_xform_corr: forall ty rs1 rs2 str v,
-    in_re_set_xform (@union_xform ty rs1 rs2) str v <-> 
-    in_re_set_xform rs1 str v \/ in_re_set_xform rs2 str v.
 
   Parameter empty_xform: forall ty, rs_xf_pair ty.
   Parameter empty_xform_erase: forall ty, projT1 (@empty_xform ty) = empty.
-  Parameter empty_xform_corr: forall ty (s : list char_t) (v : interp ty),
-    ~ in_re_set_xform (empty_xform ty) s v.
 
   Parameter singleton_xform: forall r:regexp, rs_xf_pair (regexp_type r).
   Parameter singleton_xform_erase: forall r, 
     projT1 (@singleton_xform r) = (singleton r).
-  Parameter singleton_xform_corr : forall r s v, 
-    in_re_set_xform (singleton_xform r) s v <-> in_regexp r s v.
 
 
   (* note: the following operation is motivated by the case of doing
@@ -158,8 +136,7 @@ Module RESETXFORM <: RESetXform.
 
   (* These definitions parallel those in the Raw module, but add in an xform. *)
   Definition create_xform ty (l:Raw.tree) (fl : tree_type l ->> List_t ty)
-                             (x:regexp) (fx : regexp_type x ->> List_t ty)
-                             (r:Raw.tree) (fr : tree_type r ->> List_t ty) : 
+                             (x:regexp) (fx : regexp_type x ->> List_t ty)                             (r:Raw.tree) (fr : tree_type r ->> List_t ty) : 
     tree_xf_pair ty := 
     existT _ (Raw.Node (Int.Z_as_Int.plus (Int.Z_as_Int.max (Raw.height l) 
                                                             (Raw.height r)) 1)
@@ -1005,8 +982,9 @@ Module RESETXFORM <: RESetXform.
   Qed.
 
   (* should rewrite using explicit code -- hard to work with it this way... *)
-  Definition add_xform (ty:type)(x:regexp)(fx:regexp_type x->>List_t ty)
+  Definition add_xform (ty:type) (refx : re_xf_pair ty)
              (rs:rs_xf_pair ty) : rs_xf_pair ty.
+    destruct refx as [x fx].
     destruct rs as [s fs].
     destruct s as [t ok].
     remember (add_xform_tree x fx t fs) as p.
@@ -1020,10 +998,11 @@ Module RESETXFORM <: RESetXform.
     rewrite Heqs'. apply ft'.
   Defined.
 
-  Lemma add_xform_erase ty x fx rs : 
-    projT1 (@add_xform ty x fx rs) = add x (projT1 rs).
+  Lemma add_xform_erase ty rex rs : 
+    projT1 (@add_xform ty rex rs) = add (projT1 rex) (projT1 rs).
   Proof.
     unfold add_xform.
+    destruct rex as [x fx].
     destruct rs as [s fs].
     destruct s as [t ok].
     generalize (eq_ind_r (fun s => Raw.Ok (projT1 s))
@@ -1042,10 +1021,11 @@ Module RESETXFORM <: RESetXform.
     rewrite (proof_irrelevance _ o0 (Raw.add_ok x ok)). auto.
   Qed.
 
-  Lemma add_xform_corr ty x fx rs str v : 
-    in_re_set_xform (@add_xform ty x fx rs) str v <-> 
-    in_re_xform (existT _ x fx) str v \/ in_re_set_xform rs str v.
+  Lemma add_xform_corr ty rex rs str v : 
+    in_re_set_xform (@add_xform ty rex rs) str v <-> 
+    in_re_xform rex str v \/ in_re_set_xform rs str v.
   Proof.
+    destruct rex as [x fx].
     destruct rs as [s fs]. destruct s as [t ok]. unfold in_re_set_xform.
     unfold add_xform. simpl. unfold eq_rec_r, eq_rec, eq_rect. simpl.
     generalize (eq_ind_r (fun s => Raw.Ok (projT1 s)) 
@@ -1120,58 +1100,314 @@ Module RESETXFORM <: RESetXform.
   Section FOLD_TREE_XFORM.
     Variable ty : type.
     Variable A : Type.
-    Variable f : forall r, regexp_type r ->> ty -> A -> A.
-    Fixpoint fold_tree_xform (s:Raw.tree) : (tree_type s ->> ty) -> A -> A := 
-      match s return tree_type s ->> ty -> A -> A with
+    Variable f : re_xf_pair ty -> A -> A.
+    Fixpoint fold_tree_xform (s:Raw.tree) : (tree_type s ->> List_t ty) -> A -> A :=
+      match s return tree_type s ->> List_t ty -> A -> A with
         | Raw.Leaf => fun _ v => v
         | Raw.Node _ l x r => 
-          fun fs v => fold_tree_xform r (xcomp (xcomp xinr xinr) fs) 
-                                     (f x (xcomp (xcomp xinl xinr) fs) 
-                                           (fold_tree_xform l (xcomp xinl fs) v))
+          fun fs v => 
+            fold_tree_xform r (xcomp (xcomp xinr xinr) fs)
+                            (f (existT _ x (xcomp (xcomp xinl xinr) fs))
+                               (fold_tree_xform l (xcomp xinl fs) v))
       end.
   End FOLD_TREE_XFORM.
 
-  Definition map_tree_xform ty 
-             (s:Raw.tree) 
-             (fs:tree_type s ->> List_t ty) 
-             (g:forall r:regexp, regexp_type r ->> List_t ty -> 
-                                 {r' : regexp & regexp_type r' ->> List_t ty}) :
-             { s' : Raw.tree & tree_type s' ->> List_t ty } := 
-    fold_tree_xform (fun r fr (sx : {s':Raw.tree & tree_type s' ->> List_t ty}) => 
-                       let (r',fr') := g r fr in
-                       let (s',fs') := sx in 
-                       add_xform_tree r' fr' s fs) s fs 
-                    (existT _ Raw.Leaf xzero).
+  Section FOLD_TREE_XFORM_ERASE.
+    Variable ty1 : type.
+    Variable ty2 : type.
+    Variable comb1 : re_xf_pair ty1 -> rs_xf_pair ty2 -> rs_xf_pair ty2.
+    Variable comb2 : regexp -> RESet.t -> RESet.t.
+    Variable H : forall rex rx, projT1 (comb1 rex rx) = comb2 (projT1 rex) (projT1 rx).
 
-(* Raw.fold = 
-fix fold (A : Type) (f : Raw.elt -> A -> A) (t : Raw.tree) 
-         (base : A) {struct t} : A :=
-  match t with
-  | Raw.Leaf => base
-  | Raw.Node _ l x r => fold A f r (f x (fold A f l base))
-  end
-     : forall A : Type, (Raw.elt -> A -> A) -> Raw.tree -> A -> A
+    Lemma fold_tree_xform_erase : 
+      forall rx f ini_rx, 
+        projT1 (fold_tree_xform comb1 rx f ini_rx) = 
+        Raw.fold comb2 rx (projT1 ini_rx).
+    Proof.
+      induction rx. auto. intros.
+      simpl. rewrite IHrx2. rewrite H. simpl. rewrite IHrx1. auto.
+    Qed.
+  End FOLD_TREE_XFORM_ERASE.
+
+  Definition fold_xform ty (A:Type) (comb : re_xf_pair ty -> A -> A) 
+             (rx : rs_xf_pair ty) (a:A) : A :=
+    let (s1, f1) := rx in
+    match s1 as s1' return (re_set_type s1' ->> List_t ty -> A) with
+      | {| this := t1; is_ok := okt1 |} =>
+        fun f2 : re_set_type {| this := t1; is_ok := okt1 |} ->> List_t ty =>
+          fold_tree_xform comb t1 f2 a
+    end f1.
+
+   Lemma fold_xform_erase : forall ty1 ty2
+     (comb1:re_xf_pair ty1 -> rs_xf_pair ty2 -> rs_xf_pair ty2)
+     (comb2:regexp -> RESet.t -> RESet.t) rx ini_rx,
+     (forall rex rx, projT1 (comb1 rex rx) = comb2 (projT1 rex) (projT1 rx)) -> 
+     projT1 (fold_xform comb1 rx ini_rx) = RESet.fold comb2 (projT1 rx) (projT1 ini_rx).
+  Proof.
+    intros.
+    destruct rx. simpl. destruct x. 
+    unfold RESet.fold. simpl. destruct ini_rx.
+    rewrite (@fold_tree_xform_erase ty1 ty2 comb1 comb2 H). auto.
+  Qed.
+
+  Definition map_xform ty1 ty2 (f : re_xf_pair ty1 -> re_xf_pair ty2) (s:rs_xf_pair ty1) : 
+    rs_xf_pair ty2 := 
+    fold_xform (fun x => add_xform (f x)) s (empty_xform ty2).
+
+  Lemma map_xform_erase : 
+    forall ty1 ty2 (f : re_xf_pair ty1 -> re_xf_pair ty2) 
+              (f' : regexp -> regexp) (s : rs_xf_pair ty1), 
+      (forall rx, projT1 (f rx) = f' (projT1 rx)) -> 
+      projT1(map_xform f s) = 
+      RESet.fold (fun x => RESet.add (f' x)) (projT1 s) RESet.empty.
+   Proof.
+     intros.
+     unfold map_xform. apply fold_xform_erase. intros. 
+     rewrite add_xform_erase. rewrite H. auto.
+   Qed.    
+
+   Definition set_cat_re (s:RESet.t) (r:regexp): RESet.t := 
+     match r with
+       | Eps => s (* not stricitly necessary; an optimization *)
+       | Zero => RESet.empty
+       | _ => RESet.fold (fun r1 s' => RESet.add (Cat r1 r) s') s RESet.empty
+                         (* Note : will need to show that this is the same as
+                            RESF.map (re_set_build_map (fun r1 => Cat r1 r)) s *)
+     end.
+         
+   Definition simple_cat_re_xform ty (s:rs_xf_pair ty) (r:regexp) : 
+     rs_xf_pair (Pair_t ty (regexp_type r)) := 
+     map_xform 
+       (fun xf => let (x,f) := xf in 
+                  existT _ (Cat x r)
+                         (xcomp (xpair xsnd (xcomp xfst f)) (xmapenv (xpair xsnd xfst))))
+       s.
+
+   Definition cat_re_xform ty (s : rs_xf_pair ty) (r:regexp) : 
+     rs_xf_pair (Pair_t ty (regexp_type r)) := 
+     match r as r' return rs_xf_pair (Pair_t ty (regexp_type r')) with
+       | Eps => let (raw_set,f) := s in 
+                (existT _ raw_set (xcomp f (xmap (xpair xid xunit))))
+       | Zero => (existT _ RESet.empty xzero)
+       | r' => simple_cat_re_xform s r'
+     end.
+
+   Lemma cat_re_xform_erase ty s r :  
+     projT1 (@cat_re_xform ty s r) = set_cat_re (projT1 s) r.
+   Proof.
+     destruct s. destruct r ; auto ; unfold cat_re_xform ; 
+     apply map_xform_erase ; destruct rx ; auto.
+   Qed.
+
+   Definition rx_equal ty (rx1 rx2: rs_xf_pair ty) := 
+     forall s v, in_re_set_xform rx1 s v <-> in_re_set_xform rx2 s v.
+
+   Definition tx_equal ty (tx1 tx2: tree_xf_pair ty) := 
+     forall s v, in_tree_xform tx1 s v <-> in_tree_xform tx2 s v.
+
+   Lemma ok_left i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) : 
+     Raw.Ok t1.
+   Proof.
+     unfold Raw.Ok in *. inversion ok. subst ; auto.
+   Qed.     
+
+   Lemma ok_right i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) : 
+     Raw.Ok t2.
+   Proof.
+     unfold Raw.Ok in *. inversion ok. subst ; auto.
+   Qed.
+
+   Lemma tree_disj i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) :
+     forall r, (Raw.In r t1 -> ~Raw.In r t2 /\ r <> x) /\ 
+               (Raw.In r t2 -> ~Raw.In r t1 /\ r <> x).
+   Proof.
+     inversion ok. subst. intro. 
+     specialize (H5 r). specialize (H6 r). simpl in *.
+     remember (REOrderedTypeAlt.compare r x) as c ; destruct c ; split ; intros ;
+     match goal with 
+         | [ H1 : ?P1 -> _, H2 : ?P1 |- _ ] => specialize (H1 H2) ; try discriminate
+     end.
+     generalize (REOrderedTypeAlt.compare_sym x r) ; unfold CompOpp. rewrite H6.
+     rewrite <- Heqc. intros ; discriminate. split. intro. specialize (H6 H0).
+     generalize (REOrderedTypeAlt.compare_sym r x). unfold CompOpp. rewrite H6.
+     rewrite <- Heqc. intros ; discriminate. intro. subst.
+     rewrite (Raw.MX.compare_refl x) in Heqc. discriminate.
+     generalize (REOrderedTypeAlt.compare_sym r x). unfold CompOpp. rewrite H6.
+     rewrite <- Heqc. intro ; discriminate.
+     split. intro. specialize (H5 H0). discriminate.
+     intro ; subst. rewrite (Raw.MX.compare_refl x) in Heqc. discriminate.
+   Qed.
+
+   Lemma in_tree_in_elem : 
+     forall tree s v, 
+       in_tree tree s v -> exists r, (Raw.In r tree /\ exists v', in_regexp r s v').
+   Proof.
+     induction tree ; simpl ; intros. destruct v.
+     unfold in_tree in H. simpl in H. repeat in_regexp_inv. 
+     specialize (IHtree1 _ _ H). crush. 
+     econstructor. split. eapply Raw.InLeft ; eauto. eauto.
+     econstructor. split ; eauto. eapply Raw.IsRoot. eapply Raw.MX.compare_refl.
+     specialize (IHtree2 _ _ H). crush. 
+     econstructor. split. eapply Raw.InRight ; eauto. eauto.
+   Qed.
+
+
+   Section FOLD_TREE_REC.
+     Variable ty : type.
+     Variable A : Type.
+     Variable P : rs_xf_pair ty -> A -> Prop.
+     Variable f : re_xf_pair ty -> A -> A.
+     Variable P_resp_equiv : 
+       forall rx1 rx2, rx_equal rx1 rx2 -> forall (a:A), P rx1 a -> P rx2 a.
+     Variable P_extends : 
+       forall rx rs a, P rs a -> P (add_xform rx rs) (f rx a).
+
+     Lemma fold_tree_rec' : 
+       forall (tree : Raw.tree)
+              (tree_xf : tree_type tree ->> List_t ty)
+              (accum_set : rs_xf_pair ty)
+              (accum : A)
+              (Inv : P accum_set accum),
+         P (fold_tree_xform (fun x => add_xform x) tree tree_xf accum_set)
+           (fold_tree_xform f tree tree_xf accum).
+     Proof.
+      induction tree ; intros.
+      (* base case *)
+      auto.
+       (* inductive case *)
+      specialize (IHtree1 (xcomp xinl tree_xf) accum_set accum Inv). 
+      generalize (P_extends (existT _ t1 (xcomp (xcomp xinl xinr) tree_xf)) IHtree1).
+      clear IHtree1. intro H.
+      specialize (IHtree2 (xcomp (xcomp xinr xinr) tree_xf) _ _ H).
+      assert (rx_equal (fold_tree_xform (fun x => add_xform x) tree2 
+                                        (xcomp (xcomp xinr xinr) tree_xf)
+                                        (add_xform 
+                                           (existT _ t1 (xcomp (xcomp xinl xinr) tree_xf))
+                                           (fold_tree_xform (fun x => add_xform x)
+                                                            tree1 (xcomp xinl tree_xf)
+                                                            accum_set)))
+                       (fold_tree_xform (fun x => add_xform x) 
+                                        (Raw.Node t0 tree1 t1 tree2) tree_xf accum_set)).
+      intro ; intro. clear IHtree2 H.
+      assert (@fold_tree_xform ty _ (fun x => add_xform x)
+                              (Raw.Node t0 tree1 t1 tree2) = 
+              fun fs v => 
+                fold_tree_xform (fun x => add_xform x)
+                  tree2 (xcomp (xcomp xinr xinr) fs)
+                                (add_xform (existT _ t1 (xcomp (xcomp xinl xinr) fs))
+                                           (fold_tree_xform (fun x => add_xform x)
+                                                            tree1 (xcomp xinl fs) v))).
+      auto. rewrite H. split ; auto.
+      apply (P_resp_equiv H0 IHtree2).
+    Qed.
+
+    Lemma fold_tree_rec : 
+      forall (tree : Raw.tree)
+             (tree_xf : tree_type tree ->> List_t ty)
+             (tree_ok : Raw.Ok tree)
+             (accum : A)
+             (Inv : P (empty_xform ty) accum),
+             P (existT _ {| this := tree ; is_ok := tree_ok|} tree_xf)
+             (fold_tree_xform f tree tree_xf accum).
+    Proof.
+      intros.
+      specialize (fold_tree_rec' tree tree_xf Inv).
+      apply P_resp_equiv. clear A P f P_resp_equiv P_extends accum Inv.
+      unfold rx_equal. 
+      assert (forall s str v, 
+                in_re_set_xform s str v <-> 
+                (in_re_set_xform s str v \/ in_re_set_xform (empty_xform ty) str v)).
+      intros ; split ; auto. intros. destruct H ; auto. 
+      contradiction (empty_xform_corr H). intros.
+      symmetry. rewrite H. clear H. generalize (empty_xform ty). 
+      induction tree. 
+      (* Base case *)
+      crush. unfold in_re_set in H. unfold in_tree in H. simpl in H. in_regexp_inv.
+      (* Inductive case *)
+      intro.
+      specialize (IHtree1 (xcomp xinl tree_xf) (ok_left tree_ok)).
+      specialize (IHtree2 (xcomp (xcomp xinr xinr) tree_xf) (ok_right tree_ok)).
+      unfold fold_tree_xform. 
+      rewrite <- IHtree2. rewrite add_xform_corr. rewrite <- IHtree1.
+      clear IHtree1 IHtree2. unfold in_re_set_xform, in_re_set, re_set_type, in_tree.
+      crush. in_regexp_inv. right ; right. left. econstructor ; split ; eauto.
+      xinterp_simpl. auto. in_regexp_inv. right ; left ; econstructor ; split ; eauto.
+      xinterp_simpl. auto. left ; econstructor ; split ; eauto. xinterp_simpl ; auto.
+      xinterp_simpl. left ; eauto. xinterp_simpl. left ; eauto. xinterp_simpl ; eauto.
+   Qed.
+
+   Lemma fold_xform_rec : 
+     forall (rs : rs_xf_pair ty) (accum : A),
+       P (empty_xform ty) accum -> P rs (fold_xform f rs accum).
+     Proof.
+       intros. unfold fold_xform. destruct rs as [s x]. 
+       destruct s as [t okt]. unfold re_set_type in x. simpl in x.
+       apply (fold_tree_rec). auto.
+     Qed.
+  End FOLD_TREE_REC.
+
+  Check fold_xform_rec.
+
+
+  Lemma cat_re_xform_corr' : 
+     forall ty (s : rs_xf_pair ty) r str (v : interp ty * interp (regexp_type r)), 
+       in_re_set_xform (simple_cat_re_xform s r) str v <-> 
+       exists str1 str2 v1 v2, str = str1 ++ str2 /\ v = (v1,v2) /\ 
+                           in_re_set_xform s str1 v1 /\ in_regexp r str2 v2.
+   Proof.
+     Opaque add_xform xpair xcomp.
+     unfold simple_cat_re_xform. unfold map_xform. fold regexp_type.
+     intros. apply fold_xform_rec.
+     intros. split. intros. specialize (proj1 H0 H1). clear H0 H1. crush.
+     repeat econstructor. specialize (H x x1). crush. auto.
+     crush. apply H2. repeat econstructor. specialize (H x x1) ; crush. auto.
+
+     intros. rewrite add_xform_corr. destruct rx. crush. in_regexp_inv.
+     xinterp_simpl. rewrite xmapenv_corr in H2. fold interp in H2. 
+     match goal with 
+         | [ H : List.In _ (map ?e _) |- _ ] => 
+           replace e with (fun x : interp ty => (x,x5)) in H
+     end. Focus 2. apply extensionality. intro ; xinterp_simpl ; auto.
+     simpl in H2. assert (exists v1, v = (v1,x5) /\ List.In v1 (xinterp x0 x4)).
+     generalize H2. generalize (xinterp x0 x4). induction i ; crush.
+     specialize (IHi H4). crush. crush.
+     repeat econstructor ; eauto. apply add_xform_corr. left. crush.
+     specialize (H H1). crush. repeat econstructor ; eauto. apply add_xform_corr.
+     right ; crush. rewrite add_xform_corr in H1. crush. left.
+     exists (x5,x4). crush. xinterp_simpl. rewrite xmapenv_corr. fold interp. simpl.
+     replace (fun x6 : interp ty => xinterp (xpair xsnd xfst) (x4,x6)) with 
+     (fun x6 : interp ty => (x6,x4)). Focus 2. apply extensionality.
+     intro. xinterp_simpl. auto. generalize (xinterp x0 x5) H3.
+     induction i ; crush. right. apply H0. repeat econstructor. auto. auto.
+     unfold in_re_set_xform. simpl. crush. destruct x. destruct x3.
+  Qed.
+
+  Lemma cat_re_xform_corr : 
+    forall ty (s : rs_xf_pair ty) r str (v : interp ty * interp (regexp_type r)), 
+       in_re_set_xform (cat_re_xform s r) str v <-> 
+       exists str1 str2 v1 v2, str = str1 ++ str2 /\ v = (v1,v2) /\ 
+                           in_re_set_xform s str1 v1 /\ in_regexp r str2 v2.
+  Proof.
+    intros.
+    generalize (cat_re_xform_corr' s r str v). intros.
+    destruct r ; auto ; clear H ; simpl in *. destruct s. crush.
+    xinterp_simpl. destruct v. destruct u. assert (List.In i (xinterp x0 x1)).
+    generalize (xinterp x0 x1) H0 . induction i0 ; crush. xinterp_simpl.
+    crush. repeat econstructor ; eauto. rewrite <- app_nil_end. auto.
+    in_regexp_inv. exists x5. split ; auto. generalize H1. xinterp_simpl.
+    generalize (xinterp x0 x5). induction i ; crush.
+    destruct v. destruct v.
+  Qed. 
+
+(*
+   Instance in_re_set_xform_equal ty: 
+     Proper ((@rx_equal ty) ==> eq ==> eq ==> iff) (@in_re_set_xform ty).
+   Proof. intros rx1 rx2 H1 s1 s2 H2 v1 v2 H3.
+          unfold rx_equal in H1. rewrite H1. crush.
+   Qed.
 *)
-  (* Lemma map_tree_xform_unfold ty g i l v r fs :  *)
-  (*   (@map_tree_xform ty (Raw.Node i l v r) fs g) =  *)
-  (*   let (s1,f1) := @map_tree_xform ty l (xcomp xinl fs) g in  *)
-  (*   let (v',fv') := g v (xcomp (xcomp xinl xinr) fs) in *)
-  (*   let (s2,f2) := add_xform_tree v' fv' s1 f1 in  *)
-    
 
-  (* Lemma map_tree_xform_erase ty g1 g2 :  *)
-  (*   (forall r (f:regexp_type r ->> List_t ty), projT1 (g1 r f) = g2 r) ->  *)
-  (*   forall s fs,  *)
-  (*   projT1 (@map_tree_xform ty s fs g1) =  *)
-  (*   Raw.fold (fun r s' => Raw.add (g2 r) s') s Raw.Leaf. *)
-  (* Proof. *)
-  (*   intro H. induction s ; intro. auto. simpl. *)
-  (*   unfold map_tree_xform.  *)
-  
-  (* Definition cat_re_xform :  *)
-  (*   forall ty, rs_xf_pair (List_t ty) ->  *)
-  (*              forall r:regexp, rs_xf_pair (Pair_t ty (regexp_type r)). *)
-
+     
 
 End RESETXFORM.
 
