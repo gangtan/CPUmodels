@@ -22,7 +22,22 @@ Module Type RESetXform.
       grammar *)
   Parameter re_set_type: t -> type.
 
-  Definition rs_xf_pair (ty:type) := {rs : t & re_set_type rs ->> ty }.
+  Definition rs_xf_pair (ty:type) := {rs : t & re_set_type rs ->> List_t ty }.
+
+  Definition re_xf_pair (ty:type) := {r : regexp & regexp_type r ->> List_t ty}.
+
+  Parameter in_re_set: 
+    forall (rs:t), list char_t -> interp (re_set_type rs) -> Prop.
+
+  Definition in_re_xform ty (rx : re_xf_pair ty) s (v:interp ty) := 
+    let (r,x) := rx in 
+    exists v', in_regexp r s v' /\ List.In v (xinterp x v').
+
+  Definition in_re_set_xform ty (rx : rs_xf_pair ty) s (v:interp ty) := 
+    let (rs, f) := rx in 
+    exists v', in_re_set rs s v' /\ List.In v (xinterp f v').
+
+  Parameter in_re_set_empty : forall rs v, not (in_re_set empty rs v).
 
   (* the following type for union_xform is motivated by the case of doing
      partial derivatives over r1+r2
@@ -32,17 +47,24 @@ Module Type RESetXform.
             union_xform (rs1, f1) (rs2, f2)
   *)
   Parameter union_xform: forall ty1,
-    rs_xf_pair (List_t ty1) -> rs_xf_pair (List_t ty1) -> rs_xf_pair (List_t ty1).
+    rs_xf_pair ty1 -> rs_xf_pair ty1 -> rs_xf_pair ty1.
   (* note: def equality may not be necessary here *)
   Parameter union_xform_erase: forall ty1 rx1 rx2,
     projT1 (@union_xform ty1 rx1 rx2) = union (projT1 rx1) (projT1 rx2).
+  Parameter union_xform_corr: forall ty rs1 rs2 str v,
+    in_re_set_xform (@union_xform ty rs1 rs2) str v <-> 
+    in_re_set_xform rs1 str v \/ in_re_set_xform rs2 str v.
 
   Parameter empty_xform: forall ty, rs_xf_pair ty.
   Parameter empty_xform_erase: forall ty, projT1 (@empty_xform ty) = empty.
+  Parameter empty_xform_corr: forall ty (s : list char_t) (v : interp ty),
+    ~ in_re_set_xform (empty_xform ty) s v.
 
   Parameter singleton_xform: forall r:regexp, rs_xf_pair (regexp_type r).
   Parameter singleton_xform_erase: forall r, 
     projT1 (@singleton_xform r) = (singleton r).
+  Parameter singleton_xform_corr : forall r s v, 
+    in_re_set_xform (singleton_xform r) s v <-> in_regexp r s v.
 
 
   (* note: the following operation is motivated by the case of doing
@@ -1411,4 +1433,4 @@ Module RESETXFORM <: RESetXform.
 
 End RESETXFORM.
 
-(* Module RR : WSets := RESet. *)
+(* Module RR : WSets := RESet. *) 
