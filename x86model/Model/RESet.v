@@ -37,6 +37,9 @@ Module Type RESetXform.
     let (rs, f) := rx in 
     exists v', in_re_set rs s v' /\ List.In v (xinterp f v').
 
+  Definition rx_equal ty (rx1 rx2: rs_xf_pair ty) := 
+    forall s v, in_re_set_xform rx1 s v <-> in_re_set_xform rx2 s v.
+
   Parameter in_re_set_empty : forall rs v, not (in_re_set empty rs v).
 
   (* the following type for union_xform is motivated by the case of doing
@@ -66,17 +69,56 @@ Module Type RESetXform.
   Parameter singleton_xform_corr : forall r s v, 
     in_re_set_xform (singleton_xform r) s v <-> in_regexp r s v.
 
+  Parameter add_xform: 
+    forall ty (rex: re_xf_pair ty) (rx: rs_xf_pair ty), rs_xf_pair ty.
+  Parameter add_xform_erase: 
+    forall ty (rex:re_xf_pair ty) rx,
+      projT1 (add_xform rex rx) = add (projT1 rex) (projT1 rx).
+  Parameter add_xform_corr: 
+    forall ty (rex:re_xf_pair ty) rx s v,
+      in_re_set_xform (add_xform rex rx) s v <->
+      in_re_xform rex s v \/ in_re_set_xform rx s v.
 
-  (* note: the following operation is motivated by the case of doing
-     partial derives over "r1 cat r2" when r1 is not nullable.
-        pdrv(a, r1 r2) =
-          let (rs1, f1) := pdrv (a, r1) in
-            cat_re_xform (rs1, f1) r2
-  *)
-  (* Parameter cat_re_xform: forall ty, *)
-  (*   rs_xf_pair ty -> forall r:regexp, rs_xf_pair (Pair_t ty (regexp_type r)). *)
-  (* can also state a erasure lemma, need to bring the set_cat_re definition,
-     which is in NewRecognizer.v *)
+  Parameter fold_xform: 
+    forall (ty:type) (A:Type) (comb: re_xf_pair ty -> A -> A),
+      (rs_xf_pair ty) -> A -> A.
+  Parameter fold_xform_erase : forall ty1 ty2
+     (comb1:re_xf_pair ty1 -> rs_xf_pair ty2 -> rs_xf_pair ty2)
+     (comb2:regexp -> t -> t) rx ini_rx,
+     (forall rex rx, projT1 (comb1 rex rx) = comb2 (projT1 rex) (projT1 rx)) -> 
+     projT1 (fold_xform comb1 rx ini_rx) = fold comb2 (projT1 rx) (projT1 ini_rx).
+  Parameter fold_xform_rec :
+    forall (ty : type) (A : Type)     (* output type *)
+           (P : rs_xf_pair ty -> A -> Prop)  (* predicate *)
+           (f : re_xf_pair ty -> A -> A),    (* function we are folding *)
+      (forall rx1 rx2 : rs_xf_pair ty,  (* predicate holds on equivalent sets *)
+         rx_equal rx1 rx2 -> forall a : A, P rx1 a -> P rx2 a) ->
+      (* predicate extends when we add something using the function *)
+      (forall (rx : re_xf_pair ty) (rs : rs_xf_pair ty) (a : A),
+         P rs a -> P (add_xform rx rs) (f rx a)) ->
+      forall (rs : rs_xf_pair ty) (accum : A),
+        (* predicate holds on empty set and initial accumulator *)
+        P (empty_xform ty) accum -> 
+        P rs (fold_xform f rs accum).
+
+  Definition set_cat_re (s:t) (r:regexp): t := 
+    match r with
+      | Eps => s (* not stricitly necessary; an optimization *)
+      | Zero => empty
+      | _ => fold (fun r1 s' => add (Cat r1 r) s') s empty
+                        (* Note : will need to show that this is the same as
+                          RESF.map (re_set_build_map (fun r1 => Cat r1 r)) s *)
+   end.
+
+  Parameter cat_re_xform: forall ty,
+    rs_xf_pair ty -> 
+    forall r:regexp, rs_xf_pair (Pair_t ty (regexp_type r)).
+  Parameter cat_re_xform_erase: forall t rx1 r,
+    projT1 (@cat_re_xform t rx1 r) = set_cat_re (projT1 rx1) r.
+  Parameter cat_re_xform_corr: forall ty (rx:rs_xf_pair ty) r str v,
+    in_re_set_xform (cat_re_xform rx r) str v <->
+    exists str1 str2 v1 v2, str = str1++str2 /\ v=(v1,v2) /\
+      in_re_set_xform rx str1 v1 /\ in_regexp r str2 v2.
 
 End RESetXform.
 
