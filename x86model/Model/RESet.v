@@ -120,6 +120,9 @@ Module Type RESetXform.
     exists str1 str2 v1 v2, str = str1++str2 /\ v=(v1,v2) /\
       in_re_set_xform rx str1 v1 /\ in_regexp r str2 v2.
 
+  Parameter inject_xform : forall (s1 s2:t), 
+    (subset s1 s2 = true) -> (re_set_type s1 ->> re_set_type s2).
+
 End RESetXform.
 
 Module RESet := MSetAVL.Make REOrderedType.
@@ -229,6 +232,163 @@ Module RESETXFORM <: RESetXform.
           rewrite (xmatch_corr f1 f2) ; simpl
         | [|- context[xcomp ?X1 ?X2]] => rewrite (xcomp_corr X1 X2); simpl
       end.
+
+  Ltac xinterp_simpl :=
+  repeat match goal with
+    | [|- context[xinterp (xmatch ?X1 ?X2) ?v]] => rewrite (xmatch_corr X1 X2); simpl
+    | [H:context[xinterp (xmatch ?X1 ?X2) ?v] |- _ ] => 
+      rewrite (xmatch_corr X1 X2) in H ; simpl
+    | [|- context[xcomp ?X1 ?X2]] => rewrite (xcomp_corr X1 X2); simpl
+    | [H:context[xcomp ?X1 ?X2] |- _] => 
+      rewrite (xcomp_corr X1 X2) in H; simpl in H
+    | [|- context[xinterp (xpair _ _) _]] => rewrite xpair_corr; simpl
+    | [H:context[xinterp (xpair _ _) _] |- _] => 
+      rewrite xpair_corr in H; simpl in H
+(*
+    | [|- context[xinterp xcross _]] => rewrite xcross_corr; simpl
+    | [H:context[xinterp xcross _] |- _] => 
+      rewrite xcross_corr in H; simpl in H
+*)
+    | [|- context [xinterp xapp (_,_)]] => rewrite xapp_corr; simpl
+    | [H:context [xinterp xapp (_,_)] |- _] => 
+      rewrite xapp_corr in H; simpl in H
+    | [|- context [xinterp (xmap _) ?V]] => 
+      rewrite (@xmap_corr _ _ _ V); simpl
+    | [H:context [xinterp (xmap _) ?V] |- _] => 
+      rewrite (@xmap_corr _ _ _ V) in H; simpl in H
+(*
+    | [|- context[xinterp xflatten _]] => rewrite xflatten_corr2; simpl
+    | [H:context[xinterp xflatten _] |- _] => 
+      rewrite xflatten_corr2 in H; simpl in H
+*)
+  end.
+
+  Lemma in_not_leaf : forall (r:regexp), Raw.In r Raw.Leaf -> False.
+  Proof.
+    unfold Raw.In. intros. inversion H.
+  Qed.
+
+  Lemma in_node :
+    forall r i ltree r' rtree, 
+      Raw.In r (Raw.Node i ltree r' rtree) -> 
+      Raw.In r ltree \/ r = r' \/ Raw.In r rtree.
+  Proof.
+    unfold Raw.In. intros. inversion H ; crush. right ; left.
+    eapply compare_re_eq_leibniz. auto. 
+  Qed.
+
+   Lemma ok_left i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) : 
+     Raw.Ok t1.
+   Proof.
+     unfold Raw.Ok in *. inversion ok. subst ; auto.
+   Qed.     
+
+   Lemma ok_right i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) : 
+     Raw.Ok t2.
+   Proof.
+     unfold Raw.Ok in *. inversion ok. subst ; auto.
+   Qed.
+
+  Lemma in_left r i t1 t2 x :
+        Raw.In r (Raw.Node i t1 x t2) ->
+        (Raw.Ok (Raw.Node i t1 x t2)) -> 
+        (REOrderedTypeAlt.compare r x = Lt) -> 
+        Raw.In r t1.
+  Proof.
+    unfold Raw.In, Raw.Ok. intros.  
+    inversion H ; inversion H0 ; subst ; clear H H0 ; try congruence.
+    assert False ; [idtac | contradiction].
+    specialize (H14 r H3). simpl in *. rewrite REOrderedTypeAlt.compare_sym in H14.
+    rewrite H1 in H14. simpl in *. discriminate.
+  Qed.    
+
+  Lemma in_right r i t1 t2 x : 
+        Raw.In r (Raw.Node i t1 x t2) ->
+        (Raw.Ok (Raw.Node i t1 x t2)) -> 
+        (REOrderedTypeAlt.compare r x = Gt) -> 
+        Raw.In r t2.
+  Proof.
+    unfold Raw.In, Raw.Ok. intros.  
+    inversion H ; inversion H0 ; subst ; clear H H0 ; try congruence.
+    assert False ; [idtac | contradiction].
+    specialize (H13 r H3). simpl in *. congruence.
+  Qed.    
+
+  (* Given a proof that r is in the tree t, extract an xform from
+     regexp_type r to tree_type t. *)
+  Fixpoint find_xform (t:Raw.tree) (r:regexp) : 
+    Raw.Ok t -> Raw.In r t -> xform (regexp_type r) (tree_type t) := 
+    match t as t' 
+          return Raw.Ok t' -> Raw.In r t' -> xform (regexp_type r) (tree_type t') with
+      | Raw.Leaf => fun Htok Hin => False_rect _ (in_not_leaf Hin)
+      | Raw.Node _ ltree r' rtree => 
+        fun Htok Hin => 
+          match REOrderedTypeAlt.compare r r' as p 
+                return (REOrderedTypeAlt.compare r r' = p) -> _
+          with 
+            | Eq => fun H3 => 
+                      eq_rec_r
+                        (fun r0 : regexp =>
+                           regexp_type r0 ->> Sum_t (tree_type ltree) 
+                                       (Sum_t (regexp_type r') (tree_type rtree)))
+                            (xcomp xinl xinr) (compare_re_eq_leibniz r r' H3)
+            | Lt => fun H2 => 
+                      let x := find_xform (ok_left Htok) (in_left Hin Htok H2) 
+                          in xcomp x xinl
+            | Gt => fun H4 => 
+                      let x := find_xform (ok_right Htok) (in_right Hin Htok H4)
+                      in xcomp x (xcomp xinr xinr)
+          end eq_refl
+    end.
+
+  Lemma subset_corr t1 t2 : (Raw.Ok t1) -> (Raw.Ok t2) ->
+    (Raw.subset t1 t2 = true <-> forall r, Raw.In r t1 -> Raw.In r t2).
+  Proof.
+    apply Raw.subset_spec.
+  Qed.    
+
+  Lemma subset_node i t_left r t_right t2 : 
+    Raw.Ok (Raw.Node i t_left r t_right) ->
+    Raw.Ok t2 ->
+    Raw.subset (Raw.Node i t_left r t_right) t2 = true -> 
+    Raw.subset t_left t2 = true /\ Raw.In r t2 /\ Raw.subset t_right t2 = true.
+  Proof.
+    intros. 
+    generalize (ok_left H) (ok_right H). 
+    rewrite subset_corr in H1 ; auto.
+    intros ; split.
+    rewrite subset_corr ; auto. intros. apply H1. eapply Raw.InLeft. auto.
+    split. apply H1. econstructor. apply Raw.MX.compare_refl.
+    rewrite subset_corr ; auto. intros. apply H1. eapply Raw.InRight. auto.
+  Qed.
+
+  (* Given trees t1 and r2 such that (subset t1 t2) produce a transform of the type
+     tree_type t1 ->> tree_type t2. *)
+  Fixpoint inject_xform_tree (t1 : Raw.tree) (t2 : Raw.tree) : 
+         (Raw.Ok t1) -> (Raw.Ok t2) -> 
+         (Raw.subset t1 t2 = true) -> (tree_type t1 ->> tree_type t2) := 
+    match t1 as t1' return 
+         (Raw.Ok t1') -> (Raw.Ok t2) -> 
+         (Raw.subset t1' t2 = true) -> (tree_type t1' ->> tree_type t2)
+    with 
+      | Raw.Leaf => fun _ _ _ => xzero
+      | Raw.Node _ t_left r t_right => 
+        fun t1ok t2ok Hsub => 
+          (xmatch (inject_xform_tree (ok_left t1ok) t2ok 
+                                     (proj1 (subset_node t1ok t2ok Hsub)))
+                  (xmatch 
+                     (find_xform t2ok (proj1 (proj2 (subset_node t1ok t2ok Hsub))))
+                     (inject_xform_tree (ok_right t1ok) t2ok 
+                                        (proj2 (proj2 (subset_node t1ok t2ok Hsub))))))
+    end.
+
+  Definition inject_xform (s1 s2 : RESet.t) : 
+    (RESet.subset s1 s2 = true) -> (re_set_type s1 ->> re_set_type s2).
+  Proof.
+    destruct s1 as [t1 okt1].
+    destruct s2 as [t2 okt2]. unfold RESet.subset, re_set_type. simpl. 
+    apply (inject_xform_tree okt1 okt2).
+  Defined.
 
   Lemma create_xform_corr ty l fl x fx r fr str v : 
     in_tree_xform (@create_xform ty l fl x fx r fr) str v <-> 
@@ -511,36 +671,6 @@ Module RESETXFORM <: RESetXform.
     end.
     destruct e1. rewrite bal_xform_erase. rewrite <- IHs2. auto.
   Qed.
-
-  Ltac xinterp_simpl :=
-  repeat match goal with
-    | [|- context[xinterp (xmatch ?X1 ?X2) ?v]] => rewrite (xmatch_corr X1 X2); simpl
-    | [H:context[xinterp (xmatch ?X1 ?X2) ?v] |- _ ] => 
-      rewrite (xmatch_corr X1 X2) in H ; simpl
-    | [|- context[xcomp ?X1 ?X2]] => rewrite (xcomp_corr X1 X2); simpl
-    | [H:context[xcomp ?X1 ?X2] |- _] => 
-      rewrite (xcomp_corr X1 X2) in H; simpl in H
-    | [|- context[xinterp (xpair _ _) _]] => rewrite xpair_corr; simpl
-    | [H:context[xinterp (xpair _ _) _] |- _] => 
-      rewrite xpair_corr in H; simpl in H
-(*
-    | [|- context[xinterp xcross _]] => rewrite xcross_corr; simpl
-    | [H:context[xinterp xcross _] |- _] => 
-      rewrite xcross_corr in H; simpl in H
-*)
-    | [|- context [xinterp xapp (_,_)]] => rewrite xapp_corr; simpl
-    | [H:context [xinterp xapp (_,_)] |- _] => 
-      rewrite xapp_corr in H; simpl in H
-    | [|- context [xinterp (xmap _) ?V]] => 
-      rewrite (@xmap_corr _ _ _ V); simpl
-    | [H:context [xinterp (xmap _) ?V] |- _] => 
-      rewrite (@xmap_corr _ _ _ V) in H; simpl in H
-(*
-    | [|- context[xinterp xflatten _]] => rewrite xflatten_corr2; simpl
-    | [H:context[xinterp xflatten _] |- _] => 
-      rewrite xflatten_corr2 in H; simpl in H
-*)
-  end.
 
   Lemma add_xform_tree_corr : 
     forall ty tr ftr x fx str v,
@@ -1268,18 +1398,6 @@ Module RESETXFORM <: RESetXform.
 
    Definition tx_equal ty (tx1 tx2: tree_xf_pair ty) := 
      forall s v, in_tree_xform tx1 s v <-> in_tree_xform tx2 s v.
-
-   Lemma ok_left i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) : 
-     Raw.Ok t1.
-   Proof.
-     unfold Raw.Ok in *. inversion ok. subst ; auto.
-   Qed.     
-
-   Lemma ok_right i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) : 
-     Raw.Ok t2.
-   Proof.
-     unfold Raw.Ok in *. inversion ok. subst ; auto.
-   Qed.
 
    Lemma tree_disj i (t1 t2:Raw.tree) (x:regexp) (ok : Raw.Ok (Raw.Node i t1 x t2)) :
      forall r, (Raw.In r t1 -> ~Raw.In r t2 /\ r <> x) /\ 
