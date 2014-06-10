@@ -94,12 +94,12 @@ Module Type RESetXform.
       (forall rx1 rx2 : rs_xf_pair ty,  (* predicate holds on equivalent sets *)
          rx_equal rx1 rx2 -> forall a : A, P rx1 a -> P rx2 a) ->
       (* predicate extends when we add something using the function *)
-      (forall (rx : re_xf_pair ty) (rs : rs_xf_pair ty) (a : A),
-         P rs a -> P (add_xform rx rs) (f rx a)) ->
-      forall (rs : rs_xf_pair ty) (accum : A),
+      (forall (rex : re_xf_pair ty) (rx : rs_xf_pair ty) (a : A),
+         P rx a -> P (add_xform rex rx) (f rex a)) ->
+      forall (rx : rs_xf_pair ty) (accum : A),
         (* predicate holds on empty set and initial accumulator *)
         P (empty_xform ty) accum -> 
-        P rs (fold_xform f rs accum).
+        P rx (fold_xform f rx accum).
 
   Definition set_cat_re (s:t) (r:regexp): t := 
     match r with

@@ -143,18 +143,6 @@ Lemma xcross_corr2 {t1 t2} (vs: interp (Pair_t (List_t t1) (List_t t2))):
   xinterp xcross vs = List.list_prod (fst vs) (snd vs).
 Admitted.
 
-Axiom add_xform: 
-  forall ty (rex: re_xf_pair ty) (rx: rs_xf_pair ty), rs_xf_pair ty.
-
-Lemma add_xform_erase: forall ty (rex:re_xf_pair ty) rx,
-  projT1 (add_xform rex rx) = RES.add (projT1 rex) (projT1 rx).
-Admitted.
-
-Lemma add_xform_corr: forall ty (rex:re_xf_pair ty) rx s v,
-  in_re_set_xform (add_xform rex rx) s v <->
-  in_re_xform rex s v \/ in_re_set_xform rx s v.
-Admitted.
-
 Definition rx_imply ty (rx1 rx2: rs_xf_pair ty) := 
   forall s v, in_re_set_xform rx1 s v -> in_re_set_xform rx2 s v.
 
@@ -166,33 +154,6 @@ Instance in_re_set_xform_equal ty:
 Proof. intros rx1 rx2 H1 s1 s2 H2 v1 v2 H3.
   unfold rx_equal in H1. rewrite H1. crush.
 Qed.
-
-(* The following type is slightly different from the one in RESet.v, but
-   is isomorphic *)
-Axiom fold_xform: forall (ty:type) (A:Type) (comb: re_xf_pair ty -> A -> A),
-                    (rs_xf_pair ty) -> A -> A.
-
-Lemma fold_xform_erase: forall ty
-  (comb1:re_xf_pair ty -> rs_xf_pair ty -> rs_xf_pair ty) 
-  (comb2:regexp -> RES.t -> RES.t) rx ini_rx,
-  (forall rex rx, projT1 (comb1 rex rx) = comb2 (projT1 rex) (projT1 rx)) ->
-  projT1 (fold_xform comb1 rx ini_rx) = RES.fold comb2 (projT1 rx) (projT1 ini_rx).
-Admitted.
-
-Lemma fold_xform_rec: 
-  forall (ty:type) (A : Type) (P : rs_xf_pair ty -> A -> Prop)
-         (f : re_xf_pair ty -> A -> A)
-         (i : A) (rx : rs_xf_pair ty),
-    (forall (rx1 rx2:rs_xf_pair ty) (a : A), 
-       rx_equal rx1 rx2 -> P rx1 a -> P rx2 a) ->
-    (forall sf, P (existT _ RES.empty sf) i) ->
-    (forall (rex: re_xf_pair ty) (a : A) 
-            (rx': rs_xf_pair ty),
-       RES.In (projT1 rex) (projT1 rx) ->
-       ~ RES.In (projT1 rex) (projT1 rx') ->
-       P rx' a -> P (add_xform rex rx') (f rex a)) ->
-    P rx (fold_xform f rx i).
-Admitted.
 
 Axiom Equal_xform: forall (s s':RES.t), 
   RES.Equal s s' -> RES.re_set_type s' ->> RES.re_set_type s.
@@ -633,8 +594,8 @@ Definition pdrv_rex (ty:type) (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty :=
 (** Partial derivatives over a regexp set; the result of the union 
     of taking partial derivatives on every regexp in the set *)
 Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
-  fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex a rex) rx1)
-             rx (@RES.empty_xform ty).
+  RES.fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex a rex) rx1)
+                 rx (@RES.empty_xform ty).
 
 (* Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) := *)
 (*   projT1 (pdrv_set_xform a rx). *)
@@ -1070,7 +1031,7 @@ Lemma pdrv_set_in: forall ty (rx:rs_xf_pair ty) r a,
   RES.In r (|pdrv_set a rx|) <->
   exists r', RES.In r' (|rx|) /\ RES.In r (|pdrv a r'|).
 Proof. intros. unfold erase. unfold pdrv_set. 
-  rewrite fold_xform_erase
+  rewrite RES.fold_xform_erase
     with (comb2:=fun r rs1 => RES.union (|pdrv a r|) rs1).
   split.
   Case "->". 
@@ -1124,21 +1085,22 @@ Lemma pdrv_set_corr: forall ty a (rx:rs_xf_pair ty) s v,
   in_re_set_xform (pdrv_set a rx) s v <-> 
   in_re_set_xform rx (a::s) v.
 Proof. intros. unfold pdrv_set.
-  apply fold_xform_rec.
+  apply RES.fold_xform_rec.
   Case "equality respecting".
     intros. rewrite H0. trivial.
+  Case "inductive case".
+    intros.
+    rewrite RES.union_xform_corr.
+    rewrite RES.add_xform_corr.
+    rewrite pdrv_rex_corr.
+    crush. 
+      right; apply H; apply H1.
+      right. apply H0; apply H1.
   Case "base".
     split; intro H.
       contradict H; generalize RES.empty_xform_corr; crush.
       apply in_re_set_xform_elim2 in H. sim. 
         contradiction (RES.in_re_set_empty H).
-  Case "inductive case".
-    intros.
-    rewrite RES.union_xform_corr.
-    rewrite add_xform_corr.
-    rewrite pdrv_rex_corr.
-    crush. 
-      right. apply H2. apply H3.
 Qed.
 
 Lemma wpdrv_app: forall ty w1 w2 (rx:rs_xf_pair ty),
@@ -1209,16 +1171,6 @@ Module RESetSet.
 
   Definition get_element (n:nat) (s:t) : option elt := 
     nth_error (elements s) n.
-
-  Definition get_element_2 (n:nat) (s:t) : 
-    {elt | get_element n s = Some elt} + {get_element n s = None}.
-    refine (let ge := get_element n s in
-            (match ge return get_element n s = ge -> _
-             with
-               | Some e => fun H => inleft (exist _ e _)
-               | None => fun H => inright _
-             end) eq_refl); crush.
-  Defined.
 
   (** Given an element e, find its index in the set *)
   Definition get_index (e:elt) (s:t) : option nat :=
@@ -1625,33 +1577,49 @@ Section DFA.
   Definition get_index_wfs (s:wf_state) (ss:wf_states): option nat :=
     RESS.get_index (proj1_sig s) (proj1_sig ss).
 
-  Definition get_element_wfs (n:nat) (ss:wf_states):
-    {s:state | state_is_wf s /\ RESS.get_element n (proj1_sig ss) = Some s}
+  (** Strong spec of get_index_wfs *)
+  Definition get_index_wfs2 (s:wf_state) (ss:wf_states) :
+    {n | get_index_wfs s ss = Some n} + {get_index_wfs s ss = None}.
+  refine (let gi := get_index_wfs s ss in
+          (match gi return get_index_wfs s ss = gi -> _ with
+            | Some n => fun H => inleft (exist _ n _)
+            | None => fun H => inright _
+           end) eq_refl); crush.
+  Defined.
+
+  Definition get_element_wfs (n:nat) (ss:wf_states) :=
+    RESS.get_element n (proj1_sig ss).
+
+  (** Strong spec of get_elemeng_wfs *)
+  Definition get_element_wfs2 (n:nat) (ss:wf_states):
+    {s: wf_state | get_element_wfs n ss = Some (proj1_sig s)}
     + {n >= cardinal_wfs ss}.
-    refine (match RESS.get_element_2 n (proj1_sig ss) with
-              | inleft s => inleft (exist _ (proj1_sig s) _)
-              | inright H => inright _ 
-           end).
-    Case "state_is_wf s".
-      destruct ss as [ss H2].
-        destruct s as [s H4]. simpl in *.
-        split.
-          apply H2.
-          apply Coqlib.nth_error_in in H4.
-          assert (InA RESet.Equal s (RESS.elements ss)).
-            apply In_InA. apply RESet.eq_equiv. assumption.
-          apply RESS.elements_spec1. trivial.
-        trivial.
-    Case "n>=|ss|".
+    refine (let ge := get_element_wfs n ss in
+            (match ge return get_element_wfs n ss = ge -> _ with
+               | Some rs => 
+                 fun H => inleft (exist _ (exist state_is_wf rs _) _)
+               | None => fun H => inright _ 
+             end) eq_refl).
+    Case "Some".
+      simpl. trivial.
+    Case "None".
       apply Coqlib.nth_error_none in H. trivial.
+    Grab Existential Variables.
+      unfold get_element_wfs in H.
+      destruct ss as [ss H2]. simpl in *.
+      apply H2.
+        apply Coqlib.nth_error_in in H.
+        assert (InA RESet.Equal rs (RESS.elements ss)).
+          apply In_InA. apply RESet.eq_equiv. assumption.
+        apply RESS.elements_spec1. trivial.
   Defined.
 
   (** ** Defining the DFA type *)
   
   (** Return the nth state in ss; if out of bound, return RES.empty *)
   Definition get_state (n:nat) (ss:wf_states): RES.t := 
-    match get_element_wfs n ss with
-      | inleft s => proj1_sig (extract_wf_state ss n s)
+    match get_element_wfs2 n ss with
+      | inleft s => proj1_sig (proj1_sig s)
       | inright _ => RES.empty
     end.
   Notation "s .[ i ] " := (get_state i s) (at level 40).
@@ -1773,25 +1741,34 @@ Section DFA.
 
   Lemma get_element_wfs_ext n ss ss': 
     wfs_ext ss ss' -> n < cardinal_wfs ss
-      -> RESS.get_element n (proj1_sig ss') = RESS.get_element n (proj1_sig ss).
+      -> get_element_wfs n ss' = get_element_wfs n ss.
   Proof. intros. apply wfs_ext_elements_ext in H. 
     apply RESS.get_element_ext; auto.
   Qed.
 
-  Lemma get_element_wfs_ext2: forall ss1 ss2 n e,
-    wfs_ext ss1 ss2 -> RESS.get_element n (proj1_sig ss1) = Some e
-      -> RESS.get_element n (proj1_sig ss2) = Some e.
+  Lemma get_element_wfs_ext2: forall ss ss' n e,
+    wfs_ext ss ss' -> get_element_wfs n ss = Some e
+      -> get_element_wfs n ss' = Some e.
   Proof. intros. use_lemma RESS.get_element_some_lt by eassumption.
     erewrite get_element_wfs_ext; eassumption.
   Qed.
 
+  Lemma get_index_get_element_wfs: forall s ss n,
+    get_index_wfs s ss = Some n -> 
+    exists rs, get_element_wfs n ss = Some rs /\ 
+               RES.Equal (proj1_sig s) rs.
+  Proof. unfold get_index_wfs, get_element_wfs. intros.
+    apply RESS.get_index_get_element in H. crush.
+  Qed.
+
   Lemma get_index_wfs_ext: forall s ss ss' n,
-    get_index_wfs s ss = Some n -> wfs_ext ss ss' -> 
+    wfs_ext ss ss' -> get_index_wfs s ss = Some n -> 
     get_index_wfs s ss' = Some n.
   Proof. unfold get_index_wfs. intros.
     use_lemma wfs_ext_elements_ext by eassumption.
     generalize RESS.get_index_ext. crush.
   Qed.
+
 
   Opaque RESS.elements. 
   Lemma wfs_ext_add s ss:
@@ -1805,17 +1782,17 @@ Section DFA.
   Qed.
 
   Lemma wfs_ext_add2 s ss:
-    get_index_wfs s ss = None -> wfs_ext ss (add_wfs s ss).
+    get_index_wfs s ss = None -> wfs_ext ss (s ::: ss).
   Proof. intros. apply wfs_ext_add. apply RESS.get_index_none. trivial.
   Qed.
 
   Lemma get_element_add_wfs_ext s ss ss' : 
-    wfs_ext (add_wfs s ss) ss' 
+    wfs_ext (s ::: ss) ss' 
       -> RESS.mem (proj1_sig s) (proj1_sig ss) = false
-      -> RESS.get_element (cardinal_wfs ss) (proj1_sig ss') = Some (proj1_sig s).
+      -> get_element_wfs (cardinal_wfs ss) ss' = Some (proj1_sig s).
   Proof. unfold wfs_ext, elements_wfs, add_wfs, cardinal_wfs. simpl. intros.
     destruct H as [ss1 H2].
-    unfold RESS.get_element.
+    unfold get_element_wfs, RESS.get_element.
     rewrite RESS.add_elements_2 in H2 by assumption.
     rewrite H2.
     rewrite app_ass.
@@ -1866,11 +1843,11 @@ Section DFA.
     wfs_ext ss ss' -> n < cardinal_wfs ss -> ss.[n] = ss'.[n].
   Proof. unfold get_state; intros.
     use_lemma wfs_ext_cardinal_leq by eassumption.
-    destruct (get_element_wfs n ss); [idtac | omega].
-    destruct s as [rs1 [H3 H4]]. simpl in *.
+    destruct (get_element_wfs2 n ss); [idtac | omega].
+    destruct s as [[rs1 H3] H4]. simpl in *.
     use_lemma RESS.get_element_some_lt by eassumption.
-    destruct (get_element_wfs n ss'); [idtac | omega].
-    destruct s as [rs2 [H6 H8]]. simpl in *.
+    destruct (get_element_wfs2 n ss'); [idtac | omega].
+    destruct s as [[rs2 H6] H8]. simpl in *.
     rewrite (get_element_wfs_ext H) in H8 by assumption.
     crush.
   Qed.
@@ -1879,11 +1856,12 @@ Section DFA.
     get_index_wfs s ss = Some n ->
     RES.Equal (proj1_sig s) (ss.[n]).
   Proof. intros. 
-      apply RESS.get_index_get_element in H. sim.
+      apply get_index_get_element_wfs in H. sim.
       unfold get_state.
-      destruct (get_element_wfs n ss).
-        destruct s0 as [rs [H4 H6]].
-          simpl. assert (x=rs) by congruence. subst. assumption.
+      destruct (get_element_wfs2 n ss).
+        destruct s0 as [[rs H4] H6].
+          simpl. simpl in H6.
+            assert (x=rs) by congruence. subst. assumption.
         apply RESS.get_element_some_lt in H. unfold cardinal_wfs in *. omega.
   Qed.
 
@@ -1891,15 +1869,24 @@ Section DFA.
     get_index_wfs s ss = None ->
     proj1_sig s = (s ::: ss).[cardinal_wfs ss].
   Proof. intros; unfold get_state.
-    destruct (get_element_wfs (cardinal_wfs ss) (s ::: ss)).
-      destruct s0 as [rs [H2 H4]].
+    destruct (get_element_wfs2 (cardinal_wfs ss) (s ::: ss)).
+      destruct s0 as [[rs H2] H4].
         simpl.
         apply RESS.get_index_none_get_element in H.
-        unfold cardinal_wfs, add_wfs in H4. simpl in *.
+        unfold cardinal_wfs, add_wfs, get_element_wfs in H4. simpl in *.
         congruence.
       apply RESS.get_index_none in H.
       use_lemma RESS.add_cardinal by eassumption.
       unfold cardinal_wfs, add_wfs in *. simpl in *. omega.
+  Qed.
+
+  Lemma get_state_get_element_some: forall rs ss n,
+    get_element_wfs n ss = Some rs -> rs = ss.[n].
+  Proof. intros. unfold get_state.
+    destruct (get_element_wfs2 n ss).
+      destruct s as [s H2]. simpl. crush.
+    apply RESS.get_element_some_lt in H. 
+      unfold cardinal_wfs in *. omega.
   Qed.
 
   Lemma wpdrv_wf_corr w s s1 f1:
@@ -1953,19 +1940,19 @@ Section DFA.
   (*       eauto using wfs_ext_trans. *)
   (*     apply RESS.get_index_get_element in H2. *)
   (*     unfold get_state. *)
-  (*     destruct (get_element_wfs n ss'). *)
+  (*     destruct (get_element_wfs2 n ss'). *)
   (*       destruct s0 as [s1 [H4 H6]]. *)
   (*         crush. assert (x=s1) by congruence. subst. reflexivity. *)
   (*       sim. apply RESS.get_element_some_lt in H1. unfold cardinal_wfs in *. omega. *)
   (*   Case "None". *)
   (*     simpl in *. *)
   (*     unfold get_state. *)
-  (*     destruct (get_element_wfs (RESS.cardinal (proj1_sig ss)) ss'). *)
+  (*     destruct (get_element_wfs2 (RESS.cardinal (proj1_sig ss)) ss'). *)
   (*       destruct s0 as [s1 [H4 H6]]. simpl. *)
   (*         apply RESS.get_index_none_get_element in Hgopt. *)
   (*         assert (RESS.get_element (RESS.cardinal (proj1_sig ss)) (proj1_sig ss') = *)
   (*                 Some (proj1_sig s)). *)
-  (*           eapply get_element_wfs_ext2; eassumption. *)
+  (*           eapply get_element_wfs2_ext2; eassumption. *)
   (*         assert (s1 = proj1_sig s) by congruence. *)
   (*         subst. reflexivity. *)
   (*         apply wfs_ext_cardinal_leq in H. *)
@@ -2074,18 +2061,10 @@ Section DFA.
         trivial.
     Qed.
 
-    Definition get_index_wfs2 (s:wf_state) (ss:wf_states) :
-      {n | get_index_wfs s ss = Some n} + {get_index_wfs s ss = None}.
-    refine (let gi := get_index_wfs s ss in
-            (match gi return get_index_wfs s ss = gi -> _ with
-              | Some n => fun H => inleft (exist _ n _)
-              | None => fun H => inright _
-             end) eq_refl); crush.
-    Defined.
-
     Variable s : wf_state.
     Variable gpos : nat.
 
+    (* todo: should we use | instead of & before wfs_ext *)
     (* Return type of gen_row' *)
     Definition gen_row_ret_t (ss:wf_states) (n:nat) (tid:token_id) :=
       {ss':wf_states & {row : row_t gpos ss' & wfs_ext ss ss'}}.
@@ -2142,8 +2121,32 @@ Section DFA.
         trivial.
     Defined.
 
-    (* TBC *)
 
+  (* Fixpoint gen_row' (n:nat) (s:wf_state) (ss:wf_states) (tk_id:token_id) :  *)
+  (*   (wf_states * list nat) := *)
+  (*   match n with *)
+  (*     | 0 => (ss, nil) *)
+  (*     | S n' => *)
+  (*       let s1 := wpdrv_wf (token_id_to_chars tk_id) s in *)
+  (*       match get_index_wfs s1 ss with *)
+  (*         | Some n => *)
+  (*           let (ss1, row) := gen_row' n' s ss (1 + tk_id) in *)
+  (*           (ss1, n :: row) *)
+  (*         | None => *)
+  (*           let (ss1, row) := gen_row' n' s (add_wfs s1 ss) (1 + tk_id) in *)
+  (*           (ss1, cardinal_wfs ss :: row) *)
+  (*       end *)
+  (*   end. *)
+
+  (* Definition gen_row (s:wf_state) (ss:wf_states) : (wf_states * list nat) :=  *)
+  (*   gen_row' num_tokens s ss 0. *)
+
+    (** Kick off the row generation starting with [num_tokens.] *)
+    Definition gen_row (ss:wf_states)
+               (H:ss.[gpos] = proj1_sig s) (H1: gpos < cardinal_wfs ss) :
+               gen_row_ret_t ss num_tokens 0 :=
+      gen_row' num_tokens ss 0 H H1.
+  
     (** This is the main loop-invariant for [gen_row'].  Given a state [s],
       a list of states [ss], and a token number [n], running [gen_row' n ss
       tid] yields a list of states [ss'] and transition-table [row'] such
@@ -2199,7 +2202,7 @@ Section DFA.
             rewrite wpdrv_wf_corr by eassumption.
             unfold gen_backward_xform.
             generalize ((get_state_get_index_some s1 ss'
-                 (get_index_wfs_ext s1 Hgiw Hwfs1))). intro H10.
+                 (get_index_wfs_ext s1 Hwfs1 Hgiw))). intro H10.
             rewrite (Equal_xform_corr H10).
             rewrite xcoerce_eq.
             split; intros; trivial.
@@ -2245,63 +2248,285 @@ Section DFA.
             split; intros; trivial.
     Qed.
 
+    Lemma gen_row_prop: forall ss (H:ss.[gpos] = proj1_sig s) 
+          (H1:gpos < cardinal_wfs ss),
+      match gen_row ss H H1 with 
+        | existT ss1 (existT row1 Hwfs) => 
+          length row1 = num_tokens /\
+          forall tid, wf_row row1 tid tid
+      end.
+    Proof. unfold gen_row. intros.
+      use_lemma (@gen_row'_prop num_tokens ss 0 H H1) by omega.
+      remember (gen_row' num_tokens ss 0 H H1) as gr.
+      destruct gr as [ss1 rr].
+      destruct rr as [row1 Hwfs].
+      clear Heqgr. 
+      split. crush.
+      sim. intro.
+      rewrite (minus_n_O tid) at 1.
+      apply H2. omega.
+    Qed.
 
-(* todo: the following defs and proofs haven't been migrated to the case of parsers yet *)
-
-
-
-
-  (* Fixpoint gen_row' (n:nat) (s:wf_state) (ss:wf_states) (tk_id:token_id) :  *)
-  (*   (wf_states * list nat) := *)
-  (*   match n with *)
-  (*     | 0 => (ss, nil) *)
-  (*     | S n' => *)
-  (*       let s1 := wpdrv_wf (token_id_to_chars tk_id) s in *)
-  (*       match get_index_wfs s1 ss with *)
-  (*         | Some n => *)
-  (*           let (ss1, row) := gen_row' n' s ss (1 + tk_id) in *)
-  (*           (ss1, n :: row) *)
-  (*         | None => *)
-  (*           let (ss1, row) := gen_row' n' s (add_wfs s1 ss) (1 + tk_id) in *)
-  (*           (ss1, cardinal_wfs ss :: row) *)
-  (*       end *)
-  (*   end. *)
-
-  (* Definition gen_row (s:wf_state) (ss:wf_states) : (wf_states * list nat) :=  *)
-  (*   gen_row' num_tokens s ss 0. *)
-
-
-    (** Kick off the row generation starting with [num_tokens.] *)
-    Definition gen_row (s:states_t) (H:s.[gpos] = g) (H1: gpos < length s) : 
-      { s' : states_t & {r : row_t gpos (s ++ s') & length r = num_tokens /\ 
-                             forall i, row_wf r i i }}.
-      refine (fun s H H1 => 
-                match @gen_row' num_tokens s 0 H H1 (eq_sym (minus_diag _)) (le_refl _) with 
-                  | existT s' (existT r (conj P1 P2)) => 
-                    (existT _ s' (existT _ r (conj P1 (fun i => _))))
-              end).
-      specialize (P2 i).
-      rewrite NPeano.Nat.sub_0_r in P2. apply P2. auto with arith.
-    Defined.
   End GENROW.
 
+  Definition coerce_entry_help n ss ss' (e:entry_t n ss): 
+    wfs_ext ss ss' -> n < cardinal_wfs ss ->
+    RES.re_set_type (ss'.[next_state e]) ->> 
+      List_t (RES.re_set_type (ss'.[n])).
+    generalize (next_state_lt e); intros.
+    assert (H4:ss.[next_state e] = ss'.[next_state e]).
+      apply get_state_wfs_ext; assumption.
+    assert (H6:ss.[n] = ss'.[n]).
+      apply get_state_wfs_ext; assumption.
+    rewrite <- H4. rewrite <- H6. exact (next_xform e).
+  Defined.
 
+  (** We build some entries in the transition matrix before we've discovered
+      all of the states.  So we have to coerce these entries to work with the
+      bigger set of states, which unfortunately, isn't just done at the top-level. *)
+  Definition coerce_entry n ss ss' (H:wfs_ext ss ss') (H1:n < cardinal_wfs ss)  
+             (e:entry_t n ss) : entry_t n ss' :=
+      {| next_state := next_state e ;
+         next_state_lt := 
+           lt_le_trans _ _ _ (next_state_lt e) (wfs_ext_cardinal_leq H) ;
+         next_xform := coerce_entry_help e H H1
+      |}.
 
+  (** Similarly, we have to coerce the pre-computed [astgram_extract_nil] values
+      for previous rows. *)
+  Definition coerce_nils ss ss' i (H: wfs_ext ss ss') (H1: i < cardinal_wfs ss) 
+             (v:interp (RES.re_set_type (ss.[i]))) :
+    interp (RES.re_set_type (ss'.[i])).
+    intros. erewrite <- (get_state_wfs_ext H H1). assumption.
+  Defined.
 
+  (** Helper lemmas for coercing previous transition rows once we've added in
+      some new states. *)
+  Lemma coerce_transitions1 ss ss' (H:wfs_ext ss ss') (t:transition_t ss):
+    forall i : nat,
+       wf_row (map (coerce_entry H (row_num_lt t)) (row_entries t)) i i.
+  Proof. intros. generalize (row_entries_wf t i). 
+    unfold wf_row. rewrite Coqlib.list_map_nth.
+    remember_rev (nth_error (row_entries t) i) as ne.
+    destruct ne; auto.
+    intros. unfold Coqlib.option_map.
+    destruct t; destruct e.
+    Opaque in_re_set_xform in_re_set token_id_to_chars. simpl in *.
+    unfold coerce_entry_help.
+    unfold eq_rec, eq_rect.
+    generalize (get_state_wfs_ext H row_num_lt0).
+    generalize (get_state_wfs_ext H
+                  (next_state_lt {|
+                       next_state := next_state0;
+                       next_state_lt := next_state_lt0;
+                       next_xform := next_xform0 |})).
+    intros H10 H12. simpl in H10.
+    rewrite <- H12. rewrite <- H10.
+    auto.
+  Qed.
 
+  Lemma coerce_transitions2 ss ss' (H:wfs_ext ss ss') t:
+     map (coerce_nils H (row_num_lt t)) (row_nils t) =
+     re_set_extract_nil (ss'.[row_num t]).
+  Proof.
+     destruct t. simpl. rewrite row_nils_wf0.
+     clear row_entries_wf0 row_entries_len0 row_entries0. clear row_nils_wf0.
+     clear row_nils0. unfold coerce_nils. unfold eq_rect_r. unfold eq_rect.
+     generalize (get_state_wfs_ext H row_num_lt0). intro H2.
+     rewrite H2. apply map_id.
+  Qed.
 
+  (** Used to coerce previous rows so that instead of being indexed by the *)
+  (*     original set of states [s], they are now indexed by [s ++ s1]. *)
+  Definition coerce_transitions ss ss' (H:wfs_ext ss ss') 
+              (ts:transitions_t ss) : transitions_t ss'.
+    refine (List.map (fun (t:transition_t ss) =>
+      {| row_num := row_num t ;
+         row_num_lt := 
+           (lt_le_trans _ _ _ (row_num_lt t) (wfs_ext_cardinal_leq H)) ;
+         row_entries := 
+           List.map (coerce_entry H (row_num_lt t)) (row_entries t) ;
+         row_entries_len := _ ;
+         row_nils := List.map (coerce_nils H (row_num_lt t)) (row_nils t) ;
+         row_entries_wf := coerce_transitions1 H t ;
+         row_nils_wf := coerce_transitions2 H t
+      |}) ts).
+   Case "row_entries_len".
+     rewrite Coqlib.list_length_map. apply (row_entries_len t).
+  Defined.
 
+  (** Build a transition table by closing off the reachable states.  The invariant
+     is that we've closed the table up to the [next_state] and have generated the
+     appropriate transition rows for the states in the range 0..[next_state-1].
+     So we first check to see if [next_state] is outside the range of states, and
+     if so, we are done.  Otherwise, we generate the transition row for the
+     derivative at the position [next_state], add it to the list of rows, and
+     then move on to the next position in the list of states.  Note that when 
+     we generate the transition row, we may end up adding new states.  So we 
+     have to go back and coerce the earlier transition entries to be compatible
+     with those additional states.  
+  *)
 
+    (* TBC *)
 
+  (** A relation that puts an upper bound on nats *)
+  Definition limit_nat (m:nat) : relation nat :=
+    fun n1 n2: nat => m - n1 < m - n2.
 
+  Lemma limit_nat_wf_helper :
+    forall n k m, m - k < n -> Acc (limit_nat m) k.
+  Proof. induction n; intros; [omega | idtac].
+    apply Acc_intro; intros. unfold limit_nat in H0.
+    apply IHn. omega.
+  Defined.
 
+  Lemma limit_nat_wf: 
+    forall m, well_founded (limit_nat m).
+  Proof. intros. intro n.
+    apply Acc_intro; intros.
+    unfold limit_nat in H.
+    eauto using limit_nat_wf_helper.
+  Defined.
 
+  (* max number of partial derivatives of r *)
+  Definition max_pdrv := NPeano.pow 2 (1 + num_of_syms r).
+    (* Pos.add 1 (shift_nat (1 + num_of_syms r) 1). *)
 
+  (** The termination metric for function [build_table'] *)
+  Definition build_table_metric := limit_nat max_pdrv.
 
+  Lemma states_upper_bound: forall (ss: wf_states),
+    cardinal_wfs ss <= max_pdrv.
+  Proof. intros.
+    destruct ss as [ss H].
+    assert (H2: RESS.Subset ss (POW.powerset (pdset r))).
+      intros s H2. apply POW.powerset_spec.
+      apply H in H2. unfold wf_state in H2.
+      destruct H2 as [w H2].
+      rewrite H2. apply wpdrv_subset_pdset.
+    apply RESSP.subset_cardinal in H2.
+    rewrite POW.powerset_cardinal in H2.
+    assert (NPeano.pow 2 (RESet.cardinal (pdset r)) <= 
+            NPeano.pow 2 (1 + num_of_syms r)).
+      apply NPeano.Nat.pow_le_mono_r. omega.
+      apply pdset_upper_bound.
+    unfold max_pdrv.
+    unfold cardinal_wfs. simpl in *.
+    omega.
+  Qed.
 
+  Lemma build_table_metric_dec : forall n ss,
+    n < cardinal_wfs ss -> build_table_metric (S n) n.
+  Proof. intros. unfold build_table_metric, limit_nat.
+    apply plus_lt_reg_l with (p:= S n).
+    assert (S n <= max_pdrv). 
+     generalize (states_upper_bound ss).
+      omega.
+    repeat rewrite NPeano.Nat.add_sub_assoc by omega.
+    repeat rewrite NPeano.Nat.add_sub_swap by omega.
+    omega.
+  Qed.
 
+  Definition gen_row_2 (s:wf_state) (gpos:nat) (ss:wf_states)
+     (H:ss.[gpos]=proj1_sig s) (H1:gpos<cardinal_wfs ss) :
+     {gr: gen_row_ret_t gpos ss num_tokens 0 | 
+        @gen_row s gpos ss H H1 = gr} :=
+    (match @gen_row s gpos ss H H1 as gr
+           return @gen_row s gpos ss H H1 = gr -> _ with
+       | gr => fun Hgr => exist _ gr Hgr
+     end) eq_refl.
 
+  Lemma build_table_help1 n (s:wf_state) ss: 
+    get_element_wfs n ss = Some (proj1_sig s) ->
+    ss.[n] = proj1_sig s.
+  Proof. symmetry. apply get_state_get_element_some. trivial. Qed.
 
+  Lemma build_table_help2 n (s:wf_state) ss: 
+    get_element_wfs n ss = Some (proj1_sig s) ->
+    n < cardinal_wfs ss.
+  Proof. intros.
+    apply RESS.get_element_some_lt in H. unfold cardinal_wfs. trivial.
+  Qed.
+
+  (* Unset Implicit Arguments. *)
+  (* Require Import Coq.Program.Wf. *)
+  (* Definition extract_wf_state (ss: wf_states) (n:nat) *)
+  (*            (s: {s:state | state_is_wf s *)
+  (*                           /\ RESS.get_element n (proj1_sig ss) = Some s}) *)
+  (*   : wf_state. *)
+  (*   destruct s. destruct a. *)
+  (*   refine (exist _ x _). *)
+  (*   apply H. *)
+  (* Defined. *)
+  (* Program Fixpoint build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat) *)
+  (*          {wf build_table_metric next_state} : *)
+  (*   wf_states * list (list nat) := *)
+  (*   match get_element_wfs2 next_state ss with *)
+  (*      | inleft s =>  *)
+  (*        let (ss1, row1) := gen_row (extract_wf_state _ _ s) ss in *)
+  (*        build_table' ss1 (rows ++ (row1::nil)) (1 + next_state) *)
+  (*      | inright _ => (ss, rows) *)
+  (*   end. *)
+
+  Unset Implicit Arguments.
+  Require Import Coq.Program.Wf.
+  Program Fixpoint build_table (ss:wf_states) (rows:transitions_t ss)
+          (next_state:nat) {wf build_table_metric next_state} : 
+    {ss':wf_states & transitions_t ss'} :=
+    match get_element_wfs2 next_state ss with
+         | inright _ => existT _ ss rows
+         | inleft s0 =>
+           let (s, Hge) := s0 in
+           (match (gen_row s ss (build_table_help1 _ _ _ Hge)
+                          (build_table_help2 _ _ _ Hge)) as gr
+              return (gen_row s ss (build_table_help1 _ _ _ Hge)
+                          (build_table_help2 _ _ _ Hge) = gr -> _)  with
+             | existT ss' (existT row Hwfs) =>
+               fun Hgr =>
+                 let t : transition_t ss' := {|
+                       row_num := next_state ;
+                       row_num_lt := _ ;
+                       row_entries := row ;
+                       row_entries_len := _ ;
+                       (* todo: we shouldn't need to recompute the following every time *)
+                       row_nils := re_set_extract_nil _ ; 
+                       row_entries_wf := _ ;
+                       row_nils_wf := eq_refl _
+                     |} in
+                 (* existT _ ss rows *)
+                 build_table ss' ((coerce_transitions Hwfs rows) ++ (t::nil))
+                             (1 + next_state)
+            end) eq_refl
+    end.
+  Next Obligation.
+    eapply lt_le_trans. eapply RESS.get_element_some_lt. eassumption.
+      apply wfs_ext_cardinal_leq. assumption.
+  Defined.
+  Next Obligation.
+    generalize (gen_row_prop s ss (build_table_help1 _ _ _ Hge)
+                  (build_table_help2 _ _ _ Hge)); intro H2.
+      rewrite Hgr in H2.
+      crush.
+  Defined.
+  Next Obligation.
+    generalize (gen_row_prop s ss (build_table_help1 _ _ _ Hge)
+                  (build_table_help2 _ _ _ Hge)); intro H2.
+      rewrite Hgr in H2.
+      crush.
+    (* todo: simplify the above *)
+  Defined.
+  Next Obligation.
+    destruct Heq_anonymous.
+    apply RESS.get_element_some_lt in H.
+    eauto using build_table_metric_dec.
+  Defined.
+  Next Obligation.
+    apply measure_wf. apply limit_nat_wf.
+  Defined.
+
+End DFA.
+
+Recursive Extraction build_table.
 
 
 (* Definition test0:= Eps. *)
