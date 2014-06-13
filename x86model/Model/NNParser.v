@@ -281,27 +281,11 @@ Proof. unfold erase_subset, erase_eq. intros.
   apply RESP.subset_antisym; trivial.
 Qed.
 
-(* todo: move to Regexp.v *)
-(** This function computes the list of all values v, such that 
-    [in_regexp nil v] holds. *)
-Fixpoint regexp_extract_nil (r:regexp) : list (interp (regexp_type r)) := 
-  match r return list (interp (regexp_type r)) with
-    | Eps => tt::nil
-    | Zero => nil
-    | Char _ => nil
-    | Any => nil
-    | Cat ag1 ag2 => list_prod (regexp_extract_nil ag1) (regexp_extract_nil ag2)
-    | Alt ag1 ag2 => 
-      (List.map (fun x => inl _ x) (regexp_extract_nil ag1)) ++ 
-      (List.map (fun x => inr _ x) (regexp_extract_nil ag2))
-    | Star ag => nil::nil
-  end.
-
 Axiom re_set_extract_nil: forall (rs:RES.t), list (interp (RES.re_set_type rs)).
 
-(* todo: move to Coqlib.v *)      
-Lemma plus_minus_assoc a b c: c <= b -> a + (b - c) = a + b - c.
-Proof. intros. omega. Qed.
+(* todo: remove *)
+(* Lemma plus_minus_assoc a b c: c <= b -> a + (b - c) = a + b - c. *)
+(* Proof. intros. omega. Qed. *)
 
 Lemma xcoerce_eq t1 t2 (f:t1 ->> t2) (H1:t1=t1) (H2:t2=t2):
   xcoerce f H1 H2 = f.
@@ -309,6 +293,36 @@ Proof. assert (H1=eq_refl _). apply proof_irrelevance.
   assert (H2=eq_refl _). apply proof_irrelevance.
   subst. unfold xcoerce, eq_rec_r. simpl. trivial.
 Qed.
+
+
+(* (** Nullable (r) returns true iff r can match the empty string *) *)
+(* Fixpoint regexp_nullable (r:regexp) : bool :=  *)
+(*   match r with *)
+(*     | Zero | Char _ | Any => false *)
+(*     | Eps => true *)
+(*     | Cat r1 r2 => regexp_nullable r1 && regexp_nullable r2 *)
+(*     | Alt r1 r2 => regexp_nullable r1 || regexp_nullable r2 *)
+(*     | Star r1 => true *)
+(*   end. *)
+
+(* (** reset_nullable(rs) is true iff one of the regexp in rs is nullable *) *)
+(* Definition reset_nullable (rs:RESet.t): bool := *)
+(*   RESet.exists_ regexp_nullable rs. *)
+
+(* Fixpoint regexp_always_rejects (r:regexp) : bool :=  *)
+(*   match r with  *)
+(*     | Eps => false *)
+(*     | Char _ => false *)
+(*     | Any => false *)
+(*     | Zero => true *)
+(*     | Alt r1 r2 => regexp_always_rejects r1 && regexp_always_rejects r2 *)
+(*     | Cat r1 r2 => regexp_always_rejects r1 || regexp_always_rejects r2 *)
+(*     | Star _ => false *)
+(*   end. *)
+
+(* (** reset_always_rejects(rs) is true iff all regexps in rs always rejects *) *)
+(* Definition reset_always_rejects (rs:RESet.t): bool := *)
+(*   RESet.for_all regexp_always_rejects rs. *)
             
 (* End of assumed axioms *)
 (**************************************************************************)
@@ -488,26 +502,6 @@ Qed.
 
     Partial derivatives are introduced in "Partial derivatives of regular
     expressions and finite automata construction" by Antimirov. *)
-
-(* todo: revise the following *)
-(** reset_nullable(rs) is true iff one of the regexp in rs is nullable *)
-(* Definition reset_nullable (rs:RES.t): bool := *)
-(*   RES.exists_ nullable rs. *)
-
-Fixpoint always_rejects (g:regexp) : bool := 
-  match g with 
-    | Eps => false
-    | Char _ => false
-    | Any => false
-    | Zero => true
-    | Alt g1 g2 => always_rejects g1 && always_rejects g2
-    | Cat g1 g2 => always_rejects g1 || always_rejects g2
-    | Star _ => false
-  end.
-
-(** reset_always_rejects(rs) is true iff all regexps in rs always rejects *)
-Definition reset_always_rejects (rs:RES.t): bool :=
-  RES.for_all always_rejects rs.
 
 (* todo: add calls to opt_ag to nullable and pdrv as in Parser.v *)
 
@@ -950,53 +944,6 @@ Section PDRV_CORRECT.
 
 End PDRV_CORRECT.
 
-(* todo: restore the following lemmas *)
-
-(* Lemma reset_nullable_corr rs: reset_nullable rs = true <-> in_re_set rs nil. *)
-(* Proof. unfold reset_nullable, in_re_set.  *)
-(*     generalize (nullable_proper); intro. *)
-(*     split; intro. *)
-(*     Case "->". *)
-(*       apply RES.exists_spec in H0; [idtac | trivial]. *)
-(*       unfold RES.Exists in H0. *)
-(*       generalize nullable_corr; crush_hyp. *)
-(*     Case "<-". *)
-(*       apply RES.exists_spec; [trivial | idtac]. *)
-(*       unfold RES.Exists. *)
-(*       generalize nullable_corr; crush_hyp. *)
-(* Qed. *)
-      
-(** [always_rejects] is correct. *)
-(* Lemma always_rejects_corr (r:regexp) :  *)
-(*   always_rejects r = true -> forall ls, ~ in_re r ls. *)
-(* Proof. *)
-(*   induction r; crush. *)
-(*   Case "Zero". intro H2. inversion H2. *)
-(*   Case "Cat". intro H2. *)
-(*     apply orb_prop in H. *)
-(*     destruct H; inversion H2; crush_hyp. *)
-(*   Case "Alt". intro H2. *)
-(*     apply andb_prop in H. inversion H2; crush_hyp. *)
-(* Qed. *)
-
-(* Instance always_rejects_proper: Proper (RES.E.eq ==> eq) always_rejects. *)
-(* Proof. unfold Proper, respectful. intros. *)
-(*   apply compare_re_eq_leibniz in H. crush. *)
-(* Qed. *)
-
-(* Lemma reset_always_rejects_corr rs:  *)
-(*   reset_always_rejects rs = true -> forall ls, ~ in_re_set rs ls. *)
-(* Proof. unfold reset_always_rejects, in_re_set. intros. intro H2. *)
-(*   apply RES.for_all_spec in H; [idtac | apply always_rejects_proper]. *)
-(*   unfold RES.For_all in H.  *)
-(*   generalize always_rejects_corr. crush_hyp. *)
-(* Qed. *)
-
-
-(* Definition reset_always_rejects (rs:RES.t): bool := *)
-(*   RES.for_all always_rejects rs. *)
-
-
 (** ** Properties of [pdrv_rex], [pdrv_set], and [wpdrv] *)
 
 Lemma pdrv_rex_erase: forall ty a (rex: re_xf_pair ty),
@@ -1143,9 +1090,9 @@ Proof. induction s. crush.
 Qed.
 
 (* todo: a trivial lemma; maybe remove *)
-Lemma wpdrv_re_set_pdset_trans : forall w rs r,
-  RES.Subset rs (pdset r) -> RES.Subset (|wpdrv_re_set w rs|) (pdset r).
-Proof. generalize wpdrv_pdset_trans. crush. Qed.
+(* Lemma wpdrv_re_set_pdset_trans : forall w rs r, *)
+(*   RES.Subset rs (pdset r) -> RES.Subset (|wpdrv_re_set w rs|) (pdset r). *)
+(* Proof. generalize wpdrv_pdset_trans. crush. Qed. *)
 
 Lemma wpdrv_re_set_corr rs w str v:
   in_re_set rs (w++str) v <->
@@ -1625,7 +1572,7 @@ Section DFA.
   Notation "s .[ i ] " := (get_state i s) (at level 40).
 
   (** Entries in the transition matrix *)
-  Record entry_t(rownum:nat)(ss:wf_states) := 
+  Record entry_t (rownum:nat) (ss:wf_states) := 
     { (** which state do we go to next *)
       next_state : nat ; 
       (** the [next_state] is in bounds with respect to the number of states *)
@@ -1638,21 +1585,12 @@ Section DFA.
     }.
 
   (** Rows in the transition matrix -- an entry for each token *)  
-  Definition row_t(i:nat)(ss:wf_states) := list (entry_t i ss).
+  Definition row_t (i:nat) (ss:wf_states) := list (entry_t i ss).
 
-  (** This predicate captures the fact that the ith entry in a row holds
-      the derivative of that row's corresponding RESet with respect
-      to the ith token. *)
-  (* Definition wf_row(gpos:nat)(ss:wf_states)(r:row_t gpos ss)(i:nat)(t:token_id) := *)
-  (*   match nth_error r i with *)
-  (*     | Some e =>  wpdrv_re_set (token_id_to_chars t) (ss.[gpos]) = *)
-  (*                 existT _ (ss.[next_state e]) x  *)
-  (*                 (* /\ xinterp x = (next_xform e) *) *)
-  (*                 (* no longer true, because of the backward edges from  *)
-  (*                    ss.[gpos] to some old state *) *)
-  (*     | None => True *)
-  (*   end. *)
-
+  (** This predicate captures the fact that the ith entry in a row is
+      semantically well-formed: if the transition edge goes to
+      [next_state], then [next_xform] is the correct xform going from values
+      of type ss.[gpos] back to values of type ss.[next_state] *)
   Definition wf_row (gpos:nat)(ss:wf_states)(row:row_t gpos ss)
              (i:nat)(t:token_id) :=
     match nth_error row i with
@@ -1669,16 +1607,9 @@ Section DFA.
     (** the row's index is in range for the number of states we have *)
     row_num_lt : row_num < RESS.cardinal (proj1_sig ss) ;
     (** what are the transition entries *)
-    row_entries : list (entry_t row_num ss) ;
+    row_entries : row_t row_num ss ;
     (** the list of values we get from this state when it is an accepting state *)
-    row_nils : list (interp (RES.re_set_type (ss.[row_num]))) ; 
-    (** have an entry in the row for each token *)
-    row_entries_len : length row_entries = num_tokens ;
-    (** each entry is the appropriate derivative *)
-    row_entries_wf: forall i, wf_row row_entries i i ;
-    (** the row_nils are what you get when you run [astgram_extract_nil] on the
-        row's [astgram]. *)
-    row_nils_wf : row_nils = re_set_extract_nil (ss.[row_num])
+    row_nils : list (interp (RES.re_set_type (ss.[row_num]))) 
   }.
 
   (** The transition matrix is then a list of rows *)
@@ -1698,13 +1629,13 @@ Section DFA.
     dfa_transition_r : forall i, match nth_error dfa_transition i with 
                                    | Some r => row_num r = i
                                    | None => True
-                                 end ;
+                                 end
     (** which states are accepting states -- no longer used *)
-    dfa_accepts : list bool ; 
-    dfa_accepts_len : length dfa_accepts = dfa_num_states ; 
+    (* dfa_accepts : list bool ;  *)
+    (* dfa_accepts_len : length dfa_accepts = dfa_num_states ;  *)
     (** which states are failure states -- no longer used *)
-    dfa_rejects : list bool ;
-    dfa_rejects_len : length dfa_rejects = dfa_num_states
+    (* dfa_rejects : list bool ; *)
+    (* dfa_rejects_len : length dfa_rejects = dfa_num_states *)
   }.
   
   (** ** Lemmas about wfs-level operations *)
@@ -1739,6 +1670,19 @@ Section DFA.
     repeat rewrite RESS.cardinal_spec. sim. rewrite H; crush.
   Qed.
 
+  Lemma wfs_ext_cardinal_leq_trans n ss ss':
+    wfs_ext ss ss' -> n < cardinal_wfs ss -> n < cardinal_wfs ss'.
+  Proof. intros; eapply lt_le_trans. eassumption.
+    apply wfs_ext_cardinal_leq. trivial.
+  Qed.
+
+  Lemma wfs_ext_gew_cardinal_leq n ss ss' s: 
+    wfs_ext ss ss' -> get_element_wfs n ss = Some s -> n < cardinal_wfs ss'.
+  Proof. intros.
+    eapply wfs_ext_cardinal_leq_trans. eassumption.
+      eapply RESS.get_element_some_lt. eassumption.
+  Qed.
+
   Lemma get_element_wfs_ext n ss ss': 
     wfs_ext ss ss' -> n < cardinal_wfs ss
       -> get_element_wfs n ss' = get_element_wfs n ss.
@@ -1768,7 +1712,6 @@ Section DFA.
     use_lemma wfs_ext_elements_ext by eassumption.
     generalize RESS.get_index_ext. crush.
   Qed.
-
 
   Opaque RESS.elements. 
   Lemma wfs_ext_add s ss:
@@ -1840,7 +1783,7 @@ Section DFA.
   Qed.
 
   Lemma get_state_wfs_ext : forall n ss ss',
-    wfs_ext ss ss' -> n < cardinal_wfs ss -> ss.[n] = ss'.[n].
+    wfs_ext ss ss' -> n < cardinal_wfs ss -> ss'.[n] = ss.[n].
   Proof. unfold get_state; intros.
     use_lemma wfs_ext_cardinal_leq by eassumption.
     destruct (get_element_wfs2 n ss); [idtac | omega].
@@ -1867,7 +1810,7 @@ Section DFA.
 
   Lemma get_state_get_index_none s ss:
     get_index_wfs s ss = None ->
-    proj1_sig s = (s ::: ss).[cardinal_wfs ss].
+    (s ::: ss).[cardinal_wfs ss] = proj1_sig s.
   Proof. intros; unfold get_state.
     destruct (get_element_wfs2 (cardinal_wfs ss) (s ::: ss)).
       destruct s0 as [[rs H2] H4].
@@ -1881,7 +1824,7 @@ Section DFA.
   Qed.
 
   Lemma get_state_get_element_some: forall rs ss n,
-    get_element_wfs n ss = Some rs -> rs = ss.[n].
+    get_element_wfs n ss = Some rs -> ss.[n] = rs.
   Proof. intros. unfold get_state.
     destruct (get_element_wfs2 n ss).
       destruct s as [s H2]. simpl. crush.
@@ -1961,38 +1904,6 @@ Section DFA.
   (*           apply RESS.get_index_none. trivial. *)
   (*  Qed. *)
       
-  (** Returns [true] iff the [astgram] accepts the empty string. *)
-  (* Fixpoint accepts_null (g:astgram) : bool :=  *)
-  (*   match g with  *)
-  (*     | aEps => true *)
-  (*     | aChar _ => false *)
-  (*     | aAny => false *)
-  (*     | aZero => false *)
-  (*     | aAlt g1 g2 => accepts_null g1 || accepts_null g2 *)
-  (*     | aCat g1 g2 => accepts_null g1 && accepts_null g2 *)
-  (*     | aStar _ => true *)
-  (*   end. *)
-
-  (** Build a map saying which states are accepting states *)
-  (* Definition build_accept_table (s:states_t) : list bool :=  *)
-  (*   List.map accepts_null s. *)
-
-  (** Returns [true] iff the [astgram] rejects all strings. *)
-  (* Fixpoint always_rejects (g:astgram) : bool :=  *)
-  (*   match g with  *)
-  (*     | aEps => false *)
-  (*     | aChar _ => false *)
-  (*     | aAny => false *)
-  (*     | aZero => true *)
-  (*     | aAlt g1 g2 => always_rejects g1 && always_rejects g2 *)
-  (*     | aCat g1 g2 => always_rejects g1 || always_rejects g2 *)
-  (*     | aStar _ => false *)
-  (*   end. *)
-
-  (** Build a map saying which states are rejecting states *)
-  (* Definition build_reject_table (s:states_t) : list bool :=  *)
-  (*   List.map always_rejects s. *)
-
   (** Generate the transition matrix row for the state corresponding to a
       well-forrmed state s. The table has been closed up to gpos.
       In general, this will add new states. *)
@@ -2011,51 +1922,53 @@ Section DFA.
       exact (Equal_xform H2).
     Defined.
 
-    Lemma gen_row1 s ss ss' n:
-      wfs_ext ss ss' -> 
+    Lemma gen_row_help1 s ss ss' n:
+      wfs_ext ss ss' ->
       get_index_wfs s ss = Some n ->
       n < cardinal_wfs ss'.
-    Proof. intros. eapply RESS.get_index_some_lt. 
+    Proof. intros. eapply RESS.get_index_some_lt.
       eapply get_index_wfs_ext; eassumption.
     Qed.
 
-    Lemma gen_row4 : forall s ss ss',
+    Lemma gen_row_help2 : forall s ss ss',
       get_index_wfs s ss = None -> wfs_ext (s ::: ss) ss' ->
       RES.re_set_type (proj1_sig s) =
       RES.re_set_type (ss'.[cardinal_wfs ss]).
     Proof. intros.
-      erewrite get_state_get_index_none by eassumption.
+      erewrite <- get_state_get_index_none by eassumption.
       assert (cardinal_wfs ss < cardinal_wfs (s ::: ss)).
         generalize (add_wfs_cardinal s ss H). omega.
-      erewrite get_state_wfs_ext by eassumption.
+      erewrite <- get_state_wfs_ext by eassumption.
       trivial.
     Qed.
 
-    Lemma gen_row5 : forall n rs ss ss',
+    Lemma gen_row_help3 : forall n rs ss ss',
       ss.[n] = rs -> n < cardinal_wfs ss ->
       wfs_ext ss ss' ->
       List_t (RES.re_set_type rs) = List_t (RES.re_set_type (ss'.[n])).
-    Proof. intros. repeat f_equal. generalize get_state_wfs_ext; crush. Qed.
+    Proof. intros. repeat f_equal. 
+      erewrite get_state_wfs_ext by eassumption. crush.
+    Qed.
 
-    Lemma gen_row6 (s s1:wf_state) (ss:wf_states) n:
+    Lemma gen_row_help4 (s s1:wf_state) (ss:wf_states) n:
       get_index_wfs s1 ss = None ->
       n < cardinal_wfs ss ->
       ss.[n] = proj1_sig s ->
       (s1 ::: ss).[n] = proj1_sig s.
     Proof. intros.
-      rewrite <- H1. symmetry.
+      rewrite <- H1. 
       apply get_state_wfs_ext.
         apply wfs_ext_add2. assumption.
         trivial.
     Qed.
 
-    Lemma gen_row7 (s s1:wf_state) gpos ss ss':
+    Lemma gen_row_help5 (s s1:wf_state) gpos ss ss':
       ss.[gpos] = proj1_sig s -> gpos < cardinal_wfs ss ->
       get_index_wfs s1 ss = None ->
       wfs_ext (s1 ::: ss) ss' ->
       List_t (RES.re_set_type (proj1_sig s)) = List_t (RES.re_set_type (ss'.[gpos])).
     Proof. intros.
-      eapply gen_row5. eassumption. assumption.
+      eapply gen_row_help3. eassumption. assumption.
       eapply wfs_ext_trans.
         eapply wfs_ext_add2. eassumption.
         trivial.
@@ -2093,10 +2006,10 @@ Section DFA.
                       let f_back := gen_backward_xform _ Hwfs Hgi in
                       let e : entry_t gpos ss' :=
                           {| next_state := n ;
-                             next_state_lt := gen_row1 s1 Hwfs Hgi;
+                             next_state_lt := gen_row_help1 _ Hwfs Hgi;
                              next_xform := xcomp f_back
                                              (xcoerce f1 eq_refl
-                                               (gen_row5 H H1 Hwfs)) |} in
+                                               (gen_row_help3 H H1 Hwfs)) |} in
                       existT _ ss' (existT _ (e::row) _)
                   | inright Hgi =>
                       let (ss', r) := gen_row' n' (s1 ::: ss) (1 + tid) _ _ in
@@ -2104,15 +2017,15 @@ Section DFA.
                       let e : entry_t gpos ss' :=
                           {| next_state := cardinal_wfs ss;
                              next_state_lt := _ ;
-                             next_xform := xcoerce f1 (gen_row4 Hgi Hwfs) 
-                                                   (gen_row7 s H H1 Hgi Hwfs) |} in
+                             next_xform := xcoerce f1 (gen_row_help2 Hgi Hwfs) 
+                                             (gen_row_help5 s H H1 Hgi Hwfs) |} in
                       existT _ ss' (existT _ (e::row) _)
                 end
             end
       end); clear gen_row'.
       apply wfs_ext_refl.
       trivial.
-      apply gen_row6; trivial.
+      apply gen_row_help4; trivial.
       abstract (generalize (add_wfs_cardinal_leq s1 ss); omega).
       apply wfs_ext_cardinal_leq in Hwfs.
       abstract (generalize (add_wfs_cardinal s1 ss Hgi); omega).
@@ -2120,26 +2033,6 @@ Section DFA.
         eapply wfs_ext_add2. eassumption.
         trivial.
     Defined.
-
-
-  (* Fixpoint gen_row' (n:nat) (s:wf_state) (ss:wf_states) (tk_id:token_id) :  *)
-  (*   (wf_states * list nat) := *)
-  (*   match n with *)
-  (*     | 0 => (ss, nil) *)
-  (*     | S n' => *)
-  (*       let s1 := wpdrv_wf (token_id_to_chars tk_id) s in *)
-  (*       match get_index_wfs s1 ss with *)
-  (*         | Some n => *)
-  (*           let (ss1, row) := gen_row' n' s ss (1 + tk_id) in *)
-  (*           (ss1, n :: row) *)
-  (*         | None => *)
-  (*           let (ss1, row) := gen_row' n' s (add_wfs s1 ss) (1 + tk_id) in *)
-  (*           (ss1, cardinal_wfs ss :: row) *)
-  (*       end *)
-  (*   end. *)
-
-  (* Definition gen_row (s:wf_state) (ss:wf_states) : (wf_states * list nat) :=  *)
-  (*   gen_row' num_tokens s ss 0. *)
 
     (** Kick off the row generation starting with [num_tokens.] *)
     Definition gen_row (ss:wf_states)
@@ -2184,7 +2077,7 @@ Section DFA.
           split; [auto | idtac].
           use_lemma RESS.get_index_some_lt by eassumption.
           assert (H8:ss'.[gpos] = proj1_sig s).
-            erewrite <- get_state_wfs_ext; eassumption.
+            erewrite get_state_wfs_ext; eassumption.
           intros. 
           match goal with 
             | [H:tid' >= tid |- _] => apply le_lt_or_eq in H; destruct H
@@ -2196,7 +2089,7 @@ Section DFA.
           SSCase "tid = tid'".
             subst tid'. rewrite minus_diag.
             unfold wf_row. compute [nth_error value next_state next_xform].
-            generalize (gen_row5 H H1 Hwfs1).
+            generalize (gen_row_help3 H H1 Hwfs1).
             rewrite H8.
             intros.
             rewrite wpdrv_wf_corr by eassumption.
@@ -2207,14 +2100,14 @@ Section DFA.
             rewrite xcoerce_eq.
             split; intros; trivial.
         SCase "s1 notin ss".
-          remember (gen_row6 s s1 ss e H1 H) as H4.
+          remember (gen_row_help4 s s1 ss e H1 H) as H4.
           remember (gen_row'_subproof (S n) ss tid H H1 n s1 f1 e) as H6.
           remember_rev (gen_row' n (s1 ::: ss) (1 + tid) H4 H6) as grr.
           destruct grr as [ss' rr].
           destruct rr as [row Hwfs1].
           inversion_clear Hgr. simpl.
           assert (H8:ss'.[gpos] = proj1_sig s).
-            rewrite <- H. symmetry. 
+            rewrite <- H. 
             apply get_state_wfs_ext.
               eapply wfs_ext_trans. 
                 eapply wfs_ext_add2. eassumption.
@@ -2235,13 +2128,14 @@ Section DFA.
           SSCase "tid = tid'".
             subst tid'. rewrite minus_diag.
             unfold wf_row. compute [nth_error value next_state next_xform].
-            generalize (gen_row4 e Hwfs1) (gen_row7 s H H1 e Hwfs1).
+            generalize (gen_row_help2 e Hwfs1) (gen_row_help5 s H H1 e Hwfs1).
             rewrite H8.
             use_lemma get_state_get_index_none by eassumption.
-            assert (H14:proj1_sig s1 = ss'.[cardinal_wfs ss]).
-              erewrite <- get_state_wfs_ext. eassumption. assumption.
+            assert (H14:ss'.[cardinal_wfs ss] = proj1_sig s1).
+              erewrite get_state_wfs_ext with (ss:=s1:::ss).
+              eassumption. assumption.
               generalize (add_wfs_cardinal s1 ss e).  omega.
-            rewrite <- H14.
+            rewrite H14.
             intros.
             rewrite wpdrv_wf_corr by eassumption.
             rewrite xcoerce_eq.
@@ -2269,105 +2163,49 @@ Section DFA.
 
   End GENROW.
 
-  Definition coerce_entry_help n ss ss' (e:entry_t n ss): 
-    wfs_ext ss ss' -> n < cardinal_wfs ss ->
-    RES.re_set_type (ss'.[next_state e]) ->> 
-      List_t (RES.re_set_type (ss'.[n])).
-    generalize (next_state_lt e); intros.
-    assert (H4:ss.[next_state e] = ss'.[next_state e]).
-      apply get_state_wfs_ext; assumption.
-    assert (H6:ss.[n] = ss'.[n]).
-      apply get_state_wfs_ext; assumption.
-    rewrite <- H4. rewrite <- H6. exact (next_xform e).
-  Defined.
-
   (** We build some entries in the transition matrix before we've discovered
       all of the states.  So we have to coerce these entries to work with the
       bigger set of states, which unfortunately, isn't just done at the top-level. *)
+
+  Lemma coerce_entry_help1 n ss ss': 
+    wfs_ext ss ss' -> n < cardinal_wfs ss ->
+    RES.re_set_type (ss.[n]) = RES.re_set_type (ss'.[n]).
+  Proof. intros. f_equal. symmetry; auto using get_state_wfs_ext. Qed.
+
+  Lemma coerce_entry_help2 n ss ss': 
+    wfs_ext ss ss' -> n < cardinal_wfs ss ->
+    List_t (RES.re_set_type (ss.[n])) = List_t (RES.re_set_type (ss'.[n])).
+  Proof. intros. f_equal. auto using coerce_entry_help1. Qed.
+
   Definition coerce_entry n ss ss' (H:wfs_ext ss ss') (H1:n < cardinal_wfs ss)  
              (e:entry_t n ss) : entry_t n ss' :=
-      {| next_state := next_state e ;
-         next_state_lt := 
-           lt_le_trans _ _ _ (next_state_lt e) (wfs_ext_cardinal_leq H) ;
-         next_xform := coerce_entry_help e H H1
-      |}.
+       {| next_state := next_state e ;
+          next_state_lt := wfs_ext_cardinal_leq_trans H (next_state_lt e) ;
+          next_xform := xcoerce (next_xform e) 
+                          (coerce_entry_help1 H (next_state_lt e))
+                          (coerce_entry_help2 H H1)
+       |}.
 
   (** Similarly, we have to coerce the pre-computed [astgram_extract_nil] values
       for previous rows. *)
   Definition coerce_nils ss ss' i (H: wfs_ext ss ss') (H1: i < cardinal_wfs ss) 
              (v:interp (RES.re_set_type (ss.[i]))) :
     interp (RES.re_set_type (ss'.[i])).
-    intros. erewrite <- (get_state_wfs_ext H H1). assumption.
+    intros. erewrite (get_state_wfs_ext H H1). assumption.
   Defined.
-
-  (** Helper lemmas for coercing previous transition rows once we've added in
-      some new states. *)
-  Lemma coerce_transitions1 ss ss' (H:wfs_ext ss ss') (t:transition_t ss):
-    forall i : nat,
-       wf_row (map (coerce_entry H (row_num_lt t)) (row_entries t)) i i.
-  Proof. intros. generalize (row_entries_wf t i). 
-    unfold wf_row. rewrite Coqlib.list_map_nth.
-    remember_rev (nth_error (row_entries t) i) as ne.
-    destruct ne; auto.
-    intros. unfold Coqlib.option_map.
-    destruct t; destruct e.
-    Opaque in_re_set_xform in_re_set token_id_to_chars. simpl in *.
-    unfold coerce_entry_help.
-    unfold eq_rec, eq_rect.
-    generalize (get_state_wfs_ext H row_num_lt0).
-    generalize (get_state_wfs_ext H
-                  (next_state_lt {|
-                       next_state := next_state0;
-                       next_state_lt := next_state_lt0;
-                       next_xform := next_xform0 |})).
-    intros H10 H12. simpl in H10.
-    rewrite <- H12. rewrite <- H10.
-    auto.
-  Qed.
-
-  Lemma coerce_transitions2 ss ss' (H:wfs_ext ss ss') t:
-     map (coerce_nils H (row_num_lt t)) (row_nils t) =
-     re_set_extract_nil (ss'.[row_num t]).
-  Proof.
-     destruct t. simpl. rewrite row_nils_wf0.
-     clear row_entries_wf0 row_entries_len0 row_entries0. clear row_nils_wf0.
-     clear row_nils0. unfold coerce_nils. unfold eq_rect_r. unfold eq_rect.
-     generalize (get_state_wfs_ext H row_num_lt0). intro H2.
-     rewrite H2. apply map_id.
-  Qed.
 
   (** Used to coerce previous rows so that instead of being indexed by the *)
   (*     original set of states [s], they are now indexed by [s ++ s1]. *)
-  Definition coerce_transitions ss ss' (H:wfs_ext ss ss') 
-              (ts:transitions_t ss) : transitions_t ss'.
-    refine (List.map (fun (t:transition_t ss) =>
+  Definition coerce_transitions ss ss' (H:wfs_ext ss ss')
+              (ts:transitions_t ss) : transitions_t ss' :=
+    List.map (fun (t:transition_t ss) =>
       {| row_num := row_num t ;
-         row_num_lt := 
+         row_num_lt :=
            (lt_le_trans _ _ _ (row_num_lt t) (wfs_ext_cardinal_leq H)) ;
-         row_entries := 
+         row_entries :=
            List.map (coerce_entry H (row_num_lt t)) (row_entries t) ;
-         row_entries_len := _ ;
-         row_nils := List.map (coerce_nils H (row_num_lt t)) (row_nils t) ;
-         row_entries_wf := coerce_transitions1 H t ;
-         row_nils_wf := coerce_transitions2 H t
-      |}) ts).
-   Case "row_entries_len".
-     rewrite Coqlib.list_length_map. apply (row_entries_len t).
-  Defined.
-
-  (** Build a transition table by closing off the reachable states.  The invariant
-     is that we've closed the table up to the [next_state] and have generated the
-     appropriate transition rows for the states in the range 0..[next_state-1].
-     So we first check to see if [next_state] is outside the range of states, and
-     if so, we are done.  Otherwise, we generate the transition row for the
-     derivative at the position [next_state], add it to the list of rows, and
-     then move on to the next position in the list of states.  Note that when 
-     we generate the transition row, we may end up adding new states.  So we 
-     have to go back and coerce the earlier transition entries to be compatible
-     with those additional states.  
-  *)
-
-    (* TBC *)
+         row_nils := List.map (coerce_nils H (row_num_lt t)) (row_nils t) 
+      |}) ts.
 
   (** A relation that puts an upper bound on nats *)
   Definition limit_nat (m:nat) : relation nat :=
@@ -2426,20 +2264,21 @@ Section DFA.
     repeat rewrite NPeano.Nat.add_sub_swap by omega.
     omega.
   Qed.
-
-  Definition gen_row_2 (s:wf_state) (gpos:nat) (ss:wf_states)
-     (H:ss.[gpos]=proj1_sig s) (H1:gpos<cardinal_wfs ss) :
-     {gr: gen_row_ret_t gpos ss num_tokens 0 | 
-        @gen_row s gpos ss H H1 = gr} :=
-    (match @gen_row s gpos ss H H1 as gr
-           return @gen_row s gpos ss H H1 = gr -> _ with
-       | gr => fun Hgr => exist _ gr Hgr
-     end) eq_refl.
+  
+  (* todo: remove *)
+  (* Definition gen_row_2 (s:wf_state) (gpos:nat) (ss:wf_states) *)
+  (*    (H:ss.[gpos]=proj1_sig s) (H1:gpos<cardinal_wfs ss) : *)
+  (*    {gr: gen_row_ret_t gpos ss num_tokens 0 |  *)
+  (*       @gen_row s gpos ss H H1 = gr} := *)
+  (*   (match @gen_row s gpos ss H H1 as gr *)
+  (*          return @gen_row s gpos ss H H1 = gr -> _ with *)
+  (*      | gr => fun Hgr => exist _ gr Hgr *)
+  (*    end) eq_refl. *)
 
   Lemma build_table_help1 n (s:wf_state) ss: 
     get_element_wfs n ss = Some (proj1_sig s) ->
     ss.[n] = proj1_sig s.
-  Proof. symmetry. apply get_state_get_element_some. trivial. Qed.
+  Proof. intros; apply get_state_get_element_some. trivial. Qed.
 
   Lemma build_table_help2 n (s:wf_state) ss: 
     get_element_wfs n ss = Some (proj1_sig s) ->
@@ -2448,26 +2287,24 @@ Section DFA.
     apply RESS.get_element_some_lt in H. unfold cardinal_wfs. trivial.
   Qed.
 
-  (* Unset Implicit Arguments. *)
-  (* Require Import Coq.Program.Wf. *)
-  (* Definition extract_wf_state (ss: wf_states) (n:nat) *)
-  (*            (s: {s:state | state_is_wf s *)
-  (*                           /\ RESS.get_element n (proj1_sig ss) = Some s}) *)
-  (*   : wf_state. *)
-  (*   destruct s. destruct a. *)
-  (*   refine (exist _ x _). *)
-  (*   apply H. *)
-  (* Defined. *)
-  (* Program Fixpoint build_table' (ss:wf_states) (rows:list (list nat)) (next_state:nat) *)
-  (*          {wf build_table_metric next_state} : *)
-  (*   wf_states * list (list nat) := *)
-  (*   match get_element_wfs2 next_state ss with *)
-  (*      | inleft s =>  *)
-  (*        let (ss1, row1) := gen_row (extract_wf_state _ _ s) ss in *)
-  (*        build_table' ss1 (rows ++ (row1::nil)) (1 + next_state) *)
-  (*      | inright _ => (ss, rows) *)
-  (*   end. *)
+  Definition cons_transition n ss 
+             (entries:row_t n ss) (H:n<cardinal_wfs ss) := 
+     {| row_num := n; 
+        row_num_lt := H;
+        row_entries := entries;
+        row_nils := re_set_extract_nil (ss.[n]) |}.
 
+  (** Build a transition table by closing off the reachable states.  The invariant
+     is that we've closed the table up to the [next_state] and have generated the
+     appropriate transition rows for the states in the range 0..[next_state-1].
+     So we first check to see if [next_state] is outside the range of states, and
+     if so, we are done.  Otherwise, we generate the transition row for the
+     derivative at the position [next_state], add it to the list of rows, and
+     then move on to the next position in the list of states.  Note that when 
+     we generate the transition row, we may end up adding new states.  So we 
+     have to go back and coerce the earlier transition entries to be compatible
+     with those additional states.  
+  *)
   Unset Implicit Arguments.
   Require Import Coq.Program.Wf.
   Program Fixpoint build_table (ss:wf_states) (rows:transitions_t ss)
@@ -2477,44 +2314,15 @@ Section DFA.
          | inright _ => existT _ ss rows
          | inleft s0 =>
            let (s, Hge) := s0 in
-           (match (gen_row s ss (build_table_help1 _ _ _ Hge)
-                          (build_table_help2 _ _ _ Hge)) as gr
-              return (gen_row s ss (build_table_help1 _ _ _ Hge)
-                          (build_table_help2 _ _ _ Hge) = gr -> _)  with
-             | existT ss' (existT row Hwfs) =>
-               fun Hgr =>
-                 let t : transition_t ss' := {|
-                       row_num := next_state ;
-                       row_num_lt := _ ;
-                       row_entries := row ;
-                       row_entries_len := _ ;
-                       (* todo: we shouldn't need to recompute the following every time *)
-                       row_nils := re_set_extract_nil _ ; 
-                       row_entries_wf := _ ;
-                       row_nils_wf := eq_refl _
-                     |} in
-                 (* existT _ ss rows *)
-                 build_table ss' ((coerce_transitions Hwfs rows) ++ (t::nil))
-                             (1 + next_state)
-            end) eq_refl
+           match (gen_row s ss (build_table_help1 _ _ _ Hge)
+                    (build_table_help2 _ _ _ Hge)) with
+             | existT ss' (existT entries Hwfs) =>
+                 build_table ss' 
+                   (coerce_transitions Hwfs rows ++ 
+                     cons_transition entries 
+                       (wfs_ext_gew_cardinal_leq _ Hwfs Hge)::nil) (1+next_state)
+            end
     end.
-  Next Obligation.
-    eapply lt_le_trans. eapply RESS.get_element_some_lt. eassumption.
-      apply wfs_ext_cardinal_leq. assumption.
-  Defined.
-  Next Obligation.
-    generalize (gen_row_prop s ss (build_table_help1 _ _ _ Hge)
-                  (build_table_help2 _ _ _ Hge)); intro H2.
-      rewrite Hgr in H2.
-      crush.
-  Defined.
-  Next Obligation.
-    generalize (gen_row_prop s ss (build_table_help1 _ _ _ Hge)
-                  (build_table_help2 _ _ _ Hge)); intro H2.
-      rewrite Hgr in H2.
-      crush.
-    (* todo: simplify the above *)
-  Defined.
   Next Obligation.
     destruct Heq_anonymous.
     apply RESS.get_element_some_lt in H.
@@ -2524,10 +2332,263 @@ Section DFA.
     apply measure_wf. apply limit_nat_wf.
   Defined.
 
+  Import WfExtensionality.
+  Lemma build_table_unfold (ss:wf_states) rows next_state:
+    build_table ss rows next_state  =
+    match get_element_wfs2 next_state ss with
+         | inright _ => existT _ ss rows
+         | inleft s0 =>
+           let (s, Hge) := s0 in
+           match (gen_row s ss (build_table_help1 _ _ _ Hge)
+                    (build_table_help2 _ _ _ Hge)) with
+             | existT ss' (existT entries Hwfs) =>
+                 build_table ss' 
+                   (coerce_transitions Hwfs rows ++ 
+                     cons_transition entries 
+                       (wfs_ext_gew_cardinal_leq _ Hwfs Hge)::nil) (1+next_state)
+            end
+    end.
+  Proof.
+    unfold build_table at 1.
+    unfold_sub build_table_func 
+     (build_table_func 
+        (existT (fun ss0 : wf_states => {_ : transitions_t ss0 & nat}) ss
+                (existT (fun _ : transitions_t ss => nat) rows next_state))).
+    simpl.
+    destruct (get_element_wfs2 next_state ss); [idtac | trivial].
+    destruct s. 
+    generalize (build_table_help1 next_state x ss e)
+               (build_table_help2 next_state x ss e).
+    intros H2 H4.
+    destruct (gen_row x ss H2 H4). simpl.
+    destruct s. trivial.
+  Qed.
+
+  Definition ini_state: wf_state.
+    refine (exist _ (RESet.singleton r) _).
+    exists nil. simpl. reflexivity. 
+  Defined.
+
+  Definition ini_states: wf_states.
+    refine (exist _ (RESS.singleton (proj1_sig ini_state)) _).
+    intros s H.
+    apply RESSP.FM.singleton_1 in H. rewrite <- H.
+    apply (proj2_sig ini_state).
+  Defined.
+
+  (** We start with the initial [astgram] in state 0 and then try to close
+      off the table. *)
+  Definition build_transition_table := build_table ini_states nil 0.
+
+  (** This is the main invariant for the [build_table] routine. *)
+  Definition build_table_inv (ss: wf_states) (rows: transitions_t ss) n := 
+     n <= cardinal_wfs ss /\
+     forall i, i < n -> 
+       match nth_error rows i with 
+         | Some ts => 
+           (* have an entry in the row for each token *)
+           length (row_entries ts) = num_tokens /\ 
+           (* row_num is the right number *)
+           row_num ts = i /\
+           (* each entry in the row is semantically correct *)
+           (forall tid, wf_row (row_entries ts) tid tid) /\
+           (* the row_nils are what you get when running [re_set_extract_nil] on the 
+              row's RESet *)
+           row_nils ts = re_set_extract_nil (ss.[row_num ts])
+         | _ => False
+       end.
+
+  Lemma wf_row_coerce_entry n ss ss' i tid 
+        (entries:row_t n ss) (Hwfs:wfs_ext ss ss') (H1:n < cardinal_wfs ss):
+    wf_row entries i tid ->
+    wf_row (map (coerce_entry Hwfs H1) entries) i tid.
+  Proof. unfold coerce_entry, wf_row. intros.
+    remember_destruct_head as ne; [idtac | trivial].
+    apply Coqlib.map_nth_error_imply in Hne.
+    destruct Hne as [en [H2 H4]].
+    subst e.
+    Opaque token_id_to_chars in_re_set_xform.
+    simpl.
+    rewrite H2 in H.
+    generalize (coerce_entry_help1 Hwfs (next_state_lt en))
+               (coerce_entry_help2 Hwfs H1).
+    assert (H4:ss'.[n] = ss.[n]). auto using get_state_wfs_ext.
+    assert (H6:ss'.[next_state en] = ss.[next_state en]). 
+      generalize (next_state_lt en). auto using get_state_wfs_ext.
+    rewrite H4, H6. 
+    intros. rewrite xcoerce_eq by assumption.
+    trivial.
+  Qed.
+
+  Lemma coerce_nils_corr n ss ss'
+   (Hwfs:wfs_ext ss ss') (H1:n<cardinal_wfs ss):
+   map (coerce_nils Hwfs H1) (re_set_extract_nil (ss.[n]))
+     = re_set_extract_nil (ss'.[n]).
+  Proof. 
+    assert (ss'.[n]=ss.[n]).
+      apply get_state_wfs_ext; assumption.
+    unfold coerce_nils. generalize (get_state_wfs_ext Hwfs H1).
+    rewrite H. intros. rewrite (proof_irrelevance _ e eq_refl). 
+    unfold eq_rect_r, eq_rect. simpl.
+    apply Coqlib.list_map_identity.
+  Qed.
+
+  Lemma build_table_inv_imp ss rows n :
+    build_table_inv ss rows n -> n <= cardinal_wfs ss /\ n <= length rows.
+  Proof.
+    unfold build_table_inv ; destruct n.
+      auto with arith.
+      intros. assert (n < S n) by omega.
+        destruct H as [H H2].
+        generalize (H2 n H0).
+        remember_destruct_head as ne; [idtac | crush].
+        intros.
+        apply Coqlib.nth_error_some_lt in Hne.
+        crush.
+  Qed.
+
+  Hint Rewrite Coqlib.list_length_map.
+
+  Lemma gen_row_build_table_inv n ss rows :
+    n = length rows ->
+    match get_element_wfs2 n ss with
+      | inleft s0 =>
+        let (s, Hge) := s0 in
+        forall ss1 entries (Hwfs:wfs_ext ss ss1),
+         gen_row s ss (build_table_help1 _ _ _ Hge) (build_table_help2 _ _ _ Hge)
+           = existT _ ss1 (existT _ entries Hwfs)
+         -> build_table_inv ss rows n
+         -> build_table_inv ss1
+              (coerce_transitions Hwfs rows ++ 
+                 cons_transition entries 
+                 (wfs_ext_gew_cardinal_leq _ Hwfs Hge)::nil) (1+n)
+      | inright _ => True
+    end.
+  Proof.
+    remember_rev (get_element_wfs2 n ss) as gew.
+    destruct gew; [idtac | crush]. clear Hgew.
+    destruct s as [s Hgew].
+    generalize (build_table_help1 n s ss Hgew) (build_table_help2 n s ss Hgew).
+    intros H2 H4.
+    intros.
+    assert (n=length (coerce_transitions Hwfs rows)).
+      unfold coerce_transitions. crush.
+    generalize (gen_row_prop _ _ H2 H4).
+    rewrite H0. intros. sim.
+    unfold build_table_inv in *.
+    split. sim. use_lemma wfs_ext_cardinal_leq by eassumption. omega.
+    intros.
+    destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H7)); sim.
+    Case "i<n".
+      rewrite Coqlib.nth_error_app_lt by omega.
+      remember_rev (nth_error (coerce_transitions Hwfs rows) i) as ne.
+      destruct ne as [ts1 | ].
+      SCase "ne=Some ...".
+        unfold coerce_transitions in Hne.
+        apply Coqlib.map_nth_error_imply in Hne.
+        destruct Hne as [ts [H10 H12]].
+        use_lemma H9 by eassumption. clear H1.
+        rewrite H10 in H11.
+        subst ts1. simpl.
+        repeat split; crush.
+        SSCase "wf_row". auto using wf_row_coerce_entry. 
+        apply coerce_nils_corr.
+      SCase "ne=None".
+        use_lemma Coqlib.nth_error_none by eassumption. omega.
+    Case "i=n". subst i.
+      rewrite Coqlib.nth_error_app_eq by omega. simpl.
+      crush.
+  Qed.
+
+  (* todo: enhance remember_head *)
+
+  (** This lemma establishes that the [build_table] loop maintains the
+      [build_table_inv] and only adds to the states and rows of the table. *)
+  Lemma build_table_prop: forall n ss rows,
+     n = length rows -> build_table_inv ss rows n ->
+     match build_table ss rows n with 
+       | existT ss' rows' => 
+         length rows' = cardinal_wfs ss' /\ 
+         build_table_inv ss' rows' (length rows') /\ 
+         wfs_ext ss ss'
+         (* todo: need to make sure the following is needed *)
+         (* /\ exists rows1, rows' = rows ++ rows1 *)
+     end.
+  Proof. induction n using (well_founded_ind (limit_nat_wf max_pdrv)).
+    intros. remember_head as gw.
+    destruct gw as [ss' rows'].
+    rewrite build_table_unfold in Hgw.
+    use_lemma (@gen_row_build_table_inv n ss rows) by eassumption.
+    destruct (get_element_wfs2 n ss).
+    Case "ss[n] exists".
+      destruct s as [s ge].
+      remember (gen_row s ss (build_table_help1 n s ss ge)
+                  (build_table_help2 n s ss ge)) as gr.
+      destruct gr as [ss1 [entries Hwfs]].
+      specialize (H2 ss1 entries Hwfs eq_refl H1).
+      remember (cons_transition entries
+                  (wfs_ext_gew_cardinal_leq _ Hwfs ge)) as row.
+      remember (coerce_transitions Hwfs rows ++ row :: nil) as rows1.
+      assert (n < cardinal_wfs ss).
+        use_lemma RESS.get_element_some_lt by eassumption. trivial.
+      use_lemma build_table_metric_dec by eassumption. 
+      assert (S n = length rows1). 
+        unfold coerce_transitions in Heqrows1. crush.
+      assert (build_table_inv ss1 rows1 (1 + n)) by crush.
+      use_lemma H by eassumption. clear H.
+      simpl in Hgw.
+      rewrite Hgw in *.
+      crush. reflexivity.
+    Case "ss[n] not exists".
+      use_lemma build_table_inv_imp by eassumption.
+      crush. reflexivity.
+  Qed.
+
+  Lemma build_table_inv_ini: build_table_inv ini_states nil 0.
+  Proof. unfold build_table_inv. crush. Qed.
+
+  Lemma build_transition_table_prop: 
+    match build_transition_table with
+      | existT ss rows =>
+        length rows = cardinal_wfs ss /\
+        build_table_inv ss rows (length rows)
+    end.
+  Proof. unfold build_transition_table.
+    use_lemma build_table_inv_ini by assumption.
+    generalize (@build_table_prop 0 ini_states nil). intro.
+    use_lemma H0 by trivial. 
+    remember (build_table ini_states nil 0) as bt.
+    destruct bt. crush.
+  Qed.
+
+  (** Now we can build the [DFA] using all of the helper functions.  I've
+      only included enough information here to make it possible to run the
+      parser and get something out that's type-correct, but not enough
+      info to prove that the parser is correct. *)
+  Definition build_dfa : DFA.
+    refine ((match build_transition_table as bt
+                  return build_transition_table = bt -> _
+             with
+              | existT ss table => fun Hbt =>
+               {| dfa_num_states := cardinal_wfs ss ; 
+                dfa_states := ss ; 
+                dfa_states_len := eq_refl _ ;
+                dfa_transition := table ; 
+                dfa_transition_len := _ ;
+                dfa_transition_r := _
+             |}
+            end) eq_refl); generalize build_transition_table_prop.
+  rewrite Hbt. crush.
+  rewrite Hbt. intros.
+    unfold build_table_inv in H. sim.
+    remember_destruct_head as nt; [idtac | trivial].
+    use_lemma Coqlib.nth_error_some_lt by eassumption.
+    use_lemma H1 by eassumption.
+    rewrite Hnt in H3. crush.
+  Defined.
+
 End DFA.
-
-Recursive Extraction build_table.
-
+(* Recursive Extraction build_table. *)
 
 (* Definition test0:= Eps. *)
 (* Definition test1 := Char true. *)
@@ -2542,6 +2603,13 @@ Recursive Extraction build_table.
 
 (* Time Eval compute in (build_dfa test1). *)
 (* Time Eval compute in (build_dfa test3). *)
+
+Section DFA_PARSE.
+
+(* TBC *)
+
+
+
 
 
 Section DFA_RECOGNIZE.

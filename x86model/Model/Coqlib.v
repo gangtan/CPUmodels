@@ -825,6 +825,17 @@ Proof.
   auto. rewrite IHl1. auto.
 Qed.
 
+Lemma map_nth_error_imply: 
+  forall (A B : Type) (f : A -> B) (n : nat) (l : list A) (d : B),
+  nth_error (map f l) n = Some d -> 
+  exists d', nth_error l n = Some d' /\ f d' = d.
+Proof. intros. 
+  rewrite (list_map_nth _ l n) in H.
+  unfold option_map in H.
+  destruct (nth_error l n); [idtac | congruence].
+  exists a. inversion H. auto.
+Qed.
+
 (** Properties of list membership. *)
 
 Lemma in_cns:

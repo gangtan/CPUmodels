@@ -121,6 +121,21 @@ Ltac in_regexp_inv :=
       generalize (inv_star H) ; clear H ;  crush
   end.
 
+(** This function computes the list of all values v, such that 
+    [in_regexp nil v] holds. *)
+Fixpoint regexp_extract_nil (r:regexp) : list (interp (regexp_type r)) := 
+  match r return list (interp (regexp_type r)) with
+    | Eps => tt::nil
+    | Zero => nil
+    | Char _ => nil
+    | Any => nil
+    | Cat ag1 ag2 => list_prod (regexp_extract_nil ag1) (regexp_extract_nil ag2)
+    | Alt ag1 ag2 => 
+      (List.map (fun x => inl _ x) (regexp_extract_nil ag1)) ++ 
+      (List.map (fun x => inr _ x) (regexp_extract_nil ag2))
+    | Star ag => nil::nil
+  end.
+
 (** * Ordering for regexps *)
 
 (** Use lexicographic ordering when ordering two regexps. *)

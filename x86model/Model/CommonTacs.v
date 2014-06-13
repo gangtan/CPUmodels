@@ -44,6 +44,7 @@ Tactic Notation "destruct_head" :=
      (* the following matches let (_,_) := _ in _ *)
     | [ |- context[match ?X with (_, _)  => _ end]]
       => destruct X
+    | [ |- context[match ?X with existT _ _  => _ end]] => destruct X
     | [ |- context[match ?X with nil => _ | cons _ _ => _ end]]
       => destruct X
     | [ |- context[match ?X with Some _ => _ | None => _ end]]
@@ -58,6 +59,7 @@ Tactic Notation "destruct_head" "in" ident(H) :=
       | context[if ?X then _ else _] => destruct X
         (* the following matches let (_,_) := _ in _ *)
       | context[match ?X with (_, _)  => _ end] => destruct X
+      | context[match ?X with existT _ _  => _ end] => destruct X
       | context[match ?X with nil => _ | cons _ _ => _ end] => destruct X
       | context[match ?X with Some _ => _ | None => _ end] => destruct X
       | context[match ?X with 0%Z => _ | Zpos _  | Zneg _ => _ end] =>
@@ -76,6 +78,8 @@ Tactic Notation "remember_head" "as" ident(name) :=
       | [|- context[if ?X then _ else _]] => remember_rev X as name
         (* the following matches let (_,_) := _ in _ *)
       | [|-context[match ?X with (_, _)  => _ end]] => remember_rev X as name
+      | [|-context[match ?X with existT _ _  => _ end]] => 
+        remember_rev X as name
       | [|- context[match ?X with nil => _ | cons _ _ => _ end]]
         => remember_rev X as name
       | [|- context[match ?X with Some _ => _ | None => _ end]]
@@ -90,6 +94,8 @@ Tactic Notation "remember_head" "in" ident(H) "as" ident(name) :=
       | context[if ?X then _ else _] => remember_rev X as name
         (* the following matches let (_,_) := _ in _ *)
       | context[match ?X with (_, _)  => _ end] => remember_rev X as name
+      | context[match ?X with existT _ _  => _ end] =>
+        remember_rev X as name
       | context[match ?X with nil => _ | cons _ _ => _ end]
         => remember_rev X as name
       | context[match ?X with Some _ => _ | None => _ end]
@@ -103,6 +109,8 @@ Tactic Notation "remember_head_in_hyp" "as" ident(name) :=
       | [_ : context[if ?X then _ else _] |- _] => remember_rev X as name
         (* the following matches let (_,_) := _ in _ *)
       | [_ : context[match ?X with (_, _) => _ end] |- _] => remember_rev X as name
+      | [_ : context[match ?X with existT _ _  => _ end] |- _] =>
+        remember_rev X as name
       | [_ : context[match ?X with nil => _ | cons _ _ => _ end] |- _]
         => remember_rev X as name
       | [_ : context[match ?X with Some _ => _ | None => _ end] |- _]
