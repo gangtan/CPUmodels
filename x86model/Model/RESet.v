@@ -127,6 +127,10 @@ Module Type RESetXform.
     in_re_set s1 str v <-> 
     in_re_set s2 str (xinterp (@equal_xform s1 s2 H) v).
  
+  Parameter re_set_extract_nil: forall s, list (interp (re_set_type s)).
+  Parameter re_set_extract_nil_corr : 
+    forall s (v : interp (re_set_type s)),
+           in_re_set s nil v <-> List.In v (re_set_extract_nil s).
 End RESetXform.
 
 Module RESet := MSetAVL.Make REOrderedType.
@@ -172,6 +176,70 @@ Module RESETXFORM <: RESetXform.
   Definition in_re_set_xform ty (rx : rs_xf_pair ty) s (v:interp ty) := 
     let (rs, f) := rx in 
     exists v', in_re_set rs s v' /\ List.In v (xinterp f v').
+
+  Fixpoint tree_extract_nil (t:Raw.tree) : list (interp (tree_type t)) := 
+    match t as t return list (interp (tree_type t)) with 
+      | Raw.Leaf => nil
+      | Raw.Node _ l x r => 
+        let vl := tree_extract_nil l in 
+        let vx := regexp_extract_nil x in 
+              let vr := tree_extract_nil r in 
+              (List.map (fun x => inl x) vl) ++ 
+              (List.map (fun x => inr (inl x)) vx) ++ 
+              (List.map (fun x => inr (inr x)) vr) 
+    end.
+
+  Lemma regexp_extract_nil_corr1 r str v : 
+    in_regexp r str v -> str = nil -> List.In v (regexp_extract_nil r).
+  Proof.
+    induction 1 ; crush. generalize (app_eq_nil _ _ H3). crush.
+    apply in_prod ; auto. rewrite in_app. left. rewrite in_map_iff. crush.
+    rewrite in_app. right. rewrite in_map_iff. crush.
+    generalize (app_eq_nil _ _ H4). crush.
+  Qed.
+
+  Lemma regexp_extract_nil_corr2 :
+    forall r v, 
+      List.In v (regexp_extract_nil r) -> in_regexp r nil v.
+  Proof.
+    induction r ; crush. destruct v. rewrite in_prod_iff in H. crush.
+    rewrite in_app in H ; destruct H ; rewrite in_map_iff in H ; crush.
+  Qed.
+
+  Lemma tree_extract_nil_corr : forall tr v,
+    in_tree tr nil v <-> List.In v (tree_extract_nil tr).
+  Proof.
+    unfold in_tree.
+    induction tr ; simpl. intro ; destruct v.
+    intro. destruct v as [v | [v | v]]. split. intro. 
+    in_regexp_inv. injection H0 ; crush. rewrite in_app. left.
+    eapply in_map. apply (proj1 (IHtr1 x)). auto.
+    rewrite in_app. intros. destruct H. rewrite (in_map_iff) in H.
+    crush. injection H ; crush. generalize (proj2 (IHtr1 v)). crush.
+    rewrite in_app in H. destruct H. rewrite in_map_iff in H.
+    crush. rewrite in_map_iff in H. crush.
+    split. intros. in_regexp_inv. in_regexp_inv. injection H0 ; crush.
+    rewrite in_app. right. rewrite in_app. left. rewrite in_map_iff. 
+    econstructor ; crush. eapply regexp_extract_nil_corr1 ; eauto.
+    rewrite in_app. rewrite in_app. repeat rewrite in_map_iff. crush.
+    inversion H ; crush. eapply InAlt_r. eapply InAlt_l. 
+    eapply regexp_extract_nil_corr2. eauto. eauto. auto.
+    repeat rewrite in_app. repeat rewrite in_map_iff. crush.
+    repeat in_regexp_inv. injection H0 ; crush. right ; right. 
+    exists x0. split ; auto. eapply IHtr2. eauto.
+    injection H ; crush. eapply InAlt_r ; eauto. eapply InAlt_r ; eauto.
+    eapply IHtr2. auto.
+  Qed.
+
+  Definition re_set_extract_nil (s:t) : list (interp (re_set_type s)).
+    destruct s. unfold re_set_type. apply tree_extract_nil.
+  Defined.
+
+  Lemma re_set_extract_nil_corr (s:t) (v:interp (re_set_type s)) :
+    in_re_set s nil v <-> List.In v (re_set_extract_nil s).
+  Proof.
+    destruct s. simpl. unfold in_re_set. simpl. apply tree_extract_nil_corr.
+  Qed.
 
   Definition empty_xform (ty:type) : rs_xf_pair ty := 
     existT _ empty xzero.
