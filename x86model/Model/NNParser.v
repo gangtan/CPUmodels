@@ -283,6 +283,11 @@ Qed.
 
 Axiom re_set_extract_nil: forall (rs:RES.t), list (interp (RES.re_set_type rs)).
 
+Lemma re_set_extract_nil_corr : 
+  forall s (v : interp (RES.re_set_type s)),
+         in_re_set s nil v <-> List.In v (re_set_extract_nil s).
+Admitted.
+
 (* todo: remove *)
 (* Lemma plus_minus_assoc a b c: c <= b -> a + (b - c) = a + b - c. *)
 (* Proof. intros. omega. Qed. *)
@@ -1620,7 +1625,7 @@ Section DFA.
     dfa_num_states : nat ; 
     (** the list of [astgram]s for the states *)
     dfa_states : wf_states ; 
-    dfa_states_len : RESS.cardinal (proj1_sig dfa_states) = dfa_num_states ; 
+    dfa_states_len : cardinal_wfs dfa_states = dfa_num_states ; 
     (** the transition matrix for the DFA -- see above. *)
     dfa_transition : transitions_t dfa_states ; 
     (** the number of states equals the number of rows. *)
@@ -2331,6 +2336,7 @@ Section DFA.
   Next Obligation.
     apply measure_wf. apply limit_nat_wf.
   Defined.
+  Set Implicit Arguments.
 
   Import WfExtensionality.
   Lemma build_table_unfold (ss:wf_states) rows next_state:
@@ -2380,9 +2386,10 @@ Section DFA.
       off the table. *)
   Definition build_transition_table := build_table ini_states nil 0.
 
+  (* todo: organize *)
   (** This is the main invariant for the [build_table] routine. *)
-  Definition build_table_inv (ss: wf_states) (rows: transitions_t ss) n := 
-     n <= cardinal_wfs ss /\
+  Definition build_table_inv n (ss:wf_states) (rows:transitions_t ss) := 
+     1 <= cardinal_wfs ss /\ n <= cardinal_wfs ss /\
      forall i, i < n -> 
        match nth_error rows i with 
          | Some ts => 
@@ -2398,6 +2405,9 @@ Section DFA.
          | _ => False
        end.
 
+  Definition wf_table ss rows := @build_table_inv (length rows) ss rows.
+
+  Opaque token_id_to_chars in_re_set_xform.
   Lemma wf_row_coerce_entry n ss ss' i tid 
         (entries:row_t n ss) (Hwfs:wfs_ext ss ss') (H1:n < cardinal_wfs ss):
     wf_row entries i tid ->
@@ -2406,9 +2416,7 @@ Section DFA.
     remember_destruct_head as ne; [idtac | trivial].
     apply Coqlib.map_nth_error_imply in Hne.
     destruct Hne as [en [H2 H4]].
-    subst e.
-    Opaque token_id_to_chars in_re_set_xform.
-    simpl.
+    subst e. simpl.
     rewrite H2 in H.
     generalize (coerce_entry_help1 Hwfs (next_state_lt en))
                (coerce_entry_help2 Hwfs H1).
@@ -2419,6 +2427,7 @@ Section DFA.
     intros. rewrite xcoerce_eq by assumption.
     trivial.
   Qed.
+  Transparent token_id_to_chars in_re_set_xform.
 
   Lemma coerce_nils_corr n ss ss'
    (Hwfs:wfs_ext ss ss') (H1:n<cardinal_wfs ss):
@@ -2433,14 +2442,15 @@ Section DFA.
     apply Coqlib.list_map_identity.
   Qed.
 
-  Lemma build_table_inv_imp ss rows n :
-    build_table_inv ss rows n -> n <= cardinal_wfs ss /\ n <= length rows.
+  Lemma build_table_inv_imp n ss (rows:transitions_t ss) :
+    build_table_inv n rows -> 
+    1 <= cardinal_wfs ss /\ n <= cardinal_wfs ss /\ n <= length rows.
   Proof.
     unfold build_table_inv ; destruct n.
-      auto with arith.
+      intros; repeat split; [crush | crush | auto with arith].
       intros. assert (n < S n) by omega.
-        destruct H as [H H2].
-        generalize (H2 n H0).
+        destruct H as [H [H2 H4]].
+        generalize (H4 n H0).
         remember_destruct_head as ne; [idtac | crush].
         intros.
         apply Coqlib.nth_error_some_lt in Hne.
@@ -2457,28 +2467,30 @@ Section DFA.
         forall ss1 entries (Hwfs:wfs_ext ss ss1),
          gen_row s ss (build_table_help1 _ _ _ Hge) (build_table_help2 _ _ _ Hge)
            = existT _ ss1 (existT _ entries Hwfs)
-         -> build_table_inv ss rows n
-         -> build_table_inv ss1
+         -> build_table_inv n rows
+         -> build_table_inv (1+n) 
               (coerce_transitions Hwfs rows ++ 
                  cons_transition entries 
-                 (wfs_ext_gew_cardinal_leq _ Hwfs Hge)::nil) (1+n)
+                 (wfs_ext_gew_cardinal_leq _ Hwfs Hge)::nil)
       | inright _ => True
     end.
-  Proof.
-    remember_rev (get_element_wfs2 n ss) as gew.
+  Proof. remember_rev (get_element_wfs2 n ss) as gew.
     destruct gew; [idtac | crush]. clear Hgew.
     destruct s as [s Hgew].
     generalize (build_table_help1 n s ss Hgew) (build_table_help2 n s ss Hgew).
-    intros H2 H4.
-    intros.
+    intros H2 H4. intros.
     assert (n=length (coerce_transitions Hwfs rows)).
       unfold coerce_transitions. crush.
     generalize (gen_row_prop _ _ H2 H4).
     rewrite H0. intros. sim.
     unfold build_table_inv in *.
-    split. sim. use_lemma wfs_ext_cardinal_leq by eassumption. omega.
+    use_lemma wfs_ext_cardinal_leq by eassumption.
+    destruct H1 as [H14 [H16 H18]].
+    repeat split; [crush | crush | idtac].
     intros.
-    destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H7)); sim.
+    match goal with
+      | [H:i<1+n |- _] => destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H))
+    end.
     Case "i<n".
       rewrite Coqlib.nth_error_app_lt by omega.
       remember_rev (nth_error (coerce_transitions Hwfs rows) i) as ne.
@@ -2487,12 +2499,11 @@ Section DFA.
         unfold coerce_transitions in Hne.
         apply Coqlib.map_nth_error_imply in Hne.
         destruct Hne as [ts [H10 H12]].
-        use_lemma H9 by eassumption. clear H1.
-        rewrite H10 in H11.
+        specialize (H18 i H8). rewrite H10 in H18.
         subst ts1. simpl.
         repeat split; crush.
-        SSCase "wf_row". auto using wf_row_coerce_entry. 
-        apply coerce_nils_corr.
+          auto using wf_row_coerce_entry. 
+          apply coerce_nils_corr.
       SCase "ne=None".
         use_lemma Coqlib.nth_error_none by eassumption. omega.
     Case "i=n". subst i.
@@ -2500,17 +2511,14 @@ Section DFA.
       crush.
   Qed.
 
-  (* todo: enhance remember_head *)
-
   (** This lemma establishes that the [build_table] loop maintains the
       [build_table_inv] and only adds to the states and rows of the table. *)
   Lemma build_table_prop: forall n ss rows,
-     n = length rows -> build_table_inv ss rows n ->
+     n = length rows -> build_table_inv n rows ->
      match build_table ss rows n with 
        | existT ss' rows' => 
          length rows' = cardinal_wfs ss' /\ 
-         build_table_inv ss' rows' (length rows') /\ 
-         wfs_ext ss ss'
+         wf_table rows' /\ wfs_ext ss ss'
          (* todo: need to make sure the following is needed *)
          (* /\ exists rows1, rows' = rows ++ rows1 *)
      end.
@@ -2534,7 +2542,7 @@ Section DFA.
       use_lemma build_table_metric_dec by eassumption. 
       assert (S n = length rows1). 
         unfold coerce_transitions in Heqrows1. crush.
-      assert (build_table_inv ss1 rows1 (1 + n)) by crush.
+      assert (build_table_inv (1+n) rows1) by crush.
       use_lemma H by eassumption. clear H.
       simpl in Hgw.
       rewrite Hgw in *.
@@ -2544,14 +2552,14 @@ Section DFA.
       crush. reflexivity.
   Qed.
 
-  Lemma build_table_inv_ini: build_table_inv ini_states nil 0.
+  Lemma build_table_inv_ini: @build_table_inv 0 ini_states nil.
   Proof. unfold build_table_inv. crush. Qed.
 
   Lemma build_transition_table_prop: 
     match build_transition_table with
       | existT ss rows =>
-        length rows = cardinal_wfs ss /\
-        build_table_inv ss rows (length rows)
+        length rows = cardinal_wfs ss /\ wf_table rows /\
+        wfs_ext ini_states ss
     end.
   Proof. unfold build_transition_table.
     use_lemma build_table_inv_ini by assumption.
@@ -2561,31 +2569,84 @@ Section DFA.
     destruct bt. crush.
   Qed.
 
+  Lemma build_dfa_help1 ss rows:
+    build_transition_table = existT _ ss rows -> 
+    length rows = cardinal_wfs ss.
+  Proof. intros. generalize build_transition_table_prop.
+    rewrite H. crush.
+  Qed.
+
+  Lemma build_dfa_help2 ss rows:
+    build_transition_table = existT _ ss rows -> 
+    forall i, match nth_error rows i with
+                | Some row => row_num row = i
+                | None => True
+              end.
+  Proof. intros. generalize build_transition_table_prop.
+    rewrite H.
+    unfold wf_table, build_table_inv. intros. sim.
+    remember_destruct_head as nt; [idtac | trivial].
+    use_lemma Coqlib.nth_error_some_lt by eassumption.
+    specialize (H4 i). rewrite Hnt in H4. crush.
+  Defined.
+
   (** Now we can build the [DFA] using all of the helper functions.  I've
       only included enough information here to make it possible to run the
       parser and get something out that's type-correct, but not enough
       info to prove that the parser is correct. *)
-  Definition build_dfa : DFA.
-    refine ((match build_transition_table as bt
-                  return build_transition_table = bt -> _
-             with
-              | existT ss table => fun Hbt =>
-               {| dfa_num_states := cardinal_wfs ss ; 
-                dfa_states := ss ; 
-                dfa_states_len := eq_refl _ ;
-                dfa_transition := table ; 
-                dfa_transition_len := _ ;
-                dfa_transition_r := _
-             |}
-            end) eq_refl); generalize build_transition_table_prop.
-  rewrite Hbt. crush.
-  rewrite Hbt. intros.
-    unfold build_table_inv in H. sim.
-    remember_destruct_head as nt; [idtac | trivial].
-    use_lemma Coqlib.nth_error_some_lt by eassumption.
-    use_lemma H1 by eassumption.
-    rewrite Hnt in H3. crush.
-  Defined.
+  Definition build_dfa : DFA :=
+    (match build_transition_table as bt
+           return build_transition_table = bt -> _ with
+       | existT ss table => fun Hbt =>
+          {| dfa_num_states := cardinal_wfs ss ; 
+             dfa_states := ss ; 
+             dfa_states_len := eq_refl _ ;
+             dfa_transition := table ; 
+             dfa_transition_len := build_dfa_help1 Hbt ;
+             dfa_transition_r := build_dfa_help2 Hbt
+           |}
+     end) eq_refl.
+
+  (* Lemma build_table_at_least_one i ss ss' rows rows' : *)
+  (*   build_table ss rows i = existT _ ss' rows' -> cardinal_wfs ss > 1 -> *)
+  (*   cardinal_wfs ss' > 1. *)
+  (* Proof. *)
+  (*   induction n ; simpl. intros. discriminate. intros s r i s' t'. *)
+  (*   generalize (nth_error_some i s) (nth_error_some_lt i s). *)
+  (*   remember (nth_error s i). destruct e. intros. *)
+  (*   remember (gen_row s (e a eq_refl) (l a eq_refl)). destruct s0. destruct s0. destruct a0. *)
+  (*   specialize (IHn _ _ _ _ _ H). destruct s ; simpl in * ; try congruence. *)
+  (*   apply IHn. congruence. intros. injection H ; subst. intros ; subst. auto. *)
+  (* Qed. *)
+
+  Definition wf_dfa (d:DFA) := 
+    wf_table (dfa_transition d) /\
+    d = build_dfa /\
+    (dfa_states d).[0] = RES.singleton r.
+
+  Lemma build_dfa_prop: wf_dfa build_dfa.
+  Proof. unfold wf_dfa, build_dfa.
+    generalize build_transition_table_prop; intro H.
+    generalize build_dfa_help1, build_dfa_help2.
+    remember build_transition_table as bt.
+    destruct bt as [ss rows]. intros. 
+    split; [crush | idtac].
+    subst. simpl.
+    assert (H6: 0 < cardinal_wfs ini_states).
+      unfold ini_states, cardinal_wfs. simpl.
+      rewrite RESSP.singleton_cardinal. omega.
+    destruct H as [H [H2 H4]].
+    erewrite get_state_wfs_ext by eassumption.
+    unfold get_state, ini_states. simpl. crush.
+  Qed.
+
+  (** A DFA has at least one state. *)
+  Lemma dfa_at_least_one: 0 < dfa_num_states build_dfa.
+  Proof. intros.
+    use_lemma build_dfa_prop by eassumption.
+    unfold wf_dfa, wf_table, build_table_inv in H.
+    sim. generalize (dfa_states_len build_dfa). omega.
+  Qed.
 
 End DFA.
 (* Recursive Extraction build_table. *)
@@ -2604,186 +2665,967 @@ End DFA.
 (* Time Eval compute in (build_dfa test1). *)
 (* Time Eval compute in (build_dfa test3). *)
 
-Section DFA_PARSE.
 
 (* TBC *)
 
+(* todo: organize the followig; move grammar stuff to a different file *)
+
+(** * Grammars *)
+(** Our user-facing [grammar]s, indexed by a [type], reflecting the type of the
+    semantic value returned by the grammar when used in parsing. *)
+Inductive grammar : type -> Type := 
+| gEps : grammar Unit_t
+| gZero : forall t, grammar t
+| gChar : char_p -> grammar Char_t
+| gAny : grammar Char_t
+| gCat : forall t1 t2, grammar t1 -> grammar t2 -> grammar (Pair_t t1 t2)
+| gAlt : forall t1 t2, grammar t1 -> grammar t2 -> grammar (Sum_t t1 t2)
+| gStar : forall t, grammar t -> grammar (List_t t)
+| gMap : forall t1 t2, (interp t1 -> interp t2) -> grammar t1 -> grammar t2
+| gXform : forall t1 t2, t1 ->> t2 -> grammar t1 -> grammar t2.
+Extraction Implicit gZero [t].
+Extraction Implicit gCat [t1 t2].
+Extraction Implicit gAlt [t1 t2].
+Extraction Implicit gStar [t].
+Extraction Implicit gMap [t1 t2].
+Extraction Implicit gXform [t1 t2].
 
 
+(** * Denotation of Grammars *)
+(** I'm a little annoyed that I had to break out so many equalities, but
+    found this worked a little better for both inversion and proving. *)
+Inductive in_grammar : forall t, grammar t -> list char_p -> (interp t) -> Prop := 
+| IngEps : forall s v, s = nil -> v = tt -> in_grammar gEps s v
+| IngChar : forall c s v, s = c::nil -> v = c -> in_grammar (gChar c) s v
+| IngAny : forall c s v, s = c::nil -> v = c -> in_grammar gAny s v
+| IngCat : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s1 s2 v1 v2 s v, 
+    in_grammar g1 s1 v1 -> in_grammar g2 s2 v2 -> 
+    s = s1 ++ s2 -> v = (v1,v2) -> in_grammar (gCat g1 g2) s v
+| IngAlt_l : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s v1 v, 
+    in_grammar g1 s v1 -> v = inl _ v1 -> in_grammar (gAlt g1 g2) s v
+| IngAlt_r : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s v2 v, 
+    in_grammar g2 s v2 -> v = inr _ v2 -> in_grammar (gAlt g1 g2) s v
+| IngStar_eps : forall t (g:grammar t) s v, s = nil -> v = nil ->
+                                           in_grammar (gStar g) s v
+| IngStar_cons : forall t (g:grammar t) s1 v1 s2 v2 s v, 
+    in_grammar g s1 v1 -> in_grammar (gStar g) s2 v2 -> 
+    s1 <> nil -> s = s1 ++ s2 -> v = v1::v2 -> in_grammar (gStar g) s v
+| IngMap : forall t1 t2 (f:interp t1 -> interp t2) (g:grammar t1) s v1 v2, 
+    in_grammar g s v1 -> v2 = f v1 -> in_grammar (@gMap t1 t2 f g) s v2
+| IngXform : forall t1 t2 (f: t1 ->> t2) (g:grammar t1) s v1 v2,
+    in_grammar g s v1 -> v2 = xinterp f v1 -> in_grammar (gXform f g) s v2.
+Hint Constructors in_grammar.
 
+(** * Optimizing constructors for grammars.  These try to reduce the
+      grammar, but must make adjustments to the semantic actions.  We 
+      use optimized transforms to get this effect. *)
 
-Section DFA_RECOGNIZE.
-  Variable d : DFA.
+(** g ++ 0 ==> g @ inl *)
+Definition OptAlt_r t2 (g2:grammar t2) : 
+  forall t1, grammar t1 -> grammar (Sum_t t1 t2) :=
+  match g2 in grammar t2' return forall t1, grammar t1 -> grammar (Sum_t t1 t2') with
+    | gZero t2 => fun t1 g1 => gXform Xinl g1
+    | g2' => fun t1 g1 => gAlt g1 g2'
+  end.
+Extraction Implicit OptAlt_r [t2 t1].
 
-  (** This loop is intended to find the shortest match (if any) for a
-      sequence of tokens, given a [DFA].  It returns [(Some (n, ts'))] when
-      there is a match and where [ts'] is the unconsumed input and n is the
-      length of the consumed input.  If there is no match, it returns
-      [None].  This is just one example of a recognizer that can be built
-      with the DFA. *)
-  Fixpoint dfa_loop state (count: nat) (ts : list token_id) : 
-    option (nat * list token_id) := 
-    if nth state (dfa_accepts d) false then Some (count, ts)
-    else 
-      match ts with 
-        | nil => None
-        | t::ts' => let row := nth state (dfa_transition d) nil in 
-                    let new_state := nth t row num_tokens in
-                    dfa_loop new_state (1 + count) ts'
-      end.
+(** 0 ++ g ==> g @ inr *)
+Definition OptAlt_l t1 (g1:grammar t1) : 
+  forall t2, grammar t2 -> grammar (Sum_t t1 t2) :=
+  match g1 in grammar t1' return forall t2, grammar t2 -> grammar (Sum_t t1' t2) with
+    | gZero t1 => fun t2 g2 => gXform Xinr g2
+    | g1' => fun t2 g2 => OptAlt_r g2 g1'
+  end.
+Extraction Implicit OptAlt_l [t1 t2].
 
-  Definition dfa_recognize (ts:list token_id) : option (nat * list token_id) := 
-    dfa_loop 0 0 ts.
+(** We would like to reduce (g ++ g) ==> g but this loses information and
+    turns a potentially ambiguous grammar into one that is not.  More 
+    importantly, we can't actually compare grammars for equality because
+    we are trying to keep the [type] index computationally irrelevant.
+*)
+Definition OptAlt t1 t2 (g1:grammar t1) (g2:grammar t2) := OptAlt_l g1 g2.
+Extraction Implicit OptAlt [t1 t2].
 
-   (** This is a simple function which runs a DFA on an entire string, returning
-       true if the DFA accepts the string, and false otherwise.  In what follows,
-       we prove that [run_dfa] is correct... *)
-  Fixpoint run_dfa (d:DFA) (st:nat) (ts:list token_id) : bool := 
-    match ts with 
-      | nil => nth st (dfa_accepts d) false
-      | t::ts' => run_dfa d (nth t (nth st (dfa_transition d) nil) num_tokens) ts'
+(** g $ 0 ==> 0 @ zero_to_t
+    g $ eps ==> g @ add_unit_r *)
+Definition OptCat_r t2 (g2:grammar t2) : forall t1, grammar t1 -> grammar (Pair_t t1 t2) :=
+  match g2 in grammar t2' return forall t1, grammar t1 -> grammar (Pair_t t1 t2') with
+    | gZero t2' => fun t1 (g2 : grammar t1) => gZero _
+    | gEps => fun t1 (g1 : grammar t1) => gXform (Xpair Xid Xunit) g1
+    | g2' => fun t1 (g1 : grammar t1) => gCat g1 g2'
+  end.
+Extraction Implicit OptCat_r [t2 t1].
+
+(** 0 $ g ==> 0 @ zero_to_t
+    eps $ g ==> g @ add_unit_l *)
+Definition OptCat t1 (g1:grammar t1) : 
+  forall t2, grammar t2 -> grammar (Pair_t t1 t2) :=
+  match g1 in grammar t1' return forall t2, grammar t2 -> grammar (Pair_t t1' t2) with
+    | gZero t1' => fun t2 (g2 : grammar t2) => gZero _
+    | gEps => fun t2 (g2 : grammar t2) => gXform (Xpair Xunit Xid) g2
+    | g1' => fun t2 (g2 : grammar t2) => OptCat_r g2 g1'
+  end.
+Extraction Implicit OptCat [t1 t2].
+
+(** star (star g) ==> (star g) @ mklist
+    star eps ==> eps @ to_empty_list
+    star 0 ==> eps @ to_empty_list 
+*)
+Definition OptStar t (g:grammar t) : grammar (List_t t) := 
+  match g in grammar t' return grammar (List_t t') with
+    | gStar u g' => gXform (Xcons Xid Xempty) (gStar g')
+    | gEps => gXform Xempty gEps
+    | gZero t => gXform Xempty gEps
+    | g' => gStar g'
+  end.
+Extraction Implicit OptStar [t].
+
+(** 0 @ f ==> 0
+    g @ f1 @ f2 ==> g @ (f1 o f2)
+*)
+Definition OptMap' t1 (g:grammar t1) : 
+  forall t2, (interp t1 -> interp t2) -> grammar t2 := 
+  match g in grammar t1' return forall t2, (interp t1' -> interp t2) -> grammar t2 with
+    | gZero t => fun t2 f => gZero t2
+    | gMap u1 u2 f' g' => fun t2 f => @gMap u1 t2 (fun x => f (f' x)) g'
+    | g' => fun t2 f => @gMap _ t2 f g'
+  end.
+Extraction Implicit OptMap' [t1 t2].
+
+Definition OptMap t1 t2 (f:interp t1 -> interp t2) (g:grammar t1) : grammar t2 := 
+  @OptMap' t1 g t2 f.
+Extraction Implicit OptMap [t1 t2].
+
+Definition OptXform' t1 (g:grammar t1) : forall t2, t1->>t2 -> grammar t2 :=
+  match g in grammar t1' return forall t2, t1'->>t2 -> grammar t2 with
+    | gZero t => fun t2 x => gZero t2
+    | gXform u1 u2 x' g' => fun t2 x => gXform (xcomp x' x) g'
+    | g' => fun t2 x => gXform x g'
+  end.
+Extraction Implicit OptXform' [t1 t2].
+
+Definition OptXform t1 t2 (x:t1->>t2) (g:grammar t1) := @OptXform' t1 g t2 x.
+Extraction Implicit OptXform [t1 t2].
+
+(** Explicit inversion principles for the grammars -- needed because
+    of typing dependencies, though a little awkward that we can't just
+    use [dependent inversion] to solve them. *)
+Lemma inv_gEps : forall cs v, in_grammar gEps cs v -> cs = nil /\ v = tt.
+Proof. intros. inversion H ; crush. Qed.
+
+Lemma inv_gAny : forall cs v, in_grammar gAny cs v -> cs = v::nil.
+Proof. intros. inversion H ; crush. Qed.
+
+Lemma inv_gChar : 
+  forall c cs v, in_grammar (gChar c) cs v -> cs = c::nil /\ v = c.
+Proof. intros. inversion H ; crush. Qed.
+
+Lemma inv_gCat : forall t1 t2 (g1:grammar t1) (g2:grammar t2) cs v, 
+  in_grammar (gCat g1 g2) cs v -> 
+  exists cs1, exists cs2, exists v1, exists v2, 
+    in_grammar g1 cs1 v1 /\ in_grammar g2 cs2 v2 /\ cs = cs1++cs2 /\ v = (v1,v2).
+Proof. intros. inversion H ; crush. repeat econstructor ; eauto. Qed.
+
+Lemma inv_gAlt : forall t1 t2 (g1:grammar t1) (g2:grammar t2) cs v, 
+  in_grammar (gAlt g1 g2) cs v -> 
+  (exists v1, in_grammar g1 cs v1 /\ v = inl _ v1) \/
+  (exists v2, in_grammar g2 cs v2 /\ v = inr _ v2).
+Proof. intros ; inversion H ; crush. Qed.
+
+Lemma inv_gStar : forall t (g:grammar t) cs v, 
+  in_grammar (gStar g) cs v -> (cs = nil /\ v = nil) \/ 
+  (exists cs1, exists v1, exists cs2, exists v2, 
+    cs1 <> nil /\ in_grammar g cs1 v1 /\ in_grammar (gStar g) cs2 v2 /\ 
+    cs = cs1 ++ cs2 /\ v = v1::v2).
+Proof.
+  intros ; inversion H ; clear H ; crush ; right ; exists s1 ; exists v1 ; 
+  exists s2 ; exists v2 ; auto.
+Qed.
+
+Lemma inv_gMap : forall t1 t2 (f:interp t1 -> interp t2) (g:grammar t1) cs v,
+  in_grammar (@gMap t1 t2 f g) cs v -> exists v', in_grammar g cs v' /\ v = f v'.
+Proof. intros ; inversion H ; crush. Qed.
+
+Lemma inv_gZero : forall t cs v, in_grammar (gZero t) cs v -> False.
+Proof. intros ; inversion H. Qed.
+
+Lemma inv_gXform : forall t1 t2 (x:t1->>t2) (g:grammar t1) cs v,
+  in_grammar (gXform x g) cs v -> exists v', in_grammar g cs v' /\ v = xinterp x v'.
+Proof. intros ; inversion H ; crush. Qed.
+
+Lemma in_cat_eps : forall t (g:grammar t) s v1 v, 
+  in_grammar g s v1 -> v = (v1,tt) -> in_grammar (gCat g gEps) s v.
+Proof. intros ; econstructor ; eauto. apply app_nil_end. Qed.
+Hint Resolve in_cat_eps.
+
+Ltac local_simpl := 
+  simpl in * ; intros ; 
+    repeat 
+      match goal with 
+        | [ |- _ /\ _ ] => split
+        | [ H : _ /\ _ |- _ ] => destruct H
+        | [ |- context[ _ ++ nil ] ] => rewrite <- app_nil_end
+        | [ H : exists x, _ |- _ ] => destruct H
+        | [ H : _ \/ _ |- _] => destruct H
+        | [ H : _ <-> _ |- _] => destruct H
+        | [ |- _ <-> _ ] => split
+        | [ H : _::_ = _::_ |- _] => injection H ; clear H
+        | _ => idtac
+      end ; auto.
+
+(** Tactic for invoking inversion principles on a proof that some string
+    and value are in the denotation of a grammar.  We don't unroll the 
+    [gStar] case because that would loop. *)
+Ltac in_grammar_inv := 
+    match goal with 
+      | [ H : in_grammar gEps _ _ |- _ ] => generalize (inv_gEps H) ; clear H
+      | [ H : in_grammar gAny _ _ |- _ ] => generalize (inv_gAny H) ; clear H
+      | [ H : in_grammar (gChar _) _ _ |- _ ] => generalize (inv_gChar H) ; clear H
+      | [ H : in_grammar (gAlt _ _) _ _ |- _ ] => generalize (inv_gAlt H) ; clear H
+      | [ H : in_grammar (gCat _ _) _ _ |- _ ] => generalize (inv_gCat H) ; clear H
+      | [ H : in_grammar (gZero _) _ _ |- _ ] => contradiction (inv_gZero H)
+      | [ H : in_grammar (gMap _ _ _) _ _ |- _ ] => generalize (inv_gMap H) ; clear H
+      | [ H : in_grammar (gXform _ _) _ _ |- _ ] => 
+        generalize (inv_gXform H) ; clear H
+      | _ => local_simpl ; subst ; eauto
     end.
 
-  (** This lemma tells us that if we start with a grammar [g], build a [DFA],
-      and then run the [DFA] on a list of tokens, then we get [true] iff
-      the grammar would've accepted the string and produced a value.  *)
-  Lemma run_dfa_corr' : forall (r: regexp), 
-    build_dfa r = d -> 
-    forall ts2 ts1 st rs, 
-      RESS.get_element st (dfa_states d) = Some rs ->
-      RES.Equal rs
-        (wpdrv (flat_map token_id_to_chars ts1) (proj1_sig (ini_state r))) ->
-      Forall (fun t => t < num_tokens) ts2 ->
-      if run_dfa d st ts2 then
-        in_re r (flat_map token_id_to_chars (ts1 ++ ts2))
-      else ~ in_re r (flat_map token_id_to_chars (ts1 ++ ts2)).
-  Proof. intros r H.
-    generalize (build_dfa_wf r); intro.
-    unfold wf_dfa in H0. sim.
-    induction ts2.
-    Case "nil". intros. simpl.
-      rewrite app_nil_r.
-      assert (st < dfa_num_states (build_dfa r)).
-        use_lemma RESS.get_element_some_lt by eassumption. 
-        rewrite H0. congruence.
-      use_lemma (H5 st) by eassumption.
-      rewrite H in H10. rewrite H6 in H10. sim.
-      remember_destruct_head as nn.
-      SCase "nth n (dfa_accepts d) false = true".
-        apply in_re_set_singleton.
-        rewrite <- app_nil_r.
-        apply wpdrv_corr.
-        rewrite <- H7. auto.
-      SCase "nth n (dfa_accepts d) false = false".
-        intro.
-        cut (false = true). congruence.
-        apply H14. rewrite H7.
-        apply wpdrv_corr. apply in_re_set_singleton. rewrite app_nil_r.
-        assumption.
-    Case "a::ts2". intros. simpl.
-      remember (nth a (nth st (dfa_transition d) nil) num_tokens) as st'.
-      assert (st < dfa_num_states (build_dfa r)).
-        use_lemma RESS.get_element_some_lt by eassumption. 
-        rewrite H0. congruence.
-      use_lemma (H5 st) by eassumption.
-      rewrite H in H10. rewrite H6 in H10. sim.
-      use_lemma Forall_inv by eassumption.
-      use_lemma H13 by eassumption. sim.
-      rewrite <- Heqst' in H17.
-      remember_destruct_head in H17 as gn; [idtac | false_elim].
-      assert (H20: RES.Equal e
-              (wpdrv (flat_map token_id_to_chars (ts1 ++ (a::nil)))
-                     (proj1_sig (ini_state r)))).
-        rewrite H17.
-        rewrite Coqlib.flat_map_app. rewrite wpdrv_app.
-        change (flat_map token_id_to_chars (a :: nil)) with
-          (token_id_to_chars a ++ nil).
-        rewrite app_nil_r.
-        rewrite H7. reflexivity.
-      inversion H8.
-      use_lemma IHts2 by eassumption.
-      rewrite <- app_assoc in H23. assumption.
-  Qed. 
+(** Correctness proofs for the optimizing grammar constructors. *)
+Lemma opt_alt_corr : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s v, 
+    in_grammar (gAlt g1 g2) s v <-> in_grammar (OptAlt g1 g2) s v.
+Proof. destruct g1 ; destruct g2; simpl; crush; repeat in_grammar_inv. Qed.
 
-  (** Here is the key correctness property for [run_dfa]. *)
-  Lemma run_dfa_corr (r: regexp) :
-    build_dfa r = d -> 
-    forall ts, 
-      Forall (fun t => t < num_tokens) ts -> 
-      if run_dfa d 0 ts then 
-        in_re r (flat_map token_id_to_chars ts)
-      else ~ in_re r (flat_map token_id_to_chars ts).
-  Proof. intros. 
-    generalize (build_dfa_wf r); unfold wf_dfa; intro. sim.
-    change ts with (nil++ts).
-    eapply run_dfa_corr'; try eassumption; subst; eauto.
-     simpl; reflexivity.
+Lemma opt_cat_corr : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s v,
+  in_grammar (gCat g1 g2) s v <-> in_grammar (OptCat g1 g2) s v.
+Proof.
+  destruct g1 ; destruct g2 ; simpl ; try tauto ; repeat local_simpl;
+    repeat in_grammar_inv.
+Qed.
+
+Lemma opt_map_corr : forall t1 t2 (f:interp t1 -> interp t2) (g:grammar t1) s v,
+  in_grammar (@gMap t1 t2 f g) s v <-> in_grammar (@OptMap t1 t2 f g) s v.
+Proof.
+  destruct g ; simpl ; try tauto ; repeat local_simpl; repeat in_grammar_inv.
+Qed.
+
+Lemma opt_xform_corr : forall t1 t2 (x:t1->>t2) (g:grammar t1) s v,
+  in_grammar (gXform x g) s v <-> in_grammar (OptXform x g) s v.
+Proof.
+  destruct g ; simpl ; try tauto ; repeat local_simpl ; repeat in_grammar_inv ;
+  eapply IngXform ; eauto ; rewrite xcomp_corr ;auto.
+Qed.
+
+(* (** Conceptually, returns [Eps] if [g] accepts the empty string, and  *)
+(*     [Zero] otherwise.  In practice, we won't get exactly [Eps] since *)
+(*     we could have [Map]s, [Xform]s, etc. in there. *) *)
+(* Fixpoint null t (g:grammar t) : grammar t :=  *)
+(*   match g in grammar t' return grammar t' with *)
+(*     | Zero t => Zero t *)
+(*     | Eps => Eps *)
+(*     | Any => Zero _ *)
+(*     | Char c => Zero _ *)
+(*     | Alt t1 t2 g1 g2 => OptAlt (null g1) (null g2) *)
+(*     | Cat t1 t2 g1 g2 => OptCat (null g1) (null g2) *)
+(*     | Map t1 t2 f g => OptMap t2 f (null g) *)
+(*     | Xform t1 t2 x g => OptXform x (null g) *)
+(*     | Star t g => Xform (Xempty _ _) Eps *)
+(*   end. *)
+(* Extraction Implicit null [t]. *)
+
+(* (** Computes the derivative of [g] with respect to [c]. Denotationally, *)
+(*     this is { (s,v) | (c::s,v) in_grammar[g] }. *) *)
+(* Fixpoint deriv t (g:grammar t) (c:char_p) : grammar t :=  *)
+(*   match g in grammar t' return grammar t' with *)
+(*     | Zero t => Zero t *)
+(*     | Eps => Zero Unit_t *)
+(*     | Char c' => if char_dec c c' then Xform (Xchar _ c') Eps else Zero _ *)
+(*     | Any => Xform (Xchar _ c) Eps *)
+(*     | Alt t1 t2 g1 g2 => OptAlt (deriv g1 c) (deriv g2 c) *)
+(*     | Map t1 t2 f g => OptMap t2 f (deriv g c) *)
+(*     | Xform t1 t2 x g => OptXform x (deriv g c) *)
+(*     | Cat t1 t2 g1 g2 =>  *)
+(*         OptXform (Xmatch (Xid _) (Xid _)) *)
+(*           (OptAlt (OptCat (deriv g1 c) g2) (OptCat (null g1) (deriv g2 c))) *)
+(*     | Star t g =>  *)
+(*         OptXform (Xcons (Xfst _ _) (Xsnd _ _)) (OptCat (deriv g c) (Star g)) *)
+(*   end. *)
+(* Extraction Implicit deriv [t]. *)
+
+Definition fixfn (r:regexp) (t:type) := interp (regexp_type r) -> interp t.
+
+Definition re_and_fn (t:type) (r:regexp) (f:fixfn r t): {r:regexp & fixfn r t } :=
+  existT (fun r => fixfn r t) r f.
+Extraction Implicit re_and_fn [t].
+
+(** Split a [grammar] into a simplified [regexp] (with no maps) and a top-level fix-up
+    function that can turn the results of the [regexp] back into the user-specified 
+    values.  Notice that the resulting regexp has no [gMap] or [gXform] inside of it. *)
+Fixpoint split_regexp t (g:grammar t) : { ag : regexp & fixfn ag t} := 
+  match g in grammar t' return { ag : regexp & fixfn ag t'} with
+    | gEps => @re_and_fn _ Eps (fun x => x)
+    | gZero t => @re_and_fn _ Zero (fun x => match x with end)
+    | gChar c => @re_and_fn _ (Char c) (fun x => x)
+    | gAny => @re_and_fn _ Any (fun x => x)
+    | gCat t1 t2 g1 g2 => 
+      let (ag1, f1) := split_regexp g1 in 
+        let (ag2, f2) := split_regexp g2 in 
+          @re_and_fn _ (Cat ag1 ag2) 
+          (fun p => (f1 (fst p), f2 (snd p)) : interp (Pair_t t1 t2))
+    | gAlt t1 t2 g1 g2 => 
+      let (ag1, f1) := split_regexp g1 in 
+        let (ag2, f2) := split_regexp g2 in 
+          @re_and_fn _ (Alt ag1 ag2)
+          (fun s => match s with 
+                      | inl x => inl _ (f1 x)
+                      | inr y => inr _ (f2 y)
+                    end : interp (Sum_t t1 t2))
+    | gStar t g => 
+      let (ag, f) := split_regexp g in 
+        @re_and_fn _ (Star ag) (fun xs => (List.map f xs) : interp (List_t t))
+    | gMap t1 t2 f1 g => 
+      let (ag, f2) := split_regexp g in 
+        @re_and_fn _ ag (fun x => f1 (f2 x))
+    | gXform t1 t2 f g => 
+      let (ag, f2) := split_regexp g in 
+        @re_and_fn _ ag (fun x => (xinterp f) (f2 x))
+  end.
+Extraction Implicit split_regexp [t].
+
+Local Ltac break_split_regexp := 
+  repeat 
+    match goal with
+      | [ H : match split_regexp ?g with | existT _ _ => _ end |- _ ] =>  
+        let p := fresh "p" in
+        remember (split_regexp g) as p ; destruct p ; simpl in *
+    end. 
+
+Lemma split_regexp_corr1 t (g:grammar t) : 
+  let (r,f) := split_regexp g in 
+    forall s v, in_regexp r s v -> in_grammar g s (f v).
+Proof.
+  induction g ; simpl ; repeat in_regexp_inv; break_split_regexp; intros;
+   dependent induction H ; subst ; simpl ; eauto. 
+Qed.
+
+(** Correctness of [split_regexp] part 2:  This direction requires a quantifier 
+    so is a little harder. *)
+Lemma split_regexp_corr2 t (g:grammar t) : 
+  let (r, f) := split_regexp g in 
+    forall s v, in_grammar g s v -> exists v', in_regexp r s v' /\ v = f v'.
+Proof.
+  induction g; simpl ; repeat in_grammar_inv ; repeat in_regexp_inv;
+  break_split_regexp; intros.
+  Case "Cat".
+    repeat in_grammar_inv. crush_hyp.
+  Case "Alt".
+    in_grammar_inv. intros. crush_hyp.
+  Case "Star".
+    dependent induction H. 
+    SCase "IngStar_eps". crush.
+    SCase "IngStar_cons". 
+      use_lemma IHg by eassumption.
+      destruct H2 as [v' [H2 H4]].
+      clear IHin_grammar1. 
+      specialize (IHin_grammar2 _ g f Heqp IHg v2 (eq_refl _)
+                    (JMeq_refl _) (JMeq_refl _)). 
+      destruct IHin_grammar2 as [v'' [H6 H8]].
+      exists (v'::v''). crush.
+  Case "Map". in_grammar_inv. intros. crush_hyp.
+  Case "Xform". in_grammar_inv. intros. crush_hyp.
+Qed.
+
+Notation "s .[ i ] " := (get_state i s) (at level 40).
+
+
+
+Section DFA_PARSE.
+
+  Opaque build_dfa.
+
+  Definition re_set_fixfn (rs:RESet.t) (t:type) := 
+    interp (RES.re_set_type rs) -> interp (List_t t).
+
+  (** Our real parser wants to be incremental, where we feed it one
+      token at a time.  So an [instParserState] encapsulates the intermediate
+      state of the parse engine, including the [DFA] and the current 
+      state ([row_ps]) as well as the current fix-up function to transform
+      us from the current state's type back to the original grammar type [t]. 
+      We also need a proof that the current [row_ps] is in bounds for the
+      number of states in the [dfa_ps] to avoid a run-time error. *)
+  Record instParserState (t:type) (r:regexp) := mkPS { 
+    dfa_ps : DFA r; 
+    dfa_wf : wf_dfa dfa_ps ;
+    row_ps : nat ; 
+    row_ps_lt : row_ps < dfa_num_states (dfa_ps) ;
+    fixup_ps : re_set_fixfn ((dfa_states dfa_ps).[row_ps]) t
+  }.
+
+  (** Build the initial [instParserState].  The initial fix-up function is
+      obtained by taking the grammar and splitting it into an [regexp] and
+      a fix-up function.  We then generate the [DFA] from this [regexp].
+      Finally, we start off in the initial state of the [DFA], which is
+      0. *)
+
+  Definition coerce_dfa r1 r2: r1 = r2 -> DFA r1 -> DFA r2.
+    intros. rewrite <- H. trivial.
+  Defined.
+
+  Definition coerce_dom (A A':type) (H:A=A') (B:Type) (f:interp A->B) : 
+    interp A' -> B.
+     rewrite <- H. trivial.
+  Defined.
+
+  (* Definition coerce_build_dfa t (g:grammar t) r f: *)
+  (*   DFA r -> split_regexp g = existT _ r f -> *)
+  (*   DFA (projT1 (split_regexp g)). *)
+  (*   intros. rewrite H. simpl. trivial. *)
+  (* Defined. *)
+
+  (* Lemma coerce_build_dfa_num_states t (g:grammar t) r f H:  *)
+  (*   dfa_num_states (@coerce_build_dfa _ g _ f (build_dfa r) H) =  *)
+  (*   dfa_num_states (build_dfa r). *)
+  (* Proof. unfold coerce_build_dfa. *)
+  (*   unfold eq_rect_r, eq_rect. generalize (eq_sym H). *)
+  (*   rewrite H. intros. rewrite (proof_irrelevance _ e eq_refl). *)
+  (*   trivial. *)
+  (* Qed. *)
+
+  (* Lemma coerce_build_dfa_state t (g:grammar t) r f H n: *)
+  (*   (dfa_states (@coerce_build_dfa _ g _ f (build_dfa r) H)).[n] = *)
+  (*   (dfa_states (build_dfa r)).[n]. *)
+  (* Proof. unfold coerce_build_dfa. *)
+  (*   unfold eq_rect_r, eq_rect. generalize (eq_sym H). *)
+  (*   rewrite H. intros. rewrite (proof_irrelevance _ e eq_refl). *)
+  (*   trivial. *)
+  (* Qed. *)
+
+  (* Lemma coerce_dfa_transitions t (g:grammar t) r r2 (H:r=r2): *)
+  (*   wf_table (dfa_transition (build_dfa r)) -> *)
+  (*   wf_table (dfa_transition (coerce_dfa H (build_dfa r))). *)
+  (* Proof. rewrite H.  trivial. Qed. *)
+
+  Lemma ips_help1 t (g:grammar t) r r2 (H:r=r2):
+    dfa_states (coerce_dfa H (build_dfa r)).[0] = projT1 (RES.singleton_xform r2).
+  Proof. rewrite RES.singleton_xform_erase.
+    rewrite H. simpl.
+    generalize (@build_dfa_prop r2). unfold wf_dfa. intros; sim.
+    auto.
   Qed.
 
-  (** Properties of dfa_recognize *)
-  Lemma dfa_loop_run : forall ts st count count2 ts2,
-    dfa_loop st count ts = Some (count2, ts2) -> 
-    exists ts1, 
-      ts = ts1 ++ ts2 /\ count2 = length ts1 + count /\ 
-      run_dfa d st ts1 = true /\
-      forall ts1' ts2',
-        ts = ts1' ++ ts2' -> 
-        length ts1' < length ts1 -> 
-        ~ run_dfa d st ts1' = true.
-  Proof. induction ts; simpl; intros; remember (nth st (dfa_accepts d) false) as acc;
-    destruct acc. 
-      exists nil; crush.
-      congruence.
-      exists nil; crush.
-      Case "a::ts, when acc is false".
-        remember (nth a (nth st (dfa_transition d) nil) num_tokens) as st'.
-        apply IHts in H. destruct H as [ts1 H]. sim.
-        exists (a::ts1). crush.
-          destruct ts1'. crush.
-          crush; eapply H2; crush.
+  Lemma ips_help2 t (g:grammar t) r r2 (H:r=r2):
+    RES.re_set_type (projT1 (RES.singleton_xform r)) =
+    RES.re_set_type (dfa_states (coerce_dfa H (build_dfa r)).[0]).
+  Proof. f_equal. rewrite (ips_help1 g). rewrite H. trivial. Qed.
+
+  Lemma ips_help3 t (g:grammar t) r r2 (H:r=r2):
+    wf_dfa (coerce_dfa H (build_dfa r)).
+  Proof. rewrite H. simpl. apply build_dfa_prop. Qed.
+
+  Lemma ips_help4 t (g:grammar t) r r2 (H:r=r2):
+    0 < dfa_num_states (coerce_dfa H (build_dfa r)).
+  Proof. rewrite H. simpl. apply dfa_at_least_one. Qed.
+
+  Lemma ips_help5 t (g:grammar t) r f:
+    split_regexp g = existT _ r f -> r = projT1 (split_regexp g).
+  Proof. crush. Qed.
+
+  Definition initial_parser_state t (g:grammar t) :
+    instParserState t (projT1 (split_regexp g)).
+    refine (
+      match split_regexp g as sr return split_regexp g = sr -> _ with
+        | existT r f => fun Hsr =>
+          match build_dfa r with
+            | d => 
+                let f1 := projT2 (RES.singleton_xform r) in
+                let H := (ips_help5 g Hsr) in
+                @mkPS _ _ (coerce_dfa H d) _ 0 _
+                   (coerce_dom (ips_help2 g H)
+                     (compose (map f) (xinterp f1)))
+          end
+      end eq_refl).
+    apply (ips_help3 g).
+    apply (ips_help4 g).
+  Defined.
+
+  (** Given an [instParserState] and a token, advance the parser.  We first
+      lookup the transition row of the current state ([row_ps ps]), and then
+      extract the entry in that row corresponding to the token [tk].  These
+      lookups will never fail (and some of the lemmas below are used to show
+      this.)  
+
+      We then compute the updated fixup-function by composing the current
+      parsing state's [fixup_ps] with the [next_i] entry's [next_xform].
+      We must do various type-casts to get these things to line up.  
+
+      Finally, we grab [next_i]'s [row_nils] which correspond to the semantic
+      values that state [next_i] associates with the empty string and apply
+      the newly-composed fixup-function to each of these values.  We then
+      return the list of these semantic values and a new parser state, 
+      where [next_i] becomes the current row.  Note that if there is no 
+      semantic value associated with [next_i], then we will get an empty
+      list of semantic values, so one should continue parsing tokens using
+      the new [instParserState]. 
+
+      TODO:  we should have some way of signaling that we are in a failure
+      (i.e., Zero) state.  Otherwise, a parsing loop will just consume all
+      of the tokens before realizing that there is never a match.
+  *)
+
+  (** Various lemmas needed to help discharge proof obligations in [parse_token.] *)
+  Definition parse_token_help1 (t:type) r (ps: instParserState t r)
+             (row: transition_t (dfa_states (dfa_ps ps)))
+             (H: nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row) :
+    RES.re_set_type  (dfa_states (dfa_ps ps).[row_ps ps]) =
+    RES.re_set_type (dfa_states (dfa_ps ps).[row_num row]).
+  Proof.
+    intros ; generalize (dfa_transition_r (dfa_ps ps) (row_ps ps)). 
+    rewrite H. intro g ;
+    rewrite <- g. apply eq_refl.
+  Defined.
+
+  Lemma parse_token_help2 t r (ps:instParserState t r) (row:transition_t (dfa_states (dfa_ps ps)))
+        (H: nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row)
+        (e:entry_t (row_num row) (dfa_states (dfa_ps ps))) :
+    next_state e < dfa_num_states (dfa_ps ps).
+  Proof.
+    intros. rewrite <- (dfa_states_len (dfa_ps ps)).
+    destruct ps. simpl in *. destruct dfa_ps0 ; simpl in *. destruct e.
+    simpl in *. subst. auto.
+  Defined.
+
+  (* Definition lt_and_gte_inconst (x y:nat) : x < y -> x >= y -> void. *)
+  (*   intros. omega. *)
+  (* Defined. *)
+    
+  Definition parse_token_help3 t r (ps:instParserState t r) (tk:token_id)
+             (tk_lt:tk < num_tokens)
+             (row:transition_t (dfa_states (dfa_ps ps)))
+             (H:nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row)
+             (H':nth_error (row_entries row) tk = None) : void.
+  Proof. intros. generalize (Coqlib.nth_error_none _ _ H').
+    generalize (dfa_wf ps). unfold wf_dfa, wf_table, build_table_inv.
+    intro H2. destruct H2 as [[H3 [H4 H5]] H6].
+    assert (H10:row_ps ps < length (dfa_transition (dfa_ps ps))).
+      eapply Coqlib.nth_error_some_lt. eassumption.
+    specialize (H5 (row_ps ps) H10).
+    rewrite H in H5.
+    crush.
+  Defined.
+
+  Definition parse_token_help4 t r (ps:instParserState t r)
+             (H:nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = None) : void.
+  Proof.
+    intros. generalize (Coqlib.nth_error_none _ _ H). generalize (row_ps_lt ps).
+    intros. generalize (dfa_transition_len (dfa_ps ps)). intros.
+    rewrite H2 in H1. omega.
+  Defined.
+
+  Lemma parse_token_help5 r (d: DFA r) (row : transition_t (dfa_states d))
+        (e : entry_t (row_num row) (dfa_states d))
+        (row' : transition_t (dfa_states d))
+        (H3 : nth_error (dfa_transition d) (next_state e) = Some row') :
+    row_num row' = next_state e.
+  Proof.
+    intros. generalize (dfa_transition_r d (next_state e)). rewrite H3.
+    auto.
   Qed.
 
-  Lemma dfa_recognize_corr :  forall (r:regexp),
-    build_dfa r = d -> 
-    forall ts, 
-      Forall (fun t => t < num_tokens) ts -> 
-      match dfa_recognize ts with 
-        | None => True
-        | Some (count,ts2) => 
-          exists ts1, 
-            ts = ts1 ++ ts2 /\ count = length ts1 /\ 
-            in_re r (flat_map token_id_to_chars ts1) /\
-            forall ts3 ts4,
-              length ts3 < length ts1 ->
-              ts = ts3 ++ ts4 -> 
-              ~ in_re r (flat_map token_id_to_chars ts3)
-      end.
-  Proof. intros. red. remember_rev (dfa_loop 0 0 ts) as e.
-    destruct e ; auto. destruct p. 
-    use_lemma dfa_loop_run by eassumption. 
-    destruct H1 as [ts1 H1]. sim.
-    exists ts1. crush.
-      apply Coqlib.Forall_app in H0. destruct H0.
-        generalize (run_dfa_corr _ H H0).
-        remember_destruct_head as rd; crush.
-      use_lemma H4 by eassumption.
-        rewrite H2 in H0.
-        apply Coqlib.Forall_app in H0. destruct H0.
-        generalize (run_dfa_corr _ H H0).
-        remember_destruct_head as rd; crush.
+  Lemma parse_token_help6 r (d:DFA r) (row : transition_t (dfa_states d))
+        (e : entry_t (row_num row) (dfa_states d))
+        (row' : transition_t (dfa_states d))
+        (H3 : nth_error (dfa_transition d) (next_state e) = Some row') :
+    list (interp (RES.re_set_type (dfa_states d.[row_num row']))) =
+    list (interp (RES.re_set_type (dfa_states d.[next_state e]))).
+  Proof.
+    intros. rewrite (parse_token_help5 d row e H3). auto.
   Qed.
 
-End DFA_RECOGNIZE.
+  (* Definition compose (A B C:Type) (f:A->B) (g:B -> C) : A -> C :=  *)
+  (*   fun z => g (f z). *)
 
-Require Import Parser.
-Definition par2rec t (g:grammar t) : regexp := 
-  let (ag, _) := split_regexp g in ag.
+  Definition coerce (A B:Type) (H:A=B) : A -> B := 
+    match H in (_ = C) return A -> C with 
+      | eq_refl => fun x => x
+    end.
+
+  Definition nth_error2 A (l:list A) (n:nat):
+    {e:A | nth_error l n = Some e} + {nth_error l n = None}.
+    refine (let ne := nth_error l n in
+            (match ne return nth_error l n = ne -> _ with
+               | Some e => 
+                 fun H => inleft (exist _ e H)
+               | None => fun H => inright H
+             end) eq_refl).
+  Defined.
+
+  Definition parse_token t r (ps:instParserState t r) (tk:token_id) 
+              (tk_lt:tk < num_tokens) : instParserState t r * list (interp t).
+    refine(
+      match nth_error2 (dfa_transition (dfa_ps ps)) (row_ps ps) with
+        | inright Hnd => match parse_token_help4 ps Hnd with end (*impossible*)
+        | inleft (exist row Hnd) =>
+          match nth_error2 (row_entries row) tk with 
+            | inright Hnr =>
+              match parse_token_help3 ps tk_lt Hnd Hnr with end (*impossible*)
+            | inleft (exist e Hnr) => 
+              let next_i := next_state e in 
+              let next_fixup := coerce_dom (parse_token_help1 ps Hnd) (fixup_ps ps) in
+              let g:= compose (flat_map next_fixup)
+                        (xinterp (next_xform e)) in
+              let vs0 : list (interp (RES.re_set_type (dfa_states (dfa_ps ps).[next_state e]))) :=
+                  match nth_error2 (dfa_transition (dfa_ps ps)) next_i with
+                    | inright H => nil (* impossible but not worth proving? *)
+                    | inleft (exist row' H) =>
+                      @coerce _ _ (parse_token_help6 (dfa_ps ps) row e H)
+                              (row_nils row')
+                  end in
+              let vs' := flat_map g vs0 in
+                (@mkPS t r (dfa_ps ps) (dfa_wf ps)
+                      next_i (parse_token_help2 ps Hnd e) g, vs')
+          end
+      end).
+  Defined.
+
+  Fixpoint list_all A (P : A -> Prop) (xs:list A) : Prop := 
+    match xs with 
+      | nil => True
+      | h::t => P h /\ list_all P t
+    end.
+
+  (* todo: may reuse the row_nils stored in dfa_ps, instead of doing 
+     re_set_extract_nil again *)
+  Definition ps_extract_nil t r (ps:instParserState t r) :=
+    flat_map (fixup_ps ps)
+             (re_set_extract_nil (dfa_states (dfa_ps ps).[row_ps ps])).
+
+  (** A first-parse parser -- this consumes the tokens until it gets a successful
+      semantic value. *)
+  Fixpoint parse_tokens t r (ps:instParserState t r) (tks:list token_id) := 
+    match tks return list_all (fun tk => tk < num_tokens) tks -> 
+                     (list token_id) * (instParserState t r) * list (interp t) 
+    with 
+      | nil => fun _ => (nil, ps, ps_extract_nil ps)
+      | tk::rest => 
+        fun H => 
+          match H with 
+            | conj H1 H2 => 
+              let pair := parse_token ps H1 in 
+              match snd pair with
+                | nil => parse_tokens (fst pair) rest H2
+                | vs => (rest, (fst pair), vs)
+              end
+          end
+    end.
+
+  (** The semantics of parser states *)
+  Definition in_ps t r (ps:instParserState t r) (str:list char_t) (v: interp t) :=
+    exists v', in_re_set (dfa_states (dfa_ps ps).[row_ps ps]) str v' /\
+               In v ((fixup_ps ps) v').
+
+  Opaque RES.re_set_type.
+  Lemma initial_parser_state_corr t (g:grammar t) str v:
+    in_ps (initial_parser_state g) str v <-> in_grammar g str v.
+  Proof. unfold initial_parser_state.
+    generalize (ips_help3 g) (ips_help4 g) (ips_help5 g).
+    generalize (ips_help2 g).
+    remember_rev (split_regexp g) as sr.
+    destruct sr as [r f]. 
+    intros.
+    rewrite (proof_irrelevance _ (e0 r f eq_refl) eq_refl). simpl.
+    assert (H2:projT1 (RES.singleton_xform r) =
+               dfa_states (build_dfa r).[0]).
+      generalize (build_dfa_prop r). unfold wf_dfa. crush.
+    remember_rev (projT2 (RES.singleton_xform r)) as f1.
+    simpl in f1.
+    generalize (e r r eq_refl).
+    simpl. unfold in_ps. simpl.
+    rewrite <- H2. intros.
+    rewrite (proof_irrelevance _ e1 eq_refl). simpl.
+    unfold in_ps; simpl; split; intros.
+    Case "->".
+      generalize (split_regexp_corr1 g). rewrite Hsr. intros.
+      destruct H as [v' [H4 H6]].
+      unfold compose in H6.
+      apply Coqlib.list_in_map_inv in H6.
+      destruct H6 as [v1 [H6 H8]].
+      subst. apply H0.
+      apply RES.singleton_xform_corr.
+      eapply in_re_set_xform_intro; eassumption. 
+    Case "<-".
+      generalize (split_regexp_corr2 g). rewrite Hsr. intros.
+      use_lemma H0 by eassumption.
+      destruct H1 as [v' [H4 H6]].
+      apply RES.singleton_xform_corr in H4.
+      apply in_re_set_xform_elim in H4.
+      destruct H4 as [v1 [H8 H10]].
+      exists v1. 
+      split; [assumption | idtac].
+      subst. unfold compose.
+      apply in_map. assumption.
+  Qed.
+
+(* TBC *)
+  Local Ltac match_emp_contra := 
+    intros;
+    match goal with
+      | [H: match ?P with end = _ |- _] => destruct P
+    end.
+
+  Opaque token_id_to_chars in_re_set_xform.
+  Lemma parse_token_corr t r (ps1:instParserState t r) tk 
+        (H:tk<num_tokens) ps2 vs2:
+    parse_token ps1 H = (ps2, vs2) ->
+    (forall v, In v vs2 <-> in_ps ps2 nil v) /\
+    (* vs2 = ps_extract_nil ps2 /\ *)
+    forall str v, in_ps ps1 ((token_id_to_chars tk) ++ str) v <->
+                  in_ps ps2 str v.
+  Proof. generalize (dfa_wf ps1). unfold wf_dfa. intro H0.
+    destruct H0 as [H0 [H1 _]].
+    assert (H2:row_ps ps1 < length (dfa_transition (dfa_ps ps1))).
+      rewrite (dfa_transition_len (dfa_ps ps1)).
+      apply (row_ps_lt ps1).
+    unfold parse_token.
+    destruct (nth_error2 (dfa_transition (dfa_ps ps1)) (row_ps ps1));
+           [idtac | match_emp_contra].
+    destruct s as [row Hnd].
+    destruct (nth_error2 (row_entries row) tk); [idtac | match_emp_contra].
+    destruct s as [entries Hne].
+    unfold wf_table, build_table_inv in H0.
+    destruct H0 as [_ [_ H3]].
+    generalize (H3 (row_ps ps1) H2). intro H14.
+    rewrite Hnd in H14.
+    assert (H4:row_ps ps1 = row_num row) by crush.
+    destruct H14 as [H14 [H16 [H18 _]]].
+    specialize (H18 tk). unfold wf_row in H18. simpl in H18.
+    rewrite Hne in H18.
+    destruct (nth_error2 (dfa_transition (dfa_ps ps1)) (next_state entries)).
+    Case "Some e".
+      destruct s as [row' H6].
+      intros. inversion_clear H0.
+      unfold in_ps. simpl.
+      generalize (parse_token_help1 ps1 Hnd), (fixup_ps ps1).
+      rewrite H4. intros.
+      rewrite (proof_irrelevance _ e eq_refl). simpl.
+      unfold compose.
+      split.
+      SCase "In v vs <-> in_ps ps2 nil v".
+        assert (H8:next_state entries < length (dfa_transition (dfa_ps ps1))).
+          rewrite (dfa_transition_len (dfa_ps ps1)).
+          rewrite <- (dfa_states_len (dfa_ps ps1)).
+          apply (next_state_lt entries).
+        generalize (H3 (next_state entries) H8). intro H9.
+        rewrite H6 in H9.
+        destruct H9 as [H9 [H10 [H11 H12]]].
+        generalize H12.
+        generalize (parse_token_help6 (dfa_ps ps1) row entries H6).
+        generalize (row_nils row').
+        rewrite H10.
+        intros.
+        rewrite (proof_irrelevance _ e0 eq_refl). simpl.
+        rewrite in_flat_map.
+        split; intro H20.
+        SSCase "->".
+          destruct H20 as [v' H20].
+          exists v'. 
+          split. apply re_set_extract_nil_corr. crush.
+            crush.
+        SSCase "<-".
+          destruct H20 as [v' [H20 H22]].
+          apply re_set_extract_nil_corr in H20.
+          exists v'. crush.
+      SCase "forall str v, ... <-> ...".
+      split; intro H10.
+        SSCase "->".
+          destruct H10 as [v' [H10 H12]].
+          rewrite H18 in H10.
+          destruct H10 as [v1 [H20 H22]].
+          exists v1.
+          split. assumption.
+            apply in_flat_map. crush.
+        SSCase "<-".
+          destruct H10 as [v' [H10 H12]].
+          apply in_flat_map in H12.
+          destruct H12 as [l [H12 H24]].
+          assert (H30:in_re_set_xform 
+                      (existT _ (dfa_states (dfa_ps ps1).[next_state entries])
+                              (next_xform entries)) str l).
+            eapply in_re_set_xform_intro2; eassumption.
+          apply H18 in H30.
+          exists l. crush.
+    Case "None".
+      use_lemma Coqlib.nth_error_none by eassumption.
+      generalize (next_state_lt entries), (dfa_states_len (dfa_ps ps1)).
+      generalize (dfa_transition_len (dfa_ps ps1)).
+      intros.
+      contradict H5. omega.
+  Qed.  
 
 
-stuff that need to be copied from Parser.v
-  - def of grammar, in_grammar
-  - inversion lemmas for grammars such as EpsInv
-  - the split function from a grammar to a regexp and an xform
-  - optimization constructors for grammars
-  - optimizing constructors for regexps
-  - def of naive_parse and its correctness proofs.
+  (* Definition ps_extract_nil t r (ps:instParserState t r) := *)
+  (*   flat_map (fixup_ps ps) *)
+  (*            (re_set_extract_nil (dfa_states (dfa_ps ps).[row_ps ps])). *)
+
+  Lemma ps_extract_nil_corr t r (ps:instParserState t r):
+    forall v, In v (ps_extract_nil ps) <-> in_ps ps nil v.
+  Proof. fold interp. intros. unfold ps_extract_nil, in_ps.
+    rewrite in_flat_map.
+    split; intros.
+    Case "->". destruct H as [v' H].
+      rewrite <- re_set_extract_nil_corr in H.
+      crush.
+    Case "<-". destruct H as [v' H].
+      rewrite re_set_extract_nil_corr in H.
+      crush.
+  Qed.
+
+  Lemma parse_tokens_corr t r: forall ts1 (ps1:instParserState t r)
+        (Hts1:list_all (fun tk => tk < num_tokens) ts1) ts2 ps2 vs2,
+    parse_tokens ps1 ts1 Hts1 = (ts2, ps2, vs2) ->
+    (forall v, In v vs2 <-> in_ps ps2 nil v) /\
+    (exists ts', ts1 = ts' ++ ts2 /\
+     forall str v, in_ps ps1 ((flat_map token_id_to_chars ts') ++ str) v <->
+                   in_ps ps2 str v).
+  Proof. induction ts1 as [ | tk ts1]; intros.
+    Case "nil". simpl in H. inversion_clear H.
+      split. apply ps_extract_nil_corr. 
+        exists nil; crush.
+    Case "tk::ts1".
+      simpl in Hts1. destruct Hts1 as [Htk Hts1].
+      simpl in H.
+      remember_rev (fst (parse_token ps1 Htk)) as ps1'.
+      remember_rev (snd (parse_token ps1 Htk)) as vs1'.
+      assert (H2: parse_token ps1 Htk = (ps1', vs1')).
+        apply injective_projections; trivial.
+      generalize (parse_token_corr ps1 Htk H2). 
+      destruct_head in H.
+      SCase "vs1'=nil".
+        apply IHts1 in H.
+        destruct H as [H4 [ts1' [H6 H8]]].
+        split; [crush | idtac].
+        exists (tk::ts1'). 
+        split. crush.
+        intros. rewrite <- H8.
+          simpl. rewrite app_assoc_reverse. crush.
+      SCase "vs1'<>nil".
+        inversion H. subst.
+        inversion_clear H.
+        split. crush.
+        exists (tk::nil). 
+        split. crush.
+          intros. simpl. rewrite app_assoc_reverse. crush.
+  Qed.
+
+  (** Proof that if you build an initial parsing state from a grammar [g],
+      and then run [parse_tokens] on a list of tokens [tks], you'll get back
+      (a) some suffix of [tks], corresponding to the unconsumed tokens, 
+      (b) a list of semantic values [vs], such that for each [v] in [vs],
+      and a guarantee that [v] is is related by [g] and the consumed tokens. *)
+  Definition parse_tokens_initial_ps : 
+    forall t (g:grammar t) ps0, 
+      initial_parser_state g = ps0 -> 
+      forall ts0 (H:list_all (fun tk => tk < num_tokens) ts0),
+        match parse_tokens ps0 ts0 H with 
+            | (ts2, ps2, vs) => 
+              exists ts1, ts0 = ts1 ++ ts2 /\ 
+                forall v, In v vs -> in_grammar g (flat_map token_id_to_chars ts1) v
+        end.
+  Proof. intros.
+    remember_head as pt. destruct pt as [[ts2 ps2] vs].
+    generalize (parse_tokens_corr _ _ H0 Hpt). intro H2.
+    destruct H2 as [H2 [ts1 [H4 H6]]].
+    exists ts1. 
+    split. trivial.
+    intros.
+    apply initial_parser_state_corr. rewrite H.
+    rewrite <- (app_nil_r (flat_map token_id_to_chars ts1)).
+    apply H6. apply H2. trivial.
+  Qed.
+
+End DFA_PARSE.
+    
+(* Extraction Implicit table_parse [t]. *)
+(* Extraction Implicit opt_initial_parser_state [t]. *)
+(* Extraction Implicit parse_token [t]. *)
+(* Extraction Implicit parse_tokens [t]. *)
+(* Recursive Extraction parse_tokens. *)
+
+(** [to_string] takes a grammar [a] and an abstract syntax value [v] of
+    type [regexp_type a] and produces an optional string [s] with the property
+    that [in_regexp a s v].  So effectively, it's a pretty printer for
+    ASTs given a grammar.  It's only a partial function for two reasons:
+    First, the type only describes the shape of the AST value [v] and not
+    the characters within it.  If they don't match what's in the grammar,
+    we must fail.  Second, the treatment of [aStar] in [in_regexp] demands
+    that the strings consumed in the [InaStar_cons] case are non-empty.  
+*)
+(* Fixpoint to_string (a:regexp) : interp (regexp_type a) -> option (list char_p) := *)
+(*   match a return interp (regexp_type a) -> option (list char_p) with *)
+(*     | aEps => fun (v:unit) => Some nil *)
+(*     | aZero => fun (v:void) => match v with end *)
+(*     | aChar c1 => fun (c2:char_p) => if char_dec c1 c2 then Some (c1::nil) else None *)
+(*     | aAny => fun (c:char_p) => Some (c::nil) *)
+(*     | aCat a1 a2 =>  *)
+(*       fun (v:(interp (regexp_type a1)) * (interp (regexp_type a2))) =>  *)
+(*         match to_string a1 (fst v), to_string a2 (snd v) with  *)
+(*           | Some s1, Some s2 => Some (s1 ++ s2) *)
+(*           | _, _ => None *)
+(*         end *)
+(*     | aAlt a1 a2 =>  *)
+(*       fun (v:(interp (regexp_type a1)) + (interp (regexp_type a2))) =>  *)
+(*         match v with  *)
+(*           | inl v1 => to_string a1 v1 *)
+(*           | inr v2 => to_string a2 v2 *)
+(*         end *)
+(*     | aStar a1 =>  *)
+(*       fun (v:list (interp (regexp_type a1))) =>  *)
+(*         List.fold_right  *)
+(*         (fun v1 sopt =>  *)
+(*           match to_string a1 v1, sopt with *)
+(*             | Some (c::s1), Some s2 => Some ((c::s1) ++ s2) *)
+(*             | _, _ => None *)
+(*           end) (Some nil) v *)
+(*   end. *)
+
+(* Lemma to_string_corr1 : forall a (v:interp (regexp_type a)) s,  *)
+(*   to_string a v = Some s -> in_regexp a s v. *)
+(* Proof. *)
+(*   Ltac myinj :=      *)
+(*     match goal with  *)
+(*       | [ H : Some _ = Some _ |- _ ] => injection H ; intros ; clear H ; subst *)
+(*       | _ => idtac *)
+(*     end. *)
+(*   induction a ; simpl ; intros ; eauto ; myinj ; try (destruct v ; eauto ; fail). *)
+(*    destruct (char_dec c v) ; try congruence ; myinj ; eauto. *)
+(*    destruct v as [v1 v2] ; simpl in *. remember (to_string a1 v1) as sopt1 ;  *)
+(*    remember (to_string a2 v2) as sopt2 ; destruct sopt1 ; destruct sopt2 ; try congruence ; *)
+(*    myinj ; eauto.  *)
+(*    generalize s H. clear s H. *)
+(*    induction v ; intros ; simpl in * ; myinj ; eauto. *)
+(*    remember (to_string a a0) as sopt1. destruct sopt1 ; try congruence. *)
+(*    destruct l ; try congruence. *)
+(*    match goal with  *)
+(*      | [ H : match ?e with | Some _ => _ | None => _ end = _ |- _] =>  *)
+(*        remember e as sopt2 ; destruct sopt2 ; try congruence *)
+(*    end. myinj. specialize (IHa _ _ (eq_sym Heqsopt1)). *)
+(*    eapply InaStar_cons ; eauto ; congruence. *)
+(* Defined. *)
+
+(* Lemma to_string_corr2 : forall a (s:list char_p) (v:interp (regexp_type a)), *)
+(*   in_regexp a s v -> to_string a v = Some s. *)
+(* Proof. *)
+(*   induction 1 ; subst ; simpl ; mysimp ; try congruence ;  *)
+(*   try (rewrite IHin_regexp1 ; try rewrite IHin_regexp2 ; auto). *)
+(*   destruct s1 ; try congruence. auto. *)
+(* Qed. *)
+
+
+
+(* Require Import Parser. *)
+(* Definition par2rec t (g:grammar t) : regexp :=  *)
+(*   let (ag, _) := split_regexp g in ag. *)
+
+
+(* stuff that need to be copied from Parser.v *)
+(*   - optimization constructors for grammars *)
+(*   - optimizing constructors for regexps *)
+(*   - def of naive_parse and its correctness proofs. *)

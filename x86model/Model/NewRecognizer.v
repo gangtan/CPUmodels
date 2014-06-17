@@ -896,7 +896,7 @@ Module RESetSet.
   Lemma get_element_some_lt: forall n s e,
     get_element n s = Some e -> n < cardinal s.
   Proof. unfold get_element, cardinal, Raw.cardinal. 
-     eauto using nth_error_some_lt.
+     eauto using Coqlib.nth_error_some_lt.
   Qed.
 
   Lemma get_element_eq: forall s1 s2 n,
@@ -907,7 +907,7 @@ Module RESetSet.
     elements_ext s1 s2 -> n < cardinal s1
       -> get_element n s2 = get_element n s1.
   Proof. unfold elements_ext, get_element. intros. sim.
-    rewrite H. generalize nth_error_app_lt. crush.
+    rewrite H. generalize Coqlib.nth_error_app_lt. crush.
   Qed. 
 
   Lemma get_element_add: forall n s e1 e,
@@ -953,7 +953,7 @@ Module RESetSet.
     get_index e s = Some n -> n < cardinal s.
   Proof. intros. apply get_index_spec in H.
     unfold Coqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
-    apply nth_error_some_lt in H2. auto.
+    apply Coqlib.nth_error_some_lt in H2. auto.
   Qed.
 
   Lemma get_index_add_monotone: forall e e1 s n,
@@ -975,14 +975,14 @@ Module RESetSet.
         apply get_index_spec; unfold Coqlib.first_occur.
         rewrite H. rewrite Coqlib.firstn_eq_lt by trivial.
         split; [crush | idtac].
-          exists x. rewrite nth_error_app_lt by trivial. crush.
+          exists x. rewrite Coqlib.nth_error_app_lt by trivial. crush.
       SCase "<-".
         sim. apply get_index_spec in H1. apply get_index_spec.
         unfold Coqlib.first_occur in *.
         sim. 
           erewrite <- Coqlib.firstn_eq_lt by trivial.
             rewrite H in H1. eassumption.
-          exists x. erewrite <- nth_error_app_lt by trivial.
+          exists x. erewrite <- Coqlib.nth_error_app_lt by trivial.
             rewrite H in H2. crush.
   Qed.
 
@@ -1170,7 +1170,7 @@ Section DFA.
           apply RESS.elements_spec1. trivial.
         trivial.
     Case "n>=|ss|".
-      apply nth_error_none in H. trivial.
+      apply Coqlib.nth_error_none in H. trivial.
   Defined.
 
   Opaque RESS.elements. 
@@ -1516,7 +1516,7 @@ Section DFA.
         remember_destruct_head as ne; [idtac | crush].
         intros.
         apply RESS.get_element_some_lt in Hge.
-        apply nth_error_some_lt in Hne.
+        apply Coqlib.nth_error_some_lt in Hne.
         crush.
   Qed.
 
@@ -1542,7 +1542,7 @@ Section DFA.
     destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H4)); sim.
     Case "i<n".
       rewrite (get_element_wfs_ext H6) by omega.
-      rewrite nth_error_app_lt by omega.
+      rewrite Coqlib.nth_error_app_lt by omega.
       use_lemma H1 by eassumption.
       remember_destruct_head as ge; [idtac | crush].
       remember_destruct_head as ne; [idtac | crush].
