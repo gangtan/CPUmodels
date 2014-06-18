@@ -308,31 +308,31 @@ Module RESETXFORM <: RESetXform.
   Ltac xinterp_simpl :=
   repeat match goal with
     | [|- context[xinterp (xmatch ?X1 ?X2) ?v]] => rewrite (xmatch_corr X1 X2); simpl
-    | [H:context[xinterp (xmatch ?X1 ?X2) ?v] |- _ ] => 
+    | [H:context[xinterp (xmatch ?X1 ?X2) ?v] |- _ ] =>
       rewrite (xmatch_corr X1 X2) in H ; simpl
     | [|- context[xcomp ?X1 ?X2]] => rewrite (xcomp_corr X1 X2); simpl
-    | [H:context[xcomp ?X1 ?X2] |- _] => 
+    | [H:context[xcomp ?X1 ?X2] |- _] =>
       rewrite (xcomp_corr X1 X2) in H; simpl in H
     | [|- context[xinterp (xpair _ _) _]] => rewrite xpair_corr; simpl
-    | [H:context[xinterp (xpair _ _) _] |- _] => 
+    | [H:context[xinterp (xpair _ _) _] |- _] =>
       rewrite xpair_corr in H; simpl in H
-(*
-    | [|- context[xinterp xcross _]] => rewrite xcross_corr; simpl
-    | [H:context[xinterp xcross _] |- _] => 
-      rewrite xcross_corr in H; simpl in H
-*)
+(* *)
+(*     | [|- context[xinterp xcross _]] => rewrite xcross_corr; simpl *)
+(*     | [H:context[xinterp xcross _] |- _] =>  *)
+(*       rewrite xcross_corr in H; simpl in H *)
+(* *)
     | [|- context [xinterp xapp (_,_)]] => rewrite xapp_corr; simpl
-    | [H:context [xinterp xapp (_,_)] |- _] => 
+    | [H:context [xinterp xapp (_,_)] |- _] =>
       rewrite xapp_corr in H; simpl in H
-    | [|- context [xinterp (xmap _) ?V]] => 
+    | [|- context [xinterp (xmap _) ?V]] =>
       rewrite (@xmap_corr _ _ _ V); simpl
-    | [H:context [xinterp (xmap _) ?V] |- _] => 
+    | [H:context [xinterp (xmap _) ?V] |- _] =>
       rewrite (@xmap_corr _ _ _ V) in H; simpl in H
-(*
-    | [|- context[xinterp xflatten _]] => rewrite xflatten_corr2; simpl
-    | [H:context[xinterp xflatten _] |- _] => 
-      rewrite xflatten_corr2 in H; simpl in H
-*)
+(* *)
+(*     | [|- context[xinterp xflatten _]] => rewrite xflatten_corr2; simpl *)
+(*     | [H:context[xinterp xflatten _] |- _] =>  *)
+(*       rewrite xflatten_corr2 in H; simpl in H *)
+(* *)
   end.
 
   Lemma in_not_leaf : forall (r:regexp), Raw.In r Raw.Leaf -> False.

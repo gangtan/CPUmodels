@@ -2,7 +2,7 @@ Require Import Coq.Program.Equality.
 Require Import Coqlib.
 Require Import List.
 Require Import Bool.
-Require Import Char.
+Require Export Char.
 Set Implicit Arguments.
 
 Inductive void : Type := .
@@ -723,27 +723,38 @@ Proof.
   rewrite H. auto.
 Qed.
 
+(** A singleton list *)
+Definition xsingleton {t} : t ->> List_t t := @xcons t t xid xempty.
+
 (** Compute the cross product of two lists.  For instance, the
       cross product of (1::2::nil, true::false::nil) is 
       (1,true)::(1,false)::(2,true)::(2,false)::nil.
  *)
-Definition xcross {t1 t2} : Pair_t (List_t t1) (List_t t2) ->> List_t (Pair_t t1 t2) := 
-  xopt (xcomp (xmapenv (xcomp (xpair xsnd xfst) (xmapenv (xpair xsnd xfst)))) xflatten).
+Definition xcross {t1 t2} : Pair_t (List_t t1) (List_t t2) ->> List_t (Pair_t t1 t2) :=
+  xopt (xcomp (xcomp (xpair xsnd xfst)
+                     (xmapenv (xcomp (xpair xsnd xfst) (xmapenv xid)))) xflatten).
 
 Lemma xcross_corr t1 t2 (p : interp (Pair_t (List_t t1) (List_t t2))) : 
   xinterp xcross p = 
-  Coqlib.list_flatten (List.map (fun y => List.map (fun x => (x,y)) (fst p)) (snd p)).
-Proof.
+  Coqlib.list_flatten (List.map (fun x => List.map (fun y => (x,y)) (snd p)) (fst p)).
+Proof. 
   Opaque xflatten xmapenv xpair.
-  destruct p. fold interp. unfold xcross. rewrite xopt_corr. rewrite xcomp_corr. simpl.
-  rewrite xflatten_corr2. rewrite xmapenv_corr. fold interp. 
-  match goal with | [ |- list_flatten ?e1 = list_flatten ?e2 ] => replace e1 with e2 end.
-  auto. simpl.
-  match goal with | [ |- map ?e1 _ = map ?e2 _ ] => replace e1 with e2 ; auto end. 
-  apply extensionality. intro. rewrite xcomp_corr. simpl.
-  rewrite xmapenv_corr. fold interp. simpl. 
-  rewrite xpair_corr. simpl. 
-  match goal with | [ |- map ?e1 _ = map ?e2 _ ] => replace e1 with e2 ; auto end.
+  destruct p. fold interp. unfold xcross. rewrite xopt_corr. 
+  repeat rewrite xcomp_corr. simpl. repeat rewrite xcomp_corr. simpl.
+  rewrite xflatten_corr2. rewrite xmapenv_corr. fold interp.
+  repeat f_equal.
+  apply Coqlib.extensionality. intro. rewrite xcomp_corr. simpl.
+  rewrite xmapenv_corr. fold interp. simpl.
+  f_equal.
+Qed.
+
+Lemma xcross_corr2 {t1 t2} (vs: interp (Pair_t (List_t t1) (List_t t2))):
+  xinterp xcross vs = List.list_prod (fst vs) (snd vs).
+Proof. rewrite xcross_corr. fold interp.
+  destruct vs as [l1 l2].
+  induction l1. 
+    simpl. induction l2; auto.
+    simpl in *. f_equal. trivial.
 Qed.
 
 (** Lift a continuation to work on a list of values, and then
@@ -756,6 +767,30 @@ Definition xthen {t1 t2 t3} (f1: t1 ->> List_t t2) (f2: t2 ->> List_t t3) :
 Definition xcrossmap {t1 t2 t3 t4} (f1 : t1 ->> List_t t3) (f2 : t2 ->> List_t t4) : 
   (Pair_t t1 t2) ->> List_t (Pair_t t3 t4) := 
   xopt (xcomp (xpair (xcomp xfst f1) (xcomp xsnd f2)) xcross).
+
+(** A simplification tactic for [xform]s *)
+Ltac xinterp_simpl :=
+  repeat match goal with
+    | [|- context[xcomp ?X1 ?X2]] => rewrite (xcomp_corr X1 X2); simpl
+    | [H:context[xcomp ?X1 ?X2] |- _] => 
+      rewrite (xcomp_corr X1 X2) in H; simpl in H
+    | [|- context[xinterp (xpair _ _) _]] => rewrite xpair_corr; simpl
+    | [H:context[xinterp (xpair _ _) _] |- _] => 
+      rewrite xpair_corr in H; simpl in H
+    | [|- context[xinterp xcross _]] => rewrite xcross_corr2; simpl
+    | [H:context[xinterp xcross _] |- _] => 
+      rewrite xcross_corr2 in H; simpl in H
+    | [|- context [xinterp xapp (_,_)]] => rewrite xapp_corr; simpl
+    | [H:context [xinterp xapp (_,_)] |- _] => 
+      rewrite xapp_corr in H; simpl in H
+    | [|- context [xinterp (xmap _) ?V]] => 
+      rewrite (@xmap_corr _ _ _ V); simpl
+    | [H:context [xinterp (xmap _) ?V] |- _] => 
+      rewrite (@xmap_corr _ _ _ V) in H; simpl in H
+    | [|- context[xinterp xflatten _]] => rewrite xflatten_corr2; simpl
+    | [H:context[xinterp xflatten _] |- _] => 
+      rewrite xflatten_corr2 in H; simpl in H
+  end.
 
 (** Some utilities for viewing and seeing the size of Xforms. *)
 

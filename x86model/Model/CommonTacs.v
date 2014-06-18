@@ -31,6 +31,13 @@ Ltac bool_elim_tac :=
              apply orb_true_iff in H; destruct H
          end.
 
+(* Find contradiction in the hypothesis *)
+Ltac find_contra :=
+  match goal with
+    | [H:?p, H1:~ ?p |- _] => contradict H; trivial
+    | [H: forall v, ~ ?P v, H1: ?P ?V |- _] => contradict H1; apply H
+  end.
+
 (* Make a duplicate of the hypothesis *)
 Ltac dupHyp H := 
   let t := type of H in

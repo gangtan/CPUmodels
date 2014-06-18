@@ -156,7 +156,8 @@ Module Type MAPSET (M:WSets) (M':WSets).
     forall x y,  M.In x s -> M.In y s ->
                  M'.E.eq (get_fun m x) (get_fun m y) -> M.E.eq x y.
 
-  Parameter map: proper_map -> M.t -> M'.t.
+  Definition map m s := 
+    M.fold (fun x s => M'.add (get_fun m x) s) s M'.empty.
 
   Declare Instance injective_eq:
     forall m, Proper (M.eq ==> iff) (injective m).

@@ -1,5 +1,6 @@
 Require Import List.
 Require Export Char.
+Require Import Bool.
 Require Import Xform.
 Require Import CommonTacs.
 Require Import Structures.OrdersAlt.
@@ -134,6 +135,27 @@ Fixpoint regexp_extract_nil (r:regexp) : list (interp (regexp_type r)) :=
       (List.map (fun x => inl _ x) (regexp_extract_nil ag1)) ++ 
       (List.map (fun x => inr _ x) (regexp_extract_nil ag2))
     | Star ag => nil::nil
+  end.
+
+(** Nullable (r) returns true iff r can match the empty string *)
+Fixpoint regexp_nullable (r:regexp) : bool :=
+  match r with
+    | Zero | Char _ | Any => false
+    | Eps => true
+    | Cat r1 r2 => regexp_nullable r1 && regexp_nullable r2
+    | Alt r1 r2 => regexp_nullable r1 || regexp_nullable r2
+    | Star r1 => true
+  end.
+
+Fixpoint regexp_always_rejects (r:regexp) : bool :=
+  match r with
+    | Eps => false
+    | Char _ => false
+    | Any => false
+    | Zero => true
+    | Alt r1 r2 => regexp_always_rejects r1 && regexp_always_rejects r2
+    | Cat r1 r2 => regexp_always_rejects r1 || regexp_always_rejects r2
+    | Star _ => false
   end.
 
 (** * Ordering for regexps *)
