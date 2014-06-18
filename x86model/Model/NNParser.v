@@ -25,7 +25,7 @@ Require Import ZArith.
 
 Require Import Regexp.
 Require Import ParserArg.
-Import X86_PARSER_ARG.
+(* Import X86_PARSER_ARG. *)
 Require Export Xform.
 Require Export Grammar.
 
@@ -134,7 +134,7 @@ Proof. apply RES.cat_re_xform_corr. Qed.
 (* Qed. *)
 
 Lemma equal_xform_corr2 rs1 rs2 (H:RES.Equal rs2 rs1)
-      ty (f:RES.re_set_type rs1 ->> List_t ty) str v:
+      ty (f:RES.re_set_type rs1 ->> Xform.List_t ty) str v:
   in_re_set_xform (existT _ rs1 f) str v <->
   in_re_set_xform
     (existT _ rs2 (xcomp (RES.equal_xform H) f)) str v.
@@ -148,7 +148,7 @@ Proof. intros. unfold in_re_xform. destruct rex as [r f].
 Qed.
 
 Lemma in_re_xform_intro2: 
-  forall t r (f:regexp_type r ->> (List_t t)) s v v',
+  forall t r (f:regexp_type r ->> (Xform.List_t t)) s v v',
   in_regexp r s v' -> In v (xinterp f v') -> 
     in_re_xform (existT _ r f) s v.
 Proof. generalize in_re_xform_intro; crush. Qed.
@@ -159,7 +159,7 @@ Lemma in_re_xform_elim: forall t (rex:re_xf_pair t) s v,
 Proof. unfold in_re_xform; intros. destruct rex as [r f]. crush. Qed.
 
 Lemma in_re_xform_elim2: 
-  forall t r (f: regexp_type r ->> (List_t t)) s v,
+  forall t r (f: regexp_type r ->> (Xform.List_t t)) s v,
   in_re_xform (existT _ r f) s v -> 
     exists v', in_regexp r s v' /\ In v (xinterp f v').
 Proof. generalize in_re_xform_elim. crush. Qed.
@@ -172,7 +172,7 @@ Proof. intros. unfold in_re_set_xform. destruct rx as [rs f].
 Qed.
 
 Lemma in_re_set_xform_intro2: 
-  forall t rs (f:RES.re_set_type rs ->> (List_t t)) s v v',
+  forall t rs (f:RES.re_set_type rs ->> (Xform.List_t t)) s v v',
   in_re_set rs s v' -> In v (xinterp f v') -> 
     in_re_set_xform (existT _ rs f) s v.
 Proof.  generalize in_re_set_xform_intro; crush. Qed.
@@ -183,7 +183,7 @@ Lemma in_re_set_xform_elim: forall t (rx:RES.rs_xf_pair t) s v,
 Proof. unfold in_re_set_xform; intros. destruct rx as [rs f]. crush. Qed.
 
 Lemma in_re_set_xform_elim2: 
-  forall t rs (f: RES.re_set_type rs ->> (List_t t)) s v,
+  forall t rs (f: RES.re_set_type rs ->> (Xform.List_t t)) s v,
   in_re_set_xform (existT _ rs f) s v -> 
     exists v', in_re_set rs s v' /\ In v (xinterp f v').
 Proof. intros. generalize in_re_set_xform_elim. crush. Qed.
@@ -214,7 +214,7 @@ Lemma in_re_set_xform_comp2:
   exists v,  in_re_set_xform rx s v /\ v' = xinterp g v.
 Proof. intros. destruct rx as [rs f]. apply in_re_set_xform_comp. trivial. Qed.
 
-Definition erase (ty:type) (rx:rs_xf_pair ty): RES.t := projT1 rx.
+Definition erase ty (rx:rs_xf_pair ty): RES.t := projT1 rx.
 Notation "| rx |" := (erase rx) (at level 40, no associativity).
 
 (** Equality of the RESets in [rs_xf_pair]s *)
@@ -424,13 +424,13 @@ Qed.
 (* todo: add calls to opt_ag to nullable and pdrv as in Parser.v *)
 
 Definition bool_type (b:bool) := 
-  match b with true => Unit_t | false => Void_t end.
+  match b with true => Xform.Unit_t | false => Xform.Void_t end.
 
 (** nullable (r) returns (true, f) iff r can match the empty string and 
     f returns all values that are the results of parsing the empty string. *)
 Fixpoint nullable (r:regexp) : 
-  {b:bool & bool_type b ->> List_t (regexp_type r)} :=
-  match r return {b:bool & bool_type b ->> List_t (regexp_type r)} with
+  {b:bool & bool_type b ->> Xform.List_t (regexp_type r)} :=
+  match r return {b:bool & bool_type b ->> Xform.List_t (regexp_type r)} with
     | Zero => existT _ false xzero
     | Eps => existT _ true (xcons xid xempty)
     | Char _ | Any => existT _ false xzero
@@ -498,14 +498,14 @@ Fixpoint pdrv (a:char_t) (r:regexp): rs_xf_pair (regexp_type r) :=
 
 (** pdrv_rex performs partial derviative calculation, similar to
     pdrv. However, it takes a re_xf_pair as input instead a regexp *)
-Definition pdrv_rex (ty:type) (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty := 
+Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty := 
   let (r, f) := rex in
   let (rs, frs) := pdrv a r in
   existT _ rs (xcomp frs (xcomp (xmap f) xflatten)).
 
 (** Partial derivatives over a regexp set; the result of the union 
     of taking partial derivatives on every regexp in the set *)
-Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
+Definition pdrv_set ty (a:char_t) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
   RES.fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex a rex) rx1)
                  rx (@RES.empty_xform ty).
 
@@ -1257,8 +1257,8 @@ Section DFA.
   Qed.
 
   (** A pair of well-formed states and xforms *)
-  Definition wfs_xf_pair (ty:type) := 
-    {s: wf_state & RES.re_set_type (proj1_sig s) ->> List_t ty}.
+  Definition wfs_xf_pair (ty:Xform.type) := 
+    {s: wf_state & RES.re_set_type (proj1_sig s) ->> Xform.List_t ty}.
 
   Definition wpdrv_wf (w: list char_t) (s: wf_state): 
     wfs_xf_pair (RES.re_set_type (proj1_sig s)).
@@ -1374,7 +1374,7 @@ Section DFA.
       next_state_lt : next_state < cardinal_wfs ss ; 
       (** how do we transform ASTs from the next state back to this state *)
       next_xform : RES.re_set_type (ss.[next_state]) ->>
-                   List_t (RES.re_set_type (ss.[rownum]))
+                   Xform.List_t (RES.re_set_type (ss.[rownum]))
         (* interp (RES.re_set_type (ss.[next_state]))->  *)
         (* interp (List_t (RES.re_set_type (ss.[rownum]))) *)
     }.
@@ -1404,7 +1404,7 @@ Section DFA.
     (** what are the transition entries *)
     row_entries : entries_t row_num ss ;
     (** the list of values we get from this state when it is an accepting state *)
-    row_nils : list (interp (RES.re_set_type (ss.[row_num]))) 
+    row_nils : list (Xform.interp (RES.re_set_type (ss.[row_num]))) 
   }.
 
   (** The transition matrix is then a list of rows *)
@@ -1741,7 +1741,7 @@ Section DFA.
     Lemma gen_row_help3 : forall n rs ss ss',
       ss.[n] = rs -> n < cardinal_wfs ss ->
       wfs_ext ss ss' ->
-      List_t (RES.re_set_type rs) = List_t (RES.re_set_type (ss'.[n])).
+      Xform.List_t (RES.re_set_type rs) = Xform.List_t (RES.re_set_type (ss'.[n])).
     Proof. intros. repeat f_equal. 
       erewrite get_state_wfs_ext by eassumption. crush.
     Qed.
@@ -1762,7 +1762,8 @@ Section DFA.
       ss.[gpos] = proj1_sig s -> gpos < cardinal_wfs ss ->
       get_index_wfs s1 ss = None ->
       wfs_ext (s1 ::: ss) ss' ->
-      List_t (RES.re_set_type (proj1_sig s)) = List_t (RES.re_set_type (ss'.[gpos])).
+      Xform.List_t (RES.re_set_type (proj1_sig s)) = 
+      Xform.List_t (RES.re_set_type (ss'.[gpos])).
     Proof. intros.
       eapply gen_row_help3. eassumption. assumption.
       eapply wfs_ext_trans.
@@ -1971,7 +1972,8 @@ Section DFA.
 
   Lemma coerce_entry_help2 n ss ss': 
     wfs_ext ss ss' -> n < cardinal_wfs ss ->
-    List_t (RES.re_set_type (ss.[n])) = List_t (RES.re_set_type (ss'.[n])).
+    Xform.List_t (RES.re_set_type (ss.[n])) = 
+    Xform.List_t (RES.re_set_type (ss'.[n])).
   Proof. intros. f_equal. auto using coerce_entry_help1. Qed.
 
   Definition coerce_entry n ss ss' (H:wfs_ext ss ss') (H1:n < cardinal_wfs ss)  
@@ -1986,8 +1988,8 @@ Section DFA.
   (** Similarly, we have to coerce the pre-computed [astgram_extract_nil] values
       for previous rows. *)
   Definition coerce_nils ss ss' i (H: wfs_ext ss ss') (H1: i < cardinal_wfs ss) 
-             (v:interp (RES.re_set_type (ss.[i]))) :
-    interp (RES.re_set_type (ss'.[i])).
+             (v:Xform.interp (RES.re_set_type (ss.[i]))) :
+    Xform.interp (RES.re_set_type (ss'.[i])).
     intros. erewrite (get_state_wfs_ext H H1). assumption.
   Defined.
 
@@ -2438,21 +2440,24 @@ End DFA.
 
 (** * Splitting a [grammar] into a [regexp] and a top-level fix-up function *)
 
-Definition fixfn (r:regexp) (t:type) := interp (regexp_type r) -> interp t.
+Definition fixfn (r:regexp) (t:type) := 
+  Xform.interp (regexp_type r) -> interp t.
 
 Definition re_and_fn (t:type) (r:regexp) (f:fixfn r t): {r:regexp & fixfn r t } :=
   existT (fun r => fixfn r t) r f.
 Extraction Implicit re_and_fn [t].
+
+Eval compute in (Xform.interp (regexp_type Eps)).
 
 (** Split a [grammar] into a simplified [regexp] (with no maps) and a top-level fix-up
     function that can turn the results of the [regexp] back into the user-specified 
     values.  Notice that the resulting regexp has no [gMap] or [gXform] inside of it. *)
 Fixpoint split_grammar t (g:grammar t) : { ag : regexp & fixfn ag t} := 
   match g in grammar t' return { ag : regexp & fixfn ag t'} with
-    | gEps => @re_and_fn _ Eps (fun x => x)
+    | gEps => @re_and_fn Unit_t Eps (fun x => x)
     | gZero t => @re_and_fn _ Zero (fun x => match x with end)
-    | gChar c => @re_and_fn _ (Char c) (fun x => x)
-    | gAny => @re_and_fn _ Any (fun x => x)
+    | gChar c => @re_and_fn Char_t (Char c) (fun x => x)
+    | gAny => @re_and_fn Char_t Any (fun x => x)
     | gCat t1 t2 g1 g2 => 
       let (ag1, f1) := split_grammar g1 in 
         let (ag2, f2) := split_grammar g2 in 
@@ -2472,9 +2477,9 @@ Fixpoint split_grammar t (g:grammar t) : { ag : regexp & fixfn ag t} :=
     | gMap t1 t2 f1 g => 
       let (ag, f2) := split_grammar g in 
         @re_and_fn _ ag (fun x => f1 (f2 x))
-    | gXform t1 t2 f g => 
-      let (ag, f2) := split_grammar g in 
-        @re_and_fn _ ag (fun x => (xinterp f) (f2 x))
+    (* | gXform t1 t2 f g =>  *)
+    (*   let (ag, f2) := split_grammar g in  *)
+    (*     @re_and_fn _ ag (fun x => (xinterp f) (f2 x)) *)
   end.
 Extraction Implicit split_grammar [t].
 
@@ -2518,7 +2523,7 @@ Proof.
       destruct IHin_grammar2 as [v'' [H6 H8]].
       exists (v'::v''). crush.
   Case "Map". in_grammar_inv. intros. crush_hyp.
-  Case "Xform". in_grammar_inv. intros. crush_hyp.
+  (* Case "Xform". in_grammar_inv. intros. crush_hyp. *)
 Qed.
 
 (** * A table-based parser. 
@@ -2535,7 +2540,7 @@ Section DFA_PARSE.
   Opaque build_dfa.
 
   Definition re_set_fixfn (rs:RESet.t) (t:type) := 
-    interp (RES.re_set_type rs) -> interp (List_t t).
+    Xform.interp (RES.re_set_type rs) -> interp (List_t t).
 
   (** Our real parser wants to be incremental, where we feed it one
       token at a time.  So an [instParserState] encapsulates the intermediate
@@ -2562,8 +2567,8 @@ Section DFA_PARSE.
     intros. rewrite <- H. trivial.
   Defined.
 
-  Definition coerce_dom (A A':type) (H:A=A') (B:Type) (f:interp A->B) : 
-    interp A' -> B.
+  Definition coerce_dom (A A':Xform.type) (H:A=A') (B:Type) (f:Xform.interp A->B) : 
+    Xform.interp A' -> B.
      rewrite <- H. trivial.
   Defined.
 
@@ -2698,8 +2703,8 @@ Section DFA_PARSE.
         (e : entry_t (row_num row) (dfa_states d))
         (row' : transition_t (dfa_states d))
         (H3 : nth_error (dfa_transition d) (next_state e) = Some row') :
-    list (interp (RES.re_set_type (dfa_states d.[row_num row']))) =
-    list (interp (RES.re_set_type (dfa_states d.[next_state e]))).
+    list (Xform.interp (RES.re_set_type (dfa_states d.[row_num row']))) =
+    list (Xform.interp (RES.re_set_type (dfa_states d.[next_state e]))).
   Proof.
     intros. rewrite (parse_token_help5 d row e H3). auto.
   Qed.
@@ -2733,8 +2738,9 @@ Section DFA_PARSE.
               let next_fixup := coerce_dom (parse_token_help1 ps Hnd) (fixup_ps ps) in
               let g:= compose (flat_map next_fixup)
                         (xinterp (next_xform e)) in
-              let vs0 : list (interp (RES.re_set_type 
-                                        (dfa_states (dfa_ps ps).[next_state e]))) :=
+              let vs0 : list (Xform.interp 
+                                (RES.re_set_type 
+                                   (dfa_states (dfa_ps ps).[next_state e]))) :=
                   match nth_error2 (dfa_transition (dfa_ps ps)) next_i with
                     | inright H => nil (* impossible but not worth proving? *)
                     | inleft (exist row' H) =>

@@ -1,11 +1,50 @@
 Require Import List.
 
 Require Import ParserArg.
-Import X86_PARSER_ARG.
 Require Export Xform.
 
 Require Import CommonTacs.
 Set Implicit Arguments.
+
+(* Grammar should be parametrized by a PARSER_ARG module; however, that
+   would impede code extraction because of a Coq bug.  Instead, we
+   introduce a bunch of definitions below to achieve some separation as
+   long as we never directly use definitions in X86_PARSER_ARG *)
+Definition char_p := X86_PARSER_ARG.char_p.
+Definition char_dec := X86_PARSER_ARG.char_dec.
+Definition user_type := X86_PARSER_ARG.user_type.
+Definition user_type_dec := X86_PARSER_ARG.user_type_dec.
+Definition user_type_denote := X86_PARSER_ARG.user_type_denote.
+Definition token_id := X86_PARSER_ARG.token_id.
+Definition num_tokens := X86_PARSER_ARG.num_tokens.
+Definition token_id_to_chars := X86_PARSER_ARG.token_id_to_chars.
+
+(* todo: should probably rename Xform.type and xform.interp to something else *)
+
+(** The [type]s for our grammars. *)
+Inductive type : Type := 
+| Unit_t : type
+| Char_t : type
+| Void_t : type
+| Pair_t : type -> type -> type
+| Sum_t : type -> type -> type
+| List_t : type -> type
+| User_t : user_type -> type.
+
+(** [void] is an empty type. *)
+Inductive void : Type := .
+
+(** The interpretation of [type]s as Coq [Type]s. *)
+Fixpoint interp (t:type) : Type := 
+  match t with 
+    | Unit_t => unit
+    | Char_t => char_p
+    | Void_t => void
+    | Pair_t t1 t2 => (interp t1) * (interp t2)
+    | Sum_t t1 t2 => (interp t1) + (interp t2)
+    | List_t t => list (interp t)
+    | User_t t => user_type_denote t
+  end%type.
 
 (** Our user-facing [grammar]s, indexed by a [type], reflecting the type of the
     semantic value returned by the grammar when used in parsing. *)
@@ -17,14 +56,14 @@ Inductive grammar : type -> Type :=
 | gCat : forall t1 t2, grammar t1 -> grammar t2 -> grammar (Pair_t t1 t2)
 | gAlt : forall t1 t2, grammar t1 -> grammar t2 -> grammar (Sum_t t1 t2)
 | gStar : forall t, grammar t -> grammar (List_t t)
-| gMap : forall t1 t2, (interp t1 -> interp t2) -> grammar t1 -> grammar t2
-| gXform : forall t1 t2, t1 ->> t2 -> grammar t1 -> grammar t2.
+| gMap : forall t1 t2, (interp t1 -> interp t2) -> grammar t1 -> grammar t2.
+(* | gXform : forall t1 t2, t1 ->> t2 -> grammar t1 -> grammar t2. *)
 Extraction Implicit gZero [t].
 Extraction Implicit gCat [t1 t2].
 Extraction Implicit gAlt [t1 t2].
 Extraction Implicit gStar [t].
 Extraction Implicit gMap [t1 t2].
-Extraction Implicit gXform [t1 t2].
+(* Extraction Implicit gXform [t1 t2]. *)
 
 (** * Denotation of Grammars *)
 (** I'm a little annoyed that I had to break out so many equalities, but
@@ -46,9 +85,9 @@ Inductive in_grammar : forall t, grammar t -> list char_p -> (interp t) -> Prop 
     in_grammar g s1 v1 -> in_grammar (gStar g) s2 v2 -> 
     s1 <> nil -> s = s1 ++ s2 -> v = v1::v2 -> in_grammar (gStar g) s v
 | IngMap : forall t1 t2 (f:interp t1 -> interp t2) (g:grammar t1) s v1 v2, 
-    in_grammar g s v1 -> v2 = f v1 -> in_grammar (@gMap t1 t2 f g) s v2
-| IngXform : forall t1 t2 (f: t1 ->> t2) (g:grammar t1) s v1 v2,
-    in_grammar g s v1 -> v2 = xinterp f v1 -> in_grammar (gXform f g) s v2.
+    in_grammar g s v1 -> v2 = f v1 -> in_grammar (@gMap t1 t2 f g) s v2.
+(* | IngXform : forall t1 t2 (f: t1 ->> t2) (g:grammar t1) s v1 v2, *)
+(*     in_grammar g s v1 -> v2 = xinterp f v1 -> in_grammar (gXform f g) s v2. *)
 Hint Constructors in_grammar.
 
 (** * Optimizing constructors for grammars.  These try to reduce the
@@ -59,7 +98,7 @@ Hint Constructors in_grammar.
 Definition OptAlt_r t2 (g2:grammar t2) : 
   forall t1, grammar t1 -> grammar (Sum_t t1 t2) :=
   match g2 in grammar t2' return forall t1, grammar t1 -> grammar (Sum_t t1 t2') with
-    | gZero t2 => fun t1 g1 => gXform Xinl g1
+    | gZero t2 => fun t1 g1 => gMap (Sum_t t1 t2) inl g1
     | g2' => fun t1 g1 => gAlt g1 g2'
   end.
 Extraction Implicit OptAlt_r [t2 t1].
@@ -68,7 +107,7 @@ Extraction Implicit OptAlt_r [t2 t1].
 Definition OptAlt_l t1 (g1:grammar t1) : 
   forall t2, grammar t2 -> grammar (Sum_t t1 t2) :=
   match g1 in grammar t1' return forall t2, grammar t2 -> grammar (Sum_t t1' t2) with
-    | gZero t1 => fun t2 g2 => gXform Xinr g2
+    | gZero t1 => fun t2 g2 => gMap (Sum_t t1 t2) inr g2
     | g1' => fun t2 g2 => OptAlt_r g2 g1'
   end.
 Extraction Implicit OptAlt_l [t1 t2].
@@ -86,7 +125,7 @@ Extraction Implicit OptAlt [t1 t2].
 Definition OptCat_r t2 (g2:grammar t2) : forall t1, grammar t1 -> grammar (Pair_t t1 t2) :=
   match g2 in grammar t2' return forall t1, grammar t1 -> grammar (Pair_t t1 t2') with
     | gZero t2' => fun t1 (g2 : grammar t1) => gZero _
-    | gEps => fun t1 (g1 : grammar t1) => gXform (Xpair Xid Xunit) g1
+    | gEps => fun t1 (g1 : grammar t1) => gMap (Pair_t t1 Unit_t) (fun x => (x,tt)) g1
     | g2' => fun t1 (g1 : grammar t1) => gCat g1 g2'
   end.
 Extraction Implicit OptCat_r [t2 t1].
@@ -97,7 +136,7 @@ Definition OptCat t1 (g1:grammar t1) :
   forall t2, grammar t2 -> grammar (Pair_t t1 t2) :=
   match g1 in grammar t1' return forall t2, grammar t2 -> grammar (Pair_t t1' t2) with
     | gZero t1' => fun t2 (g2 : grammar t2) => gZero _
-    | gEps => fun t2 (g2 : grammar t2) => gXform (Xpair Xunit Xid) g2
+    | gEps => fun t2 (g2 : grammar t2) => gMap (Pair_t Unit_t t2) (fun x => (tt,x)) g2
     | g1' => fun t2 (g2 : grammar t2) => OptCat_r g2 g1'
   end.
 Extraction Implicit OptCat [t1 t2].
@@ -108,9 +147,9 @@ Extraction Implicit OptCat [t1 t2].
 *)
 Definition OptStar t (g:grammar t) : grammar (List_t t) := 
   match g in grammar t' return grammar (List_t t') with
-    | gStar u g' => gXform (Xcons Xid Xempty) (gStar g')
-    | gEps => gXform Xempty gEps
-    | gZero t => gXform Xempty gEps
+    | gStar u g' => gMap (List_t _) (fun x => x::nil) (gStar g')
+    | gEps => gMap (List_t _) (fun x => nil) gEps
+    | gZero t => gMap (List_t _) (fun x => nil) gEps
     | g' => gStar g'
   end.
 Extraction Implicit OptStar [t].
@@ -131,16 +170,16 @@ Definition OptMap t1 t2 (f:interp t1 -> interp t2) (g:grammar t1) : grammar t2 :
   @OptMap' t1 g t2 f.
 Extraction Implicit OptMap [t1 t2].
 
-Definition OptXform' t1 (g:grammar t1) : forall t2, t1->>t2 -> grammar t2 :=
-  match g in grammar t1' return forall t2, t1'->>t2 -> grammar t2 with
-    | gZero t => fun t2 x => gZero t2
-    | gXform u1 u2 x' g' => fun t2 x => gXform (xcomp x' x) g'
-    | g' => fun t2 x => gXform x g'
-  end.
-Extraction Implicit OptXform' [t1 t2].
+(* Definition OptXform' t1 (g:grammar t1) : forall t2, t1->>t2 -> grammar t2 := *)
+(*   match g in grammar t1' return forall t2, t1'->>t2 -> grammar t2 with *)
+(*     | gZero t => fun t2 x => gZero t2 *)
+(*     | gXform u1 u2 x' g' => fun t2 x => gXform (xcomp x' x) g' *)
+(*     | g' => fun t2 x => gXform x g' *)
+(*   end. *)
+(* Extraction Implicit OptXform' [t1 t2]. *)
 
-Definition OptXform t1 t2 (x:t1->>t2) (g:grammar t1) := @OptXform' t1 g t2 x.
-Extraction Implicit OptXform [t1 t2].
+(* Definition OptXform t1 t2 (x:t1->>t2) (g:grammar t1) := @OptXform' t1 g t2 x. *)
+(* Extraction Implicit OptXform [t1 t2]. *)
 
 (** Explicit inversion principles for the grammars -- needed because
     of typing dependencies, though a little awkward that we can't just
@@ -184,9 +223,9 @@ Proof. intros ; inversion H ; crush. Qed.
 Lemma inv_gZero : forall t cs v, in_grammar (gZero t) cs v -> False.
 Proof. intros ; inversion H. Qed.
 
-Lemma inv_gXform : forall t1 t2 (x:t1->>t2) (g:grammar t1) cs v,
-  in_grammar (gXform x g) cs v -> exists v', in_grammar g cs v' /\ v = xinterp x v'.
-Proof. intros ; inversion H ; crush. Qed.
+(* Lemma inv_gXform : forall t1 t2 (x:t1->>t2) (g:grammar t1) cs v, *)
+(*   in_grammar (gXform x g) cs v -> exists v', in_grammar g cs v' /\ v = xinterp x v'. *)
+(* Proof. intros ; inversion H ; crush. Qed. *)
 
 Lemma in_cat_eps : forall t (g:grammar t) s v1 v, 
   in_grammar g s v1 -> v = (v1,tt) -> in_grammar (gCat g gEps) s v.
@@ -220,14 +259,14 @@ Ltac in_grammar_inv :=
       | [ H : in_grammar (gCat _ _) _ _ |- _ ] => generalize (inv_gCat H) ; clear H
       | [ H : in_grammar (gZero _) _ _ |- _ ] => contradiction (inv_gZero H)
       | [ H : in_grammar (gMap _ _ _) _ _ |- _ ] => generalize (inv_gMap H) ; clear H
-      | [ H : in_grammar (gXform _ _) _ _ |- _ ] => 
-        generalize (inv_gXform H) ; clear H
+      (* | [ H : in_grammar (gXform _ _) _ _ |- _ ] =>  *)
+      (*   generalize (inv_gXform H) ; clear H *)
       | _ => local_simpl ; subst ; eauto
     end.
 
 (** Correctness proofs for the optimizing grammar constructors. *)
 Lemma opt_alt_corr : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s v, 
-    in_grammar (gAlt g1 g2) s v <-> in_grammar (OptAlt g1 g2) s v.
+  in_grammar (gAlt g1 g2) s v <-> in_grammar (OptAlt g1 g2) s v.
 Proof. destruct g1 ; destruct g2; simpl; crush; repeat in_grammar_inv. Qed.
 
 Lemma opt_cat_corr : forall t1 t2 (g1:grammar t1) (g2:grammar t2) s v,
@@ -243,12 +282,12 @@ Proof.
   destruct g ; simpl ; try tauto ; repeat local_simpl; repeat in_grammar_inv.
 Qed.
 
-Lemma opt_xform_corr : forall t1 t2 (x:t1->>t2) (g:grammar t1) s v,
-  in_grammar (gXform x g) s v <-> in_grammar (OptXform x g) s v.
-Proof.
-  destruct g ; simpl ; try tauto ; repeat local_simpl ; repeat in_grammar_inv ;
-  eapply IngXform ; eauto ; rewrite xcomp_corr ;auto.
-Qed.
+(* Lemma opt_xform_corr : forall t1 t2 (x:t1->>t2) (g:grammar t1) s v, *)
+(*   in_grammar (gXform x g) s v <-> in_grammar (OptXform x g) s v. *)
+(* Proof. *)
+(*   destruct g ; simpl ; try tauto ; repeat local_simpl ; repeat in_grammar_inv ; *)
+(*   eapply IngXform ; eauto ; rewrite xcomp_corr ;auto. *)
+(* Qed. *)
 
 (* (** Conceptually, returns [Eps] if [g] accepts the empty string, and  *)
 (*     [Zero] otherwise.  In practice, we won't get exactly [Eps] since *)
