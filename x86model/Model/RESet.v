@@ -126,7 +126,17 @@ Module Type RESetXform.
     forall s1 s2 (H: Equal s1 s2) str v,
     in_re_set s1 str v <-> 
     in_re_set s2 str (xinterp (@equal_xform s1 s2 H) v).
- 
+
+  Parameter Equal_sym : forall s1 s2, Equal s1 s2 -> Equal s2 s1.
+
+  Parameter equal_iso : forall (s1 s2:t) (H:Equal s1 s2) v, 
+    (xinterp (equal_xform (Equal_sym H)) (xinterp (equal_xform H) v)) = v.
+
+  Parameter equal_xform_corr2 : 
+    forall rs1 rs2 (H:Equal rs1 rs2) ty (f:re_set_type rs1 ->> List_t ty) str v, 
+      in_re_set_xform (existT _ rs1 f) str v <->
+      in_re_set_xform (existT _ rs2 (xcomp (equal_xform (Equal_sym H)) f)) str v.
+
   Parameter re_set_extract_nil: forall s, list (interp (re_set_type s)).
   Parameter re_set_extract_nil_corr : 
     forall s (v : interp (re_set_type s)),
@@ -859,6 +869,280 @@ Module RESETXFORM <: RESetXform.
     intros ; split. apply inject_xform_tree_corr1. apply inject_xform_tree_corr2. auto.
   Qed.
 
+  Lemma inject_deconstruct2 :
+    forall t1 (okt1:Raw.Ok t1) (v:interp (tree_type t1)),
+    exists i1, exists l1, exists x, exists r1, exists vx, exists c1,
+    exists (H: t1 = fill c1 (Raw.Node i1 l1 x r1)), 
+      v = xinterp (find_xform okt1 (in_ctxt okt1 H)) vx.
+  Proof.
+    Opaque Raw.subset.
+    induction t1 ; simpl ; intros. destruct v.
+    intros.
+    specialize (IHt1_1 (ok_left okt1)).
+    specialize (IHt1_2 (ok_right okt1)). 
+    destruct v as [vl | [vx | vr]].
+    (* v = inl vl *)
+    clear IHt1_2. specialize (IHt1_1 vl). 
+    destruct IHt1_1 as [i1 [l1 [x [r1 [vx [c1 [H1 H3]]]]]]].
+    exists i1. exists l1. exists x. exists r1. exists vx.
+    exists (LeftNode t0 c1 t1 t1_2). 
+    assert (Raw.Node t0 t1_1 t1 t1_2 = fill (LeftNode t0 c1 t1 t1_2) (Raw.Node i1 l1 x r1)).
+    subst ; auto. exists H. generalize (in_ctxt okt1 H). clear H. subst ; simpl. intro.
+    generalize (cmp_leib x t1). generalize (in_left i okt1). generalize (in_right i okt1).
+    clear i. rewrite (ok_fill_left_lt okt1). intros. xinterp_simpl.
+    rewrite (@proof_irrelevance _ (in_ctxt (ok_left okt1) eq_refl) (i0 eq_refl)). auto.
+    (* v = inr (inl vx) *)
+    clear IHt1_1 IHt1_2. rename t0 into i. rename t1 into x.
+    exists i. exists t1_1. exists x. exists t1_2. exists vx. exists Hole. 
+    exists eq_refl. generalize (cmp_leib x x).
+    generalize (@in_left x i t1_1 t1_2 x 
+                         (@in_ctxt i t1_1 x t1_2 Hole (Raw.Node i t1_1 x t1_2)
+                                   okt1 (@eq_refl Raw.tree (Raw.Node i t1_1 x t1_2)))).
+    generalize (@in_right x i t1_1 t1_2 x
+                     (@in_ctxt i t1_1 x t1_2 Hole (Raw.Node i t1_1 x t1_2)
+                        okt1 (@eq_refl Raw.tree (Raw.Node i t1_1 x t1_2)))).
+    rewrite (Raw.MX.compare_refl x). intros.
+    rewrite (@proof_irrelevance _ (e eq_refl) eq_refl). 
+    unfold eq_rec_r, eq_rec, eq_rect, eq_sym. xinterp_simpl. auto.
+    (* v = inr (inr vr) *)
+    clear IHt1_1. specialize (IHt1_2 vr).
+    destruct IHt1_2 as [i1 [l1 [x [r1 [vx [c1 [H1 H2]]]]]]].
+    exists i1. exists l1. exists x. exists r1. exists vx. exists (RightNode t0 t1_1 t1 c1).
+    assert (Raw.Node t0 t1_1 t1 t1_2 = 
+            fill (RightNode t0 t1_1 t1 c1) (Raw.Node i1 l1 x r1)).
+    subst. auto. exists H.
+    generalize (cmp_leib x t1).
+    generalize (in_left (in_ctxt okt1 H) okt1).
+    generalize (in_right (in_ctxt okt1 H) okt1). clear H. subst.
+    rewrite (ok_fill_right_gt okt1). intros.
+    xinterp_simpl.
+    rewrite (@proof_irrelevance _ (in_ctxt (ok_right okt1) eq_refl) (i eq_refl)). auto.
+  Qed.
+
+(*
+  Lemma find_xform_injective : 
+    forall x1 x2 t1 (okt1: Raw.Ok t1) (Hin1:Raw.In x1 t1) (Hin2:Raw.In x2 t1) v1 v2,
+      (xinterp (find_xform okt1 Hin1) v1 = xinterp (find_xform okt1 Hin2) v2) -> 
+      v1 = v2.
+  Proof.
+    induction t1. simpl. intros. inversion Hin1.
+    simpl. intros okt1 Hin1 Hin2 v1 v2. 
+    rewrite (@proof_irrelevance _ Hin2 Hin1).
+    generalize (cmp_leib x t1).
+    generalize (in_left Hin1 okt1) (in_right Hin1 okt1).
+    remember (REOrderedTypeAlt.compare x t1) as cmp.
+    destruct cmp. intros.
+    assert (x = t1) ; auto ; subst. 
+    rewrite (@proof_irrelevance _ (e eq_refl) eq_refl) in H.
+    unfold eq_rec_r, eq_rec, eq_rect, eq_sym in H. xinterp_simpl.
+    congruence.
+    intros. xinterp_simpl. injection H ; intros ; clear H.
+    apply (IHt1_1 _ _ _ _ _ H0).
+    intros. xinterp_simpl. injection H ; intros ; clear H.
+    apply (IHt1_2 _ _ _ _ _ H0).
+  Qed.
+*)
+
+  Lemma inject_is_find_xform : 
+    forall i1 l1 x r1 (okt1 : Raw.Ok (Raw.Node i1 l1 x r1)) (vx:interp (regexp_type x))
+           t2 (okt2: Raw.Ok t2) (Hsub : Raw.subset t2 (Raw.Node i1 l1 x r1) = true) 
+           (Hin : Raw.In x t2), 
+      xinterp (inject_xform_tree okt2 okt1 Hsub) 
+              (xinterp (find_xform okt2 Hin) vx) = inr (inl vx).
+  Proof.
+    induction t2 ; simpl ; intros. inversion Hin.
+    xinterp_simpl. 
+    generalize (cmp_leib x t1). generalize (cmp_leib t1 x).
+    generalize (in_left Hin okt2) (in_right Hin okt2)
+               (proj1 (subset_node okt2 okt1 Hsub))
+               (in_left (proj1 (proj2 (subset_node okt2 okt1 Hsub))) okt1)
+               (in_right (proj1 (proj2 (subset_node okt2 okt1 Hsub))) okt1)
+               (proj2 (proj2 (subset_node okt2 okt1 Hsub))).
+    rewrite (REOrderedTypeAlt.compare_sym x t1).
+    remember_rev (REOrderedTypeAlt.compare x t1) as cmp.
+    destruct cmp ; simpl ; intros.
+    (* cmp = Eq *)
+    assert (x = t1) ; auto ; subst. rewrite (@proof_irrelevance _ (e2 eq_refl) eq_refl).
+    rewrite (@proof_irrelevance _ (e1 eq_refl) eq_refl).
+    unfold eq_rec_r, eq_rec, eq_rect, eq_sym. xinterp_simpl. auto.
+    (* cmp = Lt *)
+    xinterp_simpl. eapply IHt2_1.
+    (* cmp = Gt *)
+    xinterp_simpl. eapply IHt2_2.
+  Qed.
+
+  Lemma fill_is_in {c i l x r t} : 
+    fill c (Raw.Node i l x r) = t -> 
+    Raw.In x t.
+  Proof.
+    intro ; subst.
+    apply (@fill_in c i l x r (fill c (Raw.Node i l x r))). 
+    intro. auto.
+  Qed.
+
+  Fixpoint find_subtree' (t1:Raw.tree) (c1:ctxt) {struct c1} : 
+    tree_type t1 ->> tree_type (fill c1 t1) := 
+      match c1 as c1 return tree_type t1 ->> tree_type (fill c1 t1)
+      with 
+        | Hole => xid
+        | LeftNode i c1' x r => 
+          xcomp (find_subtree' t1 c1') xinl
+        | RightNode i l x c1' => 
+          xcomp (find_subtree' t1 c1') (xcomp xinr xinr)
+      end.
+
+  Definition find_subtree t t1 c1 (H:fill c1 t1 = t) : tree_type t1 ->> tree_type t := 
+    xcoerce (find_subtree' t1 c1) eq_refl (tree_eq H).
+
+  Lemma in_gives_ctxt :
+    forall x t1,
+      Raw.In x t1 ->
+      exists c, exists i, exists l, exists r, 
+         fill c (Raw.Node i l x r) = t1.
+  Proof.                                                
+    induction t1 ; simpl ; intros ; inversion H ; subst.
+    assert (t1 = x). rewrite (cmp_leib x t1 H1). auto. subst. clear H1.
+    exists Hole. repeat econstructor ; eauto.
+    specialize (IHt1_1 H1). crush. 
+    exists (LeftNode t0 x0 t1 t1_2). simpl. repeat econstructor ; eauto.
+    specialize (IHt1_2 H1). crush.
+    exists (RightNode t0 t1_1 t1 x0). simpl. repeat econstructor ; eauto.
+  Qed.
+
+  Lemma inject_find_is_find : 
+    forall x vx i1 l1 r1 i2 l2 r2 c2 (okt2:Raw.Ok (fill c2 (Raw.Node i2 l2 x r2)))
+      c1 (okt1 :Raw.Ok (fill c1 (Raw.Node i1 l1 x r1))) Hsub1,
+    (xinterp (inject_xform_tree okt1 okt2 Hsub1)
+             (xinterp (find_xform okt1 (in_ctxt okt1 eq_refl)) vx) = 
+     xinterp (find_xform okt2 (in_ctxt okt2 eq_refl)) vx).
+  Proof.
+    induction c1 ; simpl ; intros.
+    (* c1 = Hole *)
+    generalize (cmp_leib x x).
+    generalize (@in_left x i1 l1 r1 x
+                        (@in_ctxt i1 l1 x r1 Hole (Raw.Node i1 l1 x r1) okt1
+                           (@eq_refl Raw.tree (Raw.Node i1 l1 x r1))) okt1)
+               (@in_right x i1 l1 r1 x
+                          (@in_ctxt i1 l1 x r1 Hole (Raw.Node i1 l1 x r1) okt1
+                                    (@eq_refl Raw.tree (Raw.Node i1 l1 x r1))) okt1).
+    generalize (proj1 (subset_node okt1 okt2 Hsub1))
+               (proj2 (proj2 (subset_node okt1 okt2 Hsub1)))
+               (proj1 (proj2 (subset_node okt1 okt2 Hsub1))).
+
+    rewrite Raw.MX.compare_refl. intros.
+    rewrite (@proof_irrelevance _ (e1 eq_refl) eq_refl).
+    xinterp_simpl. 
+    rewrite (@proof_irrelevance _ i 
+              (@in_ctxt i2 l2 x r2 c2 (fill c2 (Raw.Node i2 l2 x r2)) okt2
+                (@eq_refl Raw.tree (fill c2 (Raw.Node i2 l2 x r2))))). auto.
+    (* c1 = LeftNode *)
+    xinterp_simpl.
+    generalize (cmp_leib x t1).
+    generalize (@in_left x t0 (fill c1 (Raw.Node i1 l1 x r1)) t2 t1
+                      (@in_ctxt i1 l1 x r1 (LeftNode t0 c1 t1 t2)
+                         (Raw.Node t0 (fill c1 (Raw.Node i1 l1 x r1)) t1 t2)
+                         okt1
+                         (@eq_refl Raw.tree
+                            (Raw.Node t0 (fill c1 (Raw.Node i1 l1 x r1)) t1 t2))) okt1).
+    generalize (@in_right x t0 (fill c1 (Raw.Node i1 l1 x r1)) t2 t1
+                      (@in_ctxt i1 l1 x r1 (LeftNode t0 c1 t1 t2)
+                         (Raw.Node t0 (fill c1 (Raw.Node i1 l1 x r1)) t1 t2)
+                         okt1
+                         (@eq_refl Raw.tree
+                            (Raw.Node t0 (fill c1 (Raw.Node i1 l1 x r1)) t1 t2))) okt1).
+    generalize (proj1 (subset_node okt1 okt2 Hsub1))
+               (proj2 (proj2 (subset_node okt1 okt2 Hsub1)))
+               (proj1 (proj2 (subset_node okt1 okt2 Hsub1))).
+    remember_rev (REOrderedTypeAlt.compare x t1) as cmp.
+    destruct cmp.
+      (* cmp = Eq -- contradiction *)
+      assert False. assert (t1 = x). symmetry. apply (cmp_leib _ _ Hcmp). subst.
+      clear Hcmp IHc1. inversion okt1. subst.
+      apply (Raw.lt_tree_not_in x (fill c1 (Raw.Node i1 l1 x r1))) ; auto.
+      apply (fill_is_in eq_refl). contradiction.
+      (* cmp = Lt *)
+      intros. xinterp_simpl. specialize (IHc1 (ok_left okt1) e).
+      rewrite (@proof_irrelevance _ (in_ctxt (ok_left okt1) eq_refl) (i3 eq_refl)) in IHc1.
+      auto.
+      (* cmp = Gt -- contradiction *)
+      assert False. inversion okt1. subst.
+      apply (Raw.lt_tree_not_in x (fill c1 (Raw.Node i1 l1 x r1))).
+      eapply Raw.lt_tree_trans ; eauto. rewrite (REOrderedTypeAlt.compare_sym).
+      rewrite Hcmp. auto. apply (fill_is_in eq_refl). contradiction.
+   (* c1 = RightNode *)
+   xinterp_simpl.
+   generalize (cmp_leib x t2).
+   generalize (@in_left x t0 t1 (fill c1 (Raw.Node i1 l1 x r1)) t2
+                      (@in_ctxt i1 l1 x r1 (RightNode t0 t1 t2 c1)
+                         (Raw.Node t0 t1 t2 (fill c1 (Raw.Node i1 l1 x r1)))
+                         okt1
+                         (@eq_refl Raw.tree
+                            (Raw.Node t0 t1 t2 (fill c1 (Raw.Node i1 l1 x r1))))) okt1).
+   generalize (@in_right x t0 t1 (fill c1 (Raw.Node i1 l1 x r1)) t2
+                      (@in_ctxt i1 l1 x r1 (RightNode t0 t1 t2 c1)
+                         (Raw.Node t0 t1 t2 (fill c1 (Raw.Node i1 l1 x r1)))
+                         okt1
+                         (@eq_refl Raw.tree
+                            (Raw.Node t0 t1 t2 (fill c1 (Raw.Node i1 l1 x r1))))) okt1).
+   generalize (proj1 (subset_node okt1 okt2 Hsub1))
+               (proj2 (proj2 (subset_node okt1 okt2 Hsub1)))
+               (proj1 (proj2 (subset_node okt1 okt2 Hsub1))).
+    remember_rev (REOrderedTypeAlt.compare x t2) as cmp.
+    destruct cmp.
+      (* cmp = Eq -- contradiction *)
+      assert False. assert (t2 = x). symmetry. apply (cmp_leib _ _ Hcmp). subst.
+      clear Hcmp IHc1. inversion okt1. subst.
+      apply (Raw.gt_tree_not_in x (fill c1 (Raw.Node i1 l1 x r1))) ; auto.
+      apply (fill_is_in eq_refl). contradiction.
+      (* cmp = Lt -- contradiction *)
+      assert False. inversion okt1. subst.
+      apply (Raw.gt_tree_not_in x (fill c1 (Raw.Node i1 l1 x r1))).
+      eapply Raw.gt_tree_trans ; eauto. apply (fill_is_in eq_refl). contradiction.
+      (* cmp = Gt *)
+      intros. xinterp_simpl. specialize (IHc1 (ok_right okt1) e0).
+      rewrite (@proof_irrelevance _ (in_ctxt (ok_right okt1) eq_refl) (i0 eq_refl)) in IHc1.
+      auto.
+  Qed.
+
+  Lemma inject_tree_iso : 
+    forall t1 (okt1:Raw.Ok t1) t2 (okt2:Raw.Ok t2) Hsub1 Hsub2 (v:interp (tree_type t1)), 
+      xinterp (inject_xform_tree okt2 okt1 Hsub2)
+         (xinterp (inject_xform_tree okt1 okt2 Hsub1) v) = v.
+  Proof.
+    intros.
+    generalize (@inject_deconstruct2 t1 okt1 v).
+    intros. destruct H as [i1 [l1 [x [r1 [vx [c1 [H1 H2]]]]]]]. 
+    assert (Raw.In x t2).
+    rewrite (Raw.subset_spec) in Hsub1 ; auto. apply (Hsub1 x). subst.
+    apply (fill_is_in eq_refl). 
+    specialize (in_gives_ctxt H). intros.
+    destruct H0 as [c2 [i2 [l2 [r2 H0]]]].  subst.
+    rewrite inject_find_is_find. rewrite inject_find_is_find. auto.
+  Qed.
+
+  Lemma xcoerce_refl t1 t2 (x:t1 ->> t2) : 
+    xcoerce x eq_refl eq_refl = x.
+  Proof.
+    auto.
+  Qed.
+
+  Lemma xcoerce_cod : 
+    forall t1 t2 t3 (x:t1 ->> t2) (H:t2 = t3) (v:interp t1),
+      xinterp (xcoerce x eq_refl H) v = 
+      cast (interp_eq H) (xinterp x v).
+  Proof.
+    intros. subst. rewrite xcoerce_refl. auto.
+  Qed.
+
+  Lemma equal_iso s1 s2 (H:Equal s1 s2) v : 
+    (xinterp (equal_xform (Equal_sym H)) 
+      (xinterp (equal_xform H) v)) = v.
+  Proof.
+    destruct s1 as [t1 okt1].
+    destruct s2 as [t2 okt2].
+    unfold equal_xform. simpl. apply inject_tree_iso.
+  Qed.    
+
   (* Lift up from trees to sets *)
   Lemma equal_xform_corr : 
     forall s1 s2 (H:Equal s1 s2) str v,
@@ -869,6 +1153,22 @@ Module RESETXFORM <: RESetXform.
     unfold Equal, in_re_set, equal_xform, inject_xform. simpl.
     intros. apply inject_xform_tree_corr. rewrite (Raw.subset_spec) ; auto.
     intro. intro. specialize (H a). tauto.
+  Qed.
+
+  Lemma equal_xform_corr2 rs1 rs2 (H:Equal rs1 rs2)
+     ty (f:re_set_type rs1 ->> List_t ty) str v:
+    in_re_set_xform (existT _ rs1 f) str v <->
+    in_re_set_xform
+      (existT _ rs2 (xcomp (equal_xform (Equal_sym H)) f)) str v.
+  Proof.
+    specialize (equal_xform_corr H str). unfold in_re_set_xform.
+    crush. generalize (proj1 (H0 x) H1). intro. econstructor ; split ; eauto.
+    xinterp_simpl. rewrite equal_iso. auto.
+    generalize (proj2 (H0 (xinterp (equal_xform (Equal_sym H)) x))).
+    generalize (Equal_sym H). intro. 
+    rewrite (@proof_irrelevance _ H (Equal_sym e)). rewrite equal_iso.
+    intro. specialize (H3 H1). econstructor ; split ; eauto.
+    xinterp_simpl. rewrite (@proof_irrelevance _ e (Equal_sym H)). auto.
   Qed.
 
   (* Now we must lift up the underlying set operations to operations over
