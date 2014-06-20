@@ -59,6 +59,12 @@ Opaque xcross xmap xapp xcomp xflatten.
 
 (** ** Abbreviations and definitions for [RESet] *)
 
+(* (* The following should be moved to RESet.v *) *)
+(* Extraction Implicit RES.map_xform [ty1 ty2]. *)
+(* Extraction Implicit RES.simple_cat_re_xform [ty]. *)
+(* Extraction Implicit RES.cat_re_xform [ty]. *)
+(* Extraction Implicit RES.empty_xform [ty]. *)
+
 Local Ltac re_set_simpl :=
   repeat 
     (simpl in *;
@@ -132,13 +138,6 @@ Proof. apply RES.cat_re_xform_corr. Qed.
 (* Proof. intros rx1 rx2 H1 s1 s2 H2 v1 v2 H3. *)
 (*   unfold rx_equal in H1. rewrite H1. crush. *)
 (* Qed. *)
-
-Lemma equal_xform_corr2 rs1 rs2 (H:RES.Equal rs2 rs1)
-      ty (f:RES.re_set_type rs1 ->> Xform.List_t ty) str v:
-  in_re_set_xform (existT _ rs1 f) str v <->
-  in_re_set_xform
-    (existT _ rs2 (xcomp (RES.equal_xform H) f)) str v.
-Admitted.
 
 Lemma in_re_xform_intro: forall t (rex:re_xf_pair t) s v v',
   in_regexp (projT1 rex) s v' -> In v (xinterp (projT2 rex) v') -> 
@@ -332,7 +331,7 @@ Lemma set_cat_re_subset : forall s1 s2 r,
 Proof. destruct r; simpl; intros; try (auto using RESF.map_subset).
   trivial.
   apply RESP.subset_refl.
-Qed.  
+Qed.
 
 (** ** Lemmas about prebase *)
 
@@ -503,14 +502,16 @@ Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty :=
   let (rs, frs) := pdrv a r in
   existT _ rs (xcomp frs (xcomp (xmap f) xflatten)).
 
+(* Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty :=  *)
+(*   let (r, f) := rex in *)
+(*   let (rs, frs) := pdrv a r in *)
+(*   existT _ rs (xopt (xcomp frs (xcomp (xmap f) xflatten))). *)
+
 (** Partial derivatives over a regexp set; the result of the union 
     of taking partial derivatives on every regexp in the set *)
 Definition pdrv_set ty (a:char_t) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
   RES.fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex a rex) rx1)
                  rx (@RES.empty_xform ty).
-
-(* Definition pdrv_set (ty:type) (a:char_t) (rx:rs_xf_pair (List_t ty)) := *)
-(*   projT1 (pdrv_set_xform a rx). *)
 
 (** Word partial derivatives; 
     wpdrv(nil, rs) = rs
@@ -518,7 +519,8 @@ Definition pdrv_set ty (a:char_t) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
 Fixpoint wpdrv ty (s:list char_t) (rx:rs_xf_pair ty): rs_xf_pair ty := 
   match s with
     | nil => rx
-    | a:: s' => wpdrv s' (pdrv_set a rx)
+    | a:: s' => let (rs, f) := pdrv_set a rx in
+                wpdrv s' (existT _ rs (xopt f))
   end.
 
 Definition wpdrv_re_set s (rs:RES.t) : rs_xf_pair (RES.re_set_type rs) :=
@@ -860,23 +862,39 @@ Lemma wpdrv_app: forall ty w1 w2 (rx:rs_xf_pair ty),
   wpdrv (w1 ++ w2) rx = wpdrv w2 (wpdrv w1 rx). 
 Proof. induction w1; intros. 
   simpl; trivial.
-  simpl. rewrite IHw1. trivial.
+  simpl. destruct (pdrv_set a rx) as [rs f].
+  rewrite IHw1. trivial.
 Qed.
 
-Lemma wpdrv_corr: forall ty s1 s2 (rx:rs_xf_pair ty) v, 
-  in_re_set_xform (wpdrv s1 rx) s2 v <-> in_re_set_xform rx (s1 ++ s2) v.
-Proof. induction s1. crush.
+(* todo: move *)
+Lemma in_re_set_xform_xopt ty rs (f:RES.re_set_type rs ->> Xform.List_t ty) str v:
+  in_re_set_xform (existT _ rs (xopt f)) str v <->
+  in_re_set_xform (existT _ rs f) str v.
+Proof. unfold in_re_set_xform, RES.in_re_set_xform.
+  rewrite xopt_corr. crush.
+Qed.
+
+Lemma wpdrv_corr: forall ty str1 str2 (rx:rs_xf_pair ty) v, 
+  in_re_set_xform (wpdrv str1 rx) str2 v <-> 
+  in_re_set_xform rx (str1 ++ str2) v.
+Proof. induction str1. crush.
   intros. simpl.
-  split; intros.
-    apply IHs1 in H. apply pdrv_set_corr in H. trivial.
-    apply IHs1. apply pdrv_set_corr. trivial.
+  remember_rev (pdrv_set a rx) as rx1.
+  destruct rx1 as [rs f].
+  rewrite IHstr1. rewrite in_re_set_xform_xopt.
+  rewrite <- Hrx1. apply pdrv_set_corr.
 Qed.
 
 Lemma wpdrv_pdset_trans : forall ty w (rx:rs_xf_pair ty) r, 
   RES.Subset (|rx|) (pdset r) -> 
   RES.Subset (|wpdrv w rx|) (pdset r).
 Proof. induction w; [auto | idtac].
-  intros; simpl; eauto using pdrv_set_trans.
+  intros; simpl. 
+  remember_rev (pdrv_set a rx) as rx1.
+  destruct rx1 as [rs f].
+  apply IHw. 
+  apply pdrv_set_trans with (a:=a) in H. rewrite Hrx1 in H.
+  unfold erase in *. simpl in *. crush.
 Qed.
 
 Theorem wpdrv_subset_pdset : forall w r,
@@ -892,7 +910,15 @@ Lemma wpdrv_erase_eq:
     erase_eq rx1 rx2 ->
     erase_eq (wpdrv s rx1) (wpdrv s rx2).
 Proof. induction s. crush.
-  intros. simpl. apply IHs. apply pdrv_set_erase_eq. trivial.
+  intros. unfold erase_eq. simpl.
+  remember_rev (pdrv_set a rx1) as rx1'.
+  destruct rx1' as [rs1 f1].
+  remember_rev (pdrv_set a rx2) as rx2'.
+  destruct rx2' as [rs2 f2].
+  apply IHs. 
+  apply pdrv_set_erase_eq with (a:=a) in H.
+  rewrite Hrx1' in H. rewrite Hrx2' in H.
+  unfold erase_eq in *. simpl in *. crush.
 Qed.
 
 Lemma wpdrv_re_set_corr rs w str v:
@@ -1893,7 +1919,7 @@ Section DFA.
             unfold gen_backward_xform.
             generalize ((get_state_get_index_some s1 ss'
                  (get_index_wfs_ext s1 Hwfs1 Hgiw))). intro H10.
-            rewrite (equal_xform_corr2 (RES.Equal_sym H10)).
+            rewrite (RES.equal_xform_corr2 H10).
             rewrite xcoerce_eq.
             split; intros; trivial.
         SCase "s1 notin ss".
@@ -2421,7 +2447,7 @@ Section DFA.
   Qed.
 
 End DFA.
-(* Recursive Extraction build_dfa. *)
+Recursive Extraction build_dfa.
 
 (* Definition test0:= Eps. *)
 (* Definition test1 := Char true. *)

@@ -54,6 +54,23 @@ Inductive xform : type -> type -> Type :=
              (Pair_t t1 t2 ->> t2) -> (t3 ->> t2) -> (t3 ->> List_t t1) -> t3 ->> t2
 where "t1 ->> t2" := (xform t1 t2).
 
+(** These declarations ensure that the types will be erased upon extraction.
+    But we must make sure not to ever eliminate these types... *)
+Extraction Implicit Xid [t].
+Extraction Implicit Xzero [t].
+Extraction Implicit Xcomp [t1 t2 t3].
+Extraction Implicit Xchar [t].
+Extraction Implicit Xunit [t].
+Extraction Implicit Xempty [t1 t2].
+Extraction Implicit Xpair [t t1 t2].
+Extraction Implicit Xfst [t1 t2].
+Extraction Implicit Xsnd [t1 t2].
+Extraction Implicit Xinl [t1 t2].
+Extraction Implicit Xinr [t1 t2].
+Extraction Implicit Xmatch [t1 t2 t].
+Extraction Implicit Xcons [t1 t2].
+Extraction Implicit Xfoldr [t1 t2 t3].
+
 (** Interpret the transform syntax as a Coq function.  Note that 
       this is really a "compiler" of sorts in that we are able to
       translate all of the sub-terms at compile-time, so we don't
@@ -96,6 +113,7 @@ Fixpoint xinterp {t1 t2} (x: t1 ->> t2) : interp t1 -> interp t2 :=
       let f3' := xinterp f3 in
       fun x => List.fold_right (fun a b => f1' (a,b)) (f2' x) (f3' x)
   end.
+Extraction Implicit xinterp [t1 t2].
 
 (** * Optimize an [xform]. *)
 
@@ -150,6 +168,7 @@ Fixpoint xinterp {t1 t2} (x: t1 ->> t2) : interp t1 -> interp t2 :=
 Definition xcoerce t1 t2 t3 t4 (x:xform t1 t2) : t1 = t3 -> t2 = t4 -> xform t3 t4.
   intros. subst. apply x.
 Defined.
+Extraction Implicit xcoerce [t1 t2 t3 t4].
 
 (** A note:  It would be much more natural to index [grammar] and [xform] by 
     the corresponding Coq [Type]s instead of my own internal [type] syntax,
@@ -200,6 +219,17 @@ Definition xinr {t1 t2} : t2 ->> Sum_t t1 t2 := Xinr.
 Definition xfst {t1 t2} : Pair_t t1 t2 ->> t1 := Xfst.
 Definition xsnd {t1 t2} : Pair_t t1 t2 ->> t2 := Xsnd.
 
+Extraction Implicit xid [t].
+Extraction Implicit xzero [t].
+Extraction Implicit xchar [t].
+Extraction Implicit xunit [t].
+Extraction Implicit xempty [t1 t2].
+Extraction Implicit xinl [t1 t2].
+Extraction Implicit xinr [t1 t2].
+Extraction Implicit xfst [t1 t2].
+Extraction Implicit xsnd [t1 t2].
+
+
 (** These next two functions reduce [Xpair Xfst Xsnd] to [Xid].  
     It's incredibly tedious to propagate the right types and equations around, 
     so I had to break it into two functions. *)
@@ -210,12 +240,14 @@ Definition xpair_fst ta tc (x2:ta->>tc):forall t1 t2,
     | Xzero _ => fun t1 t2 H => Xzero
     | x2 => fun t1 t2 H => Xpair (xcoerce Xfst (eq_sym H) (eq_refl _)) x2
   end.
+Extraction Implicit xpair_fst [ta tc t1 t2].
 
 Definition xpair_r ta tb tc (x2:ta ->> tc) : (ta ->> tb) -> ta ->> (Pair_t tb tc) := 
   match x2 in ta ->> tc return ta->>tb -> ta->>(Pair_t tb tc) with
     | Xzero _ => fun x1 => Xzero
     | x2 => fun x1 => Xpair x1 x2
   end.
+Extraction Implicit xpair_r [ta tb tc].
 
 Definition xpair ta tb tc (x1:ta ->> tb) (x2:ta ->> tc) : ta ->> (Pair_t tb tc) := 
  match x1 in ta ->> tb return ta->>tc -> ta->>(Pair_t tb tc) with
@@ -223,6 +255,7 @@ Definition xpair ta tb tc (x1:ta ->> tb) (x2:ta ->> tc) : ta ->> (Pair_t tb tc) 
    | Xzero t => fun x2 => Xzero
    | x1 => fun x2 => xpair_r x2 x1 
   end x2.
+Extraction Implicit xpair [ta tb tc].
 
 (** The [xpair] optimization preserves meaning. *)
 Lemma xpair_r_corr ta tb tc (x2:ta ->> tc) (x1:ta->>tb) v : 
@@ -250,6 +283,7 @@ refine (fun t1 t2 tb tc x2 =>
   end
 ). injection H ; intros ; subst. auto.
 Defined.
+Extraction Implicit xmatch_inl [t1 t2 tb tc].
 
 Definition xmatch_empty {tb t} (x2:tb->>t) : 
   forall {t1 t2}, (t = List_t t2) -> Sum_t t1 tb ->> List_t t2 := 
@@ -258,6 +292,7 @@ Definition xmatch_empty {tb t} (x2:tb->>t) :
     | Xempty td te => fun t1 t2 H => Xempty
     | x2' => fun t1 t2 H => (Xmatch Xempty (xcoerce x2' eq_refl H))
   end.
+Extraction Implicit xmatch_empty [tb t t1 t2].
 
 (** This function and the two above implement the reduction
     [match x with inl a => inl a | inr b => inr b end = id]. *)
@@ -267,6 +302,7 @@ Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : Sum_t ta tb ->> tc :=
     | Xempty t1 t2 => fun x2' => xmatch_empty x2' (eq_refl _)
     | x1' => Xmatch x1'
   end x2.
+Extraction Implicit xmatch [ta tb tc].
 
 (** Correctness of eta-reduction for sums. *)
 Lemma xmatch_corr ta tb tc (x1:ta->>tc) (x2:tb->>tc) v : 
@@ -306,6 +342,7 @@ Fixpoint xcomp_pair t21 t22 (x2:t21 ->> t22) :
         fun ta tb tc x11 x12 H => 
           Xcomp (xpair x11 x12) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_pair [t21 t22 ta tb tc].
 
 (** [xcomp_pair] is correct. *)
 Lemma xcomp_pair_corr : 
@@ -338,6 +375,7 @@ Definition xcomp_inl t21 t22 (x2:t21 ->> t22) :
       | x2' => 
         fun ta tb H => Xcomp Xinl (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_inl [t21 t22 ta tb].
 
 (** [xcomp_inl] is correct *)
 Lemma xcomp_inl_corr t21 t22 (x2:t21->>t22) ta tb (H:Sum_t ta tb = t21) v: 
@@ -367,6 +405,7 @@ Definition xcomp_inr t21 t22 (x2:t21 ->> t22) :
       | x2' => 
         fun ta tb H => Xcomp Xinr (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_inr [t21 t22 ta tb].
 
 (** [xcomp_inr] is correct. *)
 Lemma xcomp_inr_corr t21 t22 (x2:t21->>t22) ta tb (H:Sum_t ta tb = t21) v: 
@@ -392,6 +431,7 @@ Definition xcomp_empty t21 t22 (x2:t21 ->> t22) :
       | Xempty t1 t2 => fun ta tb H => Xempty
       | x2' => fun ta tb H => Xcomp Xempty (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_empty [t21 t22 ta tb].
 
 (** [xcomp_empty] is correct. *)
 Lemma xcomp_empty_corr t21 t22 (x2:t21->>t22) ta tb (H:List_t tb = t21) v : 
@@ -408,6 +448,7 @@ Definition xcons' t1 t (x2:t1->>t) :
     | Xzero _ => fun t2 H x1 => Xzero 
     | x2' => fun t2 H x1 => Xcons x1 (xcoerce x2' eq_refl H)
   end.
+Extraction Implicit xcons' [t1 t t2].
 
 Lemma xcons'_corr t1 t (x2:t1->>t) : 
   forall t2 (H:t=List_t t2) x1 v, 
@@ -421,6 +462,7 @@ Definition xcons t1 t2 (x1:t1->>t2) : (t1 ->> List_t t2) -> (t1 ->> List_t t2) :
     | Xzero _ => fun _ => Xzero
     | x1' => fun x2 => xcons' x2 eq_refl x1'
   end.
+Extraction Implicit xcons [t1 t2].
 
 Lemma xcons_corr t1 t2 (x1:t1->>t2) (x2:t1 ->> List_t t2) v : 
   xinterp (xcons x1 x2) v = xinterp (Xcons x1 x2) v.
@@ -445,6 +487,7 @@ Definition xcomp_cons t21 t22 (x2:t21 ->> t22) :
       | x2' => fun ta tb x11 x21 H => 
         Xcomp (xcons x11 x21) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
+Extraction Implicit xcomp_cons [t21 t22 ta tb].
 
 (** [xcomp_cons] is correct. *)
 Lemma xcomp_cons_corr t21 t22 (x2:t21->>t22) ta tb (x11:ta->>tb) (x12:ta->>List_t tb) H v: 
@@ -476,6 +519,7 @@ Fixpoint xfoldr' {t3 u} (x3:t3->>u) {struct x3} :
     (* still missing the "eta" rule for xfoldr *)                                          
     | x3' => fun t1 t2 H x1 x2 => Xfoldr x1 x2 (xcoerce x3' eq_refl H)
   end.
+Extraction Implicit xfoldr' [t3 u t1 t2].
 
 Lemma xfoldr'_corr t3 u (x3:t3->>u) : 
   forall t1 t2 (H:u=List_t t1) (x1:Pair_t t1 t2->>t2) (x2:t3->>t2) (v:interp t3),
@@ -499,6 +543,7 @@ Lemma xfoldr_corr t1 t2 t3 (x1:Pair_t t1 t2 ->>t2)(x2:t3->>t2)(x3:t3->>List_t t1
 Proof.
   unfold xfoldr ; rewrite xfoldr'_corr ; auto.
 Qed.
+Extraction Implicit xfoldr [t1 t2 t3].
 
 (** Cut eliminations on the right here:
      f o id = f
@@ -517,6 +562,7 @@ Fixpoint xcomp_r t21 t22 (x2:t21 ->> t22) : forall t11, t11 ->> t21 -> t11 ->> t
     | Xfoldr t2 t3 t4 x21 x22 x23 => fun t1 x1 => xfoldr x21 (xcomp_r x22 x1) (xcomp_r x23 x1)
     | x2' => fun t1 x1 => Xcomp x1 x2'
   end.
+Extraction Implicit xcomp_r [t21 t22 t11].
 
 (** [xcomp_r] is correct. *)
 Lemma xcomp_r_corr t21 t22 (x2:t21->>t22) t11 (x1:t11->>t21) v : 
@@ -551,6 +597,7 @@ Fixpoint xcomp t11 t12 (x1:t11 ->> t12) : forall t22, t12 ->> t22 -> t11 ->> t22
       | Xmatch ta tb tc x11 x12 => fun t22 x2 => xmatch (xcomp x11 x2) (xcomp x12 x2)
       | x1' => fun t22 x2 => xcomp_r x2 x1'
     end.
+Extraction Implicit xcomp [t11 t12 t22].
 
 (** [xcomp] is correct. *)
 Lemma xcomp_corr t1 t2 (x1:t1->>t2) t3 (x2:t2->>t3) v : 
@@ -579,6 +626,7 @@ Fixpoint xcomp' tb tc (x2:tb->>tc) : forall ta, ta->>tb -> ta->>tc :=
     | Xfoldr td te tf x21 x22 x23 => fun ta x1 => xfoldr x21 (xcomp' x22 x1) (xcomp' x23 x1)
     | x2' => fun ta x1 => xcomp x1 x2'
   end.
+Extraction Implicit xcomp' [tb tc ta].
 
 Lemma xcomp'_corr tb tc (x2:tb->>tc) ta (x1:ta->>tb) v : 
   xinterp (xcomp' x2 x1) v = xinterp (Xcomp x1 x2) v.
@@ -602,6 +650,7 @@ Fixpoint xopt t1 t2 (x:t1 ->> t2) : t1 ->> t2 :=
     | Xfoldr ta tb tc x1 x2 x3 => xfoldr (xopt x1) (xopt x2) (xopt x3)
     | x' => x'
   end.
+Extraction Implicit xopt [t1 t2].
 
 (** [xopt] is correct. *)
 Lemma xopt_corr t1 t2 (x:t1 ->> t2) : xinterp (xopt x) = xinterp x.
@@ -617,6 +666,7 @@ Qed.
 (** Map a transform over a list. *)
 Definition xmap {t1 t2} (f:t1 ->> t2) : List_t t1 ->> List_t t2 := 
   xopt (xfoldr (xcons (xcomp xfst f) xsnd) xempty xid).
+Extraction Implicit xmap [t1 t2].
 
 Lemma xmap_corr t1 t2 (f:t1 ->> t2) (vs:interp (List_t t1)) : 
   xinterp (xmap f) = List.map (xinterp f).
@@ -629,6 +679,7 @@ Qed.
 (** Append a pair of lists. *)
 Definition xapp {t} : Pair_t (List_t t) (List_t t) ->> List_t t := 
   xopt (xfoldr (xcons xfst xsnd) xsnd xfst).
+Extraction Implicit xapp [t].
 
 Lemma xapp_corr t (vs1 vs2: interp (List_t t)) : 
   xinterp xapp (vs1,vs2) = vs1 ++ vs2.
@@ -642,6 +693,7 @@ Definition xmapenv {t1 t2 t3} (f:Pair_t t1 t2 ->> t3) : Pair_t t1 (List_t t2)->>
   xopt (xcomp (xfoldr (xpair (xcomp xsnd xfst) 
                        (xcons (xcomp (xpair (xcomp xsnd xfst) xfst) f) 
                               (xcomp xsnd xsnd))) (xpair xfst xempty) xsnd) xsnd).
+Extraction Implicit xmapenv [t1 t2 t3].
 
 Lemma xmapenv_corr {t1 t2 t3} (f:Pair_t t1 t2->>t3) v : 
   xinterp (xmapenv f) v = List.map (fun x => xinterp f (fst v,x)) (snd v).
@@ -702,6 +754,7 @@ Qed.
 (** Flatten a list of lists. *)
 Definition xflatten {t} : List_t (List_t t) ->> List_t t := 
   xopt (xfoldr xapp xempty xid).
+Extraction Implicit xflatten [t].
 
 Lemma xflatten_corr {t} (vs : interp (List_t (List_t t))) : 
   xinterp xflatten vs = 
@@ -725,6 +778,7 @@ Qed.
 
 (** A singleton list *)
 Definition xsingleton {t} : t ->> List_t t := @xcons t t xid xempty.
+Extraction Implicit xsingleton [t].
 
 (** Compute the cross product of two lists.  For instance, the
       cross product of (1::2::nil, true::false::nil) is 
@@ -733,6 +787,7 @@ Definition xsingleton {t} : t ->> List_t t := @xcons t t xid xempty.
 Definition xcross {t1 t2} : Pair_t (List_t t1) (List_t t2) ->> List_t (Pair_t t1 t2) :=
   xopt (xcomp (xcomp (xpair xsnd xfst)
                      (xmapenv (xcomp (xpair xsnd xfst) (xmapenv xid)))) xflatten).
+Extraction Implicit xcross [t1 t2].
 
 Lemma xcross_corr t1 t2 (p : interp (Pair_t (List_t t1) (List_t t2))) : 
   xinterp xcross p = 
@@ -762,11 +817,13 @@ Qed.
 Definition xthen {t1 t2 t3} (f1: t1 ->> List_t t2) (f2: t2 ->> List_t t3) : 
   t1 ->> List_t t3 := 
   xopt (xcomp f1 (xcomp (xmap f2) xflatten)).
+Extraction Implicit xthen [t1 t2 t3].
 
 (** Like cross product, but parameterized by generators [f1] and [f2]. *)
 Definition xcrossmap {t1 t2 t3 t4} (f1 : t1 ->> List_t t3) (f2 : t2 ->> List_t t4) : 
   (Pair_t t1 t2) ->> List_t (Pair_t t3 t4) := 
   xopt (xcomp (xpair (xcomp xfst f1) (xcomp xsnd f2)) xcross).
+Extraction Implicit xcrossmap [t1 t2 t3 t4].
 
 (** A simplification tactic for [xform]s *)
 Ltac xinterp_simpl :=
@@ -824,10 +881,12 @@ Fixpoint show_xform' t1 t2 (x:t1->>t2) : list string -> list string :=
       emit "fold(" ;; (show_xform' x1) ;; emit "," ;; (show_xform' x2) ;; 
            emit "," ;; (show_xform' x3) ;; emit ")"
   end.
+Extraction Implicit show_xform' [t1 t2].
 
 Definition show_xform t1 t2 (x:t1->>t2) : string := 
   let ss := List.rev (show_xform' x nil) in 
   List.fold_right (fun x y => x ++ y) "" ss.
+Extraction Implicit show_xform [t1 t2].
 
 Definition inc (n:nat) : nat := plus 1 n.
 
@@ -850,5 +909,7 @@ Fixpoint xform_count' t1 t2 (x:t1->>t2) : nat->nat :=
     | Xfoldr _ _ _ x1 x2 x3 => 
       inc ;; (xform_count' x1) ;; (xform_count' x2) ;; (xform_count' x3)
   end.
+Extraction Implicit xform_count' [t1 t2].
 
 Definition xform_count t1 t2 (x:t1->>t2) : nat := xform_count' x 0.
+Extraction Implicit xform_count [t1 t2].
