@@ -30,7 +30,7 @@ Open Scope char_scope.
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 Require ExtrOcamlNatInt.
-Import X86_PARSER_ARG.
+Import ParserArg.X86_PARSER_ARG.
 Import X86_PARSER.
 (* Import X86_BASE_PARSER. *)
 Require Import X86Syntax.
@@ -58,7 +58,7 @@ Definition nat2bools(n:nat) : list bool :=
   let bs := Word.bits_of_Z 8 (Z_of_nat n) in
     ((bs 7)::(bs 6)::(bs 5)::(bs 4)::(bs 3)::(bs 2)::(bs 1)::(bs 0)::nil)%Z.
 
-Definition make_dfa t (p:grammar t) := build_dfa 400 (par2rec p).
+Definition make_dfa t (p:grammar t) := build_dfa (par2rec p).
 Implicit Arguments make_dfa [t].
 
 (** We mirror the definitions in Decode but only for valid, non-control-flow
@@ -748,7 +748,7 @@ Definition nacljmp_mask_instr (pfx1:prefix) (ins1:instr) (pfx2:prefix) (ins2:ins
   end.
 
 Definition make_recognizer t (g:grammar t) := 
-  Recognizer.build_dfa 400 (par2rec g).
+  Recognizer.build_dfa (par2rec g).
 
 Definition dfas := (make_recognizer non_cflow_grammar, make_recognizer (alts dir_cflow), make_recognizer (alts nacljmp_mask)).
 (* Extraction "tables.ml" dfas.*)

@@ -11,7 +11,6 @@
 
 (** X86Lemmas.v. This file holds lemmas about X86 instructions *)
 
-(* Require Import Tacs. *)
 Require Import CommonTacs.
 Require Import ZArith.
 Require Import List.

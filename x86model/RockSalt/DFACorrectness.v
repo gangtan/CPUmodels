@@ -26,7 +26,7 @@ Open Scope char_scope.
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 Require ExtrOcamlNatInt.
-Import X86_PARSER_ARG.
+Import ParserArg.X86_PARSER_ARG.
 Import X86_PARSER.
 (* Import X86_BASE_PARSER. *)
 Import X86Syntax.
@@ -41,18 +41,39 @@ Ltac t := repeat
       generalize (inj_pairT2 _ _ _ _ _ H) ; clear H ; intros ; subst
   end.
 
+(** Generic simplification tactic. *)
+Ltac mysimp := 
+  simpl in * ; intros ; 
+    repeat 
+      match goal with 
+        | [ |- context[char_dec ?x ?y] ] => destruct (char_dec x y) ; auto 
+        | [ |- _ /\ _ ] => split
+        | [ H : context[type_dec ?e1 ?e2] |- _ ] => 
+          destruct (type_dec e1 e2) ; simpl in * ; try discriminate
+        | [ H : existT ?f ?t ?x = existT ?f ?t ?y |- _ ] => 
+          generalize (inj_pairT2 _ f t x y H) ; clear H ; intro H ; subst
+        | [ H : _ /\ _ |- _ ] => destruct H
+        | [ |- context[ _ ++ nil ] ] => rewrite <- app_nil_end
+        | [ H : exists x, _ |- _ ] => destruct H
+        | [ H : _ \/ _ |- _] => destruct H
+        | [ H : _ <-> _ |- _] => destruct H
+        | [ |- _ <-> _ ] => split
+        | [ H : _::_ = _::_ |- _] => injection H ; clear H
+        | _ => idtac
+      end ; auto.
+
 Lemma inv_alt : forall t (p1 p2:grammar t) cs v, in_grammar (alt p1 p2) cs v -> 
   in_grammar p1 cs v \/ in_grammar p2 cs v.                                                
 Proof.
-  unfold alt. intros. generalize (MapInv H). intro. destruct H0 as [v' [H0 H1]].
-  generalize (AltInv H0). intros. destruct H2. destruct H2 as [v1 [H2 H3]]. 
+  unfold alt. intros. generalize (inv_Map H). intro. destruct H0 as [v' [H0 H1]].
+  generalize (inv_Alt H0). intros. destruct H2. destruct H2 as [v1 [H2 H3]]. 
   left. rewrite H1. rewrite H3. auto. destruct H2 as [v1 [H2 H3]]. right.
   rewrite H1. rewrite H3. auto.
 Qed.
 
 Lemma inv_never : forall t cs v, in_grammar (never t) cs v -> False.
 Proof.
-  unfold never. intros. apply (ZeroInv H).
+  unfold never. intros. apply (inv_Zero H).
 Qed.
 
 Lemma in_alt_r : forall t (p1 p2:grammar t) cs v, in_grammar p2 cs v -> 
@@ -73,17 +94,17 @@ Hint Resolve in_alt_l.
 Ltac pinv := 
   match goal with
     | [ H : in_grammar (alt _ _) _ _ |- _ ] => generalize (inv_alt H) ; clear H
-    | [ H : in_grammar Eps _ _ |- _ ] => generalize (EpsInv H) ; clear H
-    | [ H : in_grammar Any _ _ |- _ ] => generalize (AnyInv H) ; clear H
-    | [ H : in_grammar (Char _) _ _ |- _ ] => generalize (CharInv H) ; clear H
-    | [ H : in_grammar (Alt _ _) _ _ |- _ ] => generalize (AltInv H) ; clear H
-    | [ H : in_grammar (seq _ _) _ _ |- _ ] => generalize (CatInv H) ; clear H
-    | [ H : in_grammar (Cat _ _) _ _ |- _ ] => generalize (CatInv H) ; clear H
+    | [ H : in_grammar Eps _ _ |- _ ] => generalize (inv_Eps H) ; clear H
+    | [ H : in_grammar Any _ _ |- _ ] => generalize (inv_Any H) ; clear H
+    | [ H : in_grammar (Char _) _ _ |- _ ] => generalize (inv_Char H) ; clear H
+    | [ H : in_grammar (Alt _ _) _ _ |- _ ] => generalize (inv_Alt H) ; clear H
+    | [ H : in_grammar (seq _ _) _ _ |- _ ] => generalize (inv_Cat H) ; clear H
+    | [ H : in_grammar (Cat _ _) _ _ |- _ ] => generalize (inv_Cat H) ; clear H
     | [ H : in_grammar (never _) _ _ |- _ ] => contradiction (inv_never H)
-    | [ H : in_grammar (Zero _) _ _ |- _ ] => contradiction (ZeroInv H)
-    | [ H : in_grammar (_ @ _) _ _ |- _ ] => generalize (MapInv H) ; clear H
-    | [ H : in_grammar (Map _ _ _) _ _ |- _ ] => generalize (MapInv H) ; clear H
-    | [ H : in_grammar (Xform _ _) _ _ |- _ ] => generalize (XformInv H) ; clear H
+    | [ H : in_grammar (Zero _) _ _ |- _ ] => contradiction (inv_Zero H)
+    | [ H : in_grammar (_ @ _) _ _ |- _ ] => generalize (inv_Map H) ; clear H
+    | [ H : in_grammar (Map _ _ _) _ _ |- _ ] => generalize (inv_Map H) ; clear H
+    (* | [ H : in_grammar (Xform _ _) _ _ |- _ ] => generalize (XformInv H) ; clear H *)
     | [ H : _::_ = _::_ |- _] => injection H ; clear H
     | [ H : true = true |- _ ] => clear H
     | [ H : true = _ |- _ ] => generalize (eq_sym H) ; clear H ; intro H
@@ -273,12 +294,9 @@ Fixpoint simple_parse' (ps:ParseState_t) (bytes:list int8) :
                end
   end.
 
-Import X86_PARSER.ABSTRACT_OPT_INI_DECODER_STATE.
+Import X86_PARSER.ABSTRACT_INI_DECODER_STATE.
 Definition simple_parse (bytes:list int8) : option ((prefix * instr) * list int8) := 
-  match abs_opt_ini_decoder_state with
-      | None => None
-      | Some s => simple_parse' s bytes
-  end.
+  simple_parse' abs_ini_decoder_state bytes.
 
 (** This lemma shows that any instruction returned by the [non_cflow_grammar]
     satisfies the boolean predicate [non_cflow_instr].  We should probably

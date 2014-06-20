@@ -10,7 +10,7 @@
 *)
 
 
-Require Import Tacs.
+Require Import CommonTacs.
 Require Import List.
 Require Import ZArith.
 Require Export Psatz.

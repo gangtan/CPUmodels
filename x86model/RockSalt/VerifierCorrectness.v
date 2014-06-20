@@ -32,7 +32,7 @@ Require Import FastVerifier.
 (* Require Import NACLjmp. *)
 
 
-Import X86_PARSER_ARG.
+Import ParserArg.X86_PARSER_ARG.
 Import X86_PARSER.
 (* Import X86_BASE_PARSER. *)
 Import X86_RTL.
@@ -60,16 +60,13 @@ Fixpoint simple_parse' (ps:ParseState_t) (bytes:list int8) :
                end
   end.
 
-Import X86_PARSER.ABSTRACT_OPT_INI_DECODER_STATE.
+Import X86_PARSER.ABSTRACT_INI_DECODER_STATE.
 Definition simple_parse (bytes:list int8) : option ((prefix * instr) * list int8) := 
-  match abs_opt_ini_decoder_state with
-      | None => None
-      | Some s => simple_parse' s bytes
-  end.
+  simple_parse' abs_ini_decoder_state bytes.
 
 Module Type ABSTRACT_MAKE_RECOGNIZER_SIG.
   Parameter abstract_make_recognizer : 
-    forall t, grammar t -> option Recognizer.DFA.
+    forall t, grammar t -> Recognizer.DFA.
   Parameter make_recognizer_eq : abstract_make_recognizer = make_recognizer.
 End ABSTRACT_MAKE_RECOGNIZER_SIG.
 
@@ -87,7 +84,7 @@ Import ABSTRACT_MAKE_RECOGNIZER.
 Lemma non_cflow_dfa_length : 
   forall (d:DFA), 
     (* Need to use abstract_build_dfa for the same reason as above I believe *)
-    abstract_make_recognizer _ non_cflow_grammar = Some d -> 
+    abstract_make_recognizer _ non_cflow_grammar = d -> 
     forall (bytes:list int8) (n:nat) (nats2:list nat),
       dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
         (n <= 15)%nat. 
@@ -95,7 +92,7 @@ Admitted.
 
 Lemma non_cflow_dfa_corr : 
   forall (d:DFA), 
-    abstract_make_recognizer _ non_cflow_grammar = Some d -> 
+    abstract_make_recognizer _ non_cflow_grammar = d -> 
     forall (bytes:list int8) (n:nat) (nats2:list nat),
       dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
       exists bytes1, exists pfx:prefix, exists ins:instr, 
@@ -107,7 +104,7 @@ Admitted.
 
 Lemma dir_cflow_dfa_corr : 
   forall (d:DFA),
-    abstract_make_recognizer _ (alts dir_cflow) = Some d -> 
+    abstract_make_recognizer _ (alts dir_cflow) = d -> 
     forall (bytes:list int8) (n:nat) (nats2:list nat),
       dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
       exists bytes1, exists pfx:prefix, exists ins:instr,
@@ -120,7 +117,7 @@ Admitted.
 Lemma dir_cflow_dfa_length : 
   forall (d:DFA), 
     (* Need to use abstract_build_dfa for the same reason as above I believe *)
-    abstract_make_recognizer _ (alts dir_cflow) = Some d -> 
+    abstract_make_recognizer _ (alts dir_cflow) = d -> 
     forall (bytes:list int8) (n:nat) (nats2:list nat),
       dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
         (n <= 15)%nat. 
@@ -128,7 +125,7 @@ Admitted.
 
 Lemma nacljmp_dfa_corr : 
   forall (d:DFA),
-    abstract_make_recognizer _ (alts nacljmp_mask) = Some d -> 
+    abstract_make_recognizer _ (alts nacljmp_mask) = d -> 
     forall (bytes:list int8) (n:nat) (nats2:list nat),
       dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
       exists bytes1, exists pfx1:prefix, exists ins1:instr, exists bytes2,
@@ -145,7 +142,7 @@ Admitted.
 Lemma nacljmp_mask_dfa_length : 
   forall (d:DFA), 
     (* Need to use abstract_build_dfa for the same reason as above I believe *)
-    abstract_make_recognizer _ (alts nacljmp_mask) = Some d -> 
+    abstract_make_recognizer _ (alts nacljmp_mask) = d -> 
     forall (bytes:list int8) (n:nat) (nats2:list nat),
       dfa_recognize d (List.map byte2token bytes) = Some (n, nats2) -> 
         (n <= 15)%nat. 
@@ -720,7 +717,7 @@ Section VERIFIER_CORR.
 
   Lemma parse_instr_same_state : forall pc, same_rtl_state (parse_instr pc).
   Proof. unfold same_rtl_state, parse_instr, parse_instr'. intros.
-    rtl_okay_elim. destruct (abs_opt_ini_decoder_state); try discriminate.
+    rtl_okay_elim. destruct (abs_ini_decoder_state); try discriminate.
     eapply parse_instr_aux_same_state. eassumption.
   Qed.
 
@@ -742,7 +739,7 @@ Section VERIFIER_CORR.
   Lemma parse_instr_len : forall pc s pi len s',
     parse_instr pc s = (Okay_ans (pi, len), s') -> 1 <= Zpos len < 16.
   Proof. unfold parse_instr, parse_instr'. intros.
-    rtl_okay_elim. destruct (abs_opt_ini_decoder_state); try discriminate.
+    rtl_okay_elim. destruct (abs_ini_decoder_state); try discriminate.
     apply parse_instr_aux_len in H. simpl in H. omega.
   Qed.
 
@@ -822,7 +819,7 @@ Section VERIFIER_CORR.
     dupHyp H. unfold eqCodeRegion in H. sim.
     rtl_okay_elim. rtl_okay_intro.
     compute [get_location look]. rewrite  <- H. 
-    destruct (abs_opt_ini_decoder_state); try discriminate.
+    destruct (abs_ini_decoder_state); try discriminate.
     eapply parse_instr_aux_code_inv; eassumption.
   Qed.
 
@@ -2914,12 +2911,11 @@ Section VERIFIER_CORR.
            parse_instr pc s = (Okay_ans (pre, ins, pos), s) /\
            Zpos pos = Z_of_nat len.
   Proof. unfold simple_parse. intros.
-    remember_destruct_head in H as ds; try congruence.
     use_lemma simple_parse_aux_corr_parse_instr_aux by eassumption.
     destruct H3 as [pos [H10 H12]].
     exists pos. split.
       unfold parse_instr, parse_instr'. 
-      rewrite Hds. rtl_okay_intro. eassumption. omega.
+      rtl_okay_intro. eassumption. omega.
   Qed.
 
   Lemma eqMemBuffer_skipn : forall n ls s lc,
@@ -3010,16 +3006,16 @@ Section VERIFIER_CORR.
      take a long time. We actually extract ML code to do the evaluation.
   *)
   Hypothesis non_cflow_dfa_built:
-    abstract_make_recognizer _ non_cflow_grammar = Some non_cflow_dfa.
+    abstract_make_recognizer _ non_cflow_grammar = non_cflow_dfa.
 
   Hypothesis dir_cflow_dfa_built:
-    abstract_make_recognizer _ (alts dir_cflow) = Some dir_cflow_dfa.
+    abstract_make_recognizer _ (alts dir_cflow) = dir_cflow_dfa.
 
   Hypothesis nacljmp_dfa_built:
-    abstract_make_recognizer _ (alts nacljmp_mask) = Some nacljmp_dfa.
+    abstract_make_recognizer _ (alts nacljmp_mask) = nacljmp_dfa.
 
   Hypothesis initial_state_built:
-    abs_opt_ini_decoder_state = Some initial_state.
+    abs_ini_decoder_state =initial_state.
 
   (* Including the above hypotheses in the context will make some tactics *)
   (*    such as discriminate extremely slow since they will try to evaluate *)
@@ -3039,7 +3035,7 @@ Section VERIFIER_CORR.
     assert (firstn len bytes = firstn len (firstn len bytes)).
       rewrite firstn_twice_eq by omega. trivial.
     unfold simple_parse in *.
-    remember_destruct_head in H0 as ds; try congruence.
+    (* remember_destruct_head in H0 as ds; try congruence. *)
     use_lemma simple_parse'_ext by eassumption.
     destruct H5 as [rem1 H10].
     rewrite simple_parse_parseloop_same in H10.
@@ -3047,8 +3043,7 @@ Section VERIFIER_CORR.
     rewrite <- list_map_compose in H10.
     rewrite firstn_map in H10.
     unfold goodJmp, checkJmpTargets in *.
-    assert (i=initial_state) by congruence.
-    subst i. clean.
+    assert (abs_ini_decoder_state=initial_state) by congruence.
     destruct ins; simpl in H; try congruence.
     Case "CALL".
       destruct near; try congruence.
@@ -3056,6 +3051,7 @@ Section VERIFIER_CORR.
       destruct op1; try congruence.
       destruct sel; try congruence.
       unfold includeAllJmpTargets in H2.
+      subst initial_state.
       rewrite H10 in H2.
       unfold goodJmpTarget.
       remember_rev (Int32Set.mem (pc +32_n len +32 i) startAddrs) as ab.
@@ -3068,6 +3064,7 @@ Section VERIFIER_CORR.
         apply Int32Set.for_all_spec in H3. auto. apply aligned_bool_proper.
     Case "Jcc".
       unfold includeAllJmpTargets in H2.
+      subst initial_state.
       rewrite H10 in H2.
       unfold goodJmpTarget.
       remember_rev (Int32Set.mem (pc +32_n len +32 disp) startAddrs) as ab.
@@ -3084,6 +3081,7 @@ Section VERIFIER_CORR.
       destruct op1; try congruence.
       destruct sel; try congruence.
       unfold includeAllJmpTargets in H2.
+      subst initial_state.
       rewrite H10 in H2.
       unfold goodJmpTarget.
       remember_rev (Int32Set.mem (pc +32_n len +32 i) startAddrs) as ab.
@@ -3371,7 +3369,6 @@ Section VERIFIER_CORR.
   Proof. clean. unfold parse_instr, parse_instr'. intros.
     rtl_okay_elim.
     rtl_okay_intro.
-    destruct abs_opt_ini_decoder_state; try (unfold Fail in H1; congruence).
     eapply parse_instr_aux_code_inv2. eassumption.
       rewrite <- H0. eassumption.
   Qed.
