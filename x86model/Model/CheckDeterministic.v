@@ -41,7 +41,7 @@ Open Scope char_scope.
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 Require ExtrOcamlNatInt.
-Import X86_PARSER_ARG.
+Import ParserArg.X86_PARSER_ARG.
 Import X86_PARSER.
 (*Import X86_BASE_PARSER.*)
 
@@ -362,7 +362,7 @@ Fixpoint grammar2rexp t (p:grammar t) : rexp :=
     | Alt t1 t2 r1 r2 => OptAlt_r (grammar2rexp r1) (grammar2rexp r2)
     | Star t r => Star_r (grammar2rexp r)
     | Map t1 t2 f r => grammar2rexp r
-    | Xform t1 t2 f r => grammar2rexp r
+    (* | Xform t1 t2 f r => grammar2rexp r *)
   end.
 
 (** If [s] and [v] are in the denotation of [p], then [s] is in the denotation of
@@ -388,12 +388,13 @@ Proof.
    generalize (IHp1 _ H4) ; repeat in_inv. repeat econstructor ; eauto.
    generalize (IHp2 _ H4) ; repeat in_inv. econstructor. eapply InAlt_r. eauto. eauto.
    Focus 2. generalize (IHp _ H). s. econstructor. econstructor. eauto. eauto.
-   Focus 2. generalize (IHp _ H). s. econstructor. econstructor. eauto. eauto.
+   (* the following line is for the case of Xform *)
+   (* Focus 2. generalize (IHp _ H). s. econstructor. econstructor. eauto. eauto. *)
    generalize s H IHp. clear s H IHp. generalize (grammar2rexp p).
    intros r s H. remember (Star_r r) as r'. generalize Heqr'. clear Heqr'.
    induction H ; intros ; try congruence ; injection Heqr' ; intros ; subst ; clear
      Heqr'. exists nil. constructor ; auto. generalize (IHin_rexp2 (eq_refl _) IHp).
-   clear IHin_rexp1 IHin_rexp2. intros. destruct H2. generalize (IHp _ H0). 
+   clear IHin_rexp1 IHin_rexp2. intros. destruct H2. generalize (IHp _ H0).
    intros. destruct H3. econstructor. eapply InStar_cons. eauto. eauto. auto.
    eauto. auto.
 Qed.
@@ -854,18 +855,19 @@ Proof.
   intros. apply (half_in' p ps nil nil). left ; auto.
 Qed.
 
+
 Lemma in_alts' n t (ps:list (grammar t)) s (v:interp t) : 
   in_grammar (alts' n ps) s v -> exists p, In p ps /\ in_grammar p s v.
 Proof.
   induction n ; simpl.
   induction ps ; simpl; unfold never ; intros. inversion H.
-  destruct ps. exists a. auto. generalize (MapInv H). clear H ; mysimp ; subst.
-  generalize (AltInv H) ; clear H ; mysimp ; subst. exists a ; auto.
+  destruct ps. exists a. auto. generalize (inv_Map H). clear H ; mysimp ; subst.
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst. exists a ; auto.
   specialize (IHps s x0 H). destruct IHps as [p [H1 H2]]. exists p ; auto.
   intros. destruct ps. inversion H. simpl. destruct ps. exists g; auto.
   remember (half (g::g0::ps) nil nil) as e. destruct e as [ps1 ps2].
-  generalize (MapInv H) ; clear H ; mysimp. subst.
-  generalize (AltInv H)
+  generalize (inv_Map H) ; clear H ; mysimp. subst.
+  generalize (inv_Alt H)
     (IHn _ ps1 s match x with | inl a => a | inr b => b end)
     (IHn _ ps2 s match x with | inl a => a | inr b => b end) ; clear H.
   intros H H1 H2. mysimp ; subst.
@@ -881,8 +883,8 @@ Lemma in_subset t (ps1 ps2:list (grammar t)) :
               in_grammar (fold_right (@alt t) (@never t) ps2) s v.
 Proof.
   induction ps1. simpl. intros. inversion H0. simpl.
-  intros. generalize (MapInv H0) ; clear H0 ; mysimp. subst.
-  generalize (AltInv H0) ; clear H0 ; mysimp ; subst. 
+  intros. generalize (inv_Map H0) ; clear H0 ; mysimp. subst.
+  generalize (inv_Alt H0) ; clear H0 ; mysimp ; subst. 
   assert (In a ps2). eapply H. left ; auto. clear IHps1 H. generalize H1 ; clear H1.
   induction ps2 ; simpl ; intros ; try contradiction. destruct H1 ; subst.
   econstructor ; eauto. econstructor. eapply InAlt_r. eauto. eauto. auto.
@@ -894,8 +896,8 @@ Lemma in_fold_right_alt t (ps:list (grammar t)) s (v:interp t) :
   exists p, In p ps /\ in_grammar p s v.
 Proof.
   induction ps ; simpl ; unfold never ; intros. inversion H.
-  generalize (MapInv H) ; clear H ; mysimp. subst. 
-  generalize (AltInv H) ; clear H ; mysimp ; subst.
+  generalize (inv_Map H) ; clear H ; mysimp. subst. 
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst.
   exists a ; auto. specialize (IHps _ _ H). destruct IHps as [p [H1 H2]].
   exists p ; auto.
 Qed.
@@ -906,16 +908,16 @@ Proof.
   induction n. simpl.
   induction ps ; simpl ; intros. tauto.
   destruct ps. simpl. split. intro. econstructor ; eauto.
-  intros. generalize (MapInv H). clear H ; mysimp. subst. 
-  generalize (AltInv H) ; clear H ; mysimp ; subst. auto. inversion H.
-  split ; intro H ; generalize (MapInv H) ; clear H ; mysimp ; subst ; 
-  generalize (AltInv H)  ; clear H ; mysimp ; subst. econstructor ; eauto.
+  intros. generalize (inv_Map H). clear H ; mysimp. subst. 
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst. auto. inversion H.
+  split ; intro H ; generalize (inv_Map H) ; clear H ; mysimp ; subst ; 
+  generalize (inv_Alt H)  ; clear H ; mysimp ; subst. econstructor ; eauto.
   econstructor. eapply InAlt_r. eapply IHps ; eauto. eauto. auto.
   econstructor ; eauto. econstructor. eapply InAlt_r. eapply IHps ; eauto.
   eauto. auto. simpl. intros. remember ps as qs. destruct qs ; simpl.
   tauto. destruct qs ; simpl. split ; intro. econstructor ; eauto.
-  generalize (MapInv H) ; clear H ; mysimp ; subst. 
-  generalize (AltInv H) ; clear H ; mysimp ; subst ; auto. inversion H.
+  generalize (inv_Map H) ; clear H ; mysimp ; subst. 
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst ; auto. inversion H.
   remember (half qs (g::nil) (g0::nil)) as e. destruct e as [ps1 ps2].
   generalize (IHn _ ps1 s v) (IHn _ ps2 s v). clear IHn. intros IHps1 IHps2.
   assert ((fold_right (@alt t) (@never t) ps) = 
@@ -923,8 +925,8 @@ Proof.
   subst. auto. rewrite <- H. clear H.
   assert ((half qs (g::nil) (g0::nil)) = (half ps nil nil)).
   subst. auto. rewrite H in Heqe. clear H. clear Heqqs qs g0 g.
-  split. intro. generalize (MapInv H) ; clear H. intros.
-  destruct H. destruct H. generalize (AltInv H). intros.
+  split. intro. generalize (inv_Map H) ; clear H. intros.
+  destruct H. destruct H. generalize (inv_Alt H). intros.
   destruct H1 ; destruct H1 as [w [H1 H2]] ; subst. destruct IHps1 as [IHps1 _].
   specialize (IHps1 H1).
   eapply (in_subset ps1 ps) ; eauto. intros. eapply in_left_half. rewrite <- Heqe.
@@ -980,14 +982,14 @@ Proof.
   intros. generalize (@in_alts_fold t (ps1 ++ p :: ps2) s v).
   intro. destruct H0 as [H0 _]. specialize (H0 H). clear H.
   generalize p ps2 s v H0 ; clear p ps2 s v H0.
-  induction ps1 ; intros. simpl in H0. generalize (MapInv H0) ; clear H0 ; mysimp ; subst.
-  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor ; eauto.
+  induction ps1 ; intros. simpl in H0. generalize (inv_Map H0) ; clear H0 ; mysimp ; subst.
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst. econstructor ; eauto.
   econstructor. eapply InAlt_r. eapply in_alts_fold. eauto. eauto. auto.
-  simpl in H0. generalize (MapInv H0) ; clear H0 ; mysimp ; subst. 
-  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor.
+  simpl in H0. generalize (inv_Map H0) ; clear H0 ; mysimp ; subst. 
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst. econstructor.
   eapply InAlt_r. eapply in_alts_fold. simpl. econstructor ; eauto. eauto. auto.
-  specialize (IHps1 _ _ _ _ H). clear H. generalize (MapInv IHps1) ; clear IHps1.
-  mysimp. subst. generalize (AltInv H) ; clear H ; mysimp ; subst.
+  specialize (IHps1 _ _ _ _ H). clear H. generalize (inv_Map IHps1) ; clear IHps1.
+  mysimp. subst. generalize (inv_Alt H) ; clear H ; mysimp ; subst.
   econstructor ; eauto. econstructor. eapply InAlt_r. eapply in_alts'_fold.
   simpl. econstructor. eapply InAlt_r. eapply in_alts_fold. unfold alts in H.
   eauto. eauto. eauto. eauto. eauto.
@@ -1013,8 +1015,8 @@ Proof.
   generalize (in_alts_comm x2 x3 x4 H0). intros.
   assert (~ exists v', in_grammar (alts (x2 ++ x4)) s v'). intro.
   destruct H5. apply H3. generalize (in_alts (x2 ++ x4) H5). rewrite map_app. auto.
-  split ; auto. generalize (MapInv H4) ; clear H4 ; mysimp ; subst.
-  generalize (AltInv H4) ; clear H4 ; mysimp; subst. auto.
+  split ; auto. generalize (inv_Map H4) ; clear H4 ; mysimp ; subst.
+  generalize (inv_Alt H4) ; clear H4 ; mysimp; subst. auto.
   contradiction H5. exists x0. auto.
 Qed.
 
@@ -1035,8 +1037,8 @@ Proof.
   assert (~ exists s2, exists v', in_grammar (alts (x2 ++ x4)) (s ++ s2) v'). intro.
   destruct H5. destruct H5.
   apply H3. exists x. generalize (in_alts (x2 ++ x4) H5). rewrite map_app. auto.
-  split ; auto. generalize (MapInv H4) ; clear H4 ; mysimp ; subst.
-  generalize (AltInv H4) ; clear H4 ; mysimp ; subst ; auto.
+  split ; auto. generalize (inv_Map H4) ; clear H4 ; mysimp ; subst.
+  generalize (inv_Alt H4) ; clear H4 ; mysimp ; subst ; auto.
   contradiction H5. exists nil. rewrite <- app_nil_end. exists x0. auto.
 Qed.
 
@@ -1078,11 +1080,11 @@ Proof.
   specialize (H0 H). clear H1. apply in_alts_fold. clear H.
   generalize ps2 p s v H0 ; clear ps2 p s v H0.
   induction ps1. simpl. auto. intros. simpl in *. 
-  generalize (MapInv H0) ; clear H0 ; mysimp ; subst. 
-  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor.
+  generalize (inv_Map H0) ; clear H0 ; mysimp ; subst. 
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst. econstructor.
   eapply InAlt_r. eapply IHps1. econstructor. eauto. eauto. eauto. auto.
-  generalize (MapInv H) ; clear H ; mysimp ; subst.
-  generalize (AltInv H) ; clear H ; mysimp ; subst. econstructor ; eauto.
+  generalize (inv_Map H) ; clear H ; mysimp ; subst.
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst. econstructor ; eauto.
   econstructor. eapply InAlt_r. eapply IHps1. econstructor. eapply InAlt_r.
   eauto. eauto. eauto. eauto. auto.
 Qed.
@@ -1113,8 +1115,8 @@ Proof.
   injection H2. clear H2 ; intros ; subst. 
   generalize (in_alts_fold (g0::ps1 ++ p ::ps2) s v). intro.
   destruct H2 as [H2 _]. specialize (H2 H). clear H. simpl in H2.
-  generalize (MapInv H2) ; clear H2 ; intro. destruct H. destruct H. subst.
-  generalize (AltInv H) ; clear H ; intro. destruct H. destruct H.
+  generalize (inv_Map H2) ; clear H2 ; intro. destruct H. destruct H. subst.
+  generalize (inv_Alt H) ; clear H ; intro. destruct H. destruct H.
   contradiction H4. exists x0. destruct H ; subst. eapply in_alts_fold.
   simpl. econstructor ; eauto.
   destruct H. destruct H. subst.
@@ -1137,8 +1139,8 @@ Proof.
   intros t ps s v H. assert (in_grammar (fold_right (@alt t) (@never t) ps) s v).
   apply in_alts_fold ; auto. clear H. generalize s v H0. clear s v H0.
   induction ps ; simpl. unfold never. intros. inversion H0.
-  intros. generalize (MapInv H0) ; clear H0 ; mysimp ; subst.
-  generalize (AltInv H) ; clear H ; mysimp ; subst ; t.
+  intros. generalize (inv_Map H0) ; clear H0 ; mysimp ; subst.
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst ; t.
   exists nil. exists a. exists ps. auto.
   specialize (IHps s x0 H). in_inv. exists (a::x). exists x1. exists x2. auto.
 Qed.
@@ -1166,8 +1168,8 @@ Proof.
   assert (in_grammar (fold_right (@alt t) (@never t) ps1) s v). apply in_alts_fold ; auto.
   clear H. apply in_alts_fold. generalize ps2 s v H1 H0. clear ps2 s v H1 H0.
   induction ps1. simpl. intros. unfold never in *. inversion H1. simpl.
-  intros. generalize (MapInv H1) ; clear H1 ; mysimp ; subst. 
-  generalize (AltInv H) ; clear H ; mysimp ; subst. assert (In a ps2). apply H0. auto.
+  intros. generalize (inv_Map H1) ; clear H1 ; mysimp ; subst. 
+  generalize (inv_Alt H) ; clear H ; mysimp ; subst. assert (In a ps2). apply H0. auto.
   eapply in_alts_fold. eapply elt_in_alts ; eauto. auto.
 Qed.
 

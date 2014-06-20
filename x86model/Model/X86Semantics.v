@@ -4114,19 +4114,16 @@ Fixpoint parse_instr_aux
              end
   end.
 
-Definition parse_instr' (ps:option X86_PARSER.ParseState_t) 
+Definition parse_instr' (ps:X86_PARSER.ParseState_t) 
            (pc:int32) : RTL ((prefix * instr) * positive) :=
   seg_start <- get_loc (seg_reg_start_loc CS);
   (* add the PC to it *)
   let real_pc := Word.add seg_start pc in
-  match ps with 
-      | None => Fail _
-      | Some ps => parse_instr_aux 15 real_pc 1 ps
-  end.
+  parse_instr_aux 15 real_pc 1 ps.
 
-Import X86_PARSER.ABSTRACT_OPT_INI_DECODER_STATE.
+Import X86_PARSER.ABSTRACT_INI_DECODER_STATE.
 
-Definition parse_instr := parse_instr' abs_opt_ini_decoder_state.
+Definition parse_instr := parse_instr' abs_ini_decoder_state.
 
 (** Fetch an instruction at the location given by the program counter.  Return
     the abstract syntax for the instruction, along with a count in bytes for 

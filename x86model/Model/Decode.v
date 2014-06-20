@@ -14,17 +14,15 @@
 Require Coqlib.
 Require Import Coq.Init.Logic.
 Require Import Bool.
-Require Import List.
 Require Import String.
+Require Import List.
 Require Import Maps.
 Require Import Ascii.
 Require Import ZArith.
 Require Import Eqdep.
-Require Import Parser.
 Unset Automatic Introduction.
 Set Implicit Arguments.
 Local Open Scope Z_scope.
-
 
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
@@ -117,8 +115,9 @@ Module X86_PARSER.
   *)
   Require Import X86Syntax.
   Require Import Bits.
-  Import X86_PARSER_ARG.
-  Import Parser.
+  Require ParserArg.
+  Import ParserArg.X86_PARSER_ARG.
+  Require Import Parser.
 
   Definition option_t x := User_t (Option_t x).
   Definition int_t := User_t Int_t.
@@ -154,7 +153,8 @@ Module X86_PARSER.
   Definition alt t (p1 p2:grammar t) : grammar t := 
     Map _ (fun (x:interp (Sum_t t t)) => match x with inl a => a | inr b => b end) 
         (Alt p1 p2).
-Fixpoint alts0 t (ps:list (grammar t)) : grammar t := 
+
+  Fixpoint alts0 t (ps:list (grammar t)) : grammar t := 
     match ps with 
       | nil => @never t
       | p::nil => p
@@ -169,7 +169,7 @@ Fixpoint alts0 t (ps:list (grammar t)) : grammar t :=
 
   Fixpoint alts' n t (ps:list (grammar t)) : grammar t := 
     match n, ps with 
-      | 0, _ => alts0 ps
+      | 0%nat, _ => alts0 ps
       | S n, nil => @never t
       | S n, p::nil => p
       | S n, ps => 
@@ -2088,6 +2088,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     UNPCKLPS_p :: XORPS_p :: PAVGB_p :: PEXTRW_p :: PINSRW_p :: PMAXSW_p :: PMAXUB_p :: PMINSW_p :: PMINUB_p :: PMOVMSKB_p :: PSADBW_p :: PSHUFW_p :: MASKMOVQ_p ::
     MOVNTPS_p :: MOVNTQ_p :: PREFETCHT0_p :: PREFETCHT1_p :: PREFETCHT2_p :: PREFETCHNTA_p :: SFENCE_p :: nil.
 
+  Local Open Scope list_scope.
 
   Definition instruction_grammar_list := 
     (List.map (fun (p:grammar instruction_t) => prefix_grammar_rep $ p)
@@ -2111,38 +2112,39 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
       instr_grammars_seg_override).
 
   Definition instruction_grammar := alts instruction_grammar_list.
+  Definition instruction_regexp := projT1 (split_grammar (instruction_grammar)).
 
-  Definition opt_ini_decoder_state := 
-    opt_initial_parser_state 255 instruction_grammar.
+  Definition ini_decoder_state := 
+    initial_parser_state instruction_grammar.
 
-  (* Definition opt_ini_x86_decoder_state :=  *)
-  (*   X86_PARSER.opt_initial_decoder_state 255. *)
+  (* Preventing Coq from expanding the def of ini_decoder_state *)
+  Module Type ABSTRACT_INI_DECODER_STATE_SIG.
+    Parameter abs_ini_decoder_state :
+      instParserState
+        (Pair_t X86_PARSER.prefix_t X86_PARSER.instruction_t)
+        instruction_regexp.
+    Parameter ini_decoder_state_eq :
+        abs_ini_decoder_state = ini_decoder_state.
+  End ABSTRACT_INI_DECODER_STATE_SIG.
 
-  (* Preventing Coq from expanding the def of opt_ini_x86_decoder_state *)
-  Module Type ABSTRACT_OPT_INI_DECODER_STATE_SIG.
-    Parameter abs_opt_ini_decoder_state : 
-      option (instParserState
-                (Pair_t X86_PARSER.prefix_t X86_PARSER.instruction_t)).
-    Parameter opt_ini_decoder_state_eq : 
-        abs_opt_ini_decoder_state = opt_ini_decoder_state.
-  End ABSTRACT_OPT_INI_DECODER_STATE_SIG.
+  Module ABSTRACT_INI_DECODER_STATE : ABSTRACT_INI_DECODER_STATE_SIG.
+    Definition abs_ini_decoder_state := ini_decoder_state.
+    Definition ini_decoder_state_eq := eq_refl ini_decoder_state.
+  End ABSTRACT_INI_DECODER_STATE.
 
-  Module ABSTRACT_OPT_INI_DECODER_STATE : ABSTRACT_OPT_INI_DECODER_STATE_SIG.
-    Definition abs_opt_ini_decoder_state := opt_ini_decoder_state.
-    Definition opt_ini_decoder_state_eq := eq_refl opt_ini_decoder_state.
-  End ABSTRACT_OPT_INI_DECODER_STATE.
-
-  Lemma byte_less_than_num_tokens (b:int8) : 
-    (Z.to_nat (Word.intval _ b) < num_tokens).
+  Lemma byte_less_than_num_tokens (b:int8) :
+    (Z.to_nat (Word.intval _ b) < num_tokens)%nat.
   Proof.
-    destruct b. destruct intrange. simpl. assert (256 = (Z.to_nat (256%Z))). auto. 
-    unfold num_tokens. rewrite H. apply Z2Nat.inj_lt ; auto. omega.
+    destruct b. destruct intrange. simpl. assert (256 = (Z.to_nat 256%Z))%nat. auto.
+    unfold num_tokens, ParserArg.X86_PARSER_ARG.num_tokens.
+    rewrite H. apply Z2Nat.inj_lt ; auto. omega.
   Qed.
 
-  Definition ParseState_t := instParserState (Pair_t prefix_t instruction_t).
+  Definition ParseState_t := instParserState (Pair_t prefix_t instruction_t)
+                                             instruction_regexp.
 
-  Definition parse_byte (ps: ParseState_t) (byte:int8) : 
-    instParserState (Pair_t prefix_t instruction_t) * list (prefix * instr) := 
+  Definition parse_byte (ps: ParseState_t) (byte:int8) :
+    ParseState_t * list (prefix * instr) :=
     parse_token ps (byte_less_than_num_tokens byte).
 
 End X86_PARSER.
