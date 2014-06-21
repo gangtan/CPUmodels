@@ -2,7 +2,7 @@ Require Import Coq.Program.Equality.
 Require Import Coqlib.
 Require Import List.
 Require Import Bool.
-Require Export Char.
+Require Export Alphabet.
 Set Implicit Arguments.
 
 Inductive void : Type := .

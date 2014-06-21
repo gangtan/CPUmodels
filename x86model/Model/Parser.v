@@ -46,10 +46,13 @@ Local Hint Resolve in_map in_prod in_or_app.
 (* Require Import Coq.MSets.MSetFacts. *)
 
 (** * Define [RESet], a set of regexps *)
-Require Import RESet.
 
 (** A set of regexps *)
-Module RES := RESet.RESETXFORM.
+(* Require Import RESet. *)
+(* Module RES := RESet.RESetXform. *)
+Require RESet.
+Module RES := RESet.
+
 (* Module RESet := MSetAVL.Make REOrderedType. *)
 Module RESF := MapSet RES.
 Module RESP := MSetProperties.Properties RES.
@@ -60,10 +63,6 @@ Opaque xcross xmap xapp xcomp xflatten.
 (** ** Abbreviations and definitions for [RESet] *)
 
 (* (* The following should be moved to RESet.v *) *)
-(* Extraction Implicit RES.map_xform [ty1 ty2]. *)
-(* Extraction Implicit RES.simple_cat_re_xform [ty]. *)
-(* Extraction Implicit RES.cat_re_xform [ty]. *)
-(* Extraction Implicit RES.empty_xform [ty]. *)
 
 Local Ltac re_set_simpl :=
   repeat 
@@ -221,6 +220,7 @@ Lemma in_re_set_xform_comp2:
 Proof. intros. destruct rx as [rs f]. apply in_re_set_xform_comp. trivial. Qed.
 
 Definition erase ty (rx:rs_xf_pair ty): RES.t := projT1 rx.
+Extraction Implicit erase [ty].
 Notation "| rx |" := (erase rx) (at level 40, no associativity).
 
 (** Equality of the RESets in [rs_xf_pair]s *)
@@ -508,6 +508,7 @@ Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty :=
   let (r, f) := rex in
   let (rs, frs) := pdrv a r in
   existT _ rs (xcomp frs (xcomp (xmap f) xflatten)).
+Extraction Implicit pdrv_rex [ty].
 
 (* Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty :=  *)
 (*   let (r, f) := rex in *)
@@ -519,6 +520,7 @@ Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty :=
 Definition pdrv_set ty (a:char_t) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
   RES.fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex a rex) rx1)
                  rx (@RES.empty_xform ty).
+Extraction Implicit pdrv_set [ty].
 
 (** Word partial derivatives; 
     wpdrv(nil, rs) = rs
@@ -529,6 +531,7 @@ Fixpoint wpdrv ty (s:list char_t) (rx:rs_xf_pair ty): rs_xf_pair ty :=
     | a:: s' => let (rs, f) := pdrv_set a rx in
                 wpdrv s' (existT _ rs (xopt f))
   end.
+Extraction Implicit wpdrv [ty].
 
 Definition wpdrv_re_set s (rs:RES.t) : rs_xf_pair (RES.re_set_type rs) :=
   wpdrv s (existT _ rs xsingleton).
@@ -2446,7 +2449,32 @@ Section DFA.
   Qed.
 
 End DFA.
-(* Recursive Extraction build_dfa. *)
+
+Extraction Implicit entry_t [r rownum ss].
+Extraction Implicit entries_t [r i ss].
+Extraction Implicit transition_t [r ss].
+Extraction Implicit transitions_t [r ss].
+Extraction Implicit DFA [r].
+
+Extraction Implicit cardinal_wfs [r].
+Extraction Implicit wpdrv_wf [r].
+Extraction Implicit add_wfs [r].
+Extraction Implicit get_index_wfs [r].
+Extraction Implicit get_index_wfs2 [r].
+Extraction Implicit get_element_wfs [r].
+Extraction Implicit get_element_wfs2 [r].
+Extraction Implicit get_state [r].
+Extraction Implicit gen_backward_xform [r ss].
+Extraction Implicit gen_row' [r gpos].
+Extraction Implicit gen_row [r gpos].
+
+Extraction Implicit coerce_entry [r n ss ss'].
+Extraction Implicit coerce_nils [r ss ss' i].
+Extraction Implicit coerce_transitions [r].
+Extraction Implicit cons_transition [r].
+Extraction Implicit build_table_func [r].
+Extraction Implicit build_table [r].
+
 
 (* Definition test0:= Eps. *)
 (* Definition test1 := Char true. *)
@@ -2505,6 +2533,10 @@ Fixpoint split_grammar t (g:grammar t) : { ag : regexp & fixfn ag t} :=
     (*     @re_and_fn _ ag (fun x => (xinterp f) (f2 x)) *)
   end.
 Extraction Implicit split_grammar [t].
+
+Definition par2rec t (g:grammar t) : regexp := 
+  let (ag, _) := split_grammar g in ag.
+Extraction Implicit par2rec [t].
 
 Local Ltac break_split_grammar := 
   repeat 
@@ -2590,8 +2622,8 @@ Section DFA_PARSE.
     intros. rewrite <- H. trivial.
   Defined.
 
-  Definition coerce_dom (A A':xtype) (H:A=A') (B:Type) (f:xt_interp A->B) : 
-    xt_interp A' -> B.
+  Definition coerce_dom (t1 t2:xtype) (H:t1=t2) (B:Type) (f:xt_interp t1->B) : 
+    xt_interp t2 -> B.
      rewrite <- H. trivial.
   Defined.
 
@@ -3026,13 +3058,15 @@ Section DFA_PARSE.
   Qed.
 
 End DFA_PARSE.
-    
-(* Extraction Implicit table_parse [t]. *)
-(* Extraction Implicit opt_initial_parser_state [t]. *)
-(* Extraction Implicit parse_token [t]. *)
-(* Extraction Implicit parse_tokens [t]. *)
-(* Recursive Extraction parse_tokens. *)
 
+Extraction Implicit instParserState [t r].
+Extraction Implicit initial_parser_state [t].
+Extraction Implicit coerce_dfa [r1 r2].
+Extraction Implicit coerce_dom [t1 t2].
+Extraction Implicit parse_token [t r].
+Extraction Implicit ps_extract_nil [t r].
+Extraction Implicit parse_tokens [t r].
+    
 (** [to_string] takes a grammar [a] and an abstract syntax value [v] of
     type [regexp_type a] and produces an optional string [s] with the property
     that [in_regexp a s v].  So effectively, it's a pretty printer for
@@ -3102,11 +3136,6 @@ End DFA_PARSE.
 (*   destruct s1 ; try congruence. auto. *)
 (* Qed. *)
 
-
-
-(* Require Import Parser. *)
-(* Definition par2rec t (g:grammar t) : regexp :=  *)
-(*   let (ag, _) := split_grammar g in ag. *)
 
 (* stuff that can be copied from the old Parser.v *)
 (*   - optimizing constructors for regexps *)

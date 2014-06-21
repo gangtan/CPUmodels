@@ -1875,6 +1875,3 @@ Section DFA_RECOGNIZE.
 
 End DFA_RECOGNIZE.
 
-Require Import Parser.
-Definition par2rec t (g:grammar t) : regexp := 
-  let (ag, _) := split_grammar g in ag.

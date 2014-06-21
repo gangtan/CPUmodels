@@ -1,5 +1,5 @@
 Require Import List.
-Require Export Char.
+Require Export Alphabet.
 Require Import Bool.
 Require Import Xform.
 Require Import CommonTacs.

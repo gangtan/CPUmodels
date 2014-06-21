@@ -13,7 +13,7 @@ Require Import Coqlib.  (* for proof_irrelevance *)
 Set Implicit Arguments.
 
 (** A set of regexps paired with xforms *)
-Module Type RESetXform.
+Module Type RESETXFORM.
   Include WSetsOn REOrderedType.
 
   (* note: in the rest t is the type for RESets *)
@@ -141,11 +141,18 @@ Module Type RESetXform.
   Parameter re_set_extract_nil_corr : 
     forall s (v : xt_interp (re_set_type s)),
            in_re_set s nil v <-> List.In v (re_set_extract_nil s).
-End RESetXform.
+End RESETXFORM.
 
-Module RESet := MSetAVL.Make REOrderedType.
-Module RESETXFORM <: RESetXform.
-  Include RESet.  
+(* Raw RESet: RESet without transforms. Cannot use the name RESet here,
+   because the extraction would not like it if had the same name as the
+   name of this file. *)
+Module RawRESet := MSetAVL.Make REOrderedType.
+
+(* We have to break the module boundary of RESetXform because of
+   "Extraction Implicit" does not respect modules (due to a Coq bug) *)
+(* Module RESetXform <: RESETXFORM. *)
+
+  Include RawRESet.
 
   Definition re_xf_pair (ty:xtype) := {r : regexp & regexp_type r ->> xList_t ty}.
 
@@ -253,6 +260,7 @@ Module RESETXFORM <: RESetXform.
 
   Definition empty_xform (ty:xtype) : rs_xf_pair ty := 
     existT _ empty xzero.
+  Extraction Implicit empty_xform [ty].
   
   Lemma empty_xform_erase : forall ty, projT1 (@empty_xform ty) = empty.
     auto.
@@ -290,6 +298,7 @@ Module RESETXFORM <: RESetXform.
     existT _ (Raw.Node (Int.Z_as_Int.plus (Int.Z_as_Int.max (Raw.height l) 
                                                             (Raw.height r)) 1)
                        l x r) (xmatch fl (xmatch fx fr)).
+  Extraction Implicit create_xform [ty].
 
   Lemma create_xform_erase : 
     forall ty l fl x fx r fr, projT1 (@create_xform ty l fl x fx r fr) = Raw.create l x r.
@@ -501,33 +510,33 @@ Module RESETXFORM <: RESetXform.
     xinterp_simpl. apply IHt1_2. auto.
   Qed.
   
-  Definition inject_xform (s1 s2 : RESet.t) : 
-    (RESet.subset s1 s2 = true) -> (re_set_type s1 ->> re_set_type s2).
+  Definition inject_xform (s1 s2 : RawRESet.t) : 
+    (RawRESet.subset s1 s2 = true) -> (re_set_type s1 ->> re_set_type s2).
   Proof.
     destruct s1 as [t1 okt1].
-    destruct s2 as [t2 okt2]. unfold RESet.subset, re_set_type. simpl. 
+    destruct s2 as [t2 okt2]. unfold RawRESet.subset, re_set_type. simpl. 
     apply (inject_xform_tree okt1 okt2).
   Defined.
 
-  Definition inject_xform_corr1 s1 s2 (Hsub : RESet.subset s1 s2 = true) str v : 
+  Definition inject_xform_corr1 s1 s2 (Hsub : RawRESet.subset s1 s2 = true) str v : 
     in_re_set s1 str v -> 
     in_re_set s2 str (xinterp (inject_xform s1 s2 Hsub) v).
   Proof.    
     destruct s1 as [t1 okt1].
     destruct s2 as [t2 okt2]. 
-    unfold RESet.subset, re_set_type, in_re_set in *. simpl in *.
+    unfold RawRESet.subset, re_set_type, in_re_set in *. simpl in *.
     apply inject_xform_tree_corr1 ; auto.
   Qed.
 
-  Definition equal_xform s1 s2 (H : RESet.Equal s1 s2) : re_set_type s1 ->> re_set_type s2.
-    assert (RESet.subset s1 s2 = true).
-    rewrite (RESet.subset_spec). intro. apply (proj1 (H a)). 
+  Definition equal_xform s1 s2 (H : RawRESet.Equal s1 s2) : re_set_type s1 ->> re_set_type s2.
+    assert (RawRESet.subset s1 s2 = true).
+    rewrite (RawRESet.subset_spec). intro. apply (proj1 (H a)). 
     apply (@inject_xform s1 s2 H0).
   Defined.
 
-  Lemma Equal_sym s1 s2 : RESet.Equal s1 s2 -> RESet.Equal s2 s1.
+  Lemma Equal_sym s1 s2 : RawRESet.Equal s1 s2 -> RawRESet.Equal s2 s1.
   Proof.
-    unfold RESet.Equal. crush. rewrite <- H. auto.
+    unfold RawRESet.Equal. crush. rewrite <- H. auto.
   Qed.
   
   Lemma Subset_node i t11 x t12 t2 : 
@@ -1191,6 +1200,7 @@ Module RESETXFORM <: RESetXform.
   Qed.
 
   Definition assert_false_xform := create_xform.
+  Extraction Implicit assert_false_xform [ty].
 
   Lemma assert_false_xform_erase : 
     forall t l fl x fx r fr, projT1 (@assert_false_xform t l fl x fx r fr) = 
@@ -1269,6 +1279,8 @@ Module RESETXFORM <: RESetXform.
             end
       end fr
          else create_xform l fl x fx r fr.
+
+  Extraction Implicit bal_xform [t].
 
   Lemma bal_xform_erase : 
     forall t l fl x fx r fr, projT1 (@bal_xform t l fl x fx r fr) = Raw.bal l x r.
@@ -1428,6 +1440,7 @@ Module RESETXFORM <: RESetXform.
                       end
           end eq_refl
     end.
+  Extraction Implicit add_xform_tree [t].
 
   Lemma add_xform_tree_erase : 
     forall t s x f1 f, 
@@ -1580,6 +1593,7 @@ Module RESETXFORM <: RESetXform.
                                     (Raw.Node rh rl rx rr) fr
           end
     end.
+  Extraction Implicit join_xform [t].
 
   Lemma join_xform_erase : forall t l fl x fx r fr, 
       projT1 (@join_xform t l fl x fx r fr) = Raw.join l x r.
@@ -1686,6 +1700,7 @@ Module RESETXFORM <: RESetXform.
            t_in : option (regexp_type x ->> xList_t t) ; 
            t_right : Raw.tree ; t_right_xform : tree_type t_right ->> xList_t t
          }.
+  Extraction Implicit triple_xform [t].
 
   Fixpoint split_xform t (x:regexp) (s : Raw.tree) :
                                   tree_type s ->> xList_t t -> triple_xform t x := 
@@ -1723,6 +1738,7 @@ Module RESETXFORM <: RESetXform.
                          t_right := rr ; t_right_xform := frr |}
           end eq_refl
     end.
+  Extraction Implicit split_xform [t].
 
   Lemma split_xform_erase : forall t x s fs, 
       Raw.split x s = 
@@ -1872,6 +1888,7 @@ Module RESETXFORM <: RESetXform.
                 join_xform l' fl' x1 xf r' fr'
           end
     end.
+  Extraction Implicit union_xform_tree [t].
 
   Lemma union_xform_tree_erase t s1 : forall f1 s2 f2,
     projT1 (@union_xform_tree t s1 f1 s2 f2) = Raw.union s1 s2.
@@ -1974,6 +1991,7 @@ Module RESETXFORM <: RESetXform.
     eapply (existT (fun rs => re_set_type rs ->> xList_t ty) s').
     rewrite Heqs'. apply ft'.
   Defined.
+  Extraction Implicit add_xform [ty].
 
   Lemma add_xform_erase ty rex rs : 
     projT1 (@add_xform ty rex rs) = add (projT1 rex) (projT1 rs).
@@ -2030,6 +2048,7 @@ Module RESETXFORM <: RESetXform.
     rewrite Heqs'.
     apply f0.
   Defined.
+  Extraction Implicit union_xform [ty].
 
   Lemma union_xform_erase ty rs1 rs2 : 
     projT1 (@union_xform ty rs1 rs2) = union (projT1 rs1) (projT1 rs2).
@@ -2088,12 +2107,13 @@ Module RESETXFORM <: RESetXform.
                                (fold_tree_xform l (xcomp xinl fs) v))
       end.
   End FOLD_TREE_XFORM.
+  Extraction Implicit fold_tree_xform [ty].
 
   Section FOLD_TREE_XFORM_ERASE.
     Variable ty1 : xtype.
     Variable ty2 : xtype.
     Variable comb1 : re_xf_pair ty1 -> rs_xf_pair ty2 -> rs_xf_pair ty2.
-    Variable comb2 : regexp -> RESet.t -> RESet.t.
+    Variable comb2 : regexp -> RawRESet.t -> RawRESet.t.
     Variable H : forall rex rx, projT1 (comb1 rex rx) = comb2 (projT1 rex) (projT1 rx).
 
     Lemma fold_tree_xform_erase : 
@@ -2114,40 +2134,42 @@ Module RESETXFORM <: RESetXform.
         fun f2 : re_set_type {| this := t1; is_ok := okt1 |} ->> xList_t ty =>
           fold_tree_xform comb t1 f2 a
     end f1.
+  Extraction Implicit fold_xform [ty].
 
    Lemma fold_xform_erase : forall ty1 ty2
      (comb1:re_xf_pair ty1 -> rs_xf_pair ty2 -> rs_xf_pair ty2)
-     (comb2:regexp -> RESet.t -> RESet.t) rx ini_rx,
+     (comb2:regexp -> RawRESet.t -> RawRESet.t) rx ini_rx,
      (forall rex rx, projT1 (comb1 rex rx) = comb2 (projT1 rex) (projT1 rx)) -> 
-     projT1 (fold_xform comb1 rx ini_rx) = RESet.fold comb2 (projT1 rx) (projT1 ini_rx).
+     projT1 (fold_xform comb1 rx ini_rx) = RawRESet.fold comb2 (projT1 rx) (projT1 ini_rx).
   Proof.
     intros.
     destruct rx. simpl. destruct x. 
-    unfold RESet.fold. simpl. destruct ini_rx.
+    unfold RawRESet.fold. simpl. destruct ini_rx.
     rewrite (@fold_tree_xform_erase ty1 ty2 comb1 comb2 H). auto.
   Qed.
 
   Definition map_xform ty1 ty2 (f : re_xf_pair ty1 -> re_xf_pair ty2) (s:rs_xf_pair ty1) : 
     rs_xf_pair ty2 := 
     fold_xform (fun x => add_xform (f x)) s (empty_xform ty2).
+  Extraction Implicit map_xform [ty1 ty2].
 
   Lemma map_xform_erase : 
     forall ty1 ty2 (f : re_xf_pair ty1 -> re_xf_pair ty2) 
               (f' : regexp -> regexp) (s : rs_xf_pair ty1), 
       (forall rx, projT1 (f rx) = f' (projT1 rx)) -> 
       projT1(map_xform f s) = 
-      RESet.fold (fun x => RESet.add (f' x)) (projT1 s) RESet.empty.
+      RawRESet.fold (fun x => RawRESet.add (f' x)) (projT1 s) RawRESet.empty.
    Proof.
      intros.
      unfold map_xform. apply fold_xform_erase. intros. 
      rewrite add_xform_erase. rewrite H. auto.
    Qed.    
 
-   Definition set_cat_re (s:RESet.t) (r:regexp): RESet.t := 
+   Definition set_cat_re (s:RawRESet.t) (r:regexp): RawRESet.t := 
      match r with
        | rEps => s (* not stricitly necessary; an optimization *)
-       | rZero => RESet.empty
-       | _ => RESet.fold (fun r1 s' => RESet.add (rCat r1 r) s') s RESet.empty
+       | rZero => RawRESet.empty
+       | _ => RawRESet.fold (fun r1 s' => RawRESet.add (rCat r1 r) s') s RawRESet.empty
                          (* Note : will need to show that this is the same as
                             RESF.map (re_set_build_map (fun r1 => rCat r1 r)) s *)
      end.
@@ -2159,15 +2181,17 @@ Module RESETXFORM <: RESetXform.
                   existT _ (rCat x r)
                          (xcomp (xpair xsnd (xcomp xfst f)) (xmapenv (xpair xsnd xfst))))
        s.
+  Extraction Implicit simple_cat_re_xform [ty].
 
    Definition cat_re_xform ty (s : rs_xf_pair ty) (r:regexp) : 
      rs_xf_pair (xPair_t ty (regexp_type r)) := 
      match r as r' return rs_xf_pair (xPair_t ty (regexp_type r')) with
        | rEps => let (raw_set,f) := s in 
                 (existT _ raw_set (xcomp f (xmap (xpair xid xunit))))
-       | rZero => (existT _ RESet.empty xzero)
+       | rZero => (existT _ RawRESet.empty xzero)
        | r' => simple_cat_re_xform s r'
      end.
+  Extraction Implicit cat_re_xform [ty].
 
    Lemma cat_re_xform_erase ty s r :  
      projT1 (@cat_re_xform ty s r) = set_cat_re (projT1 s) r.
@@ -2361,6 +2385,6 @@ Module RESETXFORM <: RESetXform.
     destruct v. destruct v.
   Qed. 
 
-End RESETXFORM.
+(* End RESeTXform. *)
 
-(* Module RR : WSets := RESet. *) 
+(* Module RR : WSets := RawRESet. *) 
