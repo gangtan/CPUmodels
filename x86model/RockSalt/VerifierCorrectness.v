@@ -33,7 +33,7 @@ Require Import FastVerifier.
 
 
 Import ParserArg.X86_PARSER_ARG.
-Import X86_PARSER.
+(* Import X86_PARSER. *)
 (* Import X86_BASE_PARSER. *)
 Import X86_RTL.
 Import X86_MACHINE.
@@ -54,13 +54,13 @@ Fixpoint simple_parse' (ps:ParseState_t) (bytes:list int8) :
   option ((prefix * instr) * list int8) := 
   match bytes with 
     | nil => None
-    | b::bs => match X86_PARSER.parse_byte ps b with 
+    | b::bs => match parse_byte ps b with 
                  | (ps',nil) => simple_parse' ps' bs
                  | (_, v::_) => Some (v,bs)
                end
   end.
 
-Import X86_PARSER.ABSTRACT_INI_DECODER_STATE.
+Import ABSTRACT_INI_DECODER_STATE.
 Definition simple_parse (bytes:list int8) : option ((prefix * instr) * list int8) := 
   simple_parse' abs_ini_decoder_state bytes.
 
@@ -704,7 +704,7 @@ Section VERIFIER_CORR.
   Qed.
 
   (** *** Properties about parse_instr *)
-  Opaque Decode.X86_PARSER.parse_byte.
+  Opaque Decode.parse_byte.
 
   Lemma parse_instr_aux_same_state : forall n pc len ps,
     same_rtl_state (parse_instr_aux n pc len ps).
@@ -823,7 +823,7 @@ Section VERIFIER_CORR.
     eapply parse_instr_aux_code_inv; eassumption.
   Qed.
 
-  Transparent Decode.X86_PARSER.parse_byte.
+  Transparent Decode.parse_byte.
 
   (** *** Misc. lemmas *)
 
@@ -3346,7 +3346,7 @@ Section VERIFIER_CORR.
     reflexivity.
   Qed.
 
-  Opaque Decode.X86_PARSER.parse_byte.
+  Opaque Decode.parse_byte.
   Lemma parse_instr_aux_code_inv2 : forall n pc len ps s1 s1' pi len' s2,
     Same_Mem_Rel.brel s1 s2
       -> parse_instr_aux n pc len ps s1 = (Okay_ans (pi, len'), s1')
@@ -3372,7 +3372,7 @@ Section VERIFIER_CORR.
     eapply parse_instr_aux_code_inv2. eassumption.
       rewrite <- H0. eassumption.
   Qed.
-  Transparent Decode.X86_PARSER.parse_byte.
+  Transparent Decode.parse_byte.
 
   (* The proof of this theorem needs to perform case analysis over
      the current pseudo instruction *)

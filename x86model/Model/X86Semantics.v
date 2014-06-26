@@ -16,7 +16,7 @@ Require Import List.
 Require Import Bits.
 Require Import ZArith.
 Require Import Parser.
-Require Import Decode.  
+Require Decode.
 Require Import String.
 Require Import Monad.
 Require Import Maps.
@@ -4102,26 +4102,26 @@ Fixpoint fetch_n (n:nat) (loc:int32) (r:rtl_state) : list int8 :=
     to support parsing.
 *)
 Fixpoint parse_instr_aux
-  (n:nat) (loc:int32) (len:positive) (ps:X86_PARSER.ParseState_t) : 
+  (n:nat) (loc:int32) (len:positive) (ps:Decode.ParseState_t) : 
   RTL ((prefix * instr) * positive) := 
   match n with 
     | 0%nat => Fail _ 
     | S m => b <- get_byte loc ; 
-             match Decode.X86_PARSER.parse_byte ps b with 
+             match Decode.parse_byte ps b with 
                | (ps', nil) => 
                  parse_instr_aux m (Word.add loc (Word.repr 1)) (len + 1) ps'
                | (_, v::_) => ret (v,len)
              end
   end.
 
-Definition parse_instr' (ps:X86_PARSER.ParseState_t) 
+Definition parse_instr' (ps:Decode.ParseState_t) 
            (pc:int32) : RTL ((prefix * instr) * positive) :=
   seg_start <- get_loc (seg_reg_start_loc CS);
   (* add the PC to it *)
   let real_pc := Word.add seg_start pc in
   parse_instr_aux 15 real_pc 1 ps.
 
-Import X86_PARSER.ABSTRACT_INI_DECODER_STATE.
+Import Decode.ABSTRACT_INI_DECODER_STATE.
 
 Definition parse_instr := parse_instr' abs_ini_decoder_state.
 

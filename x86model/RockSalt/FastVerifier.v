@@ -21,7 +21,7 @@ Require Import Int32.
 Require Import VerifierDFA.
 
 Import ParserArg.X86_PARSER_ARG.
-Import X86_PARSER.
+(* Import X86_PARSER. *)
 (* Import X86_BASE_PARSER. *)
 
 Require Coq.MSets.MSetAVL.

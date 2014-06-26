@@ -27,7 +27,7 @@ Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 Require ExtrOcamlNatInt.
 Import ParserArg.X86_PARSER_ARG.
-Import X86_PARSER.
+(* Import X86_PARSER. *)
 (* Import X86_BASE_PARSER. *)
 Import X86Syntax.
 Hint Constructors in_grammar.
@@ -288,13 +288,13 @@ Fixpoint simple_parse' (ps:ParseState_t) (bytes:list int8) :
   option ((prefix * instr) * list int8) := 
   match bytes with 
     | nil => None
-    | b::bs => match X86_PARSER.parse_byte ps b with 
+    | b::bs => match parse_byte ps b with 
                  | (ps',nil) => simple_parse' ps' bs
                  | (_, v::_) => Some (v,bs)
                end
   end.
 
-Import X86_PARSER.ABSTRACT_INI_DECODER_STATE.
+Import ABSTRACT_INI_DECODER_STATE.
 Definition simple_parse (bytes:list int8) : option ((prefix * instr) * list int8) := 
   simple_parse' abs_ini_decoder_state bytes.
 

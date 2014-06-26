@@ -108,7 +108,7 @@ Module X86_PARSER_ARG.
 End X86_PARSER_ARG.
 *)
 
-Module X86_PARSER.
+(* Module X86_PARSER. *)
   (* Commented out because the Parser is no longer a functor, due to the
      bug with Extraction Implicit. 
      Module X86_BASE_PARSER := Parser.Parser(X86_PARSER_ARG).
@@ -2121,7 +2121,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
   Module Type ABSTRACT_INI_DECODER_STATE_SIG.
     Parameter abs_ini_decoder_state :
       instParserState
-        (Pair_t X86_PARSER.prefix_t X86_PARSER.instruction_t)
+        (Pair_t prefix_t instruction_t)
         instruction_regexp.
     Parameter ini_decoder_state_eq :
         abs_ini_decoder_state = ini_decoder_state.
@@ -2147,4 +2147,29 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     ParseState_t * list (prefix * instr) :=
     parse_token ps (byte_less_than_num_tokens byte).
 
-End X86_PARSER.
+(* End X86_PARSER. *)
+
+Extraction Implicit never [t].
+Extraction Implicit always [t].
+Extraction Implicit alt [t].
+Extraction Implicit alts0 [t].
+Extraction Implicit alts' [t].
+Extraction Implicit alts [t].
+Extraction Implicit map [t1 t2].
+Extraction Implicit seq [t1 t2].
+Extraction Implicit cons [t].
+Extraction Implicit seqs [t].
+Extraction Implicit bitsleft [t].
+Extraction Implicit modrm_gen [res_t].
+Extraction Implicit modrm_gen_noreg [reg_t res_t].
+Extraction Implicit ext_op_modrm_gen [res_t].
+Extraction Implicit ext_op_modrm2_gen [res_t].
+Extraction Implicit perm2 [t1 t2].
+Extraction Implicit perm3 [t1 t2 t3].
+Extraction Implicit perm4 [t1 t2 t3 t4].
+Extraction Implicit option_perm [t1].
+Extraction Implicit option_perm2 [t1 t2].
+Extraction Implicit option_perm3 [t1 t2 t3].
+Extraction Implicit option_perm4 [t1 t2 t3 t4].
+Extraction Implicit option_perm2_variation [t1 t2].
+Extraction Implicit option_perm3_variation [t1 t2 t3].

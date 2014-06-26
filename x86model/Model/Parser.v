@@ -2581,6 +2581,162 @@ Proof.
   (* Case "Xform". in_grammar_inv. intros. crush_hyp. *)
 Qed.
 
+
+
+(** * An naive, online derivative parser.
+
+   This parser is not really used, but only for speed comparison. *)
+
+
+Definition coerce_rx (t1 t2:xtype) (H:t1=t2) (f:rs_xf_pair t1) : rs_xf_pair t2.
+   rewrite <- H. trivial.
+Defined.
+
+Definition coerce_dom (t1 t2:xtype) (H:t1=t2) (B:Type) (f:xt_interp t1->B) : 
+  xt_interp t2 -> B.
+   rewrite <- H. trivial.
+Defined.
+
+Section NAIVE_PARSE.
+
+  (** Naive parser: split out the user-defined functions using [split_grammar], 
+    then calculate the derivative with respect to the string, then call
+    [astgram_extract_nil] to get a list of ASTs, then apply the the final
+    transform [xfinal] to map them back to values of the type of the original
+    [astgram], and then apply the split out user-level function to get back a 
+    list of [t] results. *)
+  Definition naive_parse t (g:grammar t) (cs : list char_p) : list (interp t) :=
+  let (r, fuser) := split_grammar g in 
+  let (rs, f) := wpdrv cs (RES.singleton_xform r) in
+    flat_map (compose (List.map fuser) (xinterp f)) 
+             (RES.re_set_extract_nil rs).
+
+  Lemma naive_parse_corr1 : forall t (g:grammar t) cs v, in_grammar g cs v -> 
+                                                       In v (naive_parse g cs).
+  Proof.
+    intros. unfold naive_parse. 
+    generalize (split_grammar_corr2 g). intros.
+    remember_head as sg. destruct sg as [r fuser]. 
+    specialize (H0 _ _ H). destruct H0 as [v1 [H2 H4]].
+    subst.
+    remember_head as wr. destruct wr as [rs f].
+    apply RES.singleton_xform_corr in H2.
+    rewrite <- (app_nil_r cs) in H2.
+    apply wpdrv_corr in H2.
+    rewrite Hwr in H2.
+    apply in_re_set_xform_elim2 in H2.
+    destruct H2 as [v2 [H6 H8]].
+    apply in_flat_map. 
+    exists v2. rewrite <- RES.re_set_extract_nil_corr.
+    split. trivial.
+    unfold compose. auto using in_map.
+  Qed.
+
+  Lemma naive_parse_corr2 : forall t (g:grammar t) cs v, In v (naive_parse g cs) -> 
+                                                 in_grammar g cs v.
+  Proof.
+    unfold naive_parse. intros. 
+    generalize (split_grammar_corr1 g). intro H0.
+    remember_head in H as sg. destruct sg as [r fuser].
+    remember_head in H as wr. destruct wr as [rs f].
+    apply in_flat_map in H.
+    destruct H as [v1 [H2 H4]].
+    unfold compose in H4.
+    apply Coqlib.list_in_map_inv in H4.
+    destruct H4 as [v2 [H6 H8]].
+    assert (H10:in_re_set_xform (existT _ rs f) nil v2).
+      eapply in_re_set_xform_intro2.
+      apply RES.re_set_extract_nil_corr in H2. eassumption.
+      assumption.
+    rewrite <- Hwr in H10.
+    apply wpdrv_corr in H10.
+    rewrite app_nil_r in H10.
+    rewrite RES.singleton_xform_corr in H10.
+    crush.
+  Qed.
+
+  Record naiveParserState (t1:xtype) (t2:type) := mkNPS { 
+    rx_nps : rs_xf_pair t1; (* a reset and a transform back to type t1 *)
+    fixup_nps : xt_interp t1 -> interp t2 (* the top fixup function *)
+  }.
+
+  Definition naive_parse_token t1 t2 (nps:naiveParserState t1 t2) (tk:token_id) 
+    : naiveParserState t1 t2 * list (interp t2) :=
+    let (rs,f) := wpdrv (token_id_to_chars tk) (rx_nps nps) in 
+    let v := RES.re_set_extract_nil rs in
+    (@mkNPS _ _ (existT _ rs f) (fixup_nps nps),
+     flat_map (compose (List.map (fixup_nps nps)) (xinterp f)) v).
+
+  (** The semantics of naive parser states *)
+  Definition in_nps t1 t2 (nps:naiveParserState t1 t2) (str:list char_t) (v: interp t2) :=
+    exists v', in_re_set_xform (rx_nps nps) str v' /\
+               v = fixup_nps nps v'.
+
+  Opaque token_id_to_chars.
+  Lemma naive_parse_token_corr t r (nps1:naiveParserState t r) tk nps2 vs2:
+    naive_parse_token nps1 tk = (nps2, vs2) ->
+    (forall v, In v vs2 <-> in_nps nps2 nil v) /\
+    forall str v, in_nps nps1 ((token_id_to_chars tk) ++ str) v <->
+                  in_nps nps2 str v.
+  Proof. intro H. unfold naive_parse_token in H.
+    remember_head in H as wp. destruct wp as [rs f].
+    split. intros.
+    Case "In v vs2 <-> in_nps nps2 nil v".
+      inversion_clear H. unfold in_nps. simpl.
+      rewrite in_flat_map. unfold compose. 
+      split; intros.
+      SCase "->".
+        destruct H as [v1 [H2 H4]].
+        rewrite <- RES.re_set_extract_nil_corr in H2.
+        apply Coqlib.list_in_map_inv in H4.
+        destruct H4 as [v2 [H6 H8]].
+        exists v2. crush.
+      SCase "<-".
+        destruct H as [v1 [H2 H4]].
+        destruct H2 as [v2 [H6 H8]].
+        exists v2.
+        split. apply RES.re_set_extract_nil_corr. trivial.
+          subst. apply in_map. trivial.
+    Case "in_nps ... <-> in_nps ...".
+      intros. inversion_clear H. unfold in_nps. simpl.
+      split; intros.
+      SCase "->".
+        destruct H as [v1 [H2 H4]].
+        apply wpdrv_corr in H2.
+        rewrite Hwp in H2.
+        apply in_re_set_xform_elim2 in H2.
+        destruct H2 as [v2 [H6 H8]].
+        crush.
+      SCase "<-".
+        destruct H as [v1 [[v2 [H2 H4]] H6]].
+        exists v1.
+        split; [idtac | trivial].
+        apply wpdrv_corr. rewrite Hwp.
+        eapply in_re_set_xform_intro2; crush.
+  Qed.
+
+  Lemma inps_help1 t (g:grammar t) r f:
+    split_grammar g = existT _ r f ->
+    regexp_type r = regexp_type (projT1 (split_grammar g)).
+  Proof. crush. Qed.
+
+
+  Definition initial_naive_parser_state t (g:grammar t) : 
+    naiveParserState (regexp_type (projT1 (split_grammar g))) t.
+    refine (match split_grammar g as sr return split_grammar g = sr -> _ with
+              | existT r f => fun Hsr =>
+                 @mkNPS _ _ (coerce_rx (inps_help1 g Hsr) (RES.singleton_xform r))
+                        (coerce_dom (inps_help1 g Hsr) f)
+            end eq_refl).
+  Defined.
+
+End NAIVE_PARSE.
+
+Extraction Implicit naive_parse [t].
+Extraction Implicit naiveParserState [t1 t2].
+Extraction Implicit naive_parse_token [t1 t2].
+Extraction Implicit initial_naive_parser_state [t].
+
 (** * A table-based parser. 
 
   Given a grammar, it splits the grammar into a regexp and a fixup function.
@@ -2620,11 +2776,6 @@ Section DFA_PARSE.
 
   Definition coerce_dfa r1 r2: r1 = r2 -> DFA r1 -> DFA r2.
     intros. rewrite <- H. trivial.
-  Defined.
-
-  Definition coerce_dom (t1 t2:xtype) (H:t1=t2) (B:Type) (f:xt_interp t1->B) : 
-    xt_interp t2 -> B.
-     rewrite <- H. trivial.
   Defined.
 
   Lemma ips_help1 t (g:grammar t) r r2 (H:r=r2):
@@ -3066,7 +3217,10 @@ Extraction Implicit coerce_dom [t1 t2].
 Extraction Implicit parse_token [t r].
 Extraction Implicit ps_extract_nil [t r].
 Extraction Implicit parse_tokens [t r].
-    
+
+  
+
+
 (** [to_string] takes a grammar [a] and an abstract syntax value [v] of
     type [regexp_type a] and produces an optional string [s] with the property
     that [in_regexp a s v].  So effectively, it's a pretty printer for

@@ -42,7 +42,6 @@ Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 Require ExtrOcamlNatInt.
 Import ParserArg.X86_PARSER_ARG.
-Import X86_PARSER.
 (*Import X86_BASE_PARSER.*)
 
 (** Our regular expressions with intersection ([And_r]).  We need

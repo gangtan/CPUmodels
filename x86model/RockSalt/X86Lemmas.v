@@ -24,7 +24,7 @@ Require Import Eqdep.
 Require Import VerifierDFA.
 Close Scope char_scope.
 
-Import X86_PARSER.
+(* Import X86_PARSER. *)
 Import X86_RTL.
 Import X86_MACHINE.
 Import X86_Compile.
