@@ -1401,14 +1401,18 @@ Section DFA.
       (** the [next_state] is in bounds with respect to the number of states *)
       next_state_lt : next_state < cardinal_wfs ss ; 
       (** how do we transform ASTs from the next state back to this state *)
-      next_xform : RES.re_set_type (ss.[next_state]) ->>
-                   xList_t (RES.re_set_type (ss.[rownum]))
-        (* interp (RES.re_set_type (ss.[next_state]))->  *)
-        (* interp (List_t (RES.re_set_type (ss.[rownum]))) *)
+      next_xform : (* RES.re_set_type (ss.[next_state]) ->>
+                   xList_t (RES.re_set_type (ss.[rownum])) *)
+        xt_interp (RES.re_set_type (ss.[next_state]))->  
+        xt_interp (xList_t (RES.re_set_type (ss.[rownum]))) 
     }.
 
   (** Entries for a row in the transition matrix -- an entry for each token *)  
   Definition entries_t (i:nat) (ss:wf_states) := list (entry_t i ss).
+
+  Definition in_re_set_interp_xform 
+             ty rs (f: xt_interp (RES.re_set_type rs) -> xt_interp (xList_t ty)) s v := 
+    exists v', RES.in_re_set rs s v' /\ In v (f v').
 
   (** This predicate captures the fact that the ith entry in a row is
       semantically well-formed: if the transition edge goes to
@@ -1420,7 +1424,7 @@ Section DFA.
       | Some e =>
         forall str v, 
           in_re_set (ss.[gpos]) ((token_id_to_chars t) ++ str) v <->
-          in_re_set_xform (existT _ (ss.[next_state e]) (next_xform e)) str v
+          in_re_set_interp_xform (ss.[next_state e]) (next_xform e) str v
       | None => True
     end.
 
@@ -1807,6 +1811,12 @@ Section DFA.
     Definition gen_row_ret_t (ss:wf_states) (n:nat) (tid:token_id) :=
       {ss':wf_states & {entries : entries_t gpos ss' & wfs_ext ss ss'}}.
 
+    Definition fcoerce {t1 t2 t3 t4:xtype} (f:xt_interp t1 -> xt_interp t2) : 
+      t1 = t3 -> t2 = t4 -> xt_interp t3 -> xt_interp t4.
+    Proof.
+      intros. subst. apply (f X).
+    Defined.    
+
     (** This hideous function is basically calculating the derivative
          of [ss[gpos]] with respect to all tokens from [num_tokens] down to 0,
          and adding the corresponding entries to the row.  At the same
@@ -1832,9 +1842,10 @@ Section DFA.
                       let e : entry_t gpos ss' :=
                           {| next_state := n ;
                              next_state_lt := gen_row_help1 _ Hwfs Hgi;
-                             next_xform := xcomp f_back
-                                             (xcoerce f1 eq_refl
-                                               (gen_row_help3 H H1 Hwfs)) |} in
+                             next_xform := 
+                               xinterp (xopt (xcomp f_back
+                                               (xcoerce f1 eq_refl
+                                                 (gen_row_help3 H H1 Hwfs)))) |} in
                       existT _ ss' (existT _ (e::entries) _)
                   | inright Hgi =>
                       let (ss', r) := gen_row' n' (s1 ::: ss) (1 + tid) _ _ in
@@ -1842,8 +1853,8 @@ Section DFA.
                       let e : entry_t gpos ss' :=
                           {| next_state := cardinal_wfs ss;
                              next_state_lt := _ ;
-                             next_xform := xcoerce f1 (gen_row_help2 Hgi Hwfs) 
-                                             (gen_row_help5 s H H1 Hgi Hwfs) |} in
+                             next_xform := xinterp (xcoerce f1 (gen_row_help2 Hgi Hwfs) 
+                                             (gen_row_help5 s H H1 Hgi Hwfs)) |} in
                       existT _ ss' (existT _ (e::entries) _)
                 end
             end
@@ -1922,8 +1933,8 @@ Section DFA.
             generalize ((get_state_get_index_some s1 ss'
                  (get_index_wfs_ext s1 Hwfs1 Hgiw))). intro H10.
             rewrite (RES.equal_xform_corr2 H10).
-            rewrite xcoerce_eq.
-            split; intros; trivial.
+            rewrite xcoerce_eq. repeat rewrite xopt_corr.
+            split; intros; trivial. 
         SCase "s1 notin ss".
           remember (gen_row_help4 s s1 ss e H1 H) as H4.
           remember (gen_row'_subproof (S n) ss tid H H1 n s1 f1 e) as H6.
@@ -2008,7 +2019,7 @@ Section DFA.
              (e:entry_t n ss) : entry_t n ss' :=
        {| next_state := next_state e ;
           next_state_lt := wfs_ext_cardinal_leq_trans H (next_state_lt e) ;
-          next_xform := xcoerce (next_xform e) 
+          next_xform := fcoerce (next_xform e) 
                           (coerce_entry_help1 H (next_state_lt e))
                           (coerce_entry_help2 H H1)
        |}.
@@ -2218,6 +2229,14 @@ Section DFA.
 
   Definition wf_table ss rows := @build_table_inv (length rows) ss rows.
 
+  Lemma fcoerce_eq t1 t2 (f : xt_interp t1 -> xt_interp t2) (H1 : t1 = t1) (H2 : t2 = t2) :
+    fcoerce f H1 H2 = f.
+  Proof.
+    rewrite (@proof_irrelevance _ H1 eq_refl).
+    rewrite (@proof_irrelevance _ H2 eq_refl).
+    auto.
+  Qed.
+
   Opaque token_id_to_chars in_re_set_xform.
   Lemma wf_entries_coerce_entry n ss ss' i tid 
         (entries:entries_t n ss) (Hwfs:wfs_ext ss ss') (H1:n < cardinal_wfs ss):
@@ -2235,7 +2254,7 @@ Section DFA.
     assert (H6:ss'.[next_state en] = ss.[next_state en]). 
       generalize (next_state_lt en). auto using get_state_wfs_ext.
     rewrite H4, H6. 
-    intros. rewrite xcoerce_eq by assumption.
+    intros. rewrite fcoerce_eq by assumption.
     trivial.
   Qed.
   Transparent token_id_to_chars in_re_set_xform.
@@ -2943,7 +2962,7 @@ Section DFA_PARSE.
               let next_i := next_state e in 
               let next_fixup := coerce_dom (parse_token_help1 ps Hnd) (fixup_ps ps) in
               let g:= compose (flat_map next_fixup)
-                        (xinterp (next_xform e)) in
+                        ((*xinterp*) (next_xform e)) in
               let vs0 : list (xt_interp 
                                 (RES.re_set_type 
                                    (dfa_states (dfa_ps ps).[next_state e]))) :=
@@ -3118,10 +3137,9 @@ Section DFA_PARSE.
           destruct H10 as [v' [H10 H12]].
           apply in_flat_map in H12.
           destruct H12 as [l [H12 H24]].
-          assert (H30:in_re_set_xform 
-                      (existT _ (dfa_states (dfa_ps ps1).[next_state entries])
-                              (next_xform entries)) str l).
-            eapply in_re_set_xform_intro2; eassumption.
+          assert (H30:in_re_set_interp_xform (dfa_states (dfa_ps ps1).[next_state entries])
+                                             (next_xform entries) str l).
+          econstructor ; eauto. 
           apply H18 in H30.
           exists l. crush.
     Case "None".
