@@ -3377,6 +3377,145 @@ Section DFA_PARSE.
 
 End DFA_PARSE.
 
+Section VDFA_PARSE.
+  Opaque build_dfa.
+
+  Record vinstParserState (t:type) (r:regexp) := mkvPS {
+    vdfa_ps : vDFA r ; 
+    vdfa_wf : wf_vdfa vdfa_ps ; 
+    vrow_ps : nat ; 
+    vrow_ps_lt : vrow_ps < Vector.length (vdfa_transition vdfa_ps) ; 
+    vfixup_ps : re_set_fixfn ((vdfa_states vdfa_ps).[vrow_ps]) t
+  }.
+
+  Definition coerce_vdfa r1 r2 : r1 = r2 -> vDFA r1 -> vDFA r2.
+    intros. rewrite <- H. trivial.
+  Defined.
+
+  Lemma vips_help1 t (g:grammar t) r r2 (H:r=r2):
+    vdfa_states (coerce_vdfa H (build_vdfa r)).[0] = projT1 (RES.singleton_xform r2).
+  Proof. rewrite RES.singleton_xform_erase.
+    rewrite H. simpl.
+    generalize (@build_vdfa_prop r2). unfold wf_vdfa. intros; sim.
+    auto.
+  Qed.
+  
+  Definition vips_help2 t (g:grammar t) r r2 (H:r=r2):
+    RES.re_set_type (projT1 (RES.singleton_xform r)) =
+    RES.re_set_type (vdfa_states (coerce_vdfa H (build_vdfa r)).[0]).
+  Proof. f_equal. rewrite (vips_help1 g). rewrite H. trivial. Qed.
+
+  Lemma vips_help3 t (g:grammar t) r r2 (H:r=r2):
+    wf_vdfa (coerce_vdfa H (build_vdfa r)).
+  Proof. rewrite H. simpl. apply build_vdfa_prop. Qed.
+
+  Lemma vips_help4 t (g:grammar t) r r2 (H:r=r2):
+    0 < Vector.length (vdfa_transition (coerce_vdfa H (build_vdfa r))).
+  Proof. rewrite H. 
+         generalize (vdfa_transition_len (build_vdfa r2)).
+         simpl. intros. rewrite H0. apply vdfa_at_least_one. 
+  Qed.
+
+  Definition vinitial_parser_state t (g:grammar t) : 
+    vinstParserState t (projT1 (split_grammar g)).
+    refine (
+      match split_grammar g as sr return split_grammar g = sr -> _ with
+        | existT r f => fun Hsr => 
+          match build_vdfa r with 
+            | d =>
+              let f1 := projT2 (RES.singleton_xform r) in 
+              let H := ips_help5 g Hsr in 
+              @mkvPS _ _ (coerce_vdfa H d) _ 0 _ 
+                     (coerce_dom (vips_help2 g H)
+                                 (compose (map f) (xinterp f1)))
+          end
+      end eq_refl).
+    apply (vips_help3 g).
+    apply (vips_help4 g).
+  Defined.
+
+  Lemma wf_vdfa_imp_tk_lt {r} {d:vDFA r} : 
+    wf_vdfa d -> 
+    forall i (H: i < Vector.length (vdfa_transition d)) tk, 
+      tk < num_tokens -> 
+      tk < Vector.length (vrow_entries (Vector.get (vdfa_transition d) i H)).
+  Proof.
+    unfold wf_vdfa. intros [H1 [H2 H3]]. destruct H1 as [H4 [H5 H6]].
+    intros. specialize (H6 i H). 
+    remember (Vector.get (vdfa_transition d) i H) as e.
+    simpl in H6. destruct H6 as [H7 _]. rewrite H7. auto.
+  Qed.    
+    
+  Lemma vparse_token_help1 {t r} (ps : vinstParserState t r) 
+        (row : vtransition_t (vdfa_states (vdfa_ps ps))) : 
+        (Vector.get (vdfa_transition (vdfa_ps ps)) (vrow_ps ps) (vrow_ps_lt ps) 
+         = row) ->
+        RES.re_set_type (vdfa_states (vdfa_ps ps).[vrow_ps ps]) = 
+        RES.re_set_type (vdfa_states (vdfa_ps ps).[vrow_num row]).
+  Proof.
+    intro H. rewrite <- H.
+    rewrite (vdfa_transition_r (vdfa_ps ps) (vrow_ps_lt ps)). auto.
+  Defined.
+
+  Lemma vparse_token_help2 {t r} (ps: vinstParserState t r)
+        (row:vtransition_t (vdfa_states (vdfa_ps ps)))
+        (H: Vector.get (vdfa_transition (vdfa_ps ps)) (vrow_ps ps)
+                       (vrow_ps_lt ps) = row)
+        (e: entry_t (vrow_num row) (vdfa_states (vdfa_ps ps))) : 
+    next_state e < Vector.length (vdfa_transition (vdfa_ps ps)).
+  Proof.
+    rewrite (vdfa_transition_len (vdfa_ps ps)).
+    rewrite <- (vdfa_states_len (vdfa_ps ps)).
+    destruct ps. simpl in *. destruct vdfa_ps0 ; simpl in *. destruct e.
+    simpl in *. subst. auto.
+  Qed.
+
+  Definition vparse_token {t r} (ps:vinstParserState t r) (tk:token_id) 
+              (tk_lt:tk < num_tokens) : vinstParserState t r * list (interp t).
+    refine(
+        let row := Vector.get (vdfa_transition (vdfa_ps ps)) 
+                              (vrow_ps ps) (vrow_ps_lt ps) in 
+        let e := Vector.get (vrow_entries row)
+                            tk (wf_vdfa_imp_tk_lt (vdfa_wf ps) 
+                                                  (vrow_ps_lt ps) tk_lt) in
+        let next_i := next_state e in 
+        let next_fixup := coerce_dom (vparse_token_help1 _ eq_refl) (vfixup_ps ps) in 
+        let g := compose (flat_map next_fixup) (next_xform e) in 
+        let row' := Vector.get (vdfa_transition (vdfa_ps ps)) next_i (vparse_token_help2 _ eq_refl _) in
+        let vs0 : list (xt_interp (RES.re_set_type 
+                                     (vdfa_states (vdfa_ps ps).[next_state e])))
+            := @coerce _ _ _ (vrow_nils row') in
+        let vs' := flat_map g vs0 in 
+        (@mkvPS t r (vdfa_ps ps) (vdfa_wf ps) next_i (vparse_token_help2 _ eq_refl _) g, vs')
+  ).
+  replace (vrow_num row') with (next_state e) ; auto.
+  generalize (vdfa_transition_r (vdfa_ps ps) (vparse_token_help2 ps eq_refl e)).
+  replace (next_state e) with next_i ; auto.
+  Defined.
+
+  Definition vps_extract_nil {t r} (ps:vinstParserState t r) :=
+    flat_map (vfixup_ps ps)
+             (RES.re_set_extract_nil (vdfa_states (vdfa_ps ps).[vrow_ps ps])).
+
+  Fixpoint vparse_tokens {t r} (ps:vinstParserState t r) (tks:list token_id) := 
+    match tks return list_all (fun tk => tk < num_tokens) tks -> 
+                     (list token_id) * (vinstParserState t r) * list (interp t) 
+    with 
+      | nil => fun _ => (nil, ps, vps_extract_nil ps)
+      | tk::rest => 
+        fun H => 
+          match H with 
+            | conj H1 H2 => 
+              let pair := vparse_token ps H1 in 
+              match snd pair with
+                | nil => vparse_tokens (fst pair) rest H2
+                | vs => (rest, (fst pair), vs)
+              end
+          end
+    end.
+
+End VDFA_PARSE.
+
 Extraction Implicit instParserState [t r].
 Extraction Implicit initial_parser_state [t].
 Extraction Implicit coerce_dfa [r1 r2].
@@ -3389,6 +3528,7 @@ Extraction Implicit transitions_show [r ss].
 Extraction Implicit transition_show [r ss].
 Extraction Implicit entries_show [r ss].
 Extraction Implicit entry_show [r ss].
+Extraction Implicit vparse_token [t r].
 
 
 (** [to_string] takes a grammar [a] and an abstract syntax value [v] of
