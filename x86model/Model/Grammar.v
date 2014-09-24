@@ -19,8 +19,6 @@ Definition token_id := X86_PARSER_ARG.token_id.
 Definition num_tokens := X86_PARSER_ARG.num_tokens.
 Definition token_id_to_chars := X86_PARSER_ARG.token_id_to_chars.
 
-(* todo: should probably rename Xform.type and xform.interp to something else *)
-
 (** The [type]s for our grammars. *)
 Inductive type : Type := 
 | Unit_t : type

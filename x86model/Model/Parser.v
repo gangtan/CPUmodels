@@ -2642,6 +2642,7 @@ Extraction Implicit coerce_transitions [r].
 Extraction Implicit cons_transition [r].
 Extraction Implicit build_table_func [r].
 Extraction Implicit build_table [r].
+Extraction Implicit transition_to_vtransition [r].
 Extraction Implicit dfa_to_vdfa [r].
 
 (* Definition test0:= Eps. *)
@@ -3354,7 +3355,7 @@ Section DFA_PARSE.
       (a) some suffix of [tks], corresponding to the unconsumed tokens, 
       (b) a list of semantic values [vs], such that for each [v] in [vs],
       and a guarantee that [v] is is related by [g] and the consumed tokens. *)
-  Definition parse_tokens_initial_ps : 
+  Lemma parse_tokens_initial_ps : 
     forall t (g:grammar t) ps0, 
       initial_parser_state g = ps0 -> 
       forall ts0 (H:list_all (fun tk => tk < num_tokens) ts0),
@@ -3518,6 +3519,7 @@ End VDFA_PARSE.
 
 Extraction Implicit instParserState [t r].
 Extraction Implicit initial_parser_state [t].
+Extraction Implicit vinitial_parser_state [t].
 Extraction Implicit coerce_dfa [r1 r2].
 Extraction Implicit coerce_dom [t1 t2].
 Extraction Implicit parse_token [t r].

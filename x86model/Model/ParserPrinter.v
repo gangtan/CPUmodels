@@ -481,7 +481,7 @@ Qed.
   Program Definition empty : wf_bigrammar Unit_t := Eps.
   Program Definition anybit : wf_bigrammar Char_t := Any.
 
-  Program Definition bit(x:bool) : wf_bigrammar Char_t := Char x.
+  Program Definition bit (x:bool) : wf_bigrammar Char_t := Char x.
   Program Definition never t : wf_bigrammar t := Zero t.
 
   (* Note:  could have the test return option(a=b) instead of {a=b}+{a<>b}. *)
@@ -522,6 +522,8 @@ Qed.
     Alt p1 p2.
   Next Obligation. localsimpl. localsimpl.
   Defined.
+
+
 
   (* a union operator for two grammars; should always avoid to use *)
   Program Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t := 
@@ -1092,6 +1094,87 @@ Qed.
       omega.
   Qed.
 
+
+Lemma ibrv2: forall v,
+  in_bigrammar_rng (` (bits "000" |+| bits "001" |+| bits "010" |+|
+     bits "011" |+| bits "110" |+| bits "111" )) v ->
+  v = inl (bits_of_string "000") \/
+  v = inr (inl (bits_of_string "001")) \/
+  v = inr (inr (inl (bits_of_string "010"))) \/
+  v = inr (inr (inr (inl (bits_of_string "011")))) \/
+  v = inr (inr (inr (inr (inl (bits_of_string "110"))))) \/
+  v = inr (inr (inr (inr (inr (bits_of_string "111"))))).
+Proof.
+  unfold in_bigrammar_rng. intros. crush. 
+  
+  apply AltInv in H. crush. repeat (in_inv; crush).
+  apply AltInv in H. crush. repeat (in_inv; crush).
+  apply AltInv in H. crush. repeat (in_inv; crush).
+  apply AltInv in H. crush. repeat (in_inv; crush).
+  apply AltInv in H. crush. repeat (in_inv; crush).
+    right. right. right. right. left. reflexivity.
+  repeat (in_inv; crush).
+    right. right. right. right. right. reflexivity.
+Qed.
+
+
+
+Definition rm00_1 : wf_bigrammar address_t.
+  refine(
+    ((bits "000") |+| (bits "001") |+| (bits "010") |+| 
+     (bits "011") |+| (bits "110") |+| (bits "111"))
+  @ (fun s =>
+       (match s with
+         | inl bs | inr (inl bs) 
+         | inr (inr (inl bs)) 
+         | inr (inr (inr (inl bs))) 
+         | inr (inr (inr (inr (inl bs)))) 
+         | inr (inr (inr (inr (inr bs)))) =>
+             (mkAddress (Word.repr 0) (Some (Z_to_register(bits2int 3 bs))) None)
+       end) %% address_t)
+  & (fun a =>
+       if Word.eq (addrDisp a) (Word.repr 0) then
+         (match (addrBase a), (addrIndex a) with
+           | Some EAX, None => 
+               Some (inl (bits_of_string "000"))
+           | Some ECX, None =>
+               Some (inr (inl (bits_of_string "001")))
+           | Some EDX, None =>
+               Some (inr (inr (inl (bits_of_string "010"))))
+           | Some EBX, None =>
+               Some (inr (inr (inr (inl (bits_of_string "011")))))
+           | Some ESI, None =>
+               Some (inr (inr (inr (inr (inl (bits_of_string "110"))))))
+           | Some EDI, None =>
+               Some (inr (inr (inr (inr (inr (bits_of_string "111"))))))
+           | _, _ => None
+         end)
+       else None)
+  & _).
+Proof.
+  unfold invertible. split. 
+  Case "invertible 1".
+    intros. exists v. split. 
+    SCase "finv (f v) = Some v".
+      apply ibrv2 in H.
+      repeat match goal with 
+               | [H: ?V = _ \/ _ |- _] =>
+                 destruct H; [(subst v; simpl; trivial) | idtac]
+             end.
+      subst v; simpl; trivial.
+    SCase "in_bigrammar_rng g v". assumption.
+  Case "invertible 2".
+    intros.
+    destruct w. simpl in H0.
+    remember_rev (Word.eq (addrDisp) (Word.repr 0)) as ae.
+    destruct ae; [idtac | discriminate].
+    destruct addrBase; [idtac | discriminate].
+    apply Word.int_eq_true_iff2 in Hae.
+    destruct r;
+      (destruct addrIndex; [discriminate | inversion H0; crush]).
+Qed.
+
+
   (* (* a more efficient version for testing if a signed 32-bit immediate can *)
   (*    be represented in a byte; that is, if it's within [-128,127] *) *)
   (* Definition repr_in_signed_byte (imm:int32) := *)
@@ -1119,6 +1202,7 @@ Qed.
     intros. 
     apply sign_cast_inv; trivial.
   Qed.
+
 
   (* --------------------------------------------------------------------- *)
   (* the following x86 bigrammar uses unions for alternatives and is therefore
@@ -1395,7 +1479,7 @@ Check IN_p.*)
     destruct v; destruct i; crush.
     destruct w. destruct i0; try discriminate; crush.
   Defined.
-  
+
   Definition OUTS_p : wf_bigrammar Char_t := "0110" $$ "111" $$ anybit.
   
 (*Come back to this later.*)
