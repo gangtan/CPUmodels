@@ -11,6 +11,6 @@ Axiom length_of_list :
   forall A (l:list A), length (of_list l) = List.length l.
 
 Extract Constant vector "'a" => "'a array".
-Extract Constant length => "fun v -> Big.of_int (Array.length v)".
-Extract Constant get => "fun v i -> Array.get v (Big.to_int i)".
+Extract Constant length => "fun v => Big.of_int (Array.length v)".
+Extract Constant get => "fun v i => Array.unsafe_get v (Big.to_int i)".
 Extract Inlined Constant of_list => "Array.of_list".

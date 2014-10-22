@@ -3469,10 +3469,36 @@ Section VDFA_PARSE.
     rewrite <- (vdfa_states_len (vdfa_ps ps)).
     destruct ps. simpl in *. destruct vdfa_ps0 ; simpl in *. destruct e.
     simpl in *. subst. auto.
+  Defined.
+
+  Definition flat_map' {A B} (f: A -> list B) := 
+    fix flat_map' (xs:list A) : list B := 
+      match xs with 
+        | nil => nil
+        | x::nil => f x
+        | x::t => f x ++ flat_map' t
+      end.
+
+  Lemma flat_map_simp {A B} : @flat_map' A B = @flat_map A B.
+  Proof.
+    eapply Coqlib.extensionality. intro f.
+    eapply Coqlib.extensionality. intro xs.  
+    induction xs ; crush. destruct xs ; crush.
+  Qed.
+
+  Definition compose_flat_map {A B C} (f:A->list B) (g:C->list A) : C -> list B := 
+    fun x => flat_map' f (g x).
+
+  Lemma compose_flat_map_simp {A B C} (f:A->list B) (g:C ->list A) : 
+    compose_flat_map f g = compose (flat_map f) g.
+  Proof.
+    unfold compose_flat_map, compose. rewrite flat_map_simp. auto.
   Qed.
 
   Definition vparse_token {t r} (ps:vinstParserState t r) (tk:token_id) 
-              (tk_lt:tk < num_tokens) : vinstParserState t r * list (interp t).
+              (tk_lt:tk < num_tokens) : 
+      { vips : vinstParserState t r & 
+        list (xt_interp (RES.re_set_type (vdfa_states (vdfa_ps vips).[(vrow_ps vips)]))) }.
     refine(
         let row := Vector.get (vdfa_transition (vdfa_ps ps)) 
                               (vrow_ps ps) (vrow_ps_lt ps) in 
@@ -3481,13 +3507,17 @@ Section VDFA_PARSE.
                                                   (vrow_ps_lt ps) tk_lt) in
         let next_i := next_state e in 
         let next_fixup := coerce_dom (vparse_token_help1 _ eq_refl) (vfixup_ps ps) in 
-        let g := compose (flat_map next_fixup) (next_xform e) in 
+        (* call a slightly optimized version of compose (flat_map ...) *)
+        let g := (*compose (flat_map next_fixup) (next_xform e) in *)
+                 compose_flat_map next_fixup (next_xform e) in
         let row' := Vector.get (vdfa_transition (vdfa_ps ps)) next_i (vparse_token_help2 _ eq_refl _) in
         let vs0 : list (xt_interp (RES.re_set_type 
                                      (vdfa_states (vdfa_ps ps).[next_state e])))
             := @coerce _ _ _ (vrow_nils row') in
-        let vs' := flat_map g vs0 in 
-        (@mkvPS t r (vdfa_ps ps) (vdfa_wf ps) next_i (vparse_token_help2 _ eq_refl _) g, vs')
+        (* We used to return this but we avoid calling the flat_map now until the
+           caller knows that the list is non-empty. *)
+        (* let vs' := flat_map' g vs0 in *)
+        existT _ (@mkvPS t r (vdfa_ps ps) (vdfa_wf ps) next_i (vparse_token_help2 _ eq_refl _) g) vs0
   ).
   replace (vrow_num row') with (next_state e) ; auto.
   generalize (vdfa_transition_r (vdfa_ps ps) (vparse_token_help2 ps eq_refl e)).
@@ -3495,8 +3525,149 @@ Section VDFA_PARSE.
   Defined.
 
   Definition vps_extract_nil {t r} (ps:vinstParserState t r) :=
-    flat_map (vfixup_ps ps)
+    flat_map' (vfixup_ps ps)
              (RES.re_set_extract_nil (vdfa_states (vdfa_ps ps).[vrow_ps ps])).
+
+  (** The semantics of vparser states *)
+  Definition in_vps t r (ps:vinstParserState t r)(str:list char_t)(v:interp t) := 
+    exists v', in_re_set (vdfa_states (vdfa_ps ps).[vrow_ps ps]) str v' /\ 
+               In v ((vfixup_ps ps) v').
+
+  Lemma vinitial_parser_state_corr t (g:grammar t) str v:
+    in_vps (vinitial_parser_state g) str v <-> in_grammar g str v.
+  Proof. unfold vinitial_parser_state.
+    generalize (vips_help2 g) (vips_help3 g) (vips_help4 g) (ips_help5 g).
+    remember_rev (split_grammar g) as sr.
+    destruct sr as [r f]. 
+    intros.
+    rewrite (proof_irrelevance _ (e0 r f eq_refl) eq_refl). simpl.
+    assert (H2:projT1 (RES.singleton_xform r) =
+               dfa_states (build_dfa r).[0]).
+      generalize (build_dfa_prop r). unfold wf_dfa. crush.
+    remember_rev (projT2 (RES.singleton_xform r)) as f1.
+    simpl in f1. 
+    generalize (e r _ eq_refl).
+    simpl. unfold in_vps. simpl.
+    rewrite <- H2. intros.
+    rewrite (proof_irrelevance _ e1 eq_refl). simpl.
+    unfold in_ps; simpl; split; intros.
+    Case "->".
+      generalize (split_grammar_corr1 g). rewrite Hsr. intros.
+      destruct H as [v' [H4 H6]].
+      unfold compose in H6.
+      apply Coqlib.list_in_map_inv in H6.
+      destruct H6 as [v1 [H6 H8]].
+      subst. apply H0.
+      apply RES.singleton_xform_corr.
+      eapply in_re_set_xform_intro; eassumption. 
+    Case "<-".
+      generalize (split_grammar_corr2 g). rewrite Hsr. intros.
+      use_lemma H0 by eassumption.
+      destruct H1 as [v' [H4 H6]].
+      apply RES.singleton_xform_corr in H4.
+      apply in_re_set_xform_elim in H4.
+      destruct H4 as [v1 [H8 H10]].
+      exists v1. 
+      split; [assumption | idtac].
+      subst. unfold compose.
+      apply in_map. assumption.
+  Qed.
+
+  Opaque token_id_to_chars.
+
+  Lemma vparse_token_corr1 t r (ps1:vinstParserState t r) tk 
+        (H:tk<num_tokens) : 
+    match vparse_token ps1 H with
+        | existT ps2 vs2 => 
+          (forall v, In v (flat_map' (vfixup_ps ps2) vs2) <-> in_vps ps2 nil v)
+    end.
+  Proof.
+    fold interp. unfold vparse_token. unfold in_vps. simpl.
+    generalize (vparse_token_help2 ps1 eq_refl
+                       (Vector.get
+                          (vrow_entries
+                             (Vector.get (vdfa_transition (vdfa_ps ps1))
+                                (vrow_ps ps1) (vrow_ps_lt ps1))) tk
+                          (wf_vdfa_imp_tk_lt (vdfa_wf ps1) (vrow_ps_lt ps1) H))) as H1.
+    generalize (wf_vdfa_imp_tk_lt (vdfa_wf ps1) (vrow_ps_lt ps1) H) as H2.
+    generalize (vdfa_transition_r (vdfa_ps ps1) (vrow_ps_lt ps1)) as H3.
+    intros.
+    generalize (eq_sym (vdfa_transition_r (vdfa_ps ps1) H1)) as H4. intro.
+    remember (Vector.get (vdfa_transition (vdfa_ps ps1)) (vrow_ps ps1) (vrow_ps_lt ps1))
+    as row. 
+    remember (Vector.get (vrow_entries row) tk H2) as entry.
+    remember (Vector.get (vdfa_transition (vdfa_ps ps1)) (next_state entry) H1) as row2.
+    destruct ps1 ; destruct row ; destruct entry ; simpl in *.
+    destruct row2 ; simpl in *. subst. simpl.
+    rewrite compose_flat_map_simp. rewrite flat_map_simp.
+    remember (compose (flat_map vfixup_ps0) next_xform0) as fixup. fold interp in fixup.
+    destruct vdfa_wf0 as [[H6 [H7 H9]] [H4 H5]].
+    specialize (H9 _ H1). 
+    rewrite <- Heqrow2 in H9. simpl in H9. destruct H9 as [H10 [H11 [H12 H13]]].
+    rewrite H13.
+    generalize (RES.re_set_extract_nil_corr (vdfa_states vdfa_ps0.[vrow_num1])).
+    clear Heqrow2 Heqentry.
+    remember (vdfa_states vdfa_ps0.[vrow_num1]) as s.
+    clear Heqs. intros. rewrite in_flat_map. split ; intro H3 ; destruct H3 as [x [H3 H30]] ;
+    exists x ; split ; auto. rewrite H0 ; auto. rewrite <- H0 ; auto.
+  Qed.
+
+  Lemma vparse_token_corr2 t r (ps1:vinstParserState t r) tk (H:tk < num_tokens) : 
+    match vparse_token ps1 H with 
+      | existT ps2 vs2 => 
+        forall str v, in_vps ps1 ((token_id_to_chars tk) ++ str) v <->
+                      in_vps ps2 str v
+    end.
+  Proof.
+    unfold vparse_token. unfold in_vps. simpl.
+    generalize (wf_vdfa_imp_tk_lt (vdfa_wf ps1) (vrow_ps_lt ps1) H) as H1.
+    generalize (vdfa_transition_r (vdfa_ps ps1) (vrow_ps_lt ps1)).
+    remember (Vector.get (vdfa_transition (vdfa_ps ps1))
+                               (vrow_ps ps1) (vrow_ps_lt ps1)) as row. 
+    intros.
+    remember (Vector.get (vrow_entries row) tk H1) as entry.
+    destruct ps1 ; destruct row ; destruct entry ; simpl in *. subst. simpl in *.
+    rewrite compose_flat_map_simp.
+    destruct vdfa_wf0 as [[H6 [H7 H8]] [H4 H5]].
+    generalize (H8 _ vrow_ps_lt0) ; intro H9.
+    rewrite <- Heqrow in H9. simpl in H9. destruct H9 as [H10 [H11 [H12 H13]]].
+    specialize (H12 _ H1). unfold wf_ventry in H12.
+    split ; intros [v' [H14 H15]]. 
+    specialize (proj1 (H12 str v') H14). intros. destruct H0 as [x [H16 H17]].
+    generalize v' H14 H15 x H16 H17 ; clear v' H14 H15 x H16 H17.
+    rewrite <- Heqentry. simpl. intros. exists x. split ; auto.
+    unfold compose. rewrite in_flat_map. exists v'. auto.
+    unfold compose in H15. rewrite in_flat_map in H15. destruct H15.
+    exists x. destruct H0. split ; auto.
+    specialize (H12 str x). apply H12. unfold in_re_set_interp_xform.
+    rewrite <- Heqentry. simpl. exists v' ; eauto.
+  Qed.
+
+  Lemma vparse_token_corr t r (ps1:vinstParserState t r) tk (H: tk < num_tokens) ps2 vs2 :
+    vparse_token ps1 H = existT _ ps2 vs2 -> 
+    ((forall v, In v (flat_map' (vfixup_ps ps2) vs2) <-> in_vps ps2 nil v) /\
+     (forall str v, in_vps ps1 ((token_id_to_chars tk) ++ str) v <->
+                      in_vps ps2 str v)).
+  Proof.
+    specialize (vparse_token_corr1 ps1 H).
+    specialize (vparse_token_corr2 ps1 H). fold interp.
+    remember (vparse_token ps1 H) as x. destruct x. intros. crush.
+    apply H1. auto. apply H0. auto.
+  Qed.
+
+  Lemma vps_extract_nil_corr t r (ps:vinstParserState t r):
+    forall v, In v (vps_extract_nil ps) <-> in_vps ps nil v.
+  Proof. fold interp. intros. unfold vps_extract_nil, in_vps.
+    rewrite flat_map_simp.
+    rewrite in_flat_map.
+    split; intros.
+    Case "->". destruct H as [v' H].
+      rewrite <- RES.re_set_extract_nil_corr in H.
+      crush.
+    Case "<-". destruct H as [v' H].
+      rewrite RES.re_set_extract_nil_corr in H.
+      crush.
+  Qed.
 
   Fixpoint vparse_tokens {t r} (ps:vinstParserState t r) (tks:list token_id) := 
     match tks return list_all (fun tk => tk < num_tokens) tks -> 
@@ -3508,9 +3679,10 @@ Section VDFA_PARSE.
           match H with 
             | conj H1 H2 => 
               let pair := vparse_token ps H1 in 
-              match snd pair with
-                | nil => vparse_tokens (fst pair) rest H2
-                | vs => (rest, (fst pair), vs)
+              let (ps2,vs) := pair in 
+              match vs with
+                | nil => vparse_tokens ps2 rest H2
+                | vs => (rest, ps2, flat_map (vfixup_ps ps2) vs)
               end
           end
     end.
