@@ -3,6 +3,8 @@ Require Import Coqlib.
 Require Import List.
 Require Import Bool.
 Require Export Alphabet.
+Require Import ParserArg.
+Import X86_PARSER_ARG.
 Set Implicit Arguments.
 
 Inductive void : Type := .
@@ -24,7 +26,7 @@ Defined.
 Fixpoint xt_interp (t:xtype) : Type := 
   match t with 
     | xUnit_t => unit
-    | xChar_t => char_t
+    | xChar_t => char_p
     | xVoid_t => void
     | xPair_t t1 t2 => (xt_interp t1) * (xt_interp t2)
     | xSum_t t1 t2 => (xt_interp t1) + (xt_interp t2)
@@ -40,7 +42,7 @@ Inductive xform : xtype -> xtype -> Type :=
 | Xid    : forall {t}, t ->> t
 | Xzero  : forall {t}, xVoid_t ->> t
 | Xcomp  : forall {t1 t2 t3}, (t1 ->> t2) -> (t2 ->> t3) -> (t1 ->> t3)
-| Xchar  : forall {t}, char_t -> t ->> xChar_t
+| Xchar  : forall {t}, char_p -> t ->> xChar_t
 | Xunit  : forall {t}, t ->> xUnit_t
 | Xempty : forall {t1 t2}, t1 ->> xList_t t2 
 | Xpair  : forall {t t1 t2}, (t ->> t1) -> (t ->> t2) -> (t ->> xPair_t t1 t2)
@@ -211,7 +213,7 @@ Defined.
 
 Definition xid {t} : t ->> t := Xid.
 Definition xzero {t} : xVoid_t ->> t := Xzero.
-Definition xchar {t} (c:char_t) : t ->> xChar_t := Xchar c.
+Definition xchar {t} (c:char_p) : t ->> xChar_t := Xchar c.
 Definition xunit {t} : t ->> xUnit_t := Xunit.
 Definition xempty {t1 t2} : t1 ->> xList_t t2 := Xempty.
 Definition xinl {t1 t2} : t1 ->> xSum_t t1 t2 := Xinl.

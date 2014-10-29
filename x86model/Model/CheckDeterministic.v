@@ -43,6 +43,7 @@ Require ExtrOcamlNatBigInt.
 Require ExtrOcamlNatInt.
 Import ParserArg.X86_PARSER_ARG.
 (*Import X86_BASE_PARSER.*)
+Open Scope list_scope.
 
 (** Our regular expressions with intersection ([And_r]).  We need
     the support for intersection to test whether two grammars overlap

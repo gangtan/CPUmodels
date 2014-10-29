@@ -10,6 +10,9 @@ Require Import Regexp.
 Require Import CommonTacs.
 Require Import Coqlib.  (* for proof_irrelevance *)
 
+Require Import ParserArg.
+Import X86_PARSER_ARG.
+
 Set Implicit Arguments.
 
 (** A set of regexps paired with xforms *)
@@ -27,7 +30,7 @@ Module Type RESETXFORM.
   Definition re_xf_pair (ty:xtype) := {r : regexp & regexp_type r ->> xList_t ty}.
 
   Parameter in_re_set: 
-    forall (rs:t), list char_t -> xt_interp (re_set_type rs) -> Prop.
+    forall (rs:t), list char_p -> xt_interp (re_set_type rs) -> Prop.
 
   Definition in_re_xform ty (rx : re_xf_pair ty) s (v:xt_interp ty) := 
     let (r,x) := rx in 
@@ -60,7 +63,7 @@ Module Type RESETXFORM.
 
   Parameter empty_xform: forall ty, rs_xf_pair ty.
   Parameter empty_xform_erase: forall ty, projT1 (@empty_xform ty) = empty.
-  Parameter empty_xform_corr: forall ty (s : list char_t) (v : xt_interp ty),
+  Parameter empty_xform_corr: forall ty (s : list char_p) (v : xt_interp ty),
     ~ in_re_set_xform (empty_xform ty) s v.
 
   Parameter singleton_xform: forall r:regexp, rs_xf_pair (regexp_type r).
@@ -169,7 +172,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
   Definition tree_type (t : Raw.tree) : xtype := 
     regexp_type (tree_to_regexp t).
 
-  Definition in_tree (t: Raw.tree) (str : list char_t) (v: xt_interp (tree_type t)) := 
+  Definition in_tree (t: Raw.tree) (str : list char_p) (v: xt_interp (tree_type t)) := 
     in_regexp (tree_to_regexp t) str v.
 
   Definition tree_xf_pair (ty:xtype) := { t : Raw.tree & tree_type t ->> xList_t ty }.
@@ -180,7 +183,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
 
   Definition re_set_type (rs : t) : xtype := tree_type (this rs). 
 
-  Definition in_re_set (rs : t) (str : list char_t) (v : xt_interp (re_set_type rs)) := 
+  Definition in_re_set (rs : t) (str : list char_p) (v : xt_interp (re_set_type rs)) := 
     in_tree (this rs) str v.
   
   Lemma in_re_set_empty : forall s v, not (in_re_set empty s v).
@@ -266,7 +269,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     auto.
   Qed.
 
-  Lemma empty_xform_corr ty (str : list char_t) (v : xt_interp ty) : 
+  Lemma empty_xform_corr ty (str : list char_p) (v : xt_interp ty) : 
     ~ in_re_set_xform (empty_xform ty) str v.
   Proof.
     unfold in_re_set_xform. unfold not. crush. destruct x.
@@ -450,7 +453,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
 
   Lemma find_xform_corr (r:regexp) (t:Raw.tree) : 
     forall (okt:Raw.Ok t) (Hinr:Raw.In r t)
-        (str : list char_t )(v : xt_interp (tree_type t)),
+        (str : list char_p )(v : xt_interp (tree_type t)),
     (exists v', in_regexp r str v' /\ v = xinterp (@find_xform t r okt Hinr) v') 
     -> in_tree t str v.
   Proof.

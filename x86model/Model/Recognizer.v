@@ -337,11 +337,11 @@ Definition reset_always_rejects (rs:RESet.t): bool :=
     pdrv(a, r1)r2, otherwise
   pdrv(a, r_star) = pdrv(a,r)r_star
 *)
-Fixpoint pdrv (a: char_t) (r:regexp) : RESet.t := 
+Fixpoint pdrv (a: char_p) (r:regexp) : RESet.t := 
   match r with
     | rZero | rEps => RESet.empty
     | rChar b => 
-      if char_eq_dec a b then RESet.singleton rEps
+      if char_dec a b then RESet.singleton rEps
       else RESet.empty
     | rAny => RESet.singleton rEps
     | rCat r1 r2 => 
@@ -353,13 +353,13 @@ Fixpoint pdrv (a: char_t) (r:regexp) : RESet.t :=
 
 (** Partial derivatives over a regexp set; the result of the union 
     of taking partial derivatives on every regexp in the set *)
-Definition pdrv_set (a:char_t) (rs:RESet.t) : RESet.t :=
+Definition pdrv_set (a:char_p) (rs:RESet.t) : RESet.t :=
   RESet.fold (fun r rs1 => RESet.union (pdrv a r) rs1) rs RESet.empty.
 
 (** Word partial derivatives; 
   wpdrv(nil, rs) = rs
   wpdrv(a cons w, rs) = wpdrv(w, pdrv_set(a, rs)) *)
-Fixpoint wpdrv (s:list char_t) (rs:RESet.t) : RESet.t := 
+Fixpoint wpdrv (s:list char_p) (rs:RESet.t) : RESet.t := 
   match s with
     | nil => rs
     | a :: s' => wpdrv s' (pdrv_set a rs)
@@ -390,7 +390,7 @@ Proof. unfold pdset; intros.
 Qed.
 
 (** ** Denotation semantics of regexps *)
-Inductive in_re : forall (r:regexp), list char_t -> Prop :=
+Inductive in_re : forall (r:regexp), list char_p -> Prop :=
 | InrEps : forall s, s = nil -> in_re rEps s
 | InrChar : forall c s, s = c::nil -> in_re (rChar c) s
 | InrAny : forall c s, s = c::nil -> in_re rAny s
@@ -409,7 +409,7 @@ Inductive in_re : forall (r:regexp), list char_t -> Prop :=
 Hint Local Constructors in_re.
 
 (** Denotation semantics of regexp sets *)
-Definition in_re_set (rs:RESet.t) (s:list char_t) :=
+Definition in_re_set (rs:RESet.t) (s:list char_p) :=
   exists r, RESet.In r rs /\ in_re r s.
 
 (** forall rs1 rs2 s1 s2, rs1 subseteq rs2 -> s1=s2 ->
@@ -556,8 +556,8 @@ Section PDRV_CORRECT.
       simpl. split; intros; lprover.
     Case "Char".
       intros; simpl.
-      destruct (char_eq_dec a c).
-      SCase "a=c". subst. split; intros; lprover.
+      destruct (char_dec a c).
+      SCase "a=c". subst. split; intros; lprover. 
       SCase "a<>c". split; intros; lprover.
     Case "Any". simpl. split; intros; lprover.
     Case "Cat". simpl. split; intros.
@@ -1065,7 +1065,7 @@ Section DFA.
     split; apply state_wf_imp; [trivial | symmetry; trivial].
   Qed.
 
-  Definition wpdrv_wf (w: list char_t) (s: wf_state): wf_state.
+  Definition wpdrv_wf (w: list char_p) (s: wf_state): wf_state.
     refine (exist _ (wpdrv w (proj1_sig s)) _).
     unfold state_is_wf; intros. 
     destruct s as [s [w1 H]].

@@ -28,7 +28,7 @@ Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 
 
-(* This is now defined in Parser.v because of the bug with Extraction 
+(* This is now defined in Grammar.v because of the bug with Extraction 
    Implicit.  
 
 (* a module for generating the parser for x86 instructions *)

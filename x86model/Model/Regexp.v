@@ -4,13 +4,15 @@ Require Import Bool.
 Require Import Xform.
 Require Import CommonTacs.
 Require Import Structures.OrdersAlt.
+Require Import ParserArg.
+Import X86_PARSER_ARG.
 
 Set Implicit Arguments.
 
 Inductive regexp : Set := 
 | rEps : regexp
 | rZero : regexp
-| rChar : char_t -> regexp
+| rChar : char_p -> regexp
 | rAny : regexp
 | rCat : regexp -> regexp -> regexp
 | rAlt : regexp -> regexp -> regexp
@@ -28,7 +30,7 @@ Fixpoint regexp_type (pg : regexp) : xtype :=
     | rStar pg => xList_t (regexp_type pg)
   end.
 
-Inductive in_regexp : forall a, list char_t -> xt_interp (regexp_type a) -> Prop :=
+Inductive in_regexp : forall a, list char_p -> xt_interp (regexp_type a) -> Prop :=
 | InrEps : forall s v, s = nil -> v = tt -> in_regexp rEps s v
 | InrChar : forall c s v, s = c::nil -> v = c -> in_regexp (rChar c) s v
 | InrAny : forall c s v, s = c::nil -> v = c -> in_regexp rAny s v

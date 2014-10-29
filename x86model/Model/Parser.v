@@ -472,11 +472,11 @@ Fixpoint nullable (r:regexp) :
     pdrv(a, r1)r2, otherwise
   pdrv(a, r_star) = pdrv(a,r)r_star
 *)
-Fixpoint pdrv (a:char_t) (r:regexp): rs_xf_pair (regexp_type r) := 
+Fixpoint pdrv (a:char_p) (r:regexp): rs_xf_pair (regexp_type r) := 
   match r return rs_xf_pair (regexp_type r) with
     | rEps | rZero => @RES.empty_xform _
     | rChar b => 
-      if char_eq_dec a b then
+      if char_dec a b then
         let (rs,f) := RES.singleton_xform rEps in
           existT _ rs (xcomp f (xmap (xchar a)))
       else @RES.empty_xform _
@@ -504,20 +504,20 @@ Fixpoint pdrv (a:char_t) (r:regexp): rs_xf_pair (regexp_type r) :=
 
 (** pdrv_rex performs partial derviative calculation, similar to
     pdrv. However, it takes a re_xf_pair as input instead a regexp *)
-Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty := 
+Definition pdrv_rex ty (a:char_p) (rex:re_xf_pair ty) : rs_xf_pair ty := 
   let (r, f) := rex in
   let (rs, frs) := pdrv a r in
   existT _ rs (xcomp frs (xcomp (xmap f) xflatten)).
 Extraction Implicit pdrv_rex [ty].
 
-(* Definition pdrv_rex ty (a:char_t) (rex:re_xf_pair ty) : rs_xf_pair ty :=  *)
+(* Definition pdrv_rex ty (a:char_p) (rex:re_xf_pair ty) : rs_xf_pair ty :=  *)
 (*   let (r, f) := rex in *)
 (*   let (rs, frs) := pdrv a r in *)
 (*   existT _ rs (xopt (xcomp frs (xcomp (xmap f) xflatten))). *)
 
 (** Partial derivatives over a regexp set; the result of the union 
     of taking partial derivatives on every regexp in the set *)
-Definition pdrv_set ty (a:char_t) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
+Definition pdrv_set ty (a:char_p) (rx:rs_xf_pair ty) : rs_xf_pair ty :=
   RES.fold_xform (fun rex rx1 => RES.union_xform (pdrv_rex a rex) rx1)
                  rx (@RES.empty_xform ty).
 Extraction Implicit pdrv_set [ty].
@@ -525,7 +525,7 @@ Extraction Implicit pdrv_set [ty].
 (** Word partial derivatives; 
     wpdrv(nil, rs) = rs
     wpdrv(a cons w, rs) = wpdrv(w, pdrv_set(a, rs)) *)
-Fixpoint wpdrv ty (s:list char_t) (rx:rs_xf_pair ty): rs_xf_pair ty := 
+Fixpoint wpdrv ty (s:list char_p) (rx:rs_xf_pair ty): rs_xf_pair ty := 
   match s with
     | nil => rx
     | a:: s' => let (rs, f) := pdrv_set a rx in
@@ -668,7 +668,7 @@ Section PDRV_CORRECT.
     Case "Zero". simpl. split; intros; sim; [lprover | destruct x].
     Case "Char".
       intros; simpl.
-      destruct (char_eq_dec a c).
+      destruct (char_dec a c).
       SCase "a=c". subst.
         rewrite in_re_set_xform_comp2.
         split; intros.
@@ -1288,7 +1288,7 @@ Section DFA.
   Definition wfs_xf_pair (ty:xtype) := 
     {s: wf_state & RES.re_set_type (proj1_sig s) ->> xList_t ty}.
 
-  Definition wpdrv_wf (w: list char_t) (s: wf_state): 
+  Definition wpdrv_wf (w: list char_p) (s: wf_state): 
     wfs_xf_pair (RES.re_set_type (proj1_sig s)).
     refine (existT _ (exist _ (| wpdrv_re_set w (proj1_sig s) |) _) _).
     simpl. apply (projT2 (wpdrv_re_set w (proj1_sig s))).
@@ -2837,7 +2837,7 @@ Section NAIVE_PARSE.
      flat_map (compose (List.map (fixup_nps nps)) (xinterp f)) v).
 
   (** The semantics of naive parser states *)
-  Definition in_nps t1 t2 (nps:naiveParserState t1 t2) (str:list char_t) (v: interp t2) :=
+  Definition in_nps t1 t2 (nps:naiveParserState t1 t2) (str:list char_p) (v: interp t2) :=
     exists v', in_re_set_xform (rx_nps nps) str v' /\
                v = fixup_nps nps v'.
 
@@ -3161,7 +3161,7 @@ Section DFA_PARSE.
     end.
 
   (** The semantics of parser states *)
-  Definition in_ps t r (ps:instParserState t r) (str:list char_t) (v: interp t) :=
+  Definition in_ps t r (ps:instParserState t r) (str:list char_p) (v: interp t) :=
     exists v', in_re_set (dfa_states (dfa_ps ps).[row_ps ps]) str v' /\
                In v ((fixup_ps ps) v').
 
@@ -3529,7 +3529,7 @@ Section VDFA_PARSE.
              (RES.re_set_extract_nil (vdfa_states (vdfa_ps ps).[vrow_ps ps])).
 
   (** The semantics of vparser states *)
-  Definition in_vps t r (ps:vinstParserState t r)(str:list char_t)(v:interp t) := 
+  Definition in_vps t r (ps:vinstParserState t r)(str:list char_p)(v:interp t) := 
     exists v', in_re_set (vdfa_states (vdfa_ps ps).[vrow_ps ps]) str v' /\ 
                In v ((vfixup_ps ps) v').
 
