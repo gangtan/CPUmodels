@@ -2,7 +2,6 @@ Require Import Coq.Program.Equality.
 Require Import Coqlib.
 Require Import List.
 Require Import Bool.
-Require Export Alphabet.
 Require Import ParserArg.
 Import X86_PARSER_ARG.
 Set Implicit Arguments.
