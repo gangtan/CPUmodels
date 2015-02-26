@@ -18,7 +18,7 @@ Require Import Coqlib.
 Require Import Parser.
 Require Import Recognizer.
 Require Import Ascii.
-Require Import String.
+(* Require Import String. *)
 Require Import List.
 Require Import Bits.
 Require Import Decode.
@@ -27,9 +27,9 @@ Require Import Int32.
 Unset Automatic Introduction.
 Set Implicit Arguments.
 Open Scope char_scope.
-Require ExtrOcamlString.
-Require ExtrOcamlNatBigInt.
-Require ExtrOcamlNatInt.
+(* Require ExtrOcamlString. *)
+(* Require ExtrOcamlNatBigInt. *)
+(* Require ExtrOcamlNatInt. *)
 Import ParserArg.X86_PARSER_ARG.
 (* Import X86_PARSER. *)
 (* Import X86_BASE_PARSER. *)
@@ -169,6 +169,8 @@ Definition valid_prefix_grammar_seg_op_override :=
 Definition valid_prefix_grammar_seg_override :=
     option_perm gs_segment_override_p @
      (fun s => mkPrefix None s false false %% prefix_t).
+
+(* Close Scope string_scope. *)
 
 (** The list of valid prefix and instruction grammars for non-control-flow
     operations. *)
@@ -413,11 +415,7 @@ Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool :=
     (* valid_instr_grammars_rep_or_repn *)
     | CMPS w => rep_or_repn_or_gs_or_op_prefix pfx
 
-    (* G.T.: the machine raises error (not trap) when there is no semantics for
-       instructions such as SCAS; same for BOUND, CLI, CLTS, CPUID, LAR, LGS,
-       MOVCR, MOVDR, MOVSR, MOVBE, POPF, PUSHSR, PUSHF, RDMSR, RDPMC, RDTSC, 
-       RDTSCP, RSM, SGDT, SIDT, SLDT, SMSW, STI, STR, WBINVD *)
-    (* | SCAS w => rep_or_repn_or_gs_or_op_prefix pfx *)
+    | SCAS w => rep_or_repn_or_gs_or_op_prefix pfx
 
     (* valid_instr_grammars_lock_with_op_override *)
     | ADD w op1 op2 => 
@@ -487,63 +485,63 @@ Definition non_cflow_instr (pfx:prefix) (ins:instr) : bool :=
     | AAD => only_gs_seg_override pfx
     | AAM => only_gs_seg_override pfx
     | AAS => only_gs_seg_override pfx
-    (* | BOUND op1 op2 => only_gs_seg_override pfx && no_imm_op op1 *)
+    | BOUND op1 op2 => only_gs_seg_override pfx && no_imm_op op1
     | BSF op1 op2 => only_gs_seg_override pfx && no_imm_op op1
     | BSR op1 op2 => only_gs_seg_override pfx && no_imm_op op1
     | BSWAP r => only_gs_seg_override pfx
     | BT op1 op2 => only_gs_seg_override pfx && no_imm_op op1
     | CLC => only_gs_seg_override pfx
     | CLD => only_gs_seg_override pfx
-    (* | CLI => only_gs_seg_override pfx *)
-    (* | CLTS => only_gs_seg_override pfx *)
+    | CLI => only_gs_seg_override pfx
+    | CLTS => only_gs_seg_override pfx
     | CMC => only_gs_seg_override pfx
-    (* | CPUID => only_gs_seg_override pfx *)
+    | CPUID => only_gs_seg_override pfx
     | DAA => only_gs_seg_override pfx
     | DAS => only_gs_seg_override pfx
     | HLT => only_gs_seg_override pfx
     (* | IMUL false op1 opopt iopt => only_gs_seg_override pfx (* FIX? *) *)
     | LAHF => only_gs_seg_override pfx
-    (* | LAR op1 op2 => only_gs_seg_override pfx && no_imm_op op1 *)
+    | LAR op1 op2 => only_gs_seg_override pfx && no_imm_op op1
     (* G.T.:  The decoder allows only Address_op in the second operand *)
     | LEA op1 (Address_op a) => only_gs_seg_override pfx && no_imm_op op1
     | LEAVE => only_gs_seg_override pfx
-    (* | LGS op1 op2 => only_gs_seg_override pfx && no_imm_op op1 *)
+    | LGS op1 op2 => only_gs_seg_override pfx && no_imm_op op1
     (* | MOV false op1 op2 => only_seg_or_op pfx && no_imm_op op1 *)
-    (* | MOVCR direction cr r => only_gs_seg_override pfx *)
-    (* | MOVDR direction dr r => only_gs_seg_override pfx *)
-    (* | MOVSR direction sr r => only_gs_seg_override pfx *)
-    (* | MOVBE op1 op2 => only_gs_seg_override pfx && no_imm_op op1 *)
+    | MOVCR direction cr r => only_gs_seg_override pfx
+    | MOVDR direction dr r => only_gs_seg_override pfx
+    | MOVSR direction sr r => only_gs_seg_override pfx
+    | MOVBE op1 op2 => only_gs_seg_override pfx && no_imm_op op1
     | POP op1 => only_gs_seg_override pfx && no_imm_op op1
     | POPA => only_gs_seg_override pfx  
-    (* | POPF => only_gs_seg_override pfx   *)
+    | POPF => only_gs_seg_override pfx
     | PUSH w op1 => only_gs_seg_override pfx
     | PUSHA => only_gs_seg_override pfx 
-    (* | PUSHSR sr => only_gs_seg_override pfx   *)
-    (* | PUSHF => only_gs_seg_override pfx   *)
+    | PUSHSR sr => only_gs_seg_override pfx
+    | PUSHF => only_gs_seg_override pfx
     | RCL w op1 ri => only_gs_seg_override pfx && no_imm_op op1
     | RCR w op1 ri => only_gs_seg_override pfx && no_imm_op op1
 
-    (* | RDMSR => only_gs_seg_override pfx   *)
-    (* | RDPMC => only_gs_seg_override pfx   *)
-    (* | RDTSC => only_gs_seg_override pfx   *)
-    (* | RDTSCP => only_gs_seg_override pfx   *)
-    (* | RSM => only_gs_seg_override pfx   *)
+    | RDMSR => only_gs_seg_override pfx
+    | RDPMC => only_gs_seg_override pfx
+    | RDTSC => only_gs_seg_override pfx
+    | RDTSCP => only_gs_seg_override pfx
+    | RSM => only_gs_seg_override pfx
 
     | SAHF => only_gs_seg_override pfx
     | SETcc ct op1 => only_gs_seg_override pfx && no_imm_op op1
 
-    (* | SGDT op1 => only_gs_seg_override pfx  *)
-    (* | SIDT op1 => only_gs_seg_override pfx  *)
-    (* | SLDT op1 => only_gs_seg_override pfx  *)
-    (* | SMSW op1 => only_gs_seg_override pfx  *)
+    | SGDT op1 => only_gs_seg_override pfx
+    | SIDT op1 => only_gs_seg_override pfx
+    | SLDT op1 => only_gs_seg_override pfx
+    | SMSW op1 => only_gs_seg_override pfx
 
     | STC => only_gs_seg_override pfx 
     | STD => only_gs_seg_override pfx 
 
-    (* | STI => only_gs_seg_override pfx  *)
-    (* | STR op1 => only_gs_seg_override pfx  *)
+    | STI => only_gs_seg_override pfx
+    | STR op1 => only_gs_seg_override pfx
     (* | TEST false op1 op2 => only_gs_seg_override pfx *)
-    (* | WBINVD => only_gs_seg_override pfx  *)
+    | WBINVD => only_gs_seg_override pfx
 
     (* G.T.: the model raises errors when FPU/MMX instructions are encourntered;
        to show the execution of a binary doesn't raise errors, we have to comment

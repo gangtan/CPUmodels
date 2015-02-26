@@ -3981,6 +3981,15 @@ End X86FloatSemantics.
          | LOOPNZ disp => conv_LOOP pre true false disp
          | NOP _ => ret tt
 
+         (* the following instructions are not modeled at this point *)
+         | SCAS _ | BOUND _ _ | CLI | CLTS | CPUID | LAR _ _ | LGS _ _ 
+         | MOVCR _ _ _ | MOVDR _ _ _ | MOVSR _ _ _ | MOVBE _ _ 
+         | POPF | PUSHSR _ | PUSHF
+         | RDMSR | RDPMC | RDTSC | RDTSCP | RSM
+         | SGDT _ | SIDT _ | SLDT _ | SMSW _ 
+         | STI | STR _ | WBINVD 
+           => raise_trap
+
          (*Floating-point conversions; comment out the semantics 
            of floating-point instruction as it has not been tested. *)
          (* | F2XM1 => conv_F2XM1 pre *)
@@ -4144,7 +4153,7 @@ Fixpoint RTL_step_list l :=
 
 Definition check_rep_instr (ins:instr) : RTL unit :=
   match ins with
-    | MOVS _ | STOS _ | CMPS _ => ret tt
+    | MOVS _ | STOS _ | CMPS _ | SCAS _ => ret tt
     | _ => Fail _
   end.
 

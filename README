@@ -7,7 +7,7 @@ x86model/
 	A Coq formalization of a Pentium
 
 x86model/Model
-	The CPU model
+	The CPU model, including the flocq-2.1.0 library
 
 x86model/RockSalt
 	A formally verified SFI checker based on our model of x86

@@ -14,7 +14,7 @@
 Require Import Coqlib.
 Require Import Parser.
 Require Import Ascii.
-Require Import String.
+(* Require Import String. *)
 Require Import List.
 Require Import Bits.
 Require Import Decode.
@@ -23,9 +23,9 @@ Require Import Eqdep.
 Unset Automatic Introduction.
 Set Implicit Arguments.
 Open Scope char_scope.
-Require ExtrOcamlString.
-Require ExtrOcamlNatBigInt.
-Require ExtrOcamlNatInt.
+(* Require ExtrOcamlString. *)
+(* Require ExtrOcamlNatBigInt. *)
+(* Require ExtrOcamlNatInt. *)
 Import ParserArg.X86_PARSER_ARG.
 (* Import X86_PARSER. *)
 (* Import X86_BASE_PARSER. *)
@@ -347,14 +347,14 @@ Lemma valid_instr_grammars_rep_or_repn_non_cflow pre ins s :
 Proof.
   unfold valid_instr_grammars_rep_or_repn. unfold instr_grammars_rep_or_repn.
   simpl ; intros pre ins s. rewrite in_alts. simpl ; intros.
-  unfold CMPS_p, SCAS_p, bitsleft in *. 
+  unfold CMPS_p, SCAS_p, bitsleft in *.
   repeat pinv ; injection H2 ; clear H2 ; intros ; subst ; simpl ; 
   eapply valid_prefix_grammar_rep_or_repn_non_cflow ; eauto.
 Qed.
 
 Lemma valid_prefix_grammar_lock_with_op_override_non_cflow pre s : 
   in_grammar valid_prefix_grammar_lock_with_op_override s pre -> 
-  lock_or_gs_with_op pre = true.
+  lock_or_gs_or_op pre = true.
 Proof.
   unfold valid_prefix_grammar_lock_with_op_override.
   unfold option_perm3_variation, lock_p, gs_segment_override_p, op_override_p, 

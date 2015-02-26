@@ -1,4 +1,4 @@
-(** Bi-directional grammars for both parsing and pretty-printing *)
+(** Gang Tan: Bi-directional grammars for both parsing and pretty-printing *)
 
 Require Import Coq.Program.Equality.
 Require Import Coq.Init.Logic.

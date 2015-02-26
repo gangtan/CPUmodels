@@ -1549,10 +1549,7 @@ Section VERIFIER_CORR.
       -> same_seg_regs (run_rep pre ins dpc).
   Proof. intros.
     unfold run_rep, check_rep_instr.
-    destruct ins; try discriminate; simpl in H.
-    Case "CMPS". same_seg_regs_tac.
-    Case "MOVS". same_seg_regs_tac.
-    Case "STOS". same_seg_regs_tac.
+    destruct ins; (discriminate || (simpl in H; same_seg_regs_tac)).
   Qed.
 
   Hint Resolve run_rep_same_seg_regs : same_seg_regs_db.
@@ -1561,16 +1558,10 @@ Section VERIFIER_CORR.
     non_cflow_instr pre ins = true
       -> agree_outside_seg ES (run_rep pre ins dpc).
   Proof. unfold run_rep, check_rep_instr. intros.
-    destruct ins; try discriminate; simpl in H.
-    Case "CMPS".
-      agree_outside_seg_tac.
-      unfold instr_to_rtl, check_prefix. prove_instr.
-    Case "MOVS".
-      agree_outside_seg_tac. 
-      unfold instr_to_rtl, check_prefix. prove_instr.
-    Case "STOS".
-      agree_outside_seg_tac. 
-      unfold instr_to_rtl, check_prefix. prove_instr.
+    Local Ltac rep_ins_aoes_tac := 
+      agree_outside_seg_tac;
+      unfold instr_to_rtl, check_prefix; prove_instr.
+    destruct ins; (discriminate || rep_ins_aoes_tac).
   Qed.
 
   Hint Resolve run_rep_aoes_nci : agree_outside_seg_db.
@@ -1603,45 +1594,23 @@ Section VERIFIER_CORR.
       -> PC s' = default_pc \/ PC s' = PC s.
   Proof. unfold run_rep; intros.
     repeat rtl_okay_break.
-    destruct (eq v0 zero). unfold set_loc in *. crush.
+    destruct (eq v0 zero); [unfold set_loc in *; crush | idtac].
     repeat rtl_okay_break.
-    destruct ins; try discriminate.
-    (* CMPS *)
-    assert (H10:same_pc (RTL_step_list (instr_to_rtl pre (CMPS w)))).
-      unfold instr_to_rtl, check_prefix, conv_CMPS. prove_instr.
-    assert (H12: PC s2 = PC s3). 
-      eapply H10. eassumption.
-    repeat rtl_okay_break.
-    destruct (eq v3 zero); destruct (eq v5 zero).
-      unfold set_loc in *. crush.
-      unfold set_loc in *. 
-        inversion H; inversion H6; inversion H5; subst. crush.
-      unfold set_loc in *. crush.
-      unfold set_loc in *. right. 
-        inversion H; inversion H6; inversion H5; inversion H4;
-          inversion H2; inversion H1; inversion H0; subst.
-        crush.
-    (* MOVS *)
-    assert (H10:same_pc (RTL_step_list (instr_to_rtl pre (MOVS w)))).
-      unfold instr_to_rtl, check_prefix, conv_MOVS. prove_instr.
-    assert (H12: PC s2 = PC s3). 
-      eapply H10. eassumption.
-    repeat rtl_okay_break.
-    destruct (eq v3 zero).
-      unfold set_loc in *. crush.
-      unfold set_loc in *. right. 
-        crush. inversion H4. inversion H1. subst. congruence.
-    (* STOS *)
-    assert (H10:same_pc (RTL_step_list (instr_to_rtl pre (STOS w)))).
-      unfold instr_to_rtl, check_prefix, conv_STOS. prove_instr.
-    assert (H12: PC s2 = PC s3). 
-      eapply H10. eassumption.
-    repeat rtl_okay_break.
-    destruct (eq v3 zero).
-      unfold set_loc in *. crush.
-      unfold set_loc in *. right. 
-        crush. inversion H4. inversion H1. subst. congruence.
-  Qed.        
+    destruct ins; try discriminate;
+    match goal with
+      | [H: RTL_step_list ?R ?S1 = (_, ?S2) |- _] => 
+        let HX := fresh "H" in
+        assert (HX:same_pc (RTL_step_list R)) by 
+            (unfold instr_to_rtl, check_prefix, conv_CMPS, conv_MOVS, conv_STOS;
+             prove_instr);
+        assert (PC S1 = PC S2) by (eapply HX; eassumption)
+    end;
+    repeat match goal with 
+      | [H: (if ?X then _ else _) _ = _ |- _] => destruct X
+      | _ => rtl_okay_elim
+    end; unfold set_loc in *; crush.
+  Qed.
+
 
   (** ** Proving that any non-cflow-instr reaches a safe state in one step *)
   Ltac step_tac :=

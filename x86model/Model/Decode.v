@@ -1988,10 +1988,10 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
                  mkPrefix l s (opt2b op false) false %% prefix_t end).
 
   (** this set of instructions can take prefixes in prefix_grammar_rep;
-     that is, in lock_or_rep, only rep can be used; we put RET in this
-     category because it turns out many binaries use "rep ret" to avoid the
-     branch prediction panelty in AMD processors; intel processor seems to
-     just ignore the rep prefix in "rep ret". *)
+      that is, in lock_or_rep, only rep can be used; we put RET in this
+      category because it turns out many binaries use "rep ret" to avoid the
+      branch prediction panelty in AMD processors; intel processor seems to
+      just ignore the rep prefix in "rep ret". *)
   Definition instr_grammars_rep :=
     INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: RET_p :: nil.
 
@@ -2000,7 +2000,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
       (fun p => match p with (l, (s, op)) =>
                   mkPrefix l s (opt2b op false) false %% prefix_t end).
 
-   (* this set of instructions can take prefixes in prefix_grammar_repn;
+  (** this set of instructions can take prefixes in prefix_grammar_repn;
       that is, in lock_or_rep, either rep or repn can be used, but not lock *)
   Definition instr_grammars_rep_or_repn := CMPS_p :: SCAS_p :: nil.
 
