@@ -20,6 +20,8 @@ Require Import Maps.
 Require Import Ascii.
 Require Import ZArith.
 Require Import Eqdep.
+Require Import CommonTacs.
+Require Import Program.
 Unset Automatic Introduction.
 Set Implicit Arguments.
 Local Open Scope Z_scope.
@@ -28,7 +30,7 @@ Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 
 
-(* This is now defined in Grammar.v because of the bug with Extraction 
+(* This is now defined in ParserArg.v because of the bug with Extraction 
    Implicit.  
 
 (* a module for generating the parser for x86 instructions *)
@@ -117,7 +119,7 @@ End X86_PARSER_ARG.
   Require Import Bits.
   Require ParserArg.
   Import ParserArg.X86_PARSER_ARG.
-  Require Import Parser.
+  Require Import BiGrammar.
 
   Definition option_t x := User_t (Option_t x).
   Definition int_t := User_t Int_t.
@@ -146,20 +148,123 @@ End X86_PARSER_ARG.
   Definition lock_or_rep_t := User_t Lock_or_Rep_t.
   Definition bool_t := User_t Bool_t.
   Definition prefix_t := User_t Prefix_t.
-  (* combinators for building grammars *)
-  Definition bit(x:bool) : grammar Char_t := Char x.
-  Definition never t : grammar t := Zero t.
-  Definition always t (x:interp t) : grammar t := @Map Unit_t t (fun (_:unit) => x) Eps.
-  Definition alt t (p1 p2:grammar t) : grammar t := 
-    Map _ (fun (x:interp (Sum_t t t)) => match x with inl a => a | inr b => b end) 
-        (Alt p1 p2).
 
-  Fixpoint alts0 t (ps:list (grammar t)) : grammar t := 
+  Local Ltac localsimpl :=
+    repeat match goal with
+      | [v: unit |- _ ] => destruct v
+      (* | [ |- context[char_dec ?x ?y] ] => destruct (char_dec x y) *)
+      (* | [_: context[char_dec ?x ?y] |- _] => destruct (char_dec x y) *)
+      | [H: wf_bigrammar _ |- _] => destruct H
+      | _ => unfold invertible, in_bigrammar_rng in *; in_bigrammar_inv; crush
+    end.
+
+  (* combinators for building well-formed bigrammars *)
+  Obligation Tactic := crush.
+
+  Program Definition empty : wf_bigrammar Unit_t := Eps.
+  Program Definition anybit : wf_bigrammar Char_t := Any.
+
+  Program Definition bit (x:bool) : wf_bigrammar Char_t := Char x.
+  Program Definition never t : wf_bigrammar t := Zero t.
+
+  (* Note: could also have the test return option(a=b) instead of {a=b}+{a<>b}. *)
+  Program Definition always t (teq : forall (a b:interp t), {a=b}+{a<>b})(x:interp t)
+  : wf_bigrammar t := 
+  @Map Unit_t t (fun (_:unit) => x, fun y => if teq x y then Some tt else None) Eps.
+  Next Obligation.
+    localsimpl.
+    destruct (teq x x); crush.
+    destruct (teq x w); crush.
+  Defined.
+
+  Definition map t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2)
+               (pf: invertible fi (` g)) : wf_bigrammar t2.
+    intros.
+    refine (exist (fun g0 : bigrammar t2 => wf_grammar g0)
+                  (Map fi (` g)) _).
+    destruct g. simpl. auto.
+  Defined.
+  Implicit Arguments map [t1 t2].
+
+  Program Definition seq t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) : 
+    wf_bigrammar (Pair_t t1 t2) :=
+    Cat p1 p2.
+  Next Obligation. localsimpl. localsimpl.
+  Defined.
+
+  (* Definition cons t (pair : interp (Pair_t t (List_t t))) : interp (List_t t) :=  *)
+  (*   (fst pair)::(snd pair). *)
+
+  (* doesn't seem that this is used *)
+  (* Definition seqs t (ps:list (wf_bigrammar t)) : wf_bigrammar (List_t t) :=  *)
+  (*   List.fold_right (fun p1 p2 => map (seq p1 p2) (@cons t))  *)
+  (*     (@always (List_t t) (@nil (interp t))) ps. *)
+
+  Program Definition alt t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) : 
+    wf_bigrammar (Sum_t t1 t2) :=
+    Alt p1 p2.
+  Next Obligation. localsimpl. localsimpl.
+  Defined.
+
+  (* Definition alt t (p1 p2:grammar t) : grammar t :=  *)
+  (*   Map _ (fun (x:interp (Sum_t t t)) => match x with inl a => a | inr b => b end)  *)
+  (*       (Alt p1 p2). *)
+
+  (* Fixpoint alts0 t (ps:list (grammar t)) : grammar t :=  *)
+  (*   match ps with  *)
+  (*     | nil => @never t *)
+  (*     | p::nil => p *)
+  (*     | p::rest => alt p (alts0 rest) *)
+  (*   end. *)
+
+
+  (** A union operator for two grammars; it uses the pretty printer to try
+      the left branch; only if it fails, it tries the right branch.  This
+      operator should be avoided if possible. Suppose we union n grammars,
+      each of size m. Pretty-print each grammar takes times linear to m.
+      Pretty print (g1+g2+...gn) would take the worst case n*m time as it
+      may try all n possibilities. *)
+  Program Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t := 
+    @Map (Sum_t t t) t 
+         (fun w : interp (Sum_t t t) => match w with inl x => x | inr y => y end,
+          fun v : interp t => 
+            match pretty_print (Alt g1 g2) (inl _ v) with 
+              | Some _ => Some (inl _ v)
+              | None => match pretty_print (Alt g1 g2) (inr _ v) with 
+                          | Some _ => Some (inr _ v)
+                          | None => None
+                        end
+            end)
+         (Alt g1 g2).
+  Next Obligation.
+    - localsimpl.
+    - localsimpl.
+    - unfold invertible; simpl; split.
+      + intros.
+        destruct v.
+        * remember_destruct_head as v1; eauto.
+          remember_destruct_head as v2.
+          { localsimpl. eexists. eauto using pretty_print_corr1, pretty_print_corr2. }
+          { localsimpl. generalize pretty_print_corr1; crush_hyp. }
+        * localsimpl.
+          remember_destruct_head as v1; eauto 6 using pretty_print_corr2.
+          remember_destruct_head as v2; eauto 6.
+          generalize pretty_print_corr1; crush_hyp.
+      + crush.
+      remember_head_in_hyp as e1; destruct e1; try crush.
+      remember_head_in_hyp as e2; destruct e2; crush.
+  Defined.
+
+  Fixpoint unions0 t (ps:list (wf_bigrammar t)) : wf_bigrammar t := 
     match ps with 
       | nil => @never t
       | p::nil => p
-      | p::rest => alt p (alts0 rest)
+      | p::rest => union p (unions0 rest)
     end.
+
+
+
+  
 
   Fixpoint half A (xs ys zs: list A) : (list A) * (list A) := 
     match xs with 
@@ -2112,6 +2217,11 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
       instr_grammars_seg_override).
 
   Definition instruction_grammar := alts instruction_grammar_list.
+
+
+  (** Starting constructing the x86 parser *)
+  Require Import Parser.
+
   Definition instruction_regexp := projT1 (split_grammar (instruction_grammar)).
 
   Definition ini_decoder_state := 

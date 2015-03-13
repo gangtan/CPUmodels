@@ -2896,10 +2896,10 @@ Definition enc_pre_instr_bytes pre ins : Enc (list Z) :=
               to_bytes lbits' 7 0 (acc'::res)
             else
               to_bytes lbits' (n-1) acc' res
-      end)
+      end)%Z
   in
   lbits <- enc_pre_instr pre ins;
-  lbytes <- to_bytes lbits 7 0 nil;
+  lbytes <- to_bytes lbits 7%Z 0%Z nil;
   ret (List.rev lbytes).
 
 (*

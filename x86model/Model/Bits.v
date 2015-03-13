@@ -27,6 +27,8 @@
 
 
 Require Import Coqlib.
+Require Import Znumtheory.
+Local Open Scope Z_scope.
 
 Module Word.
   Section WORDSIZE.

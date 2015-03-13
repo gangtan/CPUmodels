@@ -18,13 +18,12 @@
     library. *)
 
 Require Export ZArith.
-Require Export Znumtheory.
 Require Export List.
 Require Export Bool.
+Require Import Znumtheory.
 Require Import SetoidList.
 Require Import Classes.RelationClasses.
 Require Import Wf_nat.
-
 
 (** * Logical axioms *)
 
