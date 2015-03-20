@@ -3728,33 +3728,13 @@ Qed.
 
 Add Ring WordRing: WordRing.
 
-End WORDSIZE.
-
-
-Require Import Coqlib.
-Require Import Ascii.
 Require Import String.
 
-Fixpoint string_to_bool_list (s:string) : list bool := 
-  match s with
-    | EmptyString => nil
-    | String a s => 
-      (if ascii_dec a "0"%char then false else true)::(string_to_bool_list s)
-  end.
-
-Fixpoint string_to_Z_bool (s:string) : Z -> bool :=
-  let lb := string_to_bool_list s in
-  let fix to_Z_bool l := 
-    match l with
-      | nil => (fun i: Z => false)
-      | b :: l' =>
-       (fun i: Z => if zeq i 0 then b else to_Z_bool l' (i - 1))
-    end in
-  to_Z_bool (rev lb).
-
-Definition string_to_int n (s : string) := 
+Definition string_to_int (s : string) := 
   let zb := string_to_Z_bool s in 
-  repr n (Z_of_bits n zb).
+  repr (Z_of_bits wordsize zb).
+
+End WORDSIZE.
 
 Implicit Arguments add [wordsize_minus_one].
 Implicit Arguments sub [wordsize_minus_one].
@@ -3816,6 +3796,8 @@ Definition int16 := Word.int 15.
 Definition int32 := Word.int 31. 
 Definition int64 := Word.int 63.
 Definition int80 := Word.int 79.
+
+
 
 (** * Tactics for int *)
 

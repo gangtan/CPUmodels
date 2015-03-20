@@ -1482,6 +1482,26 @@ Proof.
   intros; destruct l. reflexivity. destruct l; reflexivity.
 Qed.
 
+Require Import Ascii.
+Require Import String.
+
+Fixpoint string_to_bool_list (s:string) : list bool := 
+  match s with
+    | EmptyString => nil
+    | String a s => 
+      (if ascii_dec a "0"%char then false else true)::(string_to_bool_list s)
+  end.
+
+Fixpoint string_to_Z_bool (s:string) : Z -> bool :=
+  let lb := string_to_bool_list s in
+  let fix to_Z_bool l := 
+    match l with
+      | nil => (fun i: Z => false)
+      | b :: l' =>
+       (fun i: Z => if zeq i 0 then b else to_Z_bool l' (i - 1)%Z)
+    end in
+  to_Z_bool (rev lb).
+
 (** * Definitions and theorems over boolean types *)
 
 Definition proj_sumbool (P Q: Prop) (a: {P} + {Q}) : bool :=

@@ -302,9 +302,8 @@ Ltac in_bigrammar_inv :=
 Definition in_bigrammar_rng t (g: bigrammar t) (v: interp t) := 
   exists s, in_bigrammar g s v.
 
-Definition bigrammar_rng_subset t1 t2 (g1: bigrammar t1) (f: interp t1 -> interp t2)
-           (g2: bigrammar t2) := 
-  forall v1, in_bigrammar_rng g1 v1 -> in_bigrammar_rng g2 (f v1).
+Definition bigrammar_rng_subset t (g1 g2: bigrammar t) := 
+  forall v, in_bigrammar_rng g1 v -> in_bigrammar_rng g2 v.
 
 Definition invertible t1 t2 (fi: funinv t1 t2) (g:bigrammar t1) :=
   (forall v: [|t1|],
@@ -406,9 +405,26 @@ Local Ltac localsimpl :=
       | _ => unfold invertible, in_bigrammar_rng in *; in_bigrammar_inv; crush
     end.
 
+Lemma in_bigrammar_rng_alt_inl
+      t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) (v:[|t1|]) :
+  in_bigrammar_rng (Alt g1 g2) (inl v) <->
+  in_bigrammar_rng g1 v. 
+Proof. localsimpl. Qed.
+
+Lemma in_bigrammar_rng_alt_inr
+      t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) (v:[|t2|]) :
+  in_bigrammar_rng (Alt g1 g2) (inr v) <->
+  in_bigrammar_rng g2 v. 
+Proof. localsimpl. Qed.
+
+Hint Rewrite in_bigrammar_rng_alt_inl in_bigrammar_rng_alt_inr : bigrammar.
+
 Lemma in_bigrammar_rng_map t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
-  in_bigrammar_rng g v -> in_bigrammar_rng (Map fi g) (fst fi v).
-Proof. unfold in_bigrammar_rng; crush. Qed.
+  in_bigrammar_rng g v ->
+  in_bigrammar_rng (Map fi g) (fst fi v).
+Proof. localsimpl. Qed.
+
+Hint Resolve in_bigrammar_rng_map : bigrammar.
 
 (* Ltac guess_in_all v := *)
 (*   match goal with  *)
