@@ -11,7 +11,7 @@
 
 (* This file provides simple bit-level parsing combinators for disassembling
  * Intel IA32 (x86) 32-bit binaries. *)
-Require Coqlib.
+Require Import Coqlib.
 Require Import Coq.Init.Logic.
 Require Import Bool.
 Require Import String.
@@ -22,9 +22,10 @@ Require Import ZArith.
 Require Import Eqdep.
 Require Import CommonTacs.
 Require Import Program.
+Require Import Coq.Classes.Morphisms.
+
 Unset Automatic Introduction.
 Set Implicit Arguments.
-
 
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
@@ -121,6 +122,7 @@ End X86_PARSER_ARG.
   Import ParserArg.X86_PARSER_ARG.
   Require Import BiGrammar.
 
+
   Definition option_t x := User_t (Option_t x).
   Definition int_t := User_t Int_t.
   Definition register_t := User_t Register_t.
@@ -148,6 +150,8 @@ End X86_PARSER_ARG.
   Definition lock_or_rep_t := User_t Lock_or_Rep_t.
   Definition bool_t := User_t Bool_t.
   Definition prefix_t := User_t Prefix_t.
+  Definition bitvector_t n := User_t (BitVector_t n).
+
 
   Local Ltac localcrush :=
     repeat match goal with
@@ -166,6 +170,216 @@ End X86_PARSER_ARG.
 
   (* combinators for building well-formed bigrammars *)
   Obligation Tactic := localcrush.
+
+
+  (** * Basic operartions for converting values in one domain to another
+        domain and their proofs *)
+
+  Fixpoint bits_n (n:nat) : type := 
+    match n with 
+      | 0%nat => Unit_t
+      | S n => Pair_t Char_t (bits_n n)
+    end.
+
+  (* A signature function that is false above an index n *)
+  Definition sig_false_above (n:nat) (f:Z->bool) := 
+    forall z, (z >= Z_of_nat n)%Z -> f z = false.
+
+  (** convert a sequence of bits to a signature function that maps position
+      indexes to bits so that we are not restricted by the
+      right-associateness of the bits when processing them; position
+      indexes in the signature function start at 0 *)
+  Fixpoint sig_of_bitsn (n:nat) : interp (bits_n n) -> (Z -> bool) := 
+    match n with
+      | O => fun _ _ => false
+      | S n' => 
+        fun v =>
+          let f' := sig_of_bitsn n' (snd v) in
+          fun x => if zeq x (Z_of_nat n') then fst v else f' x
+    end.
+
+  Fixpoint bitsn_of_sig (n:nat) (f:Z->bool) : interp (bits_n n) :=
+    match n with
+      | O => tt
+      | S n' => (f (Z_of_nat n'), bitsn_of_sig n' f)
+    end.
+
+  (* Definition bits_sig (n:nat) := {f:Z->bool | sig_false_above n f}. *)
+
+  (* Fixpoint sig_of_bits (n:nat) : interp (bits_n n) -> bits_sig n.  *)
+  (*   intros n. *)
+  (*   refine( *)
+  (*     match n return interp (bits_n n) -> bits_sig n with *)
+  (*       | O => fun _ => exist _ (fun _:Z => false) _ *)
+  (*       | S n' => *)
+  (*         fun v => *)
+  (*           let f' := sig_of_bits n' (snd v) in *)
+  (*           exist _ (fun x => if zeq x (Z_of_nat n') *)
+  (*                             then fst v else (` f') x) _ *)
+  (*     end). *)
+  (*   - crush. *)
+  (*   - unfold sig_false_above. *)
+  (*     intros z H. *)
+  (*     destruct_head.  *)
+  (*     + nat_to_Z; omega. *)
+  (*     + apply (proj2_sig f'). nat_to_Z; omega. *)
+  (* Defined. *)
+
+  (* Fixpoint bits_of_sig (n:nat) : bits_sig n -> interp (bits_n n) := *)
+  (*   match n return bits_sig n -> interp (bits_n n) with *)
+  (*     | O => fun _ => tt *)
+  (*     | S n' => fun f => ((` f) (Z_of_nat n'), @bits_of_sig n' f) *)
+  (*   end. *)
+
+  Definition int_of_bitsn (n:nat) (v:interp (bits_n n)) : interp int_t := 
+    Word.Z_of_bits n (sig_of_bitsn n v).
+
+  Definition bitsn_of_int (n:nat) (i:interp int_t) : option (interp (bits_n n)) := 
+    if (zle (0%Z) i) then
+      if (zlt i (two_power_nat n)) then 
+        Some (bitsn_of_sig n (Word.bits_of_Z n i))
+      else None
+    else None.
+
+  (* Compared to repr (Z_of_bits f), this one doesn't do the extra modular op *)
+  Definition intn_of_sig (n:nat) (f:Z->bool): Word.int n :=
+    Word.mkint _ (Word.Z_of_bits (S n) f) (Word.Z_of_bits_range n f).
+  (* Implicit Arguments intn_of_sig [n]. *)
+
+  Definition sig_of_intn (n:nat) (i:Word.int n) : Z->bool :=
+    Word.bits_of_Z (S n) (Word.unsigned i).
+
+  Definition intn_of_bitsn (n:nat) (bs:[|bits_n (S n)|]) : Word.int n :=
+    intn_of_sig n (sig_of_bitsn (S n) bs).
+
+  Definition bitsn_of_intn (n:nat) (v:Word.int n) : [|bits_n (S n)|] := 
+    bitsn_of_sig (S n) (sig_of_intn v).
+
+  (** * lemmas about above conversion operators *)
+
+  Lemma sig_of_bitsn_false_above n (v: [|bits_n n|]) :
+    sig_false_above n (sig_of_bitsn n v).
+  Proof. induction n.
+    - crush.
+    - unfold sig_false_above.
+      intros v z H. simpl.
+      destruct_head.
+      + nat_to_Z; omega.
+      + apply IHn. nat_to_Z; omega.
+  Qed.
+
+  (* todo: move to Bits.v *)
+
+  (* todo end: move to Bits.v *)
+
+  Instance bitsn_of_sig_exten n:
+    Proper (Word.sig_eq_below n ==> eq) (bitsn_of_sig n).
+  Proof. induction n. crush.
+    intros f1 f2 H.
+    simpl. f_equiv.
+    - apply H; nat_to_Z; omega.
+    - apply IHn. apply Word.sig_eq_below_downward. trivial.
+  Qed.
+
+  Lemma bitsn_of_sig_inv : forall n v, bitsn_of_sig n (sig_of_bitsn n v) = v.
+  Proof. induction n. localsimpl.
+    simpl; intros.
+    destruct_head; try omega.
+    assert (H: Word.sig_eq_below n 
+              (fun x => if zeq x (Z.of_nat n) then fst v
+                        else sig_of_bitsn n (snd v) x)
+              (sig_of_bitsn n (snd v))).
+       unfold Word.sig_eq_below.
+       intros. destruct_head; try omega. trivial.
+    rewrite H.
+    destruct v. crush.
+  Qed.
+
+  Lemma sig_of_bitsn_inv :
+    forall n f, Word.sig_eq_below n (sig_of_bitsn n (bitsn_of_sig n f)) f.
+  Proof. 
+    unfold Word.sig_eq_below. induction n.
+    - simpl. intros. omega.
+    - crush.
+      destruct_head. congruence.
+        rewrite Zpos_P_of_succ_nat in *.
+        eapply IHn.
+        omega.
+  Qed.
+
+  Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z
+       bitsn_of_sig_inv sig_of_bitsn_inv : bits.
+
+  Lemma int_of_bitsn_range n v : (0 <= int_of_bitsn n v < two_power_nat n)%Z.
+  Proof. unfold int_of_bitsn. intros.
+    destruct n. 
+      crush. 
+      unfold two_power_nat, shift_nat. simpl. omega.
+      apply Word.Z_of_bits_range.
+  Qed.
+  
+  Lemma bitsn_of_int_inv n v: bitsn_of_int n (int_of_bitsn n v) = Some v.
+  Proof. 
+    unfold bitsn_of_int; intros.
+    use_lemma (int_of_bitsn_range n v) by trivial.
+    repeat (destruct_head; try omega).
+    unfold int_of_bitsn.
+    autorewrite with bits. trivial.
+  Qed.
+
+  Lemma int_of_bitsn_inv : 
+    forall n i v, bitsn_of_int n i = Some v -> int_of_bitsn n v = i.
+  Proof.
+    unfold int_of_bitsn, bitsn_of_int in *. intros.
+    destruct_head in H; try congruence.
+    destruct_head in H; try congruence.
+    crush.
+    autorewrite with bits.
+    destruct n. 
+      unfold two_power_nat, shift_nat in *. simpl in *. omega.
+      apply Word.Z_of_bits_of_Z_lt_modulus.
+      crush.
+  Qed.
+
+  Instance intn_of_sig_exten n:
+    Proper (Word.sig_eq_below (S n) ==> eq) (@intn_of_sig n).
+  Proof. unfold Proper, respectful. intros.
+    apply Word.mkint_eq.
+    rewrite H. trivial.
+  Qed.
+
+  Lemma intn_of_sig_inv : forall n (i:Word.int n),
+    @intn_of_sig n (sig_of_intn i) = i.
+  Proof. unfold intn_of_sig, sig_of_intn. intros.
+    destruct i. apply Word.mkint_eq.
+    compute [Word.unsigned Word.intval].
+    apply Word.Z_of_bits_of_Z_lt_modulus. trivial.
+  Qed.
+
+  Lemma sig_of_intn_inv: forall n f,
+    Word.sig_eq_below (S n) (sig_of_intn (@intn_of_sig n f)) f.
+  Proof. unfold intn_of_sig, sig_of_intn. intros.
+    apply Word.bits_of_Z_of_bits.
+  Qed.
+
+  Hint Rewrite intn_of_sig_inv sig_of_intn_inv: bits.
+
+  Lemma intn_of_bitsn_inv n (i:Word.int n) :
+    intn_of_bitsn (bitsn_of_intn i) = i.
+  Proof. unfold intn_of_bitsn, bitsn_of_intn; intros.
+    autorewrite with bits. trivial.
+  Qed.
+
+  Lemma bitsn_of_intn_inv n (v:[|bits_n (S n)|]):
+    bitsn_of_intn (intn_of_bitsn v) = v.
+  Proof. unfold intn_of_bitsn, bitsn_of_intn; intros.
+    autorewrite with bits. trivial.
+  Qed.
+
+  Hint Rewrite intn_of_bitsn_inv bitsn_of_intn_inv: bits.
+
+
+  (** * Basic grammar constructors *)
 
   Program Definition empty : wf_bigrammar Unit_t := Eps.
   Program Definition anybit : wf_bigrammar Char_t := Any.
@@ -385,51 +599,217 @@ End X86_PARSER_ARG.
   (* Defined. *)
 
 
-  Fixpoint bits_n (n:nat) : type := 
-    match n with 
-      | 0%nat => Unit_t
-      | S n => Pair_t Char_t (bits_n n)
-    end.
-  Fixpoint field'(n:nat) : grammar (bits_n n) := 
-    match n with 
-      | 0%nat => Eps
-      | S n => Cat Any (field' n)
-    end.
-  Fixpoint bits2Z(n:nat)(a:Z) : interp (bits_n n) -> interp int_t := 
-    match n with 
-      | 0%nat => fun _ => a
-      | S n => fun p => bits2Z n (2*a + (if (fst p) then 1 else 0)) (snd p)
-    end.
-  Definition bits2int(n:nat)(bs:interp (bits_n n)) : interp int_t := bits2Z n 0 bs.
-  Fixpoint bits (x:string) : grammar (bits_n (String.length x)) := 
-    match x with 
-      | EmptyString => Eps
-      | String c s => 
-        (Cat (Char (if ascii_dec c "0"%char then false else true)) (bits s))
-    end.
-
   (* notation for building grammars *)
   Infix "|+|" := alt (right associativity, at level 80).
+  Infix "|\/|" := union (right associativity, at level 80).
   Infix "$" := seq (right associativity, at level 70).
-  Infix "@" := map (right associativity, at level 75).
   Notation "e %% t" := (e : interp t) (at level 80).
-  Definition bitsleft t (s:string)(p:grammar t) : grammar t := 
-    bits s $ p @ (@snd _ _).
+  Notation "g @ f & fi & pf" :=(map g (f, fi) pf) (at level 75).
+
+  Fixpoint bits (x:string) : wf_bigrammar (bits_n (String.length x)) := 
+    match x with 
+      | EmptyString => empty
+      | String c s => 
+        (seq (bit (if ascii_dec c "0"%char then false else true)) (bits s))
+    end.
+
+  (** Turn a string of 0s and 1s into a right-associated tuple of trues and
+      falses *)
+  Fixpoint tuples_of_string (s:string): interp (bits_n (String.length s)) := 
+    match s with
+      | EmptyString => tt
+      | String a s =>
+        (if ascii_dec a "0"%char then false else true, tuples_of_string s)
+    end.
+
+  Lemma in_bits_intro: forall str,
+    in_bigrammar (` (bits str)) (string_to_bool_list str) (tuples_of_string str).
+  Proof. induction str; localsimpl. Qed.
+
+  Lemma in_bits_elim: 
+    forall str s v, in_bigrammar (` (bits str)) s v ->
+                    s = string_to_bool_list str /\ v = tuples_of_string str.
+  Proof. induction str; localsimpl; destruct (ascii_dec a "0"); crush_hyp.
+  Qed.
+
+  Definition bits_match (s:string): wf_bigrammar Unit_t.
+    intros.
+    refine ((bits s) @ (fun _ => tt:[|Unit_t|])
+              & (fun _ => Some (tuples_of_string s)) & _).
+    localsimpl.
+    generalize in_bits_intro; crush.
+  Defined.
+
+  Notation "! s" := (bits_match s) (at level 60).
+
+  Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t.
+    intros.
+    refine ((bits s $ p) @ (@snd _ _) & (fun v => Some (tuples_of_string s, v)) & _).
+    localsimpl.
+    crush' in_bits_elim fail.
+  Defined.
   Infix "$$" := bitsleft (right associativity, at level 70).
 
-  Definition anybit : grammar Char_t := Any.
-  Definition field(n:nat) := (field' n) @ (bits2int n).
-  Definition reg := (field 3) @ (Z_to_register : _ -> interp register_t). 
-  Definition fpu_reg := (field 3) @ (@Word.repr 2 :_ -> interp fpu_register_t).
-  Definition mmx_reg := (field 3) @ (Z_to_mmx_register : _ -> interp mmx_register_t).
-  Definition sse_reg := (field 3) @ (Z_to_sse_register : _ -> interp sse_register_t).
-  Definition byte := (field 8) @ (@Word.repr 7 : _ -> interp byte_t).
- (* Definition halfword := (field 16) @ (@Word.repr 15 : _ -> interp half_t).
-  Definition word := (field 32) @ (@Word.repr 31 : _ -> interp word_t). *)
+  Lemma in_bitsleft_intro: forall t (g: wf_bigrammar t) str s1 s2 v1 v2,
+    in_bigrammar (` (bits str)) s1 v1 -> in_bigrammar (` g) s2 v2
+      -> in_bigrammar (` (str $$ g)) (s1 ++ s2)%list v2.
+  Proof. crush. Qed.
+
+  Lemma in_bitsleft_elim: forall t str (g: wf_bigrammar t) s (v:interp t),
+    in_bigrammar (` (str $$ g)) s v -> 
+    exists s1 s2, s = (s1 ++ s2)% list /\ in_bigrammar (` g) s2 v.
+  Proof. intros.
+    simpl in H. in_bigrammar_inv. crush. destruct x.
+    in_bigrammar_inv. crush.
+  Qed.
+
+  (* Mapping old definitions to new -- todo: substitute these away. *)
+  Definition parser r := wf_bigrammar r.
+  Definition char_t := Char_t.
+  Definition result_m := interp.
+  Definition result := type.
+  Definition pair_t := Pair_t.
+  Definition list_t := List_t.
+  Definition unit_t := Unit_t.
+  Definition tipe_t := User_t.
+  Definition Any_p := Any.
+  Definition Eps_p := Eps.
+
+  Fixpoint field'(n:nat) : wf_bigrammar (bits_n n) := 
+    match n with 
+      | 0%nat => empty
+      | S n => seq anybit (field' n)
+    end.
+
+  Fixpoint flatten_bits_n (n:nat) : (interp (bits_n n)) -> list bool := 
+    match n with
+      | O => fun _ => nil
+      | S n' => fun v => (fst v) :: flatten_bits_n n' (snd v)
+    end.
+
+  Lemma in_field'_intro: forall n (v: interp (bits_n n)),
+    in_bigrammar (` (field' n)) (flatten_bits_n n v) v.
+  Proof. induction n. crush.
+    intros. simpl. destruct v.
+    eapply InCat; crush.
+  Qed.
+
+  Definition field (n:nat) : wf_bigrammar int_t.
+    intros.
+    refine ((field' n) @ (int_of_bitsn n) & bitsn_of_int n & _).
+    localsimpl.
+    - crush' bitsn_of_int_inv fail.
+    - eapply int_of_bitsn_inv. trivial.
+  Defined.
+
+  Definition int_to_bool_list n v := 
+    (flatten_bits_n n (bitsn_of_sig n (Word.bits_of_Z n v))).
+
+  Lemma in_field_intro:
+    forall n v, (0 <= v < two_power_nat n)%Z ->
+                in_bigrammar (` (field n)) (int_to_bool_list n v) v.
+  Proof. intros.
+    eapply InMap. eapply in_field'_intro.
+    unfold int_of_bitsn in *. simpl.
+    autorewrite with bits.
+    destruct n.
+    - unfold two_power_nat, shift_nat in *. simpl in *. omega.
+    - rewrite (Word.Z_of_bits_of_Z_lt_modulus); trivial.
+  Qed.
+
+  Lemma field_range : 
+    forall n i, in_bigrammar_rng (` (field n)) i -> (0 <= i < two_power_nat n)%Z.
+  Proof. unfold field, in_bigrammar_rng. 
+    intros. crush; in_bigrammar_inv; crush' int_of_bitsn_range fail.
+  Qed.
+
+
+  (* Definition matches a register with a list of booleans that 
+   * represents its bit encoding. *)
+  Definition register_to_Z r : Z :=
+    (match r with
+      | EAX => 0
+      | ECX => 1
+      | EDX => 2
+      | EBX => 3
+      | ESP => 4
+      | EBP => 5
+      | ESI => 6
+      | EDI => 7
+    end)%Z.
+
+  Local Ltac r2ztac := 
+    repeat match goal with 
+             | [w:Z |- _ ] => destruct w; (discriminate || eauto)
+             | [ _ : context[match ?p with xH => _ | xI _  | xO _ => _ end] |- _ ]
+               => destruct p; (discriminate || eauto)
+           end.
+
+  Lemma register_to_Z_inv1 : 
+    forall z, (0 <= z < 8)%Z -> register_to_Z (Z_to_register z) = z.
+  Proof. intros.
+    remember (Z_to_register z) as r; destruct r; unfold Z_to_register in *; 
+    r2ztac; simpl in *; pos_to_Z; omega.
+  Qed.
+
+  Lemma register_to_Z_inv2 : forall r, Z_to_register (register_to_Z r) = r.
+  Proof. destruct r; crush. Qed.
+
+  Local Ltac lineararith := 
+    unfold two_power_nat, shift_nat in *; simpl in *; omega.
+
+  Definition reg : wf_bigrammar register_t.
+    refine (field 3 @ (Z_to_register : _ -> result_m register_t)
+              & (fun r => Some (register_to_Z r)) & _).
+    unfold invertible; split.
+    - intros v H.
+      assert (0 <= v < 8)%Z.
+      use_lemma field_range by eauto. lineararith.
+      use_lemma register_to_Z_inv1 by eauto.
+      crush.
+    - generalize register_to_Z_inv2. crush.
+  Defined.
+
+  Definition int_n : forall n, wf_bigrammar (User_t (BitVector_t n)).
+    intro.
+    refine ((field (S n)) @ (@Word.repr n : _ -> result_m (User_t (BitVector_t n)))
+              & fun b => Some (@Word.unsigned n b) & _).
+    unfold invertible; split.
+    + intros v H.
+      assert (0 <= v <= Word.max_unsigned n)%Z.
+        use_lemma field_range by eauto. 
+        unfold Word.max_unsigned, Word.modulus.
+        rewrite two_power_nat_S in *.
+        omega.
+      use_lemma Word.unsigned_repr by eauto.
+      crush.
+    + intros. crush.
+      apply Word.repr_unsigned.
+  Defined.
+
+  Lemma in_int_n_intro:
+    forall n (v: Word.int n), 
+      in_bigrammar (` (int_n n)) (int_to_bool_list (S n) (Word.unsigned v)) v.
+  Proof. intros. 
+    eapply InMap.
+    eapply in_field_intro.
+    eapply Word.unsigned_range. simpl.
+    rewrite Word.repr_unsigned. trivial.
+  Qed.
+
+  Definition byte : wf_bigrammar byte_t := int_n 7.
+  Definition halfword : wf_bigrammar half_t := int_n 15.
+  Definition word : wf_bigrammar word_t := int_n 31.
+
+  (* I used the above grammars for halfword and word because they are
+     easier for the proofs. The following defs of halfword and word from
+     Decode.v seems to be more efficient because they accumulate one byte
+     at a time.
   Definition halfword := (byte $ byte) @ ((fun p =>
       let b0 := Word.repr (Word.unsigned (fst p)) in
       let b1 := Word.repr (Word.unsigned (snd p)) in
-        Word.or (Word.shl b1 (Word.repr 8)) b0): _ -> interp half_t).
+        Word.or (Word.shl b1 (Word.repr 8)) b0): _ -> result_m half_t).
+
   Definition word := (byte $ byte $ byte $ byte) @
     ((fun p => 
         let b0 := zero_extend8_32 (fst p) in
@@ -440,10 +820,184 @@ End X86_PARSER_ARG.
          let w2 := Word.shl b2 (Word.repr 16) in
          let w3 := Word.shl b3 (Word.repr 24) in
           Word.or w3 (Word.or w2 (Word.or w1 b0)))
-    : _ -> interp word_t).
+    : _ -> result_m word_t).
+  *)
+
+  Definition condition_type_to_Z (ct: condition_type) : Z := 
+    (match ct with
+      | O_ct => 0 (* overflow *)
+      | NO_ct => 1 (* not overflow *)
+      | B_ct => 2 (* below, not above or equal *)
+      | NB_ct => 3 (* not below, above or equal *)
+      | E_ct => 4 (* equal, zero *)
+      | NE_ct => 5 (* not equal, not zero *)
+      | BE_ct => 6 (* below or equal, not above *)
+      | NBE_ct => 7 (* not below or equal, above *)
+      | S_ct => 8 (* sign *)
+      | NS_ct => 9 (* not sign *)
+      | P_ct => 10 (* parity, parity even *)
+      | NP_ct => 11 (* not parity, parity odd *)
+      | L_ct => 12  (* less than, not greater than or equal to *)
+      | NL_ct => 13 (* not less than, greater than or equal to *)
+      | LE_ct => 14 (* less than or equal to, not greater than *)
+      | NLE_ct => 15
+    end)%Z.
+
+  Lemma condition_type_to_Z_inv1 : 
+    forall z, (0 <= z < 16)%Z -> condition_type_to_Z (Z_to_condition_type z) = z.
+  Proof. intros.
+    remember (Z_to_condition_type z) as ct;
+    destruct ct; unfold Z_to_condition_type in *;
+    r2ztac;
+    simpl in *; pos_to_Z; omega.
+  Qed.
+
+  Lemma condition_type_to_Z_inv2 : 
+    forall ct, Z_to_condition_type (condition_type_to_Z ct) = ct.
+  Proof. destruct ct; crush. Qed.
+
+  Definition tttn : wf_bigrammar condition_t. 
+    refine ((field 4) @ (Z_to_condition_type : _ -> [|condition_t|])
+              & (fun ct => Some (condition_type_to_Z ct)) & _).
+    unfold invertible. split.
+    - intros v H.
+      assert (0 <= v < 16)%Z.
+      use_lemma field_range by eauto. lineararith.
+      use_lemma condition_type_to_Z_inv1 by eauto.
+      crush.
+    - generalize condition_type_to_Z_inv2. crush.
+  Defined.
+
+  (** * An X86 bigrammar *)
+  (* A better bigrammar for x86 instruction decoder/encoder. The encoder
+     spec is more efficient:
+
+     (1) Each individual instruction parser does not return values of
+         instr, but instead returns the instruction's arguments; as a
+         result, the inverse function does not need to perform a runtime
+         test to see what instruction it is as the previous version
+         does. At the top level, we disjoint union all instruction parsers
+         and use a conversion function to convert abstract syntax trees
+         (ast) produced by parsing to instructions.
+
+     (2) The Jcc parser uses the biased union for the two sub-parsers, 
+         avoiding runtime tests in those subparsers
+   *)
+
+  Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
+  Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
+  Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
+  Definition AAS_p : wf_bigrammar unit_t := ! "00111111".
+
+  Definition BSWAP_p : wf_bigrammar register_t := 
+    "0000" $$ "1111" $$ "1100" $$ "1" $$ reg.
+
+  Definition CDQ_p : wf_bigrammar unit_t := "1001" $$  ! "1001".
+  Definition CLC_p : wf_bigrammar unit_t := "1111" $$ ! "1000".
+  Definition CLD_p : wf_bigrammar unit_t := "1111" $$ ! "1100".
+  Definition CLI_p : wf_bigrammar unit_t := "1111" $$ ! "1010".
+  Definition CLTS_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "0110".
+  Definition CMC_p : wf_bigrammar unit_t := "1111" $$ ! "0101".
+  Definition CMPS_p : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
+
+  (*todo: Skipped CMPXCHG_p, requires modrm*)
+
+  Definition CPUID_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ ! "0010".
+  Definition CWDE_p : wf_bigrammar unit_t := "1001" $$ ! "1000".
+  Definition DAA_p : wf_bigrammar unit_t := "0010" $$ ! "0111".
+  Definition DAS_p : wf_bigrammar unit_t := "0010" $$ ! "1111".
+
+  Definition DEC_p1  :=
+    "1111" $$ "111" $$ anybit $ "11001" $$ reg.
+  Definition DEC_p2 := "0100" $$ "1" $$ reg.
+
+  (*Definition DEC_p3 : //todo: Skipped due to ext_op_modrm function*)
+  
+  Definition DIV_p1 : wf_bigrammar (Pair_t Char_t register_t) := 
+  "1111" $$ "011" $$ anybit $ "11110" $$ reg.
+
+  (*Definition DIV_p2 : //todo: Skipped due to ext_op_modrm function*)
+  
+  Definition HLT_p : wf_bigrammar unit_t := "1111" $$ ! "0100".
+  
+  Definition IDIV_p1 : wf_bigrammar (Pair_t Char_t register_t)  :=
+ "1111" $$ "011" $$ anybit $ "11111" $$ reg.
+
+ (*Definition IDIV_p2 : //todo: ext_op_modrm function*)
+ 
+ (*Definition IMUL_p : //todo: ext_op_modrm, modrm*)
+ 
+  Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
+  Definition IN_p2 := "1110" $$ "110" $$ anybit.
+
+  Definition IN_p : wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
+    refine ((IN_p1 |+| IN_p2)
+              @ (fun x => 
+                   match x with
+                     | inl (w,b) => (w, Some b)
+                     | inr w => (w, None)
+                   end %% (Pair_t Char_t (User_t (Option_t Byte_t))))
+              & (fun x => 
+                   match x with
+                     | (w, Some b) => Some (inl (w,b))
+                     | (w, None) => Some (inr w)
+                   end)
+              & _).
+    unfold invertible. split.
+    - destruct v; destruct i; crush.
+    - destruct w. destruct i0; try discriminate; crush.
+  Defined.
+
+  Definition INC_p1 :=  "1111" $$ "111" $$ anybit  $ "11000" $$ reg.
+
+  Definition INC_p2 := "0100" $$ "0" $$ reg.
+
+  (*todo: Definition INC_p3 := "1111" $$ "111" $$ anybit $ ext_op_modrm "000".*)
+  
+  Definition INS_p : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
+  
+  Definition INTn_p : wf_bigrammar byte_t := "1100" $$ "1101" $$ byte.
+  
+  Definition INT_p : wf_bigrammar unit_t := "1100" $$ ! "1100".
+  
+  Definition INTO_p : wf_bigrammar unit_t := "1100" $$ ! "1110".
+  
+  Definition INVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "1000".
+  
+  (*todo: Definition INVLPG_p := //ext_op_modrm function*)
+  
+  Definition IRET_p : wf_bigrammar unit_t := "1100" $$ ! "1111".
+
+  (* todo: remove; int_of_bits defined in a different way *)
+  (* Fixpoint bits2Z(n:nat)(a:Z) : interp (bits_n n) -> interp int_t :=  *)
+  (*   match n with  *)
+  (*     | 0%nat => fun _ => a *)
+  (*     | S n => fun p => bits2Z n (2*a + (if (fst p) then 1 else 0)) (snd p) *)
+  (*   end. *)
+  (* Definition int_of_bits(n:nat)(bs:interp (bits_n n)) : interp int_t := bits2Z n 0 bs. *)
+
+  Definition bitvector (n:nat) (bs: [|bits_n n|]) : Word.int n.
+
+  Definition field_intn (n:nat) : wf_bigrammar (bitvector_t n).
+    intros.
+    refine ((field' (S n)) @ (@intn_of_bitsn n: _ -> [|bitvector_t n|])
+               & (fun i => Some (bitsn_of_intn i)) & _).
+    unfold invertible; split.    
+    - simpl. intros. autorewrite with bits. crush.
+    - simpl. crush. autorewrite with bits. trivial.
+  Defined.
+
+  Definition fpu_reg  : wf_bigrammar fpu_register_t := field_intn 2.
+
+
+todo: change the type mmx_register to use bitvectors; sse_register as well
+
+  Definition mmx_reg := (field 3) @ (Z_to_mmx_register : _ -> interp mmx_register_t).
+  Definition sse_reg := (field 3) @ (Z_to_sse_register : _ -> interp sse_register_t).
 
   Definition scale_p := (field 2) @ (Z_to_scale : _ -> interp scale_t).
-  Definition tttn := (field 4) @ (Z_to_condition_type : _ -> interp condition_t).
+
+TBC:
 
   (* This is used in a strange edge-case for modrm parsing. See the
      footnotes on p37 of the manual in the repo This is a case where I
@@ -457,13 +1011,13 @@ End X86_PARSER_ARG.
      (bits "000" |+| bits "001" |+| bits "010" |+|
      bits "011" |+| (* bits "100" <- this is esp *)  bits "101" |+|
      bits "110" |+| bits "111") @ 
-       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> interp register_t).
+       ((fun bs => Z_to_register (int_of_bits 3 bs)) : _ -> interp register_t).
 
   Definition reg_no_ebp : grammar register_t :=
      (bits "000" |+| bits "001" |+| bits "010" |+|
      bits "011" |+|  bits "100"  (* |+| bits "101" <- this is ebp *) |+|
      bits "110" |+| bits "111") @ 
-       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> interp register_t).
+       ((fun bs => Z_to_register (int_of_bits 3 bs)) : _ -> interp register_t).
 
   Definition si := 
     (scale_p $ reg) @ (fun p => match snd p with 
@@ -482,7 +1036,7 @@ End X86_PARSER_ARG.
       |+| bits "110"
       |+| bits "111" ) @ 
           (fun bs => (mkAddress (Word.repr 0) 
-            (Some (Z_to_register(bits2int 3 bs))) None) %% address_t)
+            (Some (Z_to_register(int_of_bits 3 bs))) None) %% address_t)
       |+| bits "100" $ si $ reg_no_ebp @ 
           (fun p => match p with
                       | (_,(si,base)) => 
@@ -511,7 +1065,7 @@ End X86_PARSER_ARG.
             match p with 
               | (bs, disp) =>
                 (mkAddress (sign_extend8_32 disp) 
-                  (Some (Z_to_register(bits2int 3 bs))) None)
+                  (Some (Z_to_register(int_of_bits 3 bs))) None)
             end %% address_t)
       |+| bits "100" $ sib $ byte @ 
           (fun p => 
@@ -531,7 +1085,7 @@ End X86_PARSER_ARG.
           (fun p => 
             match p with 
               | (bs, disp) =>
-                (mkAddress disp (Some (Z_to_register(bits2int 3 bs))) None)
+                (mkAddress disp (Some (Z_to_register(int_of_bits 3 bs))) None)
             end %% address_t)
       |+|  bits "100" $ sib $ word @ 
           (fun p => 
@@ -578,6 +1132,7 @@ End X86_PARSER_ARG.
     modrm_gen 
       (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t))
       SSE_Addr_op.
+
 
 
   (* same as modrm_gen but no mod "11" case;
@@ -1329,7 +1884,7 @@ End X86_PARSER_ARG.
     (fun p =>
       match p with 
         (b2, (b1, (b0, s))) => 
-        let n := bits2int 3 (b2, (b1, (b0, tt))) in
+        let n := int_of_bits 3 (b2, (b1, (b0, tt))) in
         FCMOVcc (Z_to_fp_condition_type n) (FPS_op s) %% instruction_t
       end).
 

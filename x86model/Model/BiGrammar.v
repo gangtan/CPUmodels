@@ -179,7 +179,7 @@ Fixpoint interp (t:type) : Type :=
     | User_t t => user_type_denote t
   end%type.
 
-(* notation [[ t ]] would interfere with "destruct H as [v [H2 H4]]" *)
+(* Notation [[ t ]] would interfere with "destruct H as [v [H2 H4]]" *)
 Notation "[| t |]" := (interp t).
 
 (** a pair of a function and its inverse *)
