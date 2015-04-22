@@ -54,22 +54,14 @@ Module X86_PARSER_ARG.
   | Int_t : type
   | Register_t : type
   | BitVector_t : nat -> type (* a bit vector of a certain width *)
-  (* | Byte_t : type *)
-  (* | Half_t : type *)
-  (* | Word_t : type *)
-  (* | Double_Word_t : type *)
-  (* | Ten_Byte_t : type *)
   | Scale_t : type
   | Condition_t : type
   | Address_t : type
   | Operand_t : type
-  (* | Fpu_Register_t : type *)
   | Fp_Debug_Register_t : type
-  | Fp_Operand_t : type 
+  | Fp_Operand_t : type
   | MMX_Granularity_t : type
-  | MMX_Register_t : type
   | MMX_Operand_t : type
-  | SSE_Register_t : type
   | SSE_Operand_t : type
   | Instruction_t : type
   | Control_Register_t : type
@@ -88,6 +80,8 @@ Module X86_PARSER_ARG.
   Definition Double_Word_t := BitVector_t 63.
   Definition Ten_Byte_t := BitVector_t 79.
   Definition Fpu_Register_t := BitVector_t 2.
+  Definition MMX_Register_t := BitVector_t 2.
+  Definition SSE_Register_t := BitVector_t 2.
 
   Definition tipe := type.
   Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
@@ -100,22 +94,14 @@ Module X86_PARSER_ARG.
       | Int_t => Z
       | Register_t => register
       | BitVector_t n => Word.int n
-      (* | Byte_t => int8 *)
-      (* | Half_t => int16 *)
-      (* | Word_t => int32 *)
-      (* | Double_Word_t => int64 *)
-      (* | Ten_Byte_t => int80 *)
       | Scale_t => scale
       | Condition_t => condition_type
       | Address_t => address
       | Operand_t => operand
-      (* | Fpu_Register_t => int3 *)
       | Fp_Debug_Register_t => fp_debug_register
       | Fp_Operand_t => fp_operand  
       | MMX_Granularity_t => mmx_granularity
-      | MMX_Register_t => mmx_register
       | MMX_Operand_t => mmx_operand
-      | SSE_Register_t => sse_register
       | SSE_Operand_t => sse_operand
       | Instruction_t => instr
       | Control_Register_t => control_register

@@ -308,7 +308,7 @@ End X86_PARSER_ARG.
   Qed.
 
   Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z
-       bitsn_of_sig_inv sig_of_bitsn_inv : bits.
+       bitsn_of_sig_inv sig_of_bitsn_inv : bigrammar.
 
   Lemma int_of_bitsn_range n v : (0 <= int_of_bitsn n v < two_power_nat n)%Z.
   Proof. unfold int_of_bitsn. intros.
@@ -324,7 +324,7 @@ End X86_PARSER_ARG.
     use_lemma (int_of_bitsn_range n v) by trivial.
     repeat (destruct_head; try omega).
     unfold int_of_bitsn.
-    autorewrite with bits. trivial.
+    autorewrite with bigrammar. trivial.
   Qed.
 
   Lemma int_of_bitsn_inv : 
@@ -334,7 +334,7 @@ End X86_PARSER_ARG.
     destruct_head in H; try congruence.
     destruct_head in H; try congruence.
     crush.
-    autorewrite with bits.
+    autorewrite with bigrammar.
     destruct n. 
       unfold two_power_nat, shift_nat in *. simpl in *. omega.
       apply Word.Z_of_bits_of_Z_lt_modulus.
@@ -362,21 +362,21 @@ End X86_PARSER_ARG.
     apply Word.bits_of_Z_of_bits.
   Qed.
 
-  Hint Rewrite intn_of_sig_inv sig_of_intn_inv: bits.
+  Hint Rewrite intn_of_sig_inv sig_of_intn_inv: bigrammar.
 
   Lemma intn_of_bitsn_inv n (i:Word.int n) :
     intn_of_bitsn (bitsn_of_intn i) = i.
   Proof. unfold intn_of_bitsn, bitsn_of_intn; intros.
-    autorewrite with bits. trivial.
+    autorewrite with bigrammar. trivial.
   Qed.
 
   Lemma bitsn_of_intn_inv n (v:[|bits_n (S n)|]):
     bitsn_of_intn (intn_of_bitsn v) = v.
   Proof. unfold intn_of_bitsn, bitsn_of_intn; intros.
-    autorewrite with bits. trivial.
+    autorewrite with bigrammar. trivial.
   Qed.
 
-  Hint Rewrite intn_of_bitsn_inv bitsn_of_intn_inv: bits.
+  Hint Rewrite intn_of_bitsn_inv bitsn_of_intn_inv: bigrammar.
 
 
   (** * Basic grammar constructors *)
@@ -506,7 +506,7 @@ End X86_PARSER_ARG.
       the range of g2, or it aborts when x is not in the range of either g1
       or g2.*)
   Program Definition predicated_union_three_way t (g1 g2: wf_bigrammar t)
-          (pred: @pred_options  t g1 g2) :
+          (pred: @pred_options t g1 g2) :
     wf_bigrammar t := 
     Map (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end,
          fun w : [|t|] => 
@@ -547,7 +547,7 @@ End X86_PARSER_ARG.
       + intros v w; crush; destruct v; destruct (pred w); crush. 
   Defined.
 
-  (* This version also works, but doesn't extract to efficient code *)
+  (* This version also works, but doesn't extract efficient code *)
   (* Program Definition predicated_union t (g1 g2: wf_bigrammar t) *)
   (*         (pred: forall x:interp t,  {in_bigrammar_rng g1 x} +  *)
   (*                                    {in_bigrammar_rng g2 x}) : *)
@@ -694,6 +694,12 @@ End X86_PARSER_ARG.
     eapply InCat; crush.
   Qed.
 
+  Lemma field'_rng n (v : [|bits_n n|]): 
+    in_bigrammar_rng (` (field' n)) v.
+  Proof. unfold in_bigrammar_rng. intros. eexists.
+    eapply in_field'_intro.
+  Qed.
+
   Definition field (n:nat) : wf_bigrammar int_t.
     intros.
     refine ((field' n) @ (int_of_bitsn n) & bitsn_of_int n & _).
@@ -706,23 +712,27 @@ End X86_PARSER_ARG.
     (flatten_bits_n n (bitsn_of_sig n (Word.bits_of_Z n v))).
 
   Lemma in_field_intro:
-    forall n v, (0 <= v < two_power_nat n)%Z ->
-                in_bigrammar (` (field n)) (int_to_bool_list n v) v.
+    forall n i, (0 <= i < two_power_nat n)%Z ->
+                in_bigrammar (` (field n)) (int_to_bool_list n i) i.
   Proof. intros.
     eapply InMap. eapply in_field'_intro.
     unfold int_of_bitsn in *. simpl.
-    autorewrite with bits.
+    autorewrite with bigrammar.
     destruct n.
     - unfold two_power_nat, shift_nat in *. simpl in *. omega.
     - rewrite (Word.Z_of_bits_of_Z_lt_modulus); trivial.
   Qed.
 
-  Lemma field_range : 
-    forall n i, in_bigrammar_rng (` (field n)) i -> (0 <= i < two_power_nat n)%Z.
-  Proof. unfold field, in_bigrammar_rng. 
-    intros. crush; in_bigrammar_inv; crush' int_of_bitsn_range fail.
-  Qed.
-
+  Lemma field_rng : 
+    forall n i, (0 <= i < two_power_nat n)%Z <->
+                in_bigrammar_rng (` (field n)) i.
+  Proof. 
+    split; intros.
+    - unfold in_bigrammar_rng.
+      eexists. eapply in_field_intro. trivial.
+    - unfold field, in_bigrammar_rng in *.
+      intros. crush; in_bigrammar_inv; crush' int_of_bitsn_range fail.
+  Qed.    
 
   (* Definition matches a register with a list of booleans that 
    * represents its bit encoding. *)
@@ -738,21 +748,21 @@ End X86_PARSER_ARG.
       | EDI => 7
     end)%Z.
 
-  Local Ltac r2ztac := 
+  Local Ltac toztac := 
     repeat match goal with 
              | [w:Z |- _ ] => destruct w; (discriminate || eauto)
              | [ _ : context[match ?p with xH => _ | xI _  | xO _ => _ end] |- _ ]
                => destruct p; (discriminate || eauto)
            end.
 
-  Lemma register_to_Z_inv1 : 
+  Lemma register_to_Z_inv : 
     forall z, (0 <= z < 8)%Z -> register_to_Z (Z_to_register z) = z.
   Proof. intros.
     remember (Z_to_register z) as r; destruct r; unfold Z_to_register in *; 
-    r2ztac; simpl in *; pos_to_Z; omega.
+    toztac; simpl in *; pos_to_Z; omega.
   Qed.
 
-  Lemma register_to_Z_inv2 : forall r, Z_to_register (register_to_Z r) = r.
+  Lemma Z_to_register_inv : forall r, Z_to_register (register_to_Z r) = r.
   Proof. destruct r; crush. Qed.
 
   Local Ltac lineararith := 
@@ -764,11 +774,27 @@ End X86_PARSER_ARG.
     unfold invertible; split.
     - intros v H.
       assert (0 <= v < 8)%Z.
-      use_lemma field_range by eauto. lineararith.
-      use_lemma register_to_Z_inv1 by eauto.
+        apply field_rng in H. lineararith.
+      use_lemma register_to_Z_inv by eauto.
       crush.
-    - generalize register_to_Z_inv2. crush.
+    - generalize Z_to_register_inv. crush.
   Defined.
+
+  Lemma reg_rng: forall r, in_bigrammar_rng (` reg) r.
+  Proof. destruct r;
+    match goal with
+      | [ |- in_bigrammar_rng _ ?R] => 
+        first [replace R with (Z_to_register 0) by trivial |
+               replace R with (Z_to_register 1) by trivial |
+               replace R with (Z_to_register 2) by trivial |
+               replace R with (Z_to_register 3) by trivial |
+               replace R with (Z_to_register 4) by trivial |
+               replace R with (Z_to_register 5) by trivial |
+               replace R with (Z_to_register 6) by trivial |
+               replace R with (Z_to_register 7) by trivial ]
+    end; apply in_bigrammar_rng_map;
+    apply field_rng; lineararith.
+  Qed.
 
   Definition int_n : forall n, wf_bigrammar (User_t (BitVector_t n)).
     intro.
@@ -777,7 +803,7 @@ End X86_PARSER_ARG.
     unfold invertible; split.
     + intros v H.
       assert (0 <= v <= Word.max_unsigned n)%Z.
-        use_lemma field_range by eauto. 
+        apply field_rng in H.
         unfold Word.max_unsigned, Word.modulus.
         rewrite two_power_nat_S in *.
         omega.
@@ -843,16 +869,16 @@ End X86_PARSER_ARG.
       | NLE_ct => 15
     end)%Z.
 
-  Lemma condition_type_to_Z_inv1 : 
+  Lemma condition_type_to_Z_inv : 
     forall z, (0 <= z < 16)%Z -> condition_type_to_Z (Z_to_condition_type z) = z.
   Proof. intros.
     remember (Z_to_condition_type z) as ct;
     destruct ct; unfold Z_to_condition_type in *;
-    r2ztac;
+    toztac;
     simpl in *; pos_to_Z; omega.
   Qed.
 
-  Lemma condition_type_to_Z_inv2 : 
+  Lemma Z_to_condition_type_inv : 
     forall ct, Z_to_condition_type (condition_type_to_Z ct) = ct.
   Proof. destruct ct; crush. Qed.
 
@@ -862,10 +888,10 @@ End X86_PARSER_ARG.
     unfold invertible. split.
     - intros v H.
       assert (0 <= v < 16)%Z.
-      use_lemma field_range by eauto. lineararith.
-      use_lemma condition_type_to_Z_inv1 by eauto.
+        apply field_rng in H. lineararith.
+      use_lemma condition_type_to_Z_inv by eauto.
       crush.
-    - generalize condition_type_to_Z_inv2. crush.
+    - generalize Z_to_condition_type_inv. crush.
   Defined.
 
   (** * An X86 bigrammar *)
@@ -983,21 +1009,57 @@ End X86_PARSER_ARG.
     refine ((field' (S n)) @ (@intn_of_bitsn n: _ -> [|bitvector_t n|])
                & (fun i => Some (bitsn_of_intn i)) & _).
     unfold invertible; split.    
-    - simpl. intros. autorewrite with bits. crush.
-    - simpl. crush. autorewrite with bits. trivial.
+    - simpl. intros. autorewrite with bigrammar. crush.
+    - simpl. crush. autorewrite with bigrammar. trivial.
   Defined.
 
   Definition fpu_reg  : wf_bigrammar fpu_register_t := field_intn 2.
+  Definition mmx_reg : wf_bigrammar mmx_register_t := field_intn 2.
+  Definition sse_reg : wf_bigrammar sse_register_t := field_intn 2.
+
+  Definition scale_to_Z s := (match s with
+                               | Scale1 => 0
+                               | Scale2 => 1
+                               | Scale4 => 2
+                               | Scale8 => 3
+                              end)%Z.
 
 
-todo: change the type mmx_register to use bitvectors; sse_register as well
+  Lemma scale_to_Z_inv : 
+    forall z, (0 <= z < 4)%Z -> scale_to_Z (Z_to_scale z) = z.
+  Proof. intros.
+    remember (Z_to_scale z) as r; destruct r; unfold Z_to_scale in *; 
+    toztac; simpl in *; pos_to_Z; omega.
+  Qed.
 
-  Definition mmx_reg := (field 3) @ (Z_to_mmx_register : _ -> interp mmx_register_t).
-  Definition sse_reg := (field 3) @ (Z_to_sse_register : _ -> interp sse_register_t).
+  Lemma Z_to_scale_inv : forall r, Z_to_scale (scale_to_Z r) = r.
+  Proof. destruct r; crush. Qed.
 
-  Definition scale_p := (field 2) @ (Z_to_scale : _ -> interp scale_t).
 
-TBC:
+  Definition scale_p :wf_bigrammar scale_t. 
+    refine ((field 2) @ (Z_to_scale : _ -> interp scale_t)
+                      & (fun s => Some (scale_to_Z s)) & _).
+    unfold invertible; split.
+    - intros v H.
+      assert (0 <= v < 4)%Z.
+        apply field_rng in H. lineararith.
+      use_lemma scale_to_Z_inv by eauto.
+      crush.
+    - generalize Z_to_scale_inv. crush.
+  Defined.
+
+  Lemma scale_rng : forall s, in_bigrammar_rng (` scale_p) s.
+  Proof. 
+    destruct s;
+    match goal with
+      | [ |- in_bigrammar_rng _ ?S] => 
+        first [replace S with (Z_to_scale 0) by trivial |
+               replace S with (Z_to_scale 1) by trivial |
+               replace S with (Z_to_scale 2) by trivial |
+               replace S with (Z_to_scale 3) by trivial]
+    end; apply in_bigrammar_rng_map;
+      apply field_rng; lineararith.
+  Qed.
 
   (* This is used in a strange edge-case for modrm parsing. See the
      footnotes on p37 of the manual in the repo This is a case where I
@@ -1007,25 +1069,98 @@ TBC:
      so I replaced si, which used this and another pattern for [bits "100"]
      to the simpler case below -- helps to avoid some explosions in the 
      definitions. *)
-  Definition reg_no_esp : grammar register_t :=
-     (bits "000" |+| bits "001" |+| bits "010" |+|
-     bits "011" |+| (* bits "100" <- this is esp *)  bits "101" |+|
-     bits "110" |+| bits "111") @ 
-       ((fun bs => Z_to_register (int_of_bits 3 bs)) : _ -> interp register_t).
+  Definition reg_no_esp : wf_bigrammar register_t. 
+    refine ((! "000" |+| ! "001" |+| ! "010" |+|
+             ! "011" |+| (* bits "100" <- this is esp *)  ! "101" |+|
+             ! "110" |+| ! "111")
+            @ (fun s => match s with
+                          | inl _ => EAX
+                          | inr (inl _) => ECX
+                          | inr (inr (inl _)) => EDX
+                          | inr (inr (inr (inl _))) => EBX
+                          | inr (inr (inr (inr (inl _)))) => EBP
+                          | inr (inr (inr (inr (inr (inl _))))) => ESI
+                          | inr (inr (inr (inr (inr (inr _))))) => EDI
+                        end : interp register_t)
+            & (fun r => match r with
+                          | EAX => Some (inl ())
+                          | ECX => Some (inr (inl ()))
+                          | EDX => Some (inr (inr (inl ())))
+                          | EBX => Some (inr (inr (inr (inl ()))))
+                          | ESP => None
+                          | EBP => Some (inr (inr (inr (inr (inl ())))))
+                          | ESI => Some (inr (inr (inr (inr (inr (inl ()))))))
+                          | EDI => Some (inr (inr (inr (inr (inr (inr ()))))))
+                        end)
+            & _).
+     unfold invertible; split; compute [snd fst]; intros.
+     - repeat match goal with
+         | [v: [| Sum_t Unit_t _ |] |- _ ] =>
+           destruct v as [i | v]; [destruct i; crush | idtac]
+       end.
+       destruct v. crush.
+     - destruct w; crush.
+  Defined. 
 
-  Definition reg_no_ebp : grammar register_t :=
-     (bits "000" |+| bits "001" |+| bits "010" |+|
-     bits "011" |+|  bits "100"  (* |+| bits "101" <- this is ebp *) |+|
-     bits "110" |+| bits "111") @ 
-       ((fun bs => Z_to_register (int_of_bits 3 bs)) : _ -> interp register_t).
+  Definition reg_no_ebp : wf_bigrammar register_t.
+    refine ((! "000" |+| ! "001" |+| ! "010" |+|
+             ! "011" |+|  ! "100"  (* |+| bits "101" <- this is ebp *) |+|
+             ! "110" |+| ! "111")
+            @ (fun s => match s with
+                          | inl _ => EAX
+                          | inr (inl _) => ECX
+                          | inr (inr (inl _)) => EDX
+                          | inr (inr (inr (inl _))) => EBX
+                          | inr (inr (inr (inr (inl _)))) => ESP
+                          | inr (inr (inr (inr (inr (inl _))))) => ESI
+                          | inr (inr (inr (inr (inr (inr _))))) => EDI
+                        end : interp register_t)
+            & (fun r => match r with
+                          | EAX => Some (inl ())
+                          | ECX => Some (inr (inl ()))
+                          | EDX => Some (inr (inr (inl ())))
+                          | EBX => Some (inr (inr (inr (inl ()))))
+                          | ESP => Some (inr (inr (inr (inr (inl ())))))
+                          | EBP => None
+                          | ESI => Some (inr (inr (inr (inr (inr (inl ()))))))
+                          | EDI => Some (inr (inr (inr (inr (inr (inr ()))))))
+                        end)
+            & _).
+     unfold invertible; split; compute [snd fst]; intros.
+     - repeat match goal with
+         | [v: [| Sum_t Unit_t _ |] |- _ ] =>
+           destruct v as [i | v]; [destruct i; crush | idtac]
+       end.
+       destruct v. crush.
+     - destruct w; crush.
+  Defined. 
 
-  Definition si := 
-    (scale_p $ reg) @ (fun p => match snd p with 
-                                  | ESP => None
-                                  | _ => Some p
-                                end %% option_t (UPair_t Scale_t Register_t)).
+  Definition si: wf_bigrammar (option_t (UPair_t Scale_t Register_t)). 
+    refine ((scale_p $ reg)
+            @ (fun p => match snd p with 
+                          | ESP => None
+                          | _ => Some p
+                        end %% option_t (UPair_t Scale_t Register_t))
+            & (fun v => match v with
+                          | None => Some (Scale1, ESP)
+                          | Some (_, ESP) => None
+                          | Some (s,p) => Some (s,p)
+                        end)
+            & _); invertible_tac.
+    - destruct v as [s r]; destruct r; crush.
+      eexists. crush.
+      apply in_bigrammar_rng_cat; split.
+      + apply scale_rng.
+      + apply reg_rng.
+    - destruct w. 
+        destruct u as [sc r]; destruct r; crush.
+        crush.
+  Defined.
 
   Definition sib := si $ reg.
+
+
+TBC
 
   (* These next 4 grammars are used in the definition of the mod/rm grammar *)
   Definition rm00 : grammar address_t := 

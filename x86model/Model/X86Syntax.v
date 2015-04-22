@@ -179,19 +179,19 @@ Definition Z_to_fp_condition_type(n:Z) : fp_condition_type :=
 (* Eight 64-bit mmx registers; mmx registers are syntactically
    different from fpu registers, but are semantically mapped
    to the same set of eight 80-bit registers as FPU registers *)
-Inductive mmx_register := MM0 | MM1 | MM2 | MM3 | MM4 | MM5 | MM6 | MM7.
+Definition mmx_register := int3.
 
-Definition Z_to_mmx_register (n:Z) := 
-  match n with 
-    | 0 => MM0
-    | 1 => MM1
-    | 2 => MM2
-    | 3 => MM3
-    | 4 => MM4
-    | 5 => MM5
-    | 6 => MM6
-    | _ => MM7
-  end.
+(* Definition Z_to_mmx_register (n:Z) :=  *)
+(*   match n with  *)
+(*     | 0 => MM0 *)
+(*     | 1 => MM1 *)
+(*     | 2 => MM2 *)
+(*     | 3 => MM3 *)
+(*     | 4 => MM4 *)
+(*     | 5 => MM5 *)
+(*     | 6 => MM6 *)
+(*     | _ => MM7 *)
+(*   end. *)
 
 Inductive mmx_granularity : Set :=
 | MMX_8                         (* 8 bits *)
@@ -208,22 +208,22 @@ Inductive mmx_operand : Set :=
 
 (*SSE syntax *)
 (* 8 128-bit registers (XMM0 - XMM7) introduced, along with MXCSR word for status and control of these registers *)
-Inductive sse_register : Set := XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7.
+Definition sse_register := int3.
 Definition sse_register_eq_dec : forall (x y: sse_register), {x=y} + {x<>y}.
-  intros ; decide equality.
+  intros. apply Word.eq_dec.
 Defined.
 
-Definition Z_to_sse_register (n:Z) := 
-  match n with 
-    | 0 => XMM0
-    | 1 => XMM1
-    | 2 => XMM2
-    | 3 => XMM3
-    | 4 => XMM4
-    | 5 => XMM5
-    | 6 => XMM6
-    | _ => XMM7
-  end.
+(* Definition Z_to_sse_register (n:Z) :=  *)
+(*   match n with  *)
+(*     | 0 => XMM0 *)
+(*     | 1 => XMM1 *)
+(*     | 2 => XMM2 *)
+(*     | 3 => XMM3 *)
+(*     | 4 => XMM4 *)
+(*     | 5 => XMM5 *)
+(*     | 6 => XMM6 *)
+(*     | _ => XMM7 *)
+(*   end. *)
 
 (*mmreg means mmx register. *)
 Inductive mxcsr: Set := FZ | Rpos | Rneg | RZ | RN | PM | UM | OM | ZM | DM | IM | DAZ | PE | UE |

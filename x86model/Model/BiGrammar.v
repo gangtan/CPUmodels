@@ -351,6 +351,8 @@ Fixpoint wf_grammar t (g:bigrammar t) : Prop :=
 (* a well-formed bigrammar: a bigrammar with a proof that it is well-formed *)
 Notation wf_bigrammar t := {g:bigrammar t | wf_grammar g}.
 
+Ltac invertible_tac := unfold invertible; compute [snd fst]; split; intros.
+
 (********************************* Pretty Printer *************************************)
 
 Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
@@ -417,7 +419,14 @@ Lemma in_bigrammar_rng_alt_inr
   in_bigrammar_rng g2 v. 
 Proof. localsimpl. Qed.
 
-Hint Rewrite in_bigrammar_rng_alt_inl in_bigrammar_rng_alt_inr : bigrammar.
+Lemma in_bigrammar_rng_cat
+      t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) (v1:[|t1|]) (v2:[|t2|]) :
+  in_bigrammar_rng (Cat g1 g2) (v1, v2) <->
+  in_bigrammar_rng g1 v1 /\ in_bigrammar_rng g2 v2. 
+Proof. localsimpl. Qed.
+
+Hint Rewrite in_bigrammar_rng_alt_inl in_bigrammar_rng_alt_inr
+     in_bigrammar_rng_cat : bigrammar.
 
 Lemma in_bigrammar_rng_map t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
   in_bigrammar_rng g v ->
@@ -508,5 +517,3 @@ Proof.
     localsimpl. guess x H1. crush.
 Qed.
 
-
-      
