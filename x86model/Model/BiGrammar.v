@@ -289,13 +289,13 @@ Qed.
 Ltac in_bigrammar_inv := 
   repeat 
     match goal with 
-      | [ H : in_bigrammar Eps _ _ |- _ ] => generalize (EpsInv H) ; clear H
-      | [ H : in_bigrammar Any _ _ |- _ ] => generalize (AnyInv H) ; clear H
-      | [ H : in_bigrammar (Char _) _ _ |- _ ] => generalize (CharInv H) ; clear H
-      | [ H : in_bigrammar (Alt _ _) _ _ |- _ ] => generalize (AltInv H) ; clear H
-      | [ H : in_bigrammar (Cat _ _) _ _ |- _ ] => generalize (CatInv H) ; clear H
+      | [ H : in_bigrammar Eps _ _ |- _ ] => generalize (EpsInv H) ; clear H; intro
+      | [ H : in_bigrammar Any _ _ |- _ ] => generalize (AnyInv H) ; clear H; intro
+      | [ H : in_bigrammar (Char _) _ _ |- _ ] => generalize (CharInv H) ; clear H; intro
+      | [ H : in_bigrammar (Alt _ _) _ _ |- _ ] => generalize (AltInv H) ; clear H; intro
+      | [ H : in_bigrammar (Cat _ _) _ _ |- _ ] => generalize (CatInv H) ; clear H; intro
       | [ H : in_bigrammar (Zero _) _ _ |- _ ] => contradiction (ZeroInv H)
-      | [ H : in_bigrammar (Map _ _) _ _ |- _ ] => generalize (MapInv H) ; clear H
+      | [ H : in_bigrammar (Map _ _) _ _ |- _ ] => generalize (MapInv H) ; clear H; intro
       | _ => idtac
     end.
 
