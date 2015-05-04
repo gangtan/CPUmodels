@@ -353,6 +353,17 @@ Notation wf_bigrammar t := {g:bigrammar t | wf_grammar g}.
 
 Ltac invertible_tac := unfold invertible; compute [snd fst]; split; intros.
 
+(* a special tactic that's useful when proving the printable condition in
+     invertible. *)
+Ltac printable_tac := 
+  breakHyp;
+  match goal with 
+    | [H: ?V <> ?V |- _] => contradiction H; trivial
+    | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] => 
+      exists v; split; trivial
+  end.
+
+
 (********************************* Pretty Printer *************************************)
 
 Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
@@ -407,6 +418,9 @@ Local Ltac localsimpl :=
       | _ => unfold invertible, in_bigrammar_rng in *; in_bigrammar_inv; crush
     end.
 
+Lemma in_bigrammar_rng_eps: in_bigrammar_rng Eps ().
+Proof. unfold in_bigrammar_rng; crush. Qed.
+
 Lemma in_bigrammar_rng_alt_inl
       t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) (v:[|t1|]) :
   in_bigrammar_rng (Alt g1 g2) (inl v) <->
@@ -425,15 +439,30 @@ Lemma in_bigrammar_rng_cat
   in_bigrammar_rng g1 v1 /\ in_bigrammar_rng g2 v2. 
 Proof. localsimpl. Qed.
 
-Hint Rewrite in_bigrammar_rng_alt_inl in_bigrammar_rng_alt_inr
-     in_bigrammar_rng_cat : bigrammar.
-
 Lemma in_bigrammar_rng_map t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
   in_bigrammar_rng g v ->
   in_bigrammar_rng (Map fi g) (fst fi v).
 Proof. localsimpl. Qed.
 
-Hint Resolve in_bigrammar_rng_map : bigrammar.
+Ltac ibr_simpl :=
+  repeat match goal with 
+           | [H: in_bigrammar_rng (Alt _ _) (inl _) |- _] =>
+             apply in_bigrammar_rng_alt_inl in H
+           | [H: in_bigrammar_rng (Alt _ _) (inr _) |- _] =>
+             apply in_bigrammar_rng_alt_inr in H
+           | [ |- in_bigrammar_rng (Alt _ _) (inl _)] => 
+             apply in_bigrammar_rng_alt_inl
+           | [ |- in_bigrammar_rng (Alt _ _) (inr _)] => 
+             apply in_bigrammar_rng_alt_inr
+           | [H: in_bigrammar_rng (Cat _ _) (_,_) |- _] => 
+             apply in_bigrammar_rng_cat in H; destruct H
+           | [ |- in_bigrammar_rng (Cat _ _) (_,_) ] => 
+             apply in_bigrammar_rng_cat; split
+           | [ |- in_bigrammar_rng (Map ?fi _) (fst _ _) ] =>
+             apply in_bigrammar_rng_map
+           | [ |- in_bigrammar_rng Eps () ] =>
+             apply in_bigrammar_rng_eps
+         end.
 
 (* Ltac guess_in_all v := *)
 (*   match goal with  *)

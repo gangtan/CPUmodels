@@ -156,7 +156,9 @@ End X86_PARSER_ARG.
   Local Ltac localcrush :=
     repeat match goal with
              | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
+             | [ |- invertible _ _ ] => invertible_tac
              | _ => crush
+             (* | _ => intros; (crush; fail) || idtac *)
            end.
 
   Local Ltac localsimpl :=
@@ -165,7 +167,7 @@ End X86_PARSER_ARG.
       (* | [ |- context[char_dec ?x ?y] ] => destruct (char_dec x y) *)
       (* | [_: context[char_dec ?x ?y] |- _] => destruct (char_dec x y) *)
       | [H: wf_bigrammar _ |- _] => destruct H
-      | _ => unfold invertible, in_bigrammar_rng in *; in_bigrammar_inv; localcrush
+      | _ => unfold in_bigrammar_rng in *; in_bigrammar_inv; localcrush
     end.
 
   Local Ltac destruct_union := 
@@ -175,24 +177,14 @@ End X86_PARSER_ARG.
            end.
 
 
-  (* todo: move to bigrammar.v *)
-  (* a special tactic that's useful when proving the printable condition in
-     invertible. *)
-  Ltac printable_tac := 
-    breakHyp;
-    match goal with 
-      | [H: ?V <> ?V |- _] => contradiction H; trivial
-      | [H: in_bigrammar_rng ?b ?v |- exists _, _ /\ in_bigrammar_rng ?B _] => 
-        exists v; split; [trivial | apply H]
-    end.
-
-
   (* combinators for building well-formed bigrammars *)
   Obligation Tactic := localcrush.
 
 
-  (** * Basic operartions for converting values in one domain to another
-        domain and their proofs *)
+  (** * Basic operartions for converting values between domains:
+        bits_n, (Z->bool), int n, Z *)
+
+  (** ** Definitions *)
 
   Fixpoint bits_n (n:nat) : type := 
     match n with 
@@ -274,7 +266,50 @@ End X86_PARSER_ARG.
   Definition bitsn_of_intn (n:nat) (v:Word.int n) : [|bits_n (S n)|] := 
     bitsn_of_sig (S n) (sig_of_intn v).
 
-  (** * lemmas about above conversion operators *)
+  (* Definition matches a register with a list of booleans that 
+   * represents its bit encoding. *)
+  Definition register_to_Z r : Z :=
+    (match r with
+      | EAX => 0
+      | ECX => 1
+      | EDX => 2
+      | EBX => 3
+      | ESP => 4
+      | EBP => 5
+      | ESI => 6
+      | EDI => 7
+    end)%Z.
+
+
+  Definition condition_type_to_Z (ct: condition_type) : Z := 
+    (match ct with
+      | O_ct => 0 (* overflow *)
+      | NO_ct => 1 (* not overflow *)
+      | B_ct => 2 (* below, not above or equal *)
+      | NB_ct => 3 (* not below, above or equal *)
+      | E_ct => 4 (* equal, zero *)
+      | NE_ct => 5 (* not equal, not zero *)
+      | BE_ct => 6 (* below or equal, not above *)
+      | NBE_ct => 7 (* not below or equal, above *)
+      | S_ct => 8 (* sign *)
+      | NS_ct => 9 (* not sign *)
+      | P_ct => 10 (* parity, parity even *)
+      | NP_ct => 11 (* not parity, parity odd *)
+      | L_ct => 12  (* less than, not greater than or equal to *)
+      | NL_ct => 13 (* not less than, greater than or equal to *)
+      | LE_ct => 14 (* less than or equal to, not greater than *)
+      | NLE_ct => 15
+    end)%Z.
+
+  Definition scale_to_Z s := (match s with
+                               | Scale1 => 0
+                               | Scale2 => 1
+                               | Scale4 => 2
+                               | Scale8 => 3
+                              end)%Z.
+
+
+  (** ** Lemmas about the above conversion operators *)
 
   Lemma sig_of_bitsn_false_above n (v: [|bits_n n|]) :
     sig_false_above n (sig_of_bitsn n v).
@@ -287,10 +322,6 @@ End X86_PARSER_ARG.
       + apply IHn. nat_to_Z; omega.
   Qed.
 
-  (* todo: move to Bits.v *)
-
-  (* todo end: move to Bits.v *)
-
   Instance bitsn_of_sig_exten n:
     Proper (Word.sig_eq_below n ==> eq) (bitsn_of_sig n).
   Proof. induction n. crush.
@@ -301,7 +332,7 @@ End X86_PARSER_ARG.
   Qed.
 
   Lemma bitsn_of_sig_inv : forall n v, bitsn_of_sig n (sig_of_bitsn n v) = v.
-  Proof. induction n. localsimpl.
+  Proof. induction n. crush.
     simpl; intros.
     destruct_head; try omega.
     assert (H: Word.sig_eq_below n 
@@ -342,7 +373,7 @@ End X86_PARSER_ARG.
     unfold bitsn_of_int; intros.
     use_lemma (int_of_bitsn_range n v) by trivial.
     repeat (destruct_head; try omega).
-    unfold int_of_bitsn.
+    unfold int_of_bitsn. 
     autorewrite with bigrammar. trivial.
   Qed.
 
@@ -397,6 +428,46 @@ End X86_PARSER_ARG.
 
   Hint Rewrite intn_of_bitsn_inv bitsn_of_intn_inv: bigrammar.
 
+  Local Ltac toztac := 
+    repeat match goal with 
+             | [w:Z |- _ ] => destruct w; (discriminate || eauto)
+             | [ _ : context[match ?p with xH => _ | xI _  | xO _ => _ end] |- _ ]
+               => destruct p; (discriminate || eauto)
+           end.
+
+  Lemma register_to_Z_inv : 
+    forall z, (0 <= z < 8)%Z -> register_to_Z (Z_to_register z) = z.
+  Proof. intros.
+    remember (Z_to_register z) as r; destruct r; unfold Z_to_register in *; 
+    toztac; simpl in *; pos_to_Z; omega.
+  Qed.
+
+  Lemma Z_to_register_inv : forall r, Z_to_register (register_to_Z r) = r.
+  Proof. destruct r; crush. Qed.
+
+  Lemma condition_type_to_Z_inv : 
+    forall z, (0 <= z < 16)%Z -> condition_type_to_Z (Z_to_condition_type z) = z.
+  Proof. intros.
+    remember (Z_to_condition_type z) as ct;
+    destruct ct; unfold Z_to_condition_type in *;
+    toztac;
+    simpl in *; pos_to_Z; omega.
+  Qed.
+
+  Lemma Z_to_condition_type_inv : 
+    forall ct, Z_to_condition_type (condition_type_to_Z ct) = ct.
+  Proof. destruct ct; crush. Qed.
+
+  Lemma scale_to_Z_inv : 
+    forall z, (0 <= z < 4)%Z -> scale_to_Z (Z_to_scale z) = z.
+  Proof. intros.
+    remember (Z_to_scale z) as r; destruct r; unfold Z_to_scale in *; 
+    toztac; simpl in *; pos_to_Z; omega.
+  Qed.
+
+  Lemma Z_to_scale_inv : forall r, Z_to_scale (scale_to_Z r) = r.
+  Proof. destruct r; crush. Qed.
+
 
   (** * Basic grammar constructors *)
 
@@ -406,24 +477,21 @@ End X86_PARSER_ARG.
   Program Definition bit (x:bool) : wf_bigrammar Char_t := Char x.
   Program Definition never t : wf_bigrammar t := Zero t.
 
+  Program Definition map t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2)
+               (pf: invertible fi (` g)) : wf_bigrammar t2 := 
+    Map fi (` g).
+  Implicit Arguments map [t1 t2].
+  Notation "g @ f & fi & pf" :=(map g (f, fi) pf) (at level 75).
+
   (* Note: could also have the test return option(a=b) instead of {a=b}+{a<>b}. *)
   Program Definition always t (teq : forall (a b:interp t), {a=b}+{a<>b})(x:interp t)
   : wf_bigrammar t := 
-  @Map Unit_t t (fun (_:unit) => x, fun y => if teq x y then Some tt else None) Eps.
+    Eps @ (fun (_:unit) => x) & (fun y => if teq x y then Some tt else None)
+        & _.
   Next Obligation.
-    localsimpl.
-    destruct (teq x x); crush.
-    destruct (teq x w); crush.
+    - destruct (teq x x); printable_tac; apply in_bigrammar_rng_eps.
+    - destruct (teq x w); crush.
   Defined.
-
-  Definition map t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2)
-               (pf: invertible fi (` g)) : wf_bigrammar t2.
-    intros.
-    refine (exist (fun g0 : bigrammar t2 => wf_grammar g0)
-                  (Map fi (` g)) _).
-    destruct g. simpl. auto.
-  Defined.
-  Implicit Arguments map [t1 t2].
 
   Program Definition seq t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) : 
     wf_bigrammar (Pair_t t1 t2) :=
@@ -432,7 +500,7 @@ End X86_PARSER_ARG.
   (* Definition cons t (pair : interp (Pair_t t (List_t t))) : interp (List_t t) :=  *)
   (*   (fst pair)::(snd pair). *)
 
-  (* doesn't seem that this is used *)
+  (* doesn't seem that this is used; removed for now *)
   (* Definition seqs t (ps:list (wf_bigrammar t)) : wf_bigrammar (List_t t) :=  *)
   (*   List.fold_right (fun p1 p2 => map (seq p1 p2) (@cons t))  *)
   (*     (@always (List_t t) (@nil (interp t))) ps. *)
@@ -441,51 +509,36 @@ End X86_PARSER_ARG.
     wf_bigrammar (Sum_t t1 t2) :=
     Alt p1 p2.
 
-  (* Definition alt t (p1 p2:grammar t) : grammar t :=  *)
-  (*   Map _ (fun (x:interp (Sum_t t t)) => match x with inl a => a | inr b => b end)  *)
-  (*       (Alt p1 p2). *)
-
-  (* Fixpoint alts0 t (ps:list (grammar t)) : grammar t :=  *)
-  (*   match ps with  *)
-  (*     | nil => @never t *)
-  (*     | p::nil => p *)
-  (*     | p::rest => alt p (alts0 rest) *)
-  (*   end. *)
-
-
   (** A union operator for two grammars; it uses the pretty printer to try
       the left branch; only if it fails, it tries the right branch.  This
       operator should be avoided if possible. Suppose we union n grammars,
       each of size m. Pretty-print each grammar takes times linear to m.
       Pretty print (g1+g2+...gn) would take the worst case n*m time as it
       may try all n possibilities. *)
-  Program Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t := 
-    @Map (Sum_t t t) t 
-         (fun w : interp (Sum_t t t) => match w with inl x => x | inr y => y end,
-          fun v : interp t => 
-            match pretty_print (Alt g1 g2) (inl _ v) with 
-              | Some _ => Some (inl _ v)
-              | None => match pretty_print (Alt g1 g2) (inr _ v) with 
-                          | Some _ => Some (inr _ v)
-                          | None => None
-                        end
-            end)
-         (Alt g1 g2).
-  Next Obligation.
-    - unfold invertible; simpl; split.
-      + intros.
-        destruct v.
-        * remember_destruct_head as v1; eauto.
-          remember_destruct_head as v2.
-          { localsimpl. eexists. eauto using pretty_print_corr1, pretty_print_corr2. }
-          { localsimpl. generalize pretty_print_corr1; crush_hyp. }
-        * localsimpl.
-          remember_destruct_head as v1; eauto 6 using pretty_print_corr2.
-          remember_destruct_head as v2; eauto 6.
-          generalize pretty_print_corr1; crush_hyp.
-      + crush.
-        remember_head_in_hyp as e1; destruct e1; try crush.
-        remember_head_in_hyp as e2; destruct e2; crush.
+  Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
+    intros.
+    refine ((alt g1 g2)
+              @ (fun w : interp (Sum_t t t) => match w with inl x => x | inr y => y end)
+              & (fun v : interp t => 
+                   match pretty_print (Alt (` g1) (` g2)) (inl _ v) with 
+                     | Some _ => Some (inl _ v)
+                     | None => match pretty_print (Alt (` g1)  (` g2)) (inr _ v) with 
+                                 | Some _ => Some (inr _ v)
+                                 | None => None
+                               end
+                   end)
+              & _); invertible_tac.
+    - destruct v.
+      + remember_destruct_head as v1; eauto.
+        remember_destruct_head as v2.
+        * localsimpl. eexists. eauto using pretty_print_corr1, pretty_print_corr2.
+        * localsimpl. generalize pretty_print_corr1; crush_hyp.
+      + localsimpl.
+        remember_destruct_head as v1; eauto 6 using pretty_print_corr2.
+        remember_destruct_head as v2; eauto 6.
+        generalize pretty_print_corr1; crush_hyp.
+    - remember_head_in_hyp as e1; destruct e1; try crush.
+      remember_head_in_hyp as e2; destruct e2; crush.
   Defined.
 
   Fixpoint unions0 t (ps:list (wf_bigrammar t)) : wf_bigrammar t := 
@@ -515,115 +568,11 @@ End X86_PARSER_ARG.
 
   Definition unions t (ps:list (wf_bigrammar t)) : wf_bigrammar t := unions' 20 ps.
 
-  Definition pred_options t (g1 g2: wf_bigrammar t) := 
-    forall x: [|t|], ({in_bigrammar_rng (` g1) x} + {in_bigrammar_rng (` g2) x}) +
-                     {not (in_bigrammar_rng (` g1) x) /\ 
-                      not (in_bigrammar_rng (` g2) x)}.
-
-  (** Three-way predicated union: the pretty printer for "g1 + g2" uses the
-      left one if x is in the range of g1, uses the right one if x is in
-      the range of g2, or it aborts when x is not in the range of either g1
-      or g2.*)
-  Program Definition predicated_union_three_way t (g1 g2: wf_bigrammar t)
-          (pred: @pred_options t g1 g2) :
-    wf_bigrammar t := 
-    Map (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end,
-         fun w : [|t|] => 
-           match (pred w) with
-             | inleft (left _) => Some (inl w)
-             | inleft (right _) => Some (inr w)
-             | inright _ => None
-           end)
-        (Alt g1 g2).
-  Next Obligation.
-    - unfold invertible; split.
-      + intros. destruct v as [v|v]; simpl.
-        * destruct (pred v) as [[H2|H2]|H2];
-          try (eexists; localsimpl; fail).
-          autorewrite with bigrammar in *; crush.
-        * destruct (pred v) as [[H2|H2]|H2];
-          try (eexists; localsimpl; fail).
-          autorewrite with bigrammar in *; crush.
-      + simpl. intros v w; intros. destruct v;
-        destruct (pred w) as [[H2|H2]|H2]; crush.
-  Defined. 
-
-  
-  (** Predicated union: the pretty printer for "g1 + g2" uses the left one
-      if x is in the range of g1 and uses the right one if x is in the
-      range of g2; it bias towards g1 if x is in the range of both. *)
-  Program Definition predicated_union t (g1 g2: wf_bigrammar t)
-          (pred: forall x:interp t,  {in_bigrammar_rng g1 x} + 
-                                     {in_bigrammar_rng g2 x}) :
-    wf_bigrammar t := 
-    Map (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end,
-         fun w : [|t|] => if (pred w) then Some (inl w) else Some (inr w))
-        (Alt g1 g2).
-  Next Obligation.
-    - unfold invertible; split.
-      + intros. destruct v as [v|v]; simpl;
-        destruct (pred v); eexists; localsimpl.
-      + intros v w; crush; destruct v; destruct (pred w); crush. 
-  Defined.
-
-  (* This version also works, but doesn't extract efficient code *)
-  (* Program Definition predicated_union t (g1 g2: wf_bigrammar t) *)
-  (*         (pred: forall x:interp t,  {in_bigrammar_rng g1 x} +  *)
-  (*                                    {in_bigrammar_rng g2 x}) : *)
-  (*   wf_bigrammar t :=  *)
-  (*   @predicated_union_three_way t g1 g2 (fun w => inleft (pred w)). *)
-
-
-  (* Left biased toward g1, for the special case when rng(g2) is 
-     a subset of rng(g1). *)
-  Program Definition biased_union t (g1 g2: wf_bigrammar t)
-          (ss: bigrammar_rng_subset g2 g1) : wf_bigrammar t := 
-    Map (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end,
-         fun w : [|t|] => Some (inl w))
-        (Alt g1 g2).
-  Next Obligation.
-    - unfold invertible; split.
-      + intros. destruct v; try crush.
-        eexists; crush.
-        autorewrite with bigrammar in *; crush.
-      + crush.
-  Defined.
-
-
-  (* The following def works for g1 and g2 that have different types; we
-     could use the above def together with a map that uses f to go from
-     t1 to t2, at the cost of some inefficiency. *)
-  (* Definition bigrammar_rng_subset t1 t2 (g1: bigrammar t1) (f: interp t1 -> interp t2) *)
-  (*            (g2: bigrammar t2) :=  *)
-  (*   forall v1, in_bigrammar_rng g1 v1 -> in_bigrammar_rng g2 (f v1). *)
-  (* Program Definition biased_union t1 t2 (g1: wf_bigrammar t1) (g2: wf_bigrammar t2) *)
-  (*         (f: interp t2 -> interp t1) *)
-  (*         (pfs: bigrammar_rng_subset g2 f g1) : wf_bigrammar t1 :=  *)
-  (*   @Map (Sum_t t1 t2) t1 *)
-  (*        (fun v : interp (Sum_t t1 t2) => match v with inl x => x | inr y => f y end, *)
-  (*         fun w : interp t1 => Some (inl w)) *)
-  (*        (Alt g1 g2). *)
-  (* Next Obligation. *)
-  (*   - localsimpl.  *)
-  (*   - localsimpl. *)
-  (*   - unfold invertible; split. *)
-  (*     * intros. destruct v. crush. *)
-  (*       unfold bigrammar_rng_subset, in_bigrammar_rng in *. *)
-  (*       guess i pfs.  *)
-  (*       assert (exists s, in_bigrammar (` g2) s i).  *)
-  (*         crush. in_bigrammar_inv. crush. inversion H0. crush. *)
-  (*       apply pfs in H0. *)
-  (*       crush. *)
-  (*     * crush. *)
-  (* Defined. *)
-
-
   (* notation for building grammars *)
   Infix "|+|" := alt (right associativity, at level 80).
   Infix "|\/|" := union (right associativity, at level 80).
   Infix "$" := seq (right associativity, at level 70).
   Notation "e %% t" := (e : interp t) (at level 80).
-  Notation "g @ f & fi & pf" :=(map g (f, fi) pf) (at level 75).
 
   Fixpoint bits (x:string) : wf_bigrammar (bits_n (String.length x)) := 
     match x with 
@@ -651,21 +600,25 @@ End X86_PARSER_ARG.
   Proof. induction str; localsimpl; destruct (ascii_dec a "0"); crush_hyp.
   Qed.
 
-  Definition bitsmatch (s:string): wf_bigrammar Unit_t.
-    intros.
-    refine ((bits s) @ (fun _ => tt:[|Unit_t|])
-              & (fun _ => Some (tuples_of_string s)) & _).
-    localsimpl.
-    generalize in_bits_intro; crush.
+  Lemma bits_rng: forall str,
+    in_bigrammar_rng (` (bits str)) (tuples_of_string str).
+  Proof. generalize in_bits_intro; localsimpl. Qed.
+ 
+  Program Definition bitsmatch (s:string): wf_bigrammar Unit_t := 
+    (bits s) @ (fun _ => tt:[|Unit_t|])
+       & (fun _ => Some (tuples_of_string s)) & _.
+  Next Obligation. 
+    printable_tac; apply bits_rng.
   Defined.
-
   Notation "! s" := (bitsmatch s) (at level 60).
 
-  Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t.
-    intros.
-    refine ((bits s $ p) @ (@snd _ _) & (fun v => Some (tuples_of_string s, v)) & _).
-    localsimpl.
-    crush' in_bits_elim fail.
+  Program Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t :=
+    (bits s $ p) @ (@snd _ _)
+                 & (fun v => Some (tuples_of_string s, v)) & _.
+  Next Obligation.
+    destruct v; printable_tac; ibr_simpl. 
+    - apply bits_rng.
+    - trivial.
   Defined.
   Infix "$$" := bitsleft (right associativity, at level 70).
 
@@ -702,30 +655,113 @@ End X86_PARSER_ARG.
     repeat match goal with 
       | [H: in_bigrammar_rng (` (_ |+| _)) _ |- _] =>
         unfold proj1_sig at 1, alt at 1 in H
-      | [H: in_bigrammar_rng (Alt _ _) (inl _) |- _] =>
-        apply in_bigrammar_rng_alt_inl in H
-      | [H: in_bigrammar_rng (Alt _ _) (inr _) |- _] =>
-        apply in_bigrammar_rng_alt_inr in H
       | [ |- in_bigrammar_rng (` (_ |+| _)) _] =>
         unfold proj1_sig at 1, alt at 1
-      | [ |- in_bigrammar_rng (Alt _ _) (inl _)] => 
-        apply in_bigrammar_rng_alt_inl
-      | [ |- in_bigrammar_rng (Alt _ _) (inr _)] => 
-        apply in_bigrammar_rng_alt_inr
       | [H: in_bigrammar_rng (` (_ $ _)) _ |- _] => 
         unfold proj1_sig at 1, seq at 1 in H
-      | [H: in_bigrammar_rng (Cat _ _) (_,_) |- _] => 
-        apply in_bigrammar_rng_cat in H; destruct H
       | [ |- in_bigrammar_rng (` (_ $ _)) _ ] => 
         unfold proj1_sig at 1, seq at 1
-      | [ |- in_bigrammar_rng (Cat _ _) (_,_) ] => 
-        apply in_bigrammar_rng_cat; split
-      | [ |- in_bigrammar_rng (Map ?fi _) (fst _ _) ] =>
-        apply in_bigrammar_rng_map
       | [ |- in_bigrammar_rng (` (! _)) () ] =>
         apply bitsmatch_rng
+      | _ => ibr_simpl
     end.
 
+  Definition pred_options t (g1 g2: wf_bigrammar t) := 
+    forall x: [|t|], ({in_bigrammar_rng (` g1) x} + {in_bigrammar_rng (` g2) x}) +
+                     {not (in_bigrammar_rng (` g1) x) /\ 
+                      not (in_bigrammar_rng (` g2) x)}.
+
+  (** Three-way predicated union: the pretty printer for "g1 + g2" uses the
+      left one if x is in the range of g1, uses the right one if x is in
+      the range of g2, or it aborts when x is not in the range of either g1
+      or g2.*)
+  Definition predicated_union_three_way t (g1 g2: wf_bigrammar t)
+          (pred: @pred_options t g1 g2) : wf_bigrammar t.
+    intros.
+    refine((alt g1 g2)
+      @ (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end)
+      & (fun w : [|t|] => 
+           match (pred w) with
+             | inleft (left _) => Some (inl w)
+             | inleft (right _) => Some (inr w)
+             | inright _ => None
+           end)
+      & _); invertible_tac.
+    - destruct v as [v|v]; simpl.
+      + destruct (pred v) as [[H2|H2]|H2];
+        try (eexists; localsimpl; fail).
+        ibr_prover; crush.
+      + destruct (pred v) as [[H2|H2]|H2];
+        try (eexists; localsimpl; fail).
+        ibr_prover; crush.
+    - destruct v; destruct (pred w) as [[H2|H2]|H2]; crush.
+  Defined. 
+
+  (** Predicated union: the pretty printer for "g1 + g2" uses the left one
+      if x is in the range of g1 and uses the right one if x is in the
+      range of g2; it bias towards g1 if x is in the range of both. *)
+  Definition predicated_union t (g1 g2: wf_bigrammar t)
+          (pred: forall x:interp t,  {in_bigrammar_rng (` g1) x} + 
+                                     {in_bigrammar_rng (` g2) x}) :
+    wf_bigrammar t.
+    intros;
+    refine ((alt g1 g2)
+              @ (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end)
+              & (fun w : [|t|] => if (pred w) then Some (inl w) else Some (inr w))
+              & _); invertible_tac.
+    - destruct v as [v|v]; simpl;
+      destruct (pred v); printable_tac; ibr_prover; crush.
+    - crush; destruct v; destruct (pred w); crush. 
+  Defined.
+
+  (* This version also works, but doesn't extract efficient code *)
+  (* Program Definition predicated_union t (g1 g2: wf_bigrammar t) *)
+  (*         (pred: forall x:interp t,  {in_bigrammar_rng g1 x} +  *)
+  (*                                    {in_bigrammar_rng g2 x}) : *)
+  (*   wf_bigrammar t :=  *)
+  (*   @predicated_union_three_way t g1 g2 (fun w => inleft (pred w)). *)
+
+
+  (* Left biased toward g1, for the special case when rng(g2) is 
+     a subset of rng(g1). *)
+  Program Definition biased_union t (g1 g2: wf_bigrammar t)
+          (ss: bigrammar_rng_subset g2 g1) : wf_bigrammar t := 
+    (alt g1 g2) 
+      @ (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end)
+      & (fun w : [|t|] => Some (inl w))
+      & _.
+  Next Obligation.
+    intros. destruct v; try crush.
+    eexists; crush.
+    ibr_simpl; crush.
+  Defined.
+
+  (* The following def works for g1 and g2 that have different types; we
+     could use the above def together with a map that uses f to go from
+     t1 to t2, at the cost of some inefficiency. *)
+  (* Definition bigrammar_rng_subset t1 t2 (g1: bigrammar t1) (f: interp t1 -> interp t2) *)
+  (*            (g2: bigrammar t2) :=  *)
+  (*   forall v1, in_bigrammar_rng g1 v1 -> in_bigrammar_rng g2 (f v1). *)
+  (* Program Definition biased_union t1 t2 (g1: wf_bigrammar t1) (g2: wf_bigrammar t2) *)
+  (*         (f: interp t2 -> interp t1) *)
+  (*         (pfs: bigrammar_rng_subset g2 f g1) : wf_bigrammar t1 :=  *)
+  (*   @Map (Sum_t t1 t2) t1 *)
+  (*        (fun v : interp (Sum_t t1 t2) => match v with inl x => x | inr y => f y end, *)
+  (*         fun w : interp t1 => Some (inl w)) *)
+  (*        (Alt g1 g2). *)
+  (* Next Obligation. *)
+  (*   - localsimpl.  *)
+  (*   - localsimpl. *)
+  (*   - unfold invertible; split. *)
+  (*     * intros. destruct v. crush. *)
+  (*       unfold bigrammar_rng_subset, in_bigrammar_rng in *. *)
+  (*       guess i pfs.  *)
+  (*       assert (exists s, in_bigrammar (` g2) s i).  *)
+  (*         crush. in_bigrammar_inv. crush. inversion H0. crush. *)
+  (*       apply pfs in H0. *)
+  (*       crush. *)
+  (*     * crush. *)
+  (* Defined. *)
 
   (* Mapping old definitions to new -- todo: substitute these away. *)
   Definition parser r := wf_bigrammar r.
@@ -764,11 +800,10 @@ End X86_PARSER_ARG.
     eapply in_field'_intro.
   Qed.
 
-  Definition field (n:nat) : wf_bigrammar int_t.
-    intros.
-    refine ((field' n) @ (int_of_bitsn n) & bitsn_of_int n & _).
-    localsimpl.
-    - crush' bitsn_of_int_inv fail.
+  Program Definition field (n:nat) : wf_bigrammar int_t := 
+    (field' n) @ (int_of_bitsn n) & bitsn_of_int n & _.
+  Next Obligation.
+    - rewrite bitsn_of_int_inv. printable_tac.
     - eapply int_of_bitsn_inv. trivial.
   Defined.
 
@@ -796,48 +831,16 @@ End X86_PARSER_ARG.
       eexists. eapply in_field_intro. trivial.
     - unfold field, in_bigrammar_rng in *.
       intros. crush; in_bigrammar_inv; crush' int_of_bitsn_range fail.
-  Qed.    
-
-  (* Definition matches a register with a list of booleans that 
-   * represents its bit encoding. *)
-  Definition register_to_Z r : Z :=
-    (match r with
-      | EAX => 0
-      | ECX => 1
-      | EDX => 2
-      | EBX => 3
-      | ESP => 4
-      | EBP => 5
-      | ESI => 6
-      | EDI => 7
-    end)%Z.
-
-  Local Ltac toztac := 
-    repeat match goal with 
-             | [w:Z |- _ ] => destruct w; (discriminate || eauto)
-             | [ _ : context[match ?p with xH => _ | xI _  | xO _ => _ end] |- _ ]
-               => destruct p; (discriminate || eauto)
-           end.
-
-  Lemma register_to_Z_inv : 
-    forall z, (0 <= z < 8)%Z -> register_to_Z (Z_to_register z) = z.
-  Proof. intros.
-    remember (Z_to_register z) as r; destruct r; unfold Z_to_register in *; 
-    toztac; simpl in *; pos_to_Z; omega.
   Qed.
-
-  Lemma Z_to_register_inv : forall r, Z_to_register (register_to_Z r) = r.
-  Proof. destruct r; crush. Qed.
 
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
   Definition reg : wf_bigrammar register_t.
     refine (field 3 @ (Z_to_register : _ -> result_m register_t)
-              & (fun r => Some (register_to_Z r)) & _).
-    unfold invertible; split.
-    - intros v H.
-      assert (0 <= v < 8)%Z.
+              & (fun r => Some (register_to_Z r)) & _); 
+    invertible_tac.
+    - assert (0 <= v < 8)%Z.
         apply field_rng in H. lineararith.
       use_lemma register_to_Z_inv by eauto.
       crush.
@@ -861,19 +864,18 @@ End X86_PARSER_ARG.
   Qed.
 
   Definition int_n : forall n, wf_bigrammar (User_t (BitVector_t n)).
-    intro.
+    intro;
     refine ((field (S n)) @ (@Word.repr n : _ -> result_m (User_t (BitVector_t n)))
-              & fun b => Some (@Word.unsigned n b) & _).
-    unfold invertible; split.
-    + intros v H.
-      assert (0 <= v <= Word.max_unsigned n)%Z.
+              & fun b => Some (@Word.unsigned n b) & _);
+    invertible_tac.
+    + assert (0 <= v <= Word.max_unsigned n)%Z.
         apply field_rng in H.
         unfold Word.max_unsigned, Word.modulus.
         rewrite two_power_nat_S in *.
         omega.
       use_lemma Word.unsigned_repr by eauto.
       crush.
-    + intros. crush.
+    + crush.
       apply Word.repr_unsigned.
   Defined.
 
@@ -901,8 +903,8 @@ End X86_PARSER_ARG.
 
   (* I used the above grammars for halfword and word because they are
      easier for the proofs. The following defs of halfword and word from
-     Decode.v seems to be more efficient because they accumulate one byte
-     at a time.
+     the old Decode.v seems to be more efficient because they accumulate
+     one byte at a time.
   Definition halfword := (byte $ byte) @ ((fun p =>
       let b0 := Word.repr (Word.unsigned (fst p)) in
       let b1 := Word.repr (Word.unsigned (snd p)) in
@@ -921,199 +923,38 @@ End X86_PARSER_ARG.
     : _ -> result_m word_t).
   *)
 
-  Definition condition_type_to_Z (ct: condition_type) : Z := 
-    (match ct with
-      | O_ct => 0 (* overflow *)
-      | NO_ct => 1 (* not overflow *)
-      | B_ct => 2 (* below, not above or equal *)
-      | NB_ct => 3 (* not below, above or equal *)
-      | E_ct => 4 (* equal, zero *)
-      | NE_ct => 5 (* not equal, not zero *)
-      | BE_ct => 6 (* below or equal, not above *)
-      | NBE_ct => 7 (* not below or equal, above *)
-      | S_ct => 8 (* sign *)
-      | NS_ct => 9 (* not sign *)
-      | P_ct => 10 (* parity, parity even *)
-      | NP_ct => 11 (* not parity, parity odd *)
-      | L_ct => 12  (* less than, not greater than or equal to *)
-      | NL_ct => 13 (* not less than, greater than or equal to *)
-      | LE_ct => 14 (* less than or equal to, not greater than *)
-      | NLE_ct => 15
-    end)%Z.
-
-  Lemma condition_type_to_Z_inv : 
-    forall z, (0 <= z < 16)%Z -> condition_type_to_Z (Z_to_condition_type z) = z.
-  Proof. intros.
-    remember (Z_to_condition_type z) as ct;
-    destruct ct; unfold Z_to_condition_type in *;
-    toztac;
-    simpl in *; pos_to_Z; omega.
-  Qed.
-
-  Lemma Z_to_condition_type_inv : 
-    forall ct, Z_to_condition_type (condition_type_to_Z ct) = ct.
-  Proof. destruct ct; crush. Qed.
-
   Definition tttn : wf_bigrammar condition_t. 
     refine ((field 4) @ (Z_to_condition_type : _ -> [|condition_t|])
-              & (fun ct => Some (condition_type_to_Z ct)) & _).
-    unfold invertible. split.
-    - intros v H.
-      assert (0 <= v < 16)%Z.
+              & (fun ct => Some (condition_type_to_Z ct)) & _);
+    invertible_tac.
+    - assert (0 <= v < 16)%Z.
         apply field_rng in H. lineararith.
       use_lemma condition_type_to_Z_inv by eauto.
       crush.
     - generalize Z_to_condition_type_inv. crush.
   Defined.
 
-  (** * An X86 bigrammar *)
-  (* A better bigrammar for x86 instruction decoder/encoder. The encoder
-     spec is more efficient:
-
-     (1) Each individual instruction parser does not return values of
-         instr, but instead returns the instruction's arguments; as a
-         result, the inverse function does not need to perform a runtime
-         test to see what instruction it is as the previous version
-         does. At the top level, we disjoint union all instruction parsers
-         and use a conversion function to convert abstract syntax trees
-         (ast) produced by parsing to instructions.
-
-     (2) The Jcc parser uses the biased union for the two sub-parsers, 
-         avoiding runtime tests in those subparsers
-   *)
-
-  Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
-  Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
-  Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
-  Definition AAS_p : wf_bigrammar unit_t := ! "00111111".
-
-  Definition BSWAP_p : wf_bigrammar register_t := 
-    "0000" $$ "1111" $$ "1100" $$ "1" $$ reg.
-
-  Definition CDQ_p : wf_bigrammar unit_t := "1001" $$  ! "1001".
-  Definition CLC_p : wf_bigrammar unit_t := "1111" $$ ! "1000".
-  Definition CLD_p : wf_bigrammar unit_t := "1111" $$ ! "1100".
-  Definition CLI_p : wf_bigrammar unit_t := "1111" $$ ! "1010".
-  Definition CLTS_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "0110".
-  Definition CMC_p : wf_bigrammar unit_t := "1111" $$ ! "0101".
-  Definition CMPS_p : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
-
-  (*todo: Skipped CMPXCHG_p, requires modrm*)
-
-  Definition CPUID_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ ! "0010".
-  Definition CWDE_p : wf_bigrammar unit_t := "1001" $$ ! "1000".
-  Definition DAA_p : wf_bigrammar unit_t := "0010" $$ ! "0111".
-  Definition DAS_p : wf_bigrammar unit_t := "0010" $$ ! "1111".
-
-  Definition DEC_p1  :=
-    "1111" $$ "111" $$ anybit $ "11001" $$ reg.
-  Definition DEC_p2 := "0100" $$ "1" $$ reg.
-
-  (*Definition DEC_p3 : //todo: Skipped due to ext_op_modrm function*)
-  
-  Definition DIV_p1 : wf_bigrammar (Pair_t Char_t register_t) := 
-  "1111" $$ "011" $$ anybit $ "11110" $$ reg.
-
-  (*Definition DIV_p2 : //todo: Skipped due to ext_op_modrm function*)
-  
-  Definition HLT_p : wf_bigrammar unit_t := "1111" $$ ! "0100".
-  
-  Definition IDIV_p1 : wf_bigrammar (Pair_t Char_t register_t)  :=
- "1111" $$ "011" $$ anybit $ "11111" $$ reg.
-
- (*Definition IDIV_p2 : //todo: ext_op_modrm function*)
- 
- (*Definition IMUL_p : //todo: ext_op_modrm, modrm*)
- 
-  Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
-  Definition IN_p2 := "1110" $$ "110" $$ anybit.
-
-  Definition IN_p : wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
-    refine ((IN_p1 |+| IN_p2)
-              @ (fun x => 
-                   match x with
-                     | inl (w,b) => (w, Some b)
-                     | inr w => (w, None)
-                   end %% (Pair_t Char_t (User_t (Option_t Byte_t))))
-              & (fun x => 
-                   match x with
-                     | (w, Some b) => Some (inl (w,b))
-                     | (w, None) => Some (inr w)
-                   end)
-              & _).
-    unfold invertible. split.
-    - destruct v; destruct i; crush.
-    - destruct w. destruct i0; try discriminate; crush.
-  Defined.
-
-  Definition INC_p1 :=  "1111" $$ "111" $$ anybit  $ "11000" $$ reg.
-
-  Definition INC_p2 := "0100" $$ "0" $$ reg.
-
-  (*todo: Definition INC_p3 := "1111" $$ "111" $$ anybit $ ext_op_modrm "000".*)
-  
-  Definition INS_p : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
-  
-  Definition INTn_p : wf_bigrammar byte_t := "1100" $$ "1101" $$ byte.
-  
-  Definition INT_p : wf_bigrammar unit_t := "1100" $$ ! "1100".
-  
-  Definition INTO_p : wf_bigrammar unit_t := "1100" $$ ! "1110".
-  
-  Definition INVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "1000".
-  
-  (*todo: Definition INVLPG_p := //ext_op_modrm function*)
-  
-  Definition IRET_p : wf_bigrammar unit_t := "1100" $$ ! "1111".
-
-  (* todo: remove; int_of_bits defined in a different way *)
-  (* Fixpoint bits2Z(n:nat)(a:Z) : interp (bits_n n) -> interp int_t :=  *)
-  (*   match n with  *)
-  (*     | 0%nat => fun _ => a *)
-  (*     | S n => fun p => bits2Z n (2*a + (if (fst p) then 1 else 0)) (snd p) *)
-  (*   end. *)
-  (* Definition int_of_bits(n:nat)(bs:interp (bits_n n)) : interp int_t := bits2Z n 0 bs. *)
+  (** * A bigrammar for modrm *)
 
   Definition bitvector (n:nat) (bs: [|bits_n n|]) : Word.int n.
 
-  Definition field_intn (n:nat) : wf_bigrammar (bitvector_t n).
-    intros.
-    refine ((field' (S n)) @ (@intn_of_bitsn n: _ -> [|bitvector_t n|])
-               & (fun i => Some (bitsn_of_intn i)) & _).
-    unfold invertible; split.    
-    - simpl. intros. autorewrite with bigrammar. crush.
-    - simpl. crush. autorewrite with bigrammar. trivial.
+  Program Definition field_intn (n:nat) : wf_bigrammar (bitvector_t n) :=
+    (field' (S n)) @ (@intn_of_bitsn n: _ -> [|bitvector_t n|])
+                   & (fun i => Some (bitsn_of_intn i)) & _.
+  Next Obligation.
+    - autorewrite with bigrammar. printable_tac.
+    - autorewrite with bigrammar. trivial.
   Defined.
 
   Definition fpu_reg  : wf_bigrammar fpu_register_t := field_intn 2.
   Definition mmx_reg : wf_bigrammar mmx_register_t := field_intn 2.
   Definition sse_reg : wf_bigrammar sse_register_t := field_intn 2.
 
-  Definition scale_to_Z s := (match s with
-                               | Scale1 => 0
-                               | Scale2 => 1
-                               | Scale4 => 2
-                               | Scale8 => 3
-                              end)%Z.
-
-
-  Lemma scale_to_Z_inv : 
-    forall z, (0 <= z < 4)%Z -> scale_to_Z (Z_to_scale z) = z.
-  Proof. intros.
-    remember (Z_to_scale z) as r; destruct r; unfold Z_to_scale in *; 
-    toztac; simpl in *; pos_to_Z; omega.
-  Qed.
-
-  Lemma Z_to_scale_inv : forall r, Z_to_scale (scale_to_Z r) = r.
-  Proof. destruct r; crush. Qed.
-
-
   Definition scale_p :wf_bigrammar scale_t. 
     refine ((field 2) @ (Z_to_scale : _ -> interp scale_t)
-                      & (fun s => Some (scale_to_Z s)) & _).
-    unfold invertible; split.
-    - intros v H.
-      assert (0 <= v < 4)%Z.
+                      & (fun s => Some (scale_to_Z s)) & _);
+    invertible_tac.
+    - assert (0 <= v < 4)%Z.
         apply field_rng in H. lineararith.
       use_lemma scale_to_Z_inv by eauto.
       crush.
@@ -1136,98 +977,126 @@ End X86_PARSER_ARG.
   (* This is used in a strange edge-case for modrm parsing. See the
      footnotes on p37 of the manual in the repo This is a case where I
      think intersections/complements would be nice operators *)
-
   (* JGM: we can handle this in the semantic action instead of the grammar, 
      so I replaced si, which used this and another pattern for [bits "100"]
      to the simpler case below -- helps to avoid some explosions in the 
      definitions. *)
   Definition reg_no_esp : wf_bigrammar register_t. 
-    refine ((! "000" |+| ! "001" |+| ! "010" |+|
-             ! "011" |+| (* bits "100" <- this is esp *)  ! "101" |+|
-             ! "110" |+| ! "111")
+    refine (((! "000" |+| ! "001" |+| ! "010") |+|
+             (! "011" |+| (* bits "100" <- this is esp *)  ! "101") |+|
+             (! "110" |+| ! "111"))
             @ (fun s => match s with
-                          | inl _ => EAX
-                          | inr (inl _) => ECX
-                          | inr (inr (inl _)) => EDX
-                          | inr (inr (inr (inl _))) => EBX
-                          | inr (inr (inr (inr (inl _)))) => EBP
-                          | inr (inr (inr (inr (inr (inl _))))) => ESI
-                          | inr (inr (inr (inr (inr (inr _))))) => EDI
+                          | inl (inl _) => EAX
+                          | inl (inr (inl _)) => ECX
+                          | inl (inr (inr _)) => EDX
+                          | inr (inl (inl _)) => EBX
+                          | inr (inl (inr _)) => EBP
+                          | inr (inr (inl _)) => ESI
+                          | inr (inr (inr _)) => EDI
                         end : interp register_t)
             & (fun r => match r with
-                          | EAX => Some (inl ())
-                          | ECX => Some (inr (inl ()))
-                          | EDX => Some (inr (inr (inl ())))
-                          | EBX => Some (inr (inr (inr (inl ()))))
+                          | EAX => Some (inl (inl ()))
+                          | ECX => Some (inl (inr (inl ())))
+                          | EDX => Some (inl (inr (inr ())))
+                          | EBX => Some (inr (inl (inl ())))
                           | ESP => None
-                          | EBP => Some (inr (inr (inr (inr (inl ())))))
-                          | ESI => Some (inr (inr (inr (inr (inr (inl ()))))))
-                          | EDI => Some (inr (inr (inr (inr (inr (inr ()))))))
+                          | EBP => Some (inr (inl (inr ())))
+                          | ESI => Some (inr (inr (inl ())))
+                          | EDI => Some (inr (inr (inr ())))
                         end)
-            & _).
-     unfold invertible; split; compute [snd fst]; intros.
-     - repeat match goal with
-         | [v: [| Sum_t Unit_t _ |] |- _ ] =>
-           destruct v as [i | v]; [destruct i; crush | idtac]
-       end.
-       destruct v. crush.
+            & _); invertible_tac.
+     - destruct_union; printable_tac.
      - destruct w; crush.
   Defined. 
 
   Lemma reg_no_esp_rng r:
-    in_bigrammar_rng (` reg_no_esp) r -> r <> ESP.
-  Proof. unfold in_bigrammar_rng. intros r H.
-    destruct H as [s H]. simpl in H.
-    in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    repeat match goal with
-             | [u: [| Sum_t Unit_t _ |] |- _ ] =>
-               destruct u; [crush | idtac]
-           end; crush.
+    r <> ESP <-> in_bigrammar_rng (` reg_no_esp) r.
+  Proof. split; intros.
+    - compute - [in_bigrammar_rng bitsmatch].
+      destruct r;
+      breakHyp;
+      match goal with
+        | [H: ?V <> ?V |- _] => contradiction H; trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
+          replace EAX with (fst fi (inl (inl ()))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) ECX] => 
+          replace ECX with (fst fi (inl (inr (inl ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EDX] => 
+          replace EDX with (fst fi (inl (inr (inr ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EBX] => 
+          replace EBX with (fst fi (inr (inl (inl ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EBP] => 
+          replace EBP with (fst fi (inr (inl (inr ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) ESI] => 
+          replace ESI with (fst fi (inr (inr (inl ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EDI] => 
+          replace EDI with (fst fi (inr (inr (inr ()))))
+            by trivial
+        | _ => idtac
+      end; ibr_prover; apply bitsmatch_rng.
+    - unfold in_bigrammar_rng. 
+      destruct H as [s H]. simpl in H.
+      in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
+      destruct_union; crush.
   Qed.
 
   Definition reg_no_ebp : wf_bigrammar register_t.
-    refine ((! "000" |+| ! "001" |+| ! "010" |+|
-             ! "011" |+|  ! "100"  (* |+| bits "101" <- this is ebp *) |+|
-             ! "110" |+| ! "111")
+    refine (((! "000" |+| ! "001" |+| ! "010") |+|
+             (! "011" |+|  ! "100")  (* |+| bits "101" <- this is ebp *) |+|
+             (! "110" |+| ! "111"))
             @ (fun s => match s with
-                          | inl _ => EAX
-                          | inr (inl _) => ECX
-                          | inr (inr (inl _)) => EDX
-                          | inr (inr (inr (inl _))) => EBX
-                          | inr (inr (inr (inr (inl _)))) => ESP
-                          | inr (inr (inr (inr (inr (inl _))))) => ESI
-                          | inr (inr (inr (inr (inr (inr _))))) => EDI
+                          | inl (inl _) => EAX
+                          | inl (inr (inl _)) => ECX
+                          | inl (inr (inr _)) => EDX
+                          | inr (inl (inl _)) => EBX
+                          | inr (inl (inr _)) => ESP
+                          | inr (inr (inl _)) => ESI
+                          | inr (inr (inr _)) => EDI
                         end : interp register_t)
             & (fun r => match r with
-                          | EAX => Some (inl ())
-                          | ECX => Some (inr (inl ()))
-                          | EDX => Some (inr (inr (inl ())))
-                          | EBX => Some (inr (inr (inr (inl ()))))
-                          | ESP => Some (inr (inr (inr (inr (inl ())))))
+                          | EAX => Some (inl (inl ()))
+                          | ECX => Some (inl (inr (inl ())))
+                          | EDX => Some (inl (inr (inr ())))
+                          | EBX => Some (inr (inl (inl ())))
+                          | ESP => Some (inr (inl (inr ())))
                           | EBP => None
-                          | ESI => Some (inr (inr (inr (inr (inr (inl ()))))))
-                          | EDI => Some (inr (inr (inr (inr (inr (inr ()))))))
+                          | ESI => Some (inr (inr (inl ())))
+                          | EDI => Some (inr (inr (inr ())))
                         end)
-            & _).
-     unfold invertible; split; compute [snd fst]; intros.
-     - repeat match goal with
-         | [v: [| Sum_t Unit_t _ |] |- _ ] =>
-           destruct v as [i | v]; [destruct i; crush | idtac]
-       end.
-       destruct v. crush.
+            & _); invertible_tac.
+     - destruct_union; printable_tac.
      - destruct w; crush.
   Defined. 
 
   Lemma reg_no_ebp_rng r:
-    in_bigrammar_rng (` reg_no_ebp) r -> r <> EBP.
-  Proof. unfold in_bigrammar_rng. intros r H.
-    destruct H as [s H]. simpl in H.
-    in_bigrammar_inv.
-    destruct H as [u [_ H]]. simpl in H.
-    repeat match goal with
-             | [u: [| Sum_t Unit_t _ |] |- _ ] =>
-               destruct u; [crush | idtac]
-           end; crush.
+    r <> EBP <-> in_bigrammar_rng (` reg_no_ebp) r.
+  Proof. split; intros. 
+    - compute - [in_bigrammar_rng bitsmatch].
+      destruct r;
+      breakHyp;
+      match goal with
+        | [H: ?V <> ?V |- _] => contradiction H; trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
+          replace EAX with (fst fi (inl (inl ()))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) ECX] => 
+          replace ECX with (fst fi (inl (inr (inl ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EDX] => 
+          replace EDX with (fst fi (inl (inr (inr ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EBX] => 
+          replace EBX with (fst fi (inr (inl (inl ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) ESP] => 
+          replace ESP with (fst fi (inr (inl (inr ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) ESI] => 
+          replace ESI with (fst fi (inr (inr (inl ())))) by trivial
+        | [ |- in_bigrammar_rng (Map ?fi _) EDI] => 
+          replace EDI with (fst fi (inr (inr (inr ()))))
+            by trivial
+        | _ => idtac
+      end; ibr_prover; apply bitsmatch_rng.
+    - unfold in_bigrammar_rng. 
+      destruct H as [s H]. simpl in H.
+      in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
+      destruct_union; crush.
   Qed.
 
   (* possible todo: add tactics for automatic balancing *)
@@ -1255,8 +1124,7 @@ End X86_PARSER_ARG.
                           | ESI => Some (inr (inr (inl ())))
                           | EDI => Some (inr (inr (inr ())))
                         end)
-            & _).
-     unfold invertible; split; compute [snd fst]; intros.
+            & _); invertible_tac.
      - destruct_union; printable_tac.
      - destruct w; crush.
   Defined. 
@@ -1292,7 +1160,6 @@ End X86_PARSER_ARG.
       destruct_union; crush.
   Qed.
 
-
   Definition si_p: wf_bigrammar (option_t (UPair_t Scale_t Register_t)). 
     refine ((scale_p $ reg)
             @ (fun p => match snd p with 
@@ -1305,14 +1172,11 @@ End X86_PARSER_ARG.
                           | Some (s,p) => Some (s,p)
                         end)
             & _); invertible_tac.
-    - destruct v as [s r]; destruct r; crush.
-      eexists. crush.
-      apply in_bigrammar_rng_cat; split.
-      + apply scale_rng.
-      + apply reg_rng.
+    - destruct v as [s r]; destruct r; printable_tac; ibr_prover;
+      [apply scale_rng | trivial].
     - destruct w. 
-        destruct u as [sc r]; destruct r; crush.
-        crush.
+      + destruct u as [sc r]; destruct r; crush.
+      + crush.
   Defined.
 
   Lemma si_p_range_some sc idx: 
@@ -1327,50 +1191,11 @@ End X86_PARSER_ARG.
 
   Definition sib_p := si_p $ reg.
 
-  (* (** modrm 00 mode, for the case of when *)
-  (*     - disp = 0; *)
-  (*     - base register is EAX, ECX, EDX, EBX, ESI, or EDI *)
-  (*     - scaled index is none *) *)
-  (* Definition rm00_reg : wf_bigrammar address_t. *)
-  (*   refine ((! "000" |+| ! "001" |+| ! "010" |+| ! "011" |+| *)
-  (*            ! "110" |+| ! "111") *)
-  (*           @ (fun u => *)
-  (*                match u with *)
-  (*                  | inl _ => mkAddress (Word.repr 0) (Some EAX) None *)
-  (*                  | inr (inl _) => mkAddress (Word.repr 0) (Some ECX) None *)
-  (*                  | inr (inr (inl _)) => *)
-  (*                    mkAddress (Word.repr 0) (Some EDX) None *)
-  (*                  | inr (inr (inr (inl _))) => *)
-  (*                    mkAddress (Word.repr 0) (Some EBX) None *)
-  (*                  | inr (inr (inr (inr (inl _)))) => *)
-  (*                    mkAddress (Word.repr 0) (Some ESI) None *)
-  (*                  | inr (inr (inr (inr (inr _)))) => *)
-  (*                    mkAddress (Word.repr 0) (Some EDI) None *)
-  (*                end %% address_t) *)
-  (*           & (fun addr => *)
-  (*                match addr with *)
-  (*                  | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=None |} => *)
-  (*                    if (Word.eq disp Word.zero) then *)
-  (*                      match bs with *)
-  (*                        | EAX => Some (inl tt) *)
-  (*                        | ECX => Some (inr (inl tt)) *)
-  (*                        | EDX => Some (inr (inr (inl tt))) *)
-  (*                        | EBX => Some (inr (inr (inr (inl tt)))) *)
-  (*                        | ESI => Some (inr (inr (inr (inr (inl tt))))) *)
-  (*                        | EDI => Some (inr (inr (inr (inr (inr tt))))) *)
-  (*                        | _ => None *)
-  (*                      end *)
-  (*                      else None *)
-  (*                  | _ => None *)
-  (*                end) *)
-  (*           & _); invertible_tac. *)
-  (*   - repeat match goal with *)
-  (*       | [v: [| Sum_t Unit_t _ |] |- _ ] => *)
-  (*         destruct v as [i | v]; [destruct i; crush | idtac] *)
-  (*     end. *)
-  (*     destruct v. crush. *)
-  (*   -  *)
-
+  Local Ltac parsable_tac := 
+    match goal with
+      | [H:None = Some _ |- _] => discriminate
+      | [H:Some _ = Some _ |- _] => inversion H; trivial
+    end.
 
   Definition rm00 : wf_bigrammar address_t.
     refine (((reg_no_esp_ebp |+| (! "100" $ si_p $ reg_no_ebp)) |+|
@@ -1380,16 +1205,7 @@ End X86_PARSER_ARG.
                    | inl (inl r) => mkAddress (Word.repr 0) (Some r) None
                    | inl (inr (_, (si, base))) => 
                      mkAddress (Word.repr 0) (Some base) si
-                   (* | inl (inr p) =>  *)
-                   (*   match p with  *)
-                   (*     | (_, (si,base)) => *)
-                   (*       mkAddress (Word.repr 0) (Some base) si *)
-                   (*   end *)
                    | inr (inl (_,(si,(_, disp)))) => mkAddress disp None si
-                   (* | inr (inl p) =>  *)
-                   (*   match p with  *)
-                   (*     | (_,(si,(_, disp))) => mkAddress disp None si *)
-                   (*   end *)
                    | inr (inr (_, disp)) => 
                      mkAddress disp None None
                  end %% address_t)
@@ -1433,17 +1249,13 @@ End X86_PARSER_ARG.
         * assert (idx <> ESP).
             ibr_prover. eapply si_p_range_some. eassumption.
           destruct idx; destruct base; printable_tac.
-        * destruct base;
-          match goal with
-            | [H:?R <> ?R |- _] => contradiction H; trivial
-            | [H:ESP <> EBP |- _] => printable_tac
-            | _ => eexists; split; [trivial | ibr_prover; apply reg_no_esp_ebp_rng; crush]
-          end.
+        * destruct base; printable_tac;
+            ibr_prover; apply reg_no_esp_ebp_rng; split; discriminate.
       + (* case ! "100" $ si_p $ ! "101" $ word *)
         destruct v as [u1 [si [u2 disp]]]. destruct u1, u2.
         destruct si as [[sc idx] | ].
         * printable_tac.
-        * eexists. split; [trivial | ibr_prover; trivial].
+        * printable_tac; ibr_prover; trivial.
       + (* case ! "101" $ word *)
         destruct v as [u disp]; destruct u.
         printable_tac.
@@ -1454,11 +1266,6 @@ End X86_PARSER_ARG.
         destruct disp_eq; [idtac | crush].
         apply Word.int_eq_true_iff2 in Hdisp_eq; subst addrDisp.
         destruct addrIndex as [[sc idx] | ].
-        Local Ltac parsable_tac := 
-          match goal with
-            | [H:None = Some _ |- _] => discriminate
-            | [H:Some _ = Some _ |- _] => inversion H; trivial
-          end.
         * (* addrIndex = Some (sc,idx) *)
           destruct idx; destruct bs; parsable_tac.
         * destruct bs; parsable_tac.
@@ -1467,36 +1274,10 @@ End X86_PARSER_ARG.
         * parsable_tac.
         * parsable_tac.
   Defined.
-          
 
 
 TBC
 
-  (* These next 4 grammars are used in the definition of the mod/rm grammar *)
-  Definition rm00 : grammar address_t := 
-    (     bits "000" 
-      |+| bits "001" 
-      |+| bits "010" 
-      |+| bits "011" 
-      |+| bits "110"
-      |+| bits "111" ) @ 
-          (fun bs => (mkAddress (Word.repr 0) 
-            (Some (Z_to_register(int_of_bits 3 bs))) None) %% address_t)
-      |+| bits "100" $ si $ reg_no_ebp @ 
-          (fun p => match p with
-                      | (_,(si,base)) => 
-                        (mkAddress (Word.repr 0) (Some base) si)
-                    end : interp address_t)     
-      |+| bits "100" $ si $ bits "101" $ word @
-          (fun p => match p with
-                      | (_,(si,(_, disp))) => 
-                        (mkAddress disp None si)
-                    end : interp address_t)
-      |+| bits "101" $ word @
-          (fun p => match p with 
-                      | (_, disp) => 
-                        (mkAddress disp None None)
-                    end %% address_t).  
 
   Definition rm01 : grammar address_t := 
     ((    bits "000" 
@@ -1664,6 +1445,115 @@ TBC
 
   Definition ext_op_modrm2 :=
     ext_op_modrm2_gen reg_op Address_op.
+
+          
+  (** * An X86 bigrammar *)
+  (* A better bigrammar for x86 instruction decoder/encoder. The encoder
+     spec is more efficient:
+
+     (1) Each individual instruction parser does not return values of
+         instr, but instead returns the instruction's arguments; as a
+         result, the inverse function does not need to perform a runtime
+         test to see what instruction it is as the previous version
+         does. At the top level, we disjoint union all instruction parsers
+         and use a conversion function to convert abstract syntax trees
+         (ast) produced by parsing to instructions.
+
+     (2) The Jcc parser uses the biased union for the two sub-parsers, 
+         avoiding runtime tests in those subparsers
+   *)
+
+  Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
+  Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
+  Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
+  Definition AAS_p : wf_bigrammar unit_t := ! "00111111".
+
+  Definition BSWAP_p : wf_bigrammar register_t := 
+    "0000" $$ "1111" $$ "1100" $$ "1" $$ reg.
+
+  Definition CDQ_p : wf_bigrammar unit_t := "1001" $$  ! "1001".
+  Definition CLC_p : wf_bigrammar unit_t := "1111" $$ ! "1000".
+  Definition CLD_p : wf_bigrammar unit_t := "1111" $$ ! "1100".
+  Definition CLI_p : wf_bigrammar unit_t := "1111" $$ ! "1010".
+  Definition CLTS_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "0110".
+  Definition CMC_p : wf_bigrammar unit_t := "1111" $$ ! "0101".
+  Definition CMPS_p : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
+
+  (*todo: Skipped CMPXCHG_p, requires modrm*)
+
+  Definition CPUID_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ ! "0010".
+  Definition CWDE_p : wf_bigrammar unit_t := "1001" $$ ! "1000".
+  Definition DAA_p : wf_bigrammar unit_t := "0010" $$ ! "0111".
+  Definition DAS_p : wf_bigrammar unit_t := "0010" $$ ! "1111".
+
+  Definition DEC_p1  :=
+    "1111" $$ "111" $$ anybit $ "11001" $$ reg.
+  Definition DEC_p2 := "0100" $$ "1" $$ reg.
+
+  (*Definition DEC_p3 : //todo: Skipped due to ext_op_modrm function*)
+  
+  Definition DIV_p1 : wf_bigrammar (Pair_t Char_t register_t) := 
+  "1111" $$ "011" $$ anybit $ "11110" $$ reg.
+
+  (*Definition DIV_p2 : //todo: Skipped due to ext_op_modrm function*)
+  
+  Definition HLT_p : wf_bigrammar unit_t := "1111" $$ ! "0100".
+  
+  Definition IDIV_p1 : wf_bigrammar (Pair_t Char_t register_t)  :=
+ "1111" $$ "011" $$ anybit $ "11111" $$ reg.
+
+ (*Definition IDIV_p2 : //todo: ext_op_modrm function*)
+ 
+ (*Definition IMUL_p : //todo: ext_op_modrm, modrm*)
+ 
+  Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
+  Definition IN_p2 := "1110" $$ "110" $$ anybit.
+
+  Definition IN_p : wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
+    refine ((IN_p1 |+| IN_p2)
+              @ (fun x => 
+                   match x with
+                     | inl (w,b) => (w, Some b)
+                     | inr w => (w, None)
+                   end %% (Pair_t Char_t (User_t (Option_t Byte_t))))
+              & (fun x => 
+                   match x with
+                     | (w, Some b) => Some (inl (w,b))
+                     | (w, None) => Some (inr w)
+                   end)
+              & _); invertible_tac.
+    - destruct_union; destruct v; crush.
+    - destruct w as [c [b | ]]; try discriminate; crush.
+  Defined.
+
+  Definition INC_p1 :=  "1111" $$ "111" $$ anybit  $ "11000" $$ reg.
+
+  Definition INC_p2 := "0100" $$ "0" $$ reg.
+
+  (*todo: Definition INC_p3 := "1111" $$ "111" $$ anybit $ ext_op_modrm "000".*)
+  
+  Definition INS_p : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
+  
+  Definition INTn_p : wf_bigrammar byte_t := "1100" $$ "1101" $$ byte.
+  
+  Definition INT_p : wf_bigrammar unit_t := "1100" $$ ! "1100".
+  
+  Definition INTO_p : wf_bigrammar unit_t := "1100" $$ ! "1110".
+  
+  Definition INVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "1000".
+  
+  (*todo: Definition INVLPG_p := //ext_op_modrm function*)
+  
+  Definition IRET_p : wf_bigrammar unit_t := "1100" $$ ! "1111".
+
+  (* todo: remove; int_of_bits defined in a different way *)
+  (* Fixpoint bits2Z(n:nat)(a:Z) : interp (bits_n n) -> interp int_t :=  *)
+  (*   match n with  *)
+  (*     | 0%nat => fun _ => a *)
+  (*     | S n => fun p => bits2Z n (2*a + (if (fst p) then 1 else 0)) (snd p) *)
+  (*   end. *)
+  (* Definition int_of_bits(n:nat)(bs:interp (bits_n n)) : interp int_t := bits2Z n 0 bs. *)
+
 
 
   (* Grammars for the individual instructions *)
