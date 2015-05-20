@@ -1200,8 +1200,8 @@ End X86_PARSER_ARG.
   Definition rm00 : wf_bigrammar address_t.
     refine (((reg_no_esp_ebp |+| (! "100" $ si_p $ reg_no_ebp)) |+|
              ((! "100" $ si_p $ ! "101" $ word) |+| (! "101" $ word)))
-            @ (fun u => 
-                 match u with
+            @ (fun v => 
+                 match v with
                    | inl (inl r) => mkAddress (Word.repr 0) (Some r) None
                    | inl (inr (_, (si, base))) => 
                      mkAddress (Word.repr 0) (Some base) si
@@ -1274,6 +1274,213 @@ End X86_PARSER_ARG.
         * parsable_tac.
         * parsable_tac.
   Defined.
+
+  (* testing if a signed 32-bit immediate can be represented in a byte;
+     that is, if it's within [-128,127] *)
+  Definition repr_in_signed_byte (w:int32) :=
+    (Word.min_signed 7 <= Word.signed w <= Word.max_signed 7)%Z.
+
+  Definition repr_in_signed_byte_dec (w:int32) :
+    {repr_in_signed_byte w} + {~(repr_in_signed_byte w)}.
+    intro.
+    refine (
+      match (Z_le_dec (Word.signed w) (Word.max_signed 7)), 
+            (Z_le_dec (Word.min_signed 7) (Word.signed w)) with
+        | left _, left _ => left _ 
+        | _, _ => right _
+      end); unfold repr_in_signed_byte; intuition.
+  Defined.
+
+  Definition sign_shrink32_8 (w:int32): int8 := Word.repr (Word.signed w).
+
+  Lemma sign_extend8_32_inv (w:int32) : 
+    repr_in_signed_byte w -> sign_extend8_32 (sign_shrink32_8 w) = w.
+  Proof. Set Printing Implicit.
+    unfold sign_extend8_32, sign_shrink32_8; intros.
+    rewrite Word.signed_repr by trivial.
+    rewrite Word.repr_signed; trivial.
+  Qed.
+  
+  Lemma sign_shrink32_8_inv (b:int8) : 
+    sign_shrink32_8 (sign_extend8_32 b) = b.
+  Proof. unfold sign_extend8_32, sign_shrink32_8; intros.
+    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
+      generalize (Word.signed_range 7 b).
+      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
+      lineararith.
+    rewrite Word.signed_repr by assumption.
+    rewrite Word.repr_signed; trivial.
+  Qed.
+
+Unset Printing Implicit.
+
+  Lemma repr_in_signed_byte_extend8_32 b: 
+    repr_in_signed_byte (sign_extend8_32 b).
+  Proof. unfold repr_in_signed_byte, sign_extend8_32; intros.
+    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
+      generalize (Word.signed_range 7 b).
+      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
+      lineararith.
+    rewrite Word.signed_repr by assumption.
+    apply Word.signed_range.
+  Qed.         
+      
+  (* todo: refactoring def in rm00 and rm01 *)
+  Definition rm01 : wf_bigrammar address_t. 
+    refine (((reg_no_esp $ byte) |+| (! "100" $ sib_p $ byte))
+              @ (fun v => 
+                   match v with
+                     | inl (bs,disp) => 
+                       (mkAddress (sign_extend8_32 disp) (Some bs) None)
+                     | inr (_,((si,bs),disp)) => 
+                       (mkAddress (sign_extend8_32 disp) (Some bs) si)
+                   end %% address_t)
+              & (fun addr => 
+                   if (repr_in_signed_byte_dec addr.(addrDisp)) then
+                     match addr with
+                       | {| addrDisp:=disp; addrBase:=Some bs; 
+                            addrIndex:=siopt |} =>
+                         match siopt with
+                           | None => 
+                             match bs with
+                               | ESP => 
+                                 Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
+                               | _ => Some (inl (bs, sign_shrink32_8 disp))
+                             end
+                           | Some (_, ESP) => None
+                           | _ => 
+                             Some (inr ((), ((siopt, bs), sign_shrink32_8 disp)))
+                         end
+                       | _ => None
+                     end
+                   else None)
+              & _ ); invertible_tac.
+    - destruct_union.
+      + (* case reg_no_esp $ byte *)
+        destruct v as [bs disp].
+        compute [addrDisp].
+        generalize (repr_in_signed_byte_extend8_32 disp).
+        destruct_head; [intro | intuition].
+        rewrite sign_shrink32_8_inv.
+        destruct bs; printable_tac.
+
+        ibr_prover. 
+
+        tbc: the ESP case; contradiction on H???
+        
+
+
+
+    - destruct_union.
+      + (* case reg_no_esp_ebp *)
+        rewrite Word.int_eq_refl.
+        assert (v<>ESP /\ v<>EBP).
+          ibr_prover. apply reg_no_esp_ebp_rng. trivial.
+        destruct v; printable_tac.
+      + (* case (! "100" $ si_p $ reg_no_ebp)) *)
+        destruct v as [u [si base]]. destruct u.
+        rewrite Word.int_eq_refl.
+        assert (base <> EBP).
+          ibr_prover. apply reg_no_ebp_rng. trivial.
+        destruct si as [[sc idx] | ].
+        * assert (idx <> ESP).
+            ibr_prover. eapply si_p_range_some. eassumption.
+          destruct idx; destruct base; printable_tac.
+        * destruct base; printable_tac;
+            ibr_prover; apply reg_no_esp_ebp_rng; split; discriminate.
+      + (* case ! "100" $ si_p $ ! "101" $ word *)
+        destruct v as [u1 [si [u2 disp]]]. destruct u1, u2.
+        destruct si as [[sc idx] | ].
+        * printable_tac.
+        * printable_tac; ibr_prover; trivial.
+      + (* case ! "101" $ word *)
+        destruct v as [u disp]; destruct u.
+        printable_tac.
+    - destruct w.
+      destruct addrBase as [bs | ].
+      + (* addrBase = Some bs *)
+        remember_head_in_hyp as disp_eq. 
+        destruct disp_eq; [idtac | crush].
+        apply Word.int_eq_true_iff2 in Hdisp_eq; subst addrDisp.
+        destruct addrIndex as [[sc idx] | ].
+        * (* addrIndex = Some (sc,idx) *)
+          destruct idx; destruct bs; parsable_tac.
+        * destruct bs; parsable_tac.
+      + (* addrBase = None *)
+        destruct addrIndex as [[sc idx] | ].
+        * parsable_tac.
+        * parsable_tac.
+  Defined.
+
+  Definition rm01 : wf_bigrammar address_t. 
+    refine (((reg_no_esp $ byte) |+| (! "100" $ sib_p $ byte))
+              @ (fun v => 
+                   match v with
+                     | inl (bs,disp) => 
+                       (mkAddress (sign_extend8_32 disp) (Some bs) None)
+                     | inr (_,((si,bs),disp)) => 
+                       (mkAddress (sign_extend8_32 disp) (Some bs) si)
+                   end %% address_t)
+              & (fun addr => 
+                   match (repr_in_signed_byte_dec addr.(addrDisp)) with
+                     | left _ =>
+                       match addr with
+                         | {| addrDisp:=disp; addrBase:=Some bs; 
+                              addrIndex:=siopt |} =>
+                           match siopt with
+                             | None => 
+                               match bs with
+                                 | ESP => 
+                                   Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
+                                 | _ => Some (inl (bs, sign_shrink32_8 disp))
+                               end
+                             | Some (_, ESP) => None
+                             | _ => 
+                               Some (inr ((), ((siopt, bs), sign_shrink32_8 disp)))
+                           end
+                         | _ => None
+                       end
+                     | right _ => None
+                   end)
+              & _ ); invertible_tac.
+    - 
+
+
+  Definition rm01 : wf_bigrammar address_t. 
+    refine (((reg_no_esp $ byte) |+| (! "100" $ sib_p $ byte))
+              @ (fun v => 
+                   match v with
+                     | inl (bs,disp) => 
+                       (mkAddress (sign_extend8_32 disp) (Some bs) None)
+                     | inr (_,((si,bs),disp)) => 
+                       (mkAddress (sign_extend8_32 disp) (Some bs) si)
+                   end %% address_t)
+              & (fun addr => 
+                   match (repr_in_signed_byte_dec addr.(addrDisp)) with
+                     | left _ =>
+                       match addr with
+                         | {| addrDisp:=disp; addrBase:=Some ESP; 
+                              addrIndex:=siopt |} =>
+                           match siopt with
+                             | Some (_, ESP) => None
+                             | _ => 
+                               Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
+                           end
+                         | {| addrDisp:=disp; addrBase:=Some bs; 
+                              addrIndex:=siopt |} =>
+                           match siopt with
+                             | None => Some (inl (bs, sign_shrink32_8 disp))
+                             | Some (_, ESP) => None
+                             | Some _ => 
+                               Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
+                           end
+                         | _ => None
+                       end
+                     | right _ => None
+                   end)
+              & _ ).
+
+
 
 
 TBC
