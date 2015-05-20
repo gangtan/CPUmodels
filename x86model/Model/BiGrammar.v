@@ -444,6 +444,8 @@ Lemma in_bigrammar_rng_map t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
   in_bigrammar_rng (Map fi g) (fst fi v).
 Proof. localsimpl. Qed.
 
+Create HintDb ibr_rng_db.
+
 Ltac ibr_simpl :=
   repeat match goal with 
            | [H: in_bigrammar_rng (Alt _ _) (inl _) |- _] =>
@@ -462,6 +464,7 @@ Ltac ibr_simpl :=
              apply in_bigrammar_rng_map
            | [ |- in_bigrammar_rng Eps () ] =>
              apply in_bigrammar_rng_eps
+           | _ => auto with ibr_rng_db
          end.
 
 (* Ltac guess_in_all v := *)

@@ -152,7 +152,6 @@ End X86_PARSER_ARG.
   Definition prefix_t := User_t Prefix_t.
   Definition bitvector_t n := User_t (BitVector_t n).
 
-
   Local Ltac localcrush :=
     repeat match goal with
              | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
@@ -176,6 +175,8 @@ End X86_PARSER_ARG.
              | [v: [| Unit_t |] |- _] => destruct v
            end.
 
+  Local Ltac lineararith := 
+    unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
   (* combinators for building well-formed bigrammars *)
   Obligation Tactic := localcrush.
@@ -358,7 +359,7 @@ End X86_PARSER_ARG.
   Qed.
 
   Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z
-       bitsn_of_sig_inv sig_of_bitsn_inv : bigrammar.
+       bitsn_of_sig_inv sig_of_bitsn_inv : inv_db.
 
   Lemma int_of_bitsn_range n v : (0 <= int_of_bitsn n v < two_power_nat n)%Z.
   Proof. unfold int_of_bitsn. intros.
@@ -374,7 +375,7 @@ End X86_PARSER_ARG.
     use_lemma (int_of_bitsn_range n v) by trivial.
     repeat (destruct_head; try omega).
     unfold int_of_bitsn. 
-    autorewrite with bigrammar. trivial.
+    autorewrite with inv_db. trivial.
   Qed.
 
   Lemma int_of_bitsn_inv : 
@@ -384,7 +385,7 @@ End X86_PARSER_ARG.
     destruct_head in H; try congruence.
     destruct_head in H; try congruence.
     crush.
-    autorewrite with bigrammar.
+    autorewrite with inv_db.
     destruct n. 
       unfold two_power_nat, shift_nat in *. simpl in *. omega.
       apply Word.Z_of_bits_of_Z_lt_modulus.
@@ -412,21 +413,21 @@ End X86_PARSER_ARG.
     apply Word.bits_of_Z_of_bits.
   Qed.
 
-  Hint Rewrite intn_of_sig_inv sig_of_intn_inv: bigrammar.
+  Hint Rewrite intn_of_sig_inv sig_of_intn_inv: inv_db.
 
   Lemma intn_of_bitsn_inv n (i:Word.int n) :
     intn_of_bitsn (bitsn_of_intn i) = i.
   Proof. unfold intn_of_bitsn, bitsn_of_intn; intros.
-    autorewrite with bigrammar. trivial.
+    autorewrite with inv_db. trivial.
   Qed.
 
   Lemma bitsn_of_intn_inv n (v:[|bits_n (S n)|]):
     bitsn_of_intn (intn_of_bitsn v) = v.
   Proof. unfold intn_of_bitsn, bitsn_of_intn; intros.
-    autorewrite with bigrammar. trivial.
+    autorewrite with inv_db. trivial.
   Qed.
 
-  Hint Rewrite intn_of_bitsn_inv bitsn_of_intn_inv: bigrammar.
+  Hint Rewrite intn_of_bitsn_inv bitsn_of_intn_inv: inv_db.
 
   Local Ltac toztac := 
     repeat match goal with 
@@ -468,6 +469,56 @@ End X86_PARSER_ARG.
   Lemma Z_to_scale_inv : forall r, Z_to_scale (scale_to_Z r) = r.
   Proof. destruct r; crush. Qed.
 
+  (* testing if a signed 32-bit immediate can be represented in a byte;
+     that is, if it's within [-128,127] *)
+  Definition repr_in_signed_byte (w:int32) :=
+    (Word.min_signed 7 <= Word.signed w <= Word.max_signed 7)%Z.
+
+  Definition repr_in_signed_byte_dec (w:int32) :
+    {repr_in_signed_byte w} + {~(repr_in_signed_byte w)}.
+    intro.
+    refine (
+      match (Z_le_dec (Word.signed w) (Word.max_signed 7)), 
+            (Z_le_dec (Word.min_signed 7) (Word.signed w)) with
+        | left _, left _ => left _ 
+        | _, _ => right _
+      end); unfold repr_in_signed_byte; intuition.
+  Defined.
+
+  Definition sign_shrink32_8 (w:int32): int8 := Word.repr (Word.signed w).
+
+  Lemma sign_extend8_32_inv (w:int32) : 
+    repr_in_signed_byte w -> sign_extend8_32 (sign_shrink32_8 w) = w.
+  Proof. 
+    unfold sign_extend8_32, sign_shrink32_8; intros.
+    rewrite Word.signed_repr by trivial.
+    rewrite Word.repr_signed; trivial.
+  Qed.
+  
+  Lemma sign_shrink32_8_inv (b:int8) : 
+    sign_shrink32_8 (sign_extend8_32 b) = b.
+  Proof. unfold sign_extend8_32, sign_shrink32_8; intros.
+    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
+      generalize (Word.signed_range 7 b).
+      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
+      lineararith.
+    rewrite Word.signed_repr by assumption.
+    rewrite Word.repr_signed; trivial.
+  Qed.
+
+  Hint Rewrite sign_shrink32_8_inv: inv_db.
+  Hint Rewrite sign_extend8_32_inv using assumption: inv_db.
+
+  Lemma repr_in_signed_byte_extend8_32 b: 
+    repr_in_signed_byte (sign_extend8_32 b).
+  Proof. unfold repr_in_signed_byte, sign_extend8_32; intros.
+    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
+      generalize (Word.signed_range 7 b).
+      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
+      lineararith.
+    rewrite Word.signed_repr by assumption.
+    apply Word.signed_range.
+  Qed.         
 
   (** * Basic grammar constructors *)
 
@@ -603,12 +654,12 @@ End X86_PARSER_ARG.
   Lemma bits_rng: forall str,
     in_bigrammar_rng (` (bits str)) (tuples_of_string str).
   Proof. generalize in_bits_intro; localsimpl. Qed.
+  Hint Resolve bits_rng: ibr_rng_db.
  
   Program Definition bitsmatch (s:string): wf_bigrammar Unit_t := 
     (bits s) @ (fun _ => tt:[|Unit_t|])
        & (fun _ => Some (tuples_of_string s)) & _.
-  Next Obligation. 
-    printable_tac; apply bits_rng.
+  Next Obligation. printable_tac. auto with ibr_rng_db.
   Defined.
   Notation "! s" := (bitsmatch s) (at level 60).
 
@@ -617,8 +668,6 @@ End X86_PARSER_ARG.
                  & (fun v => Some (tuples_of_string s, v)) & _.
   Next Obligation.
     destruct v; printable_tac; ibr_simpl. 
-    - apply bits_rng.
-    - trivial.
   Defined.
   Infix "$$" := bitsleft (right associativity, at level 70).
 
@@ -637,6 +686,7 @@ End X86_PARSER_ARG.
   Proof. unfold in_bigrammar_rng. intros. eexists.
     eapply in_bitsmatch_intro. eapply in_bits_intro.
   Qed.
+  Hint Resolve bitsmatch_rng: ibr_rng_db.
 
   Lemma in_bitsleft_intro: forall t (g: wf_bigrammar t) str s1 s2 v1 v2,
     in_bigrammar (` (bits str)) s1 v1 -> in_bigrammar (` g) s2 v2
@@ -733,7 +783,7 @@ End X86_PARSER_ARG.
   Next Obligation.
     intros. destruct v; try crush.
     eexists; crush.
-    ibr_simpl; crush.
+    ibr_prover; crush.
   Defined.
 
   (* The following def works for g1 and g2 that have different types; we
@@ -799,6 +849,7 @@ End X86_PARSER_ARG.
   Proof. unfold in_bigrammar_rng. intros. eexists.
     eapply in_field'_intro.
   Qed.
+  Hint Resolve field'_rng: ibr_rng_db.
 
   Program Definition field (n:nat) : wf_bigrammar int_t := 
     (field' n) @ (int_of_bitsn n) & bitsn_of_int n & _.
@@ -816,7 +867,7 @@ End X86_PARSER_ARG.
   Proof. intros.
     eapply InMap. eapply in_field'_intro.
     unfold int_of_bitsn in *. simpl.
-    autorewrite with bigrammar.
+    autorewrite with inv_db.
     destruct n.
     - unfold two_power_nat, shift_nat in *. simpl in *. omega.
     - rewrite (Word.Z_of_bits_of_Z_lt_modulus); trivial.
@@ -832,9 +883,7 @@ End X86_PARSER_ARG.
     - unfold field, in_bigrammar_rng in *.
       intros. crush; in_bigrammar_inv; crush' int_of_bitsn_range fail.
   Qed.
-
-  Local Ltac lineararith := 
-    unfold two_power_nat, shift_nat in *; simpl in *; omega.
+  Hint Resolve field_rng: ibr_rng_db.
 
   Definition reg : wf_bigrammar register_t.
     refine (field 3 @ (Z_to_register : _ -> result_m register_t)
@@ -862,6 +911,7 @@ End X86_PARSER_ARG.
     end; apply in_bigrammar_rng_map;
     apply field_rng; lineararith.
   Qed.
+  Hint Resolve reg_rng: ibr_rng_db.
 
   Definition int_n : forall n, wf_bigrammar (User_t (BitVector_t n)).
     intro;
@@ -892,14 +942,19 @@ End X86_PARSER_ARG.
   Lemma int_n_rng:
     forall n (v: Word.int n), in_bigrammar_rng (` (int_n n)) v.
   Proof. unfold in_bigrammar_rng. intros; eexists; eapply in_int_n_intro. Qed.
+  Hint Resolve int_n_rng: ibr_rng_db.
 
   Definition byte : wf_bigrammar byte_t := int_n 7.
   Definition halfword : wf_bigrammar half_t := int_n 15.
   Definition word : wf_bigrammar word_t := int_n 31.
 
+  Lemma byte_rng (v: [|byte_t|]): in_bigrammar_rng (` byte) v.
+  Proof. unfold byte. apply int_n_rng. Qed.
+
   Lemma word_rng (v: [|word_t|]): in_bigrammar_rng (` word) v.
   Proof. unfold word. apply int_n_rng. Qed.
     
+  Hint Resolve byte_rng word_rng: ibr_rng_db.
 
   (* I used the above grammars for halfword and word because they are
      easier for the proofs. The following defs of halfword and word from
@@ -942,8 +997,8 @@ End X86_PARSER_ARG.
     (field' (S n)) @ (@intn_of_bitsn n: _ -> [|bitvector_t n|])
                    & (fun i => Some (bitsn_of_intn i)) & _.
   Next Obligation.
-    - autorewrite with bigrammar. printable_tac.
-    - autorewrite with bigrammar. trivial.
+    - autorewrite with inv_db. printable_tac.
+    - autorewrite with inv_db. trivial.
   Defined.
 
   Definition fpu_reg  : wf_bigrammar fpu_register_t := field_intn 2.
@@ -973,6 +1028,7 @@ End X86_PARSER_ARG.
     end; apply in_bigrammar_rng_map;
       apply field_rng; lineararith.
   Qed.
+  Hint Resolve scale_rng: ibr_rng_db.
 
   (* This is used in a strange edge-case for modrm parsing. See the
      footnotes on p37 of the manual in the repo This is a case where I
@@ -1010,34 +1066,40 @@ End X86_PARSER_ARG.
   Defined. 
 
   Lemma reg_no_esp_rng r:
-    r <> ESP <-> in_bigrammar_rng (` reg_no_esp) r.
-  Proof. split; intros.
-    - compute - [in_bigrammar_rng bitsmatch].
-      destruct r;
-      breakHyp;
-      match goal with
-        | [H: ?V <> ?V |- _] => contradiction H; trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
-          replace EAX with (fst fi (inl (inl ()))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) ECX] => 
-          replace ECX with (fst fi (inl (inr (inl ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EDX] => 
-          replace EDX with (fst fi (inl (inr (inr ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EBX] => 
-          replace EBX with (fst fi (inr (inl (inl ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EBP] => 
-          replace EBP with (fst fi (inr (inl (inr ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) ESI] => 
-          replace ESI with (fst fi (inr (inr (inl ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EDI] => 
-          replace EDI with (fst fi (inr (inr (inr ()))))
-            by trivial
-        | _ => idtac
-      end; ibr_prover; apply bitsmatch_rng.
-    - unfold in_bigrammar_rng. 
-      destruct H as [s H]. simpl in H.
-      in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-      destruct_union; crush.
+    r <> ESP -> in_bigrammar_rng (` reg_no_esp) r.
+  Proof. intros.
+    compute - [in_bigrammar_rng bitsmatch].
+    destruct r;
+    breakHyp;
+    match goal with
+      | [H: ?V <> ?V |- _] => contradiction H; trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
+        replace EAX with (fst fi (inl (inl ()))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) ECX] => 
+        replace ECX with (fst fi (inl (inr (inl ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EDX] => 
+        replace EDX with (fst fi (inl (inr (inr ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EBX] => 
+        replace EBX with (fst fi (inr (inl (inl ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EBP] => 
+        replace EBP with (fst fi (inr (inl (inr ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) ESI] => 
+        replace ESI with (fst fi (inr (inr (inl ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EDI] => 
+        replace EDI with (fst fi (inr (inr (inr ()))))
+          by trivial
+      | _ => idtac
+    end; ibr_prover; apply bitsmatch_rng.
+  Qed.
+  Hint Extern 1 (in_bigrammar_rng (` reg_no_esp) _) => 
+    apply reg_no_esp_rng; discriminate: ibr_rng_db.
+
+  Lemma reg_no_esp_neq r: in_bigrammar_rng (` reg_no_esp) r -> r <> ESP.
+  Proof. intros.
+    unfold in_bigrammar_rng. 
+    destruct H as [s H]. simpl in H.
+    in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
+    destruct_union; crush.
   Qed.
 
   Definition reg_no_ebp : wf_bigrammar register_t.
@@ -1069,38 +1131,43 @@ End X86_PARSER_ARG.
   Defined. 
 
   Lemma reg_no_ebp_rng r:
-    r <> EBP <-> in_bigrammar_rng (` reg_no_ebp) r.
-  Proof. split; intros. 
-    - compute - [in_bigrammar_rng bitsmatch].
-      destruct r;
-      breakHyp;
-      match goal with
-        | [H: ?V <> ?V |- _] => contradiction H; trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
-          replace EAX with (fst fi (inl (inl ()))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) ECX] => 
-          replace ECX with (fst fi (inl (inr (inl ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EDX] => 
-          replace EDX with (fst fi (inl (inr (inr ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EBX] => 
-          replace EBX with (fst fi (inr (inl (inl ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) ESP] => 
-          replace ESP with (fst fi (inr (inl (inr ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) ESI] => 
-          replace ESI with (fst fi (inr (inr (inl ())))) by trivial
-        | [ |- in_bigrammar_rng (Map ?fi _) EDI] => 
-          replace EDI with (fst fi (inr (inr (inr ()))))
-            by trivial
-        | _ => idtac
-      end; ibr_prover; apply bitsmatch_rng.
-    - unfold in_bigrammar_rng. 
-      destruct H as [s H]. simpl in H.
-      in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-      destruct_union; crush.
+    r <> EBP -> in_bigrammar_rng (` reg_no_ebp) r.
+  Proof. intros.
+    compute - [in_bigrammar_rng bitsmatch].
+    destruct r;
+    breakHyp;
+    match goal with
+      | [H: ?V <> ?V |- _] => contradiction H; trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
+        replace EAX with (fst fi (inl (inl ()))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) ECX] => 
+        replace ECX with (fst fi (inl (inr (inl ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EDX] => 
+        replace EDX with (fst fi (inl (inr (inr ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EBX] => 
+        replace EBX with (fst fi (inr (inl (inl ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) ESP] => 
+        replace ESP with (fst fi (inr (inl (inr ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) ESI] => 
+        replace ESI with (fst fi (inr (inr (inl ())))) by trivial
+      | [ |- in_bigrammar_rng (Map ?fi _) EDI] => 
+        replace EDI with (fst fi (inr (inr (inr ()))))
+          by trivial
+      | _ => idtac
+    end; ibr_prover; apply bitsmatch_rng.
+  Qed.
+  Hint Extern 1 (in_bigrammar_rng (` reg_no_ebp) _) => 
+    apply reg_no_ebp_rng; discriminate: ibr_rng_db.
+
+  Lemma reg_no_ebp_neq r: in_bigrammar_rng (` reg_no_ebp) r -> r <> EBP.
+  Proof. intros.
+    unfold in_bigrammar_rng. 
+    destruct H as [s H]. simpl in H.
+    in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
+    destruct_union; crush.
   Qed.
 
   (* possible todo: add tactics for automatic balancing *)
-
   Definition reg_no_esp_ebp : wf_bigrammar register_t.
     refine (((! "000" |+| ! "001" |+| ! "010")  |+|
              (! "011" |+| ! "110" |+| ! "111"))
@@ -1130,11 +1197,10 @@ End X86_PARSER_ARG.
   Defined. 
 
   Lemma reg_no_esp_ebp_rng r: 
-    r <> ESP /\ r <> EBP <->
-    in_bigrammar_rng (` reg_no_esp_ebp) r.
-  Proof. split; intros.
-    - compute - [in_bigrammar_rng bitsmatch].
-      destruct r;
+    r <> ESP /\ r <> EBP -> in_bigrammar_rng (` reg_no_esp_ebp) r.
+  Proof. intros.
+    compute - [in_bigrammar_rng bitsmatch].
+    destruct r;
       breakHyp;
       match goal with
         | [H: ?V <> ?V |- _] => contradiction H; trivial
@@ -1153,11 +1219,18 @@ End X86_PARSER_ARG.
             by trivial
         | _ => idtac
       end; ibr_prover; apply bitsmatch_rng.
-    - unfold in_bigrammar_rng in H.
-      destruct H as [s H]. simpl in H.
-      in_bigrammar_inv.
-      destruct H as [v [_ H]]. simpl in H.
-      destruct_union; crush.
+  Qed.
+  Hint Extern 1 (in_bigrammar_rng (` reg_no_esp_ebp) _) => 
+    apply reg_no_esp_ebp_rng; split; discriminate: ibr_rng_db.
+
+  Lemma reg_no_esp_ebp_neq r: 
+    in_bigrammar_rng (` reg_no_esp_ebp) r -> r <> ESP /\ r <> EBP.
+  Proof. intros.
+    unfold in_bigrammar_rng in H.
+    destruct H as [s H]. simpl in H.
+    in_bigrammar_inv.
+    destruct H as [v [_ H]]. simpl in H.
+    destruct_union; crush.
   Qed.
 
   Definition si_p: wf_bigrammar (option_t (UPair_t Scale_t Register_t)). 
@@ -1172,14 +1245,13 @@ End X86_PARSER_ARG.
                           | Some (s,p) => Some (s,p)
                         end)
             & _); invertible_tac.
-    - destruct v as [s r]; destruct r; printable_tac; ibr_prover;
-      [apply scale_rng | trivial].
+    - destruct v as [s r]; destruct r; printable_tac; ibr_prover.
     - destruct w. 
       + destruct u as [sc r]; destruct r; crush.
       + crush.
   Defined.
 
-  Lemma si_p_range_some sc idx: 
+  Lemma si_p_rng_some sc idx: 
     in_bigrammar_rng (` si_p) (Some (sc, idx)) -> idx <> ESP.
   Proof. unfold in_bigrammar_rng. intros sc idx H.
     destruct H as [s H].
@@ -1189,12 +1261,26 @@ End X86_PARSER_ARG.
     destruct idx'; crush.
   Qed.
 
+  Lemma si_p_rng_none : in_bigrammar_rng (` si_p) None.
+  Proof. unfold proj1_sig at 1; compute - [in_bigrammar_rng proj1_sig scale_p reg seq].
+    match goal with
+      | [ |- in_bigrammar_rng (Map ?fi ?g) None] => 
+        assert (H:None = (fst fi (Scale1, ESP))) by trivial;
+        rewrite H; clear H; apply in_bigrammar_rng_map
+    end; ibr_prover.
+  Qed.    
+  Hint Resolve si_p_rng_none: ibr_rng_db.
+
   Definition sib_p := si_p $ reg.
+
+  Lemma sib_p_rng_none r: in_bigrammar_rng (` sib_p) (None, r).
+  Proof. intros; unfold sib_p. ibr_prover. Qed.
+  Hint Resolve sib_p_rng_none: ibr_rng_db.
 
   Local Ltac parsable_tac := 
     match goal with
       | [H:None = Some _ |- _] => discriminate
-      | [H:Some _ = Some _ |- _] => inversion H; trivial
+      | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial
     end.
 
   Definition rm00 : wf_bigrammar address_t.
@@ -1238,19 +1324,18 @@ End X86_PARSER_ARG.
       + (* case reg_no_esp_ebp *)
         rewrite Word.int_eq_refl.
         assert (v<>ESP /\ v<>EBP).
-          ibr_prover. apply reg_no_esp_ebp_rng. trivial.
+          ibr_prover. apply reg_no_esp_ebp_neq. trivial.
         destruct v; printable_tac.
       + (* case (! "100" $ si_p $ reg_no_ebp)) *)
         destruct v as [u [si base]]. destruct u.
         rewrite Word.int_eq_refl.
         assert (base <> EBP).
-          ibr_prover. apply reg_no_ebp_rng. trivial.
+          ibr_prover. apply reg_no_ebp_neq. trivial.
         destruct si as [[sc idx] | ].
         * assert (idx <> ESP).
-            ibr_prover. eapply si_p_range_some. eassumption.
+            ibr_prover. eapply si_p_rng_some. eassumption.
           destruct idx; destruct base; printable_tac.
-        * destruct base; printable_tac;
-            ibr_prover; apply reg_no_esp_ebp_rng; split; discriminate.
+        * destruct base; printable_tac; ibr_prover.
       + (* case ! "100" $ si_p $ ! "101" $ word *)
         destruct v as [u1 [si [u2 disp]]]. destruct u1, u2.
         destruct si as [[sc idx] | ].
@@ -1275,59 +1360,8 @@ End X86_PARSER_ARG.
         * parsable_tac.
   Defined.
 
-  (* testing if a signed 32-bit immediate can be represented in a byte;
-     that is, if it's within [-128,127] *)
-  Definition repr_in_signed_byte (w:int32) :=
-    (Word.min_signed 7 <= Word.signed w <= Word.max_signed 7)%Z.
-
-  Definition repr_in_signed_byte_dec (w:int32) :
-    {repr_in_signed_byte w} + {~(repr_in_signed_byte w)}.
-    intro.
-    refine (
-      match (Z_le_dec (Word.signed w) (Word.max_signed 7)), 
-            (Z_le_dec (Word.min_signed 7) (Word.signed w)) with
-        | left _, left _ => left _ 
-        | _, _ => right _
-      end); unfold repr_in_signed_byte; intuition.
-  Defined.
-
-  Definition sign_shrink32_8 (w:int32): int8 := Word.repr (Word.signed w).
-
-  Lemma sign_extend8_32_inv (w:int32) : 
-    repr_in_signed_byte w -> sign_extend8_32 (sign_shrink32_8 w) = w.
-  Proof. Set Printing Implicit.
-    unfold sign_extend8_32, sign_shrink32_8; intros.
-    rewrite Word.signed_repr by trivial.
-    rewrite Word.repr_signed; trivial.
-  Qed.
-  
-  Lemma sign_shrink32_8_inv (b:int8) : 
-    sign_shrink32_8 (sign_extend8_32 b) = b.
-  Proof. unfold sign_extend8_32, sign_shrink32_8; intros.
-    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
-      generalize (Word.signed_range 7 b).
-      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
-      lineararith.
-    rewrite Word.signed_repr by assumption.
-    rewrite Word.repr_signed; trivial.
-  Qed.
-
-Unset Printing Implicit.
-
-  Lemma repr_in_signed_byte_extend8_32 b: 
-    repr_in_signed_byte (sign_extend8_32 b).
-  Proof. unfold repr_in_signed_byte, sign_extend8_32; intros.
-    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
-      generalize (Word.signed_range 7 b).
-      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
-      lineararith.
-    rewrite Word.signed_repr by assumption.
-    apply Word.signed_range.
-  Qed.         
-      
-  (* todo: refactoring def in rm00 and rm01 *)
   Definition rm01 : wf_bigrammar address_t. 
-    refine (((reg_no_esp $ byte) |+| (! "100" $ sib_p $ byte))
+    refine ((reg_no_esp $ byte |+| ! "100" $ sib_p $ byte)
               @ (fun v => 
                    match v with
                      | inl (bs,disp) => 
@@ -1362,150 +1396,33 @@ Unset Printing Implicit.
         generalize (repr_in_signed_byte_extend8_32 disp).
         destruct_head; [intro | intuition].
         rewrite sign_shrink32_8_inv.
-        destruct bs; printable_tac.
-
-        ibr_prover. 
-
-        tbc: the ESP case; contradiction on H???
-        
-
-
-
-    - destruct_union.
-      + (* case reg_no_esp_ebp *)
-        rewrite Word.int_eq_refl.
-        assert (v<>ESP /\ v<>EBP).
-          ibr_prover. apply reg_no_esp_ebp_rng. trivial.
-        destruct v; printable_tac.
-      + (* case (! "100" $ si_p $ reg_no_ebp)) *)
-        destruct v as [u [si base]]. destruct u.
-        rewrite Word.int_eq_refl.
-        assert (base <> EBP).
-          ibr_prover. apply reg_no_ebp_rng. trivial.
+        destruct bs; printable_tac; ibr_prover.
+      + (* case ! "100" $ sib_p $ byte *)
+        destruct v as [u [[si bs] disp]]; destruct u.
+        generalize (repr_in_signed_byte_extend8_32 disp).
+        destruct_head; [intro | intuition].
+        rewrite sign_shrink32_8_inv.
         destruct si as [[sc idx] | ].
         * assert (idx <> ESP).
-            ibr_prover. eapply si_p_range_some. eassumption.
-          destruct idx; destruct base; printable_tac.
-        * destruct base; printable_tac;
-            ibr_prover; apply reg_no_esp_ebp_rng; split; discriminate.
-      + (* case ! "100" $ si_p $ ! "101" $ word *)
-        destruct v as [u1 [si [u2 disp]]]. destruct u1, u2.
-        destruct si as [[sc idx] | ].
-        * printable_tac.
-        * printable_tac; ibr_prover; trivial.
-      + (* case ! "101" $ word *)
-        destruct v as [u disp]; destruct u.
-        printable_tac.
-    - destruct w.
+            unfold sib_p in *; ibr_prover.
+            eapply si_p_rng_some. eassumption.
+          destruct idx; printable_tac.
+        * destruct bs; printable_tac; ibr_prover.
+    - destruct w. compute [X86Syntax.addrDisp] in *.
+      destruct (repr_in_signed_byte_dec addrDisp); [idtac | discriminate].
       destruct addrBase as [bs | ].
       + (* addrBase = Some bs *)
-        remember_head_in_hyp as disp_eq. 
-        destruct disp_eq; [idtac | crush].
-        apply Word.int_eq_true_iff2 in Hdisp_eq; subst addrDisp.
         destruct addrIndex as [[sc idx] | ].
         * (* addrIndex = Some (sc,idx) *)
-          destruct idx; destruct bs; parsable_tac.
+          destruct idx; parsable_tac.
         * destruct bs; parsable_tac.
       + (* addrBase = None *)
-        destruct addrIndex as [[sc idx] | ].
-        * parsable_tac.
-        * parsable_tac.
-  Defined.
-
-  Definition rm01 : wf_bigrammar address_t. 
-    refine (((reg_no_esp $ byte) |+| (! "100" $ sib_p $ byte))
-              @ (fun v => 
-                   match v with
-                     | inl (bs,disp) => 
-                       (mkAddress (sign_extend8_32 disp) (Some bs) None)
-                     | inr (_,((si,bs),disp)) => 
-                       (mkAddress (sign_extend8_32 disp) (Some bs) si)
-                   end %% address_t)
-              & (fun addr => 
-                   match (repr_in_signed_byte_dec addr.(addrDisp)) with
-                     | left _ =>
-                       match addr with
-                         | {| addrDisp:=disp; addrBase:=Some bs; 
-                              addrIndex:=siopt |} =>
-                           match siopt with
-                             | None => 
-                               match bs with
-                                 | ESP => 
-                                   Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
-                                 | _ => Some (inl (bs, sign_shrink32_8 disp))
-                               end
-                             | Some (_, ESP) => None
-                             | _ => 
-                               Some (inr ((), ((siopt, bs), sign_shrink32_8 disp)))
-                           end
-                         | _ => None
-                       end
-                     | right _ => None
-                   end)
-              & _ ); invertible_tac.
-    - 
-
-
-  Definition rm01 : wf_bigrammar address_t. 
-    refine (((reg_no_esp $ byte) |+| (! "100" $ sib_p $ byte))
-              @ (fun v => 
-                   match v with
-                     | inl (bs,disp) => 
-                       (mkAddress (sign_extend8_32 disp) (Some bs) None)
-                     | inr (_,((si,bs),disp)) => 
-                       (mkAddress (sign_extend8_32 disp) (Some bs) si)
-                   end %% address_t)
-              & (fun addr => 
-                   match (repr_in_signed_byte_dec addr.(addrDisp)) with
-                     | left _ =>
-                       match addr with
-                         | {| addrDisp:=disp; addrBase:=Some ESP; 
-                              addrIndex:=siopt |} =>
-                           match siopt with
-                             | Some (_, ESP) => None
-                             | _ => 
-                               Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
-                           end
-                         | {| addrDisp:=disp; addrBase:=Some bs; 
-                              addrIndex:=siopt |} =>
-                           match siopt with
-                             | None => Some (inl (bs, sign_shrink32_8 disp))
-                             | Some (_, ESP) => None
-                             | Some _ => 
-                               Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
-                           end
-                         | _ => None
-                       end
-                     | right _ => None
-                   end)
-              & _ ).
-
-
+        destruct addrIndex as [[sc idx] | ]; parsable_tac.
+  Qed.
 
 
 TBC
 
-
-  Definition rm01 : grammar address_t := 
-    ((    bits "000" 
-      |+| bits "001" 
-      |+| bits "010" 
-      |+| bits "011"
-      |+| bits "101" 
-      |+| bits "110"
-      |+| bits "111") $ byte) @ 
-          (fun p => 
-            match p with 
-              | (bs, disp) =>
-                (mkAddress (sign_extend8_32 disp) 
-                  (Some (Z_to_register(int_of_bits 3 bs))) None)
-            end %% address_t)
-      |+| bits "100" $ sib $ byte @ 
-          (fun p => 
-            match p with
-              | (_,((si,base),disp)) => 
-                (mkAddress (sign_extend8_32 disp) (Some base) (si))
-            end %% address_t).
 
   Definition rm10 : grammar address_t := 
     ((    bits "000" 
