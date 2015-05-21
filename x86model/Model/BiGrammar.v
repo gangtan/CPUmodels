@@ -314,6 +314,14 @@ Definition invertible t1 t2 (fi: funinv t1 t2) (g:bigrammar t1) :=
      in_bigrammar_rng g v -> snd fi w = Some v -> fst fi v = w).
 Implicit Arguments invertible [t1 t2].
 
+(** A stronger notion of invertibility; doesn't require this
+    in a well-formed bigrammar, but it's sometimes more convenient to use 
+    since it doesn't take a grammar g as a parameter *)
+Definition strong_invertible t1 t2 (fi: funinv t1 t2) :=
+  (forall v: [|t1|], (snd fi) (fst fi v) = Some v) /\
+  (forall (v:[|t1|]) (w:[|t2|]), snd fi w = Some v -> fst fi v = w).
+Implicit Arguments strong_invertible [t1 t2].
+
 (** compose two pairs of functions and inverses *)
 Definition funinv_compose t1 t2 t3 (fi2: funinv t2 t3) (fi1: funinv t1 t2) :=
   (compose (fst fi2) (fst fi1), 
@@ -474,6 +482,10 @@ Ltac ibr_simpl :=
 (*         | T => guess v H *)
 (*       end *)
 (*   end. *)
+
+Lemma strong_inv_imp_inv t1 t2 (fi: funinv t1 t2) g : 
+  strong_invertible fi -> invertible fi g.
+Proof. unfold strong_invertible, invertible. crush. Qed.
       
 Lemma compose_invertible
       t1 t2 t3 (g:bigrammar t1) (fi1:funinv t1 t2) (fi2: funinv t2 t3):

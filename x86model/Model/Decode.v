@@ -676,7 +676,7 @@ End X86_PARSER_ARG.
   Proof. crush. Qed.
 
   Lemma in_bitsmatch_elim str s:
-    in_bigrammar (` (!str)) s () ->
+    in_bigrammar (` (! str)) s () ->
     exists v, in_bigrammar (` (bits str)) s v.
   Proof. unfold bitsmatch. simpl.
     intros; in_bigrammar_inv. crush.
@@ -701,6 +701,20 @@ End X86_PARSER_ARG.
     in_bigrammar_inv. crush.
   Qed.
 
+  Lemma in_bigrammar_rng_bitsleft t str (g:wf_bigrammar t) v: 
+    in_bigrammar_rng (` (str $$ g)) v <-> in_bigrammar_rng (` g) v.
+  Proof. unfold in_bigrammar_rng; split; intros.
+    - (* -> *)
+      destruct H as [s H]. apply in_bitsleft_elim in H.
+      destruct H as [s1 [s2 [H2 H4]]].
+      crush.
+    - (* <- *)
+      destruct H as [s H]. 
+      generalize (in_bits_intro str); intro.
+      eexists.
+      eapply in_bitsleft_intro; eassumption.
+  Qed.
+
   Ltac ibr_prover :=
     repeat match goal with 
       | [H: in_bigrammar_rng (` (_ |+| _)) _ |- _] =>
@@ -711,6 +725,10 @@ End X86_PARSER_ARG.
         unfold proj1_sig at 1, seq at 1 in H
       | [ |- in_bigrammar_rng (` (_ $ _)) _ ] => 
         unfold proj1_sig at 1, seq at 1
+      | [H: in_bigrammar_rng (` (_ $$ _)) _ |- _] =>
+        apply in_bigrammar_rng_bitsleft in H
+      | [ |- in_bigrammar_rng (` (_ $$ _)) _ ] =>
+        rewrite -> in_bigrammar_rng_bitsleft
       | [ |- in_bigrammar_rng (` (! _)) () ] =>
         apply bitsmatch_rng
       | _ => ibr_simpl
@@ -1284,37 +1302,37 @@ End X86_PARSER_ARG.
     end.
 
   Definition rm00 : wf_bigrammar address_t.
-    refine (((reg_no_esp_ebp |+| (! "100" $ si_p $ reg_no_ebp)) |+|
-             ((! "100" $ si_p $ ! "101" $ word) |+| (! "101" $ word)))
+    refine (((reg_no_esp_ebp |+| ("100" $$ si_p $ reg_no_ebp)) |+|
+             (("100" $$ si_p $ "101" $$ word) |+| ("101" $$ word)))
             @ (fun v => 
                  match v with
                    | inl (inl r) => mkAddress (Word.repr 0) (Some r) None
-                   | inl (inr (_, (si, base))) => 
+                   | inl (inr (si, base)) => 
                      mkAddress (Word.repr 0) (Some base) si
-                   | inr (inl (_,(si,(_, disp)))) => mkAddress disp None si
-                   | inr (inr (_, disp)) => 
+                   | inr (inl (si, disp)) => mkAddress disp None si
+                   | inr (inr disp) => 
                      mkAddress disp None None
                  end %% address_t)
             & (fun addr => 
                  match addr with
                    | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-                     Some (inr (inr ((), disp)))
+                     Some (inr (inr disp))
                    | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some si |} =>
                      (* special case: disp32[index*scale]; the mod bits in mod/rm must be 00 *)
-                     Some (inr (inl (tt, (Some si, ((), disp)))))
+                     Some (inr (inl (Some si, disp)))
                    | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=siopt |} =>
                      if (Word.eq disp Word.zero) then
                        match siopt with
                          | None => match bs with
                                      | EBP => None
-                                     | ESP => Some (inl (inr (tt, (None, ESP))))
+                                     | ESP => Some (inl (inr (None, ESP)))
                                      | _ => Some (inl (inl bs))
                                    end
                          | Some (sc, ESP) => None
                          | Some (sc, idx) => 
                            match bs with 
                              | EBP => None
-                             | _ => Some (inl (inr (tt, (Some (sc, idx), bs))))
+                             | _ => Some (inl (inr (Some (sc, idx), bs)))
                            end
                        end
                      else None
@@ -1327,7 +1345,7 @@ End X86_PARSER_ARG.
           ibr_prover. apply reg_no_esp_ebp_neq. trivial.
         destruct v; printable_tac.
       + (* case (! "100" $ si_p $ reg_no_ebp)) *)
-        destruct v as [u [si base]]. destruct u.
+        destruct v as [si base].
         rewrite Word.int_eq_refl.
         assert (base <> EBP).
           ibr_prover. apply reg_no_ebp_neq. trivial.
@@ -1337,12 +1355,11 @@ End X86_PARSER_ARG.
           destruct idx; destruct base; printable_tac.
         * destruct base; printable_tac; ibr_prover.
       + (* case ! "100" $ si_p $ ! "101" $ word *)
-        destruct v as [u1 [si [u2 disp]]]. destruct u1, u2.
+        destruct v as [si disp].
         destruct si as [[sc idx] | ].
         * printable_tac.
         * printable_tac; ibr_prover; trivial.
       + (* case ! "101" $ word *)
-        destruct v as [u disp]; destruct u.
         printable_tac.
     - destruct w.
       destruct addrBase as [bs | ].
@@ -1361,12 +1378,12 @@ End X86_PARSER_ARG.
   Defined.
 
   Definition rm01 : wf_bigrammar address_t. 
-    refine ((reg_no_esp $ byte |+| ! "100" $ sib_p $ byte)
+    refine ((reg_no_esp $ byte |+| "100" $$ sib_p $ byte)
               @ (fun v => 
                    match v with
                      | inl (bs,disp) => 
                        (mkAddress (sign_extend8_32 disp) (Some bs) None)
-                     | inr (_,((si,bs),disp)) => 
+                     | inr ((si,bs),disp) => 
                        (mkAddress (sign_extend8_32 disp) (Some bs) si)
                    end %% address_t)
               & (fun addr => 
@@ -1378,12 +1395,12 @@ End X86_PARSER_ARG.
                            | None => 
                              match bs with
                                | ESP => 
-                                 Some (inr ((), ((siopt, ESP), sign_shrink32_8 disp)))
+                                 Some (inr ((siopt, ESP), sign_shrink32_8 disp))
                                | _ => Some (inl (bs, sign_shrink32_8 disp))
                              end
                            | Some (_, ESP) => None
                            | _ => 
-                             Some (inr ((), ((siopt, bs), sign_shrink32_8 disp)))
+                             Some (inr ((siopt, bs), sign_shrink32_8 disp))
                          end
                        | _ => None
                      end
@@ -1398,7 +1415,7 @@ End X86_PARSER_ARG.
         rewrite sign_shrink32_8_inv.
         destruct bs; printable_tac; ibr_prover.
       + (* case ! "100" $ sib_p $ byte *)
-        destruct v as [u [[si bs] disp]]; destruct u.
+        destruct v as [[si bs] disp].
         generalize (repr_in_signed_byte_extend8_32 disp).
         destruct_head; [intro | intuition].
         rewrite sign_shrink32_8_inv.
@@ -1421,12 +1438,12 @@ End X86_PARSER_ARG.
   Defined.
 
   Definition rm10 : wf_bigrammar address_t. 
-    refine ((reg_no_esp $ word |+| ! "100" $ sib_p $ word)
+    refine ((reg_no_esp $ word |+| "100" $$ sib_p $ word)
               @ (fun v => 
                    match v with
                      | inl (bs,disp) => 
                        (mkAddress disp (Some bs) None)
-                     | inr (_,((si,bs),disp)) => 
+                     | inr ((si,bs),disp) => 
                        (mkAddress disp (Some bs) si)
                    end %% address_t)
               & (fun addr => 
@@ -1437,12 +1454,12 @@ End X86_PARSER_ARG.
                          | None => 
                            match bs with
                              | ESP => 
-                               Some (inr ((), ((siopt, ESP), disp)))
+                               Some (inr ((siopt, ESP), disp))
                              | _ => Some (inl (bs, disp))
                            end
                          | Some (_, ESP) => None
                          | _ => 
-                           Some (inr ((), ((siopt, bs), disp)))
+                           Some (inr ((siopt, bs), disp))
                        end
                      | _ => None
                      end)
@@ -1453,7 +1470,7 @@ End X86_PARSER_ARG.
         compute [addrDisp].
         destruct bs; printable_tac; ibr_prover.
       + (* case ! "100" $ sib_p $ byte *)
-        destruct v as [u [[si bs] disp]]; destruct u.
+        destruct v as [[si bs] disp].
         destruct si as [[sc idx] | ].
         * assert (idx <> ESP).
             unfold sib_p in *; ibr_prover.
@@ -1470,20 +1487,6 @@ End X86_PARSER_ARG.
       + (* addrBase = None *)
         destruct addrIndex as [[sc idx] | ]; parsable_tac.
   Defined.
-
-  (** A stronger notion of invertibility; doesn't require this
-      in a well-formed bigrammar, but it's sometimes more convenient to use 
-      since it doesn't take a grammar g as a parameter *)
-  Definition strong_invertible t1 t2 (fi: funinv t1 t2) :=
-    (forall v: [|t1|], (snd fi) (fst fi v) = Some v) /\
-    (forall (v:[|t1|]) (w:[|t2|]), snd fi w = Some v -> fst fi v = w).
-  Implicit Arguments strong_invertible [t1 t2].
-
-  Lemma strong_inv_imp_inv t1 t2 (fi: funinv t1 t2) g : 
-    strong_invertible fi -> invertible fi g.
-  Proof. unfold strong_invertible, invertible. crush. Qed.
-
-(* todo: ! vs $$ *)
 
   (** a general modrm grammar for integer, floating-point, sse, mmx instructions *)
   (* using |\/| below as it's messy to distinguish the four cases in the inverse 
