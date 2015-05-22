@@ -21,10 +21,16 @@ Local Open Scope Z_scope.
 (********************************************)
 (* Type definitions for x86 abstract syntax *)
 (********************************************)
-Definition zero_extend8_32(w:int8) : int32 := Word.repr (Word.unsigned w).
-Definition sign_extend8_32(w:int8) : int32 := Word.repr (Word.signed w).
-Definition zero_extend16_32(w:int16) : int32 := Word.repr (Word.unsigned w).
-Definition sign_extend16_32(w:int16) : int32 := Word.repr (Word.signed w).
+
+Definition zero_extend n1 n2 (w:Word.int n1): Word.int n2 := 
+  Word.repr (Word.unsigned w).
+Definition sign_extend n1 n2 (w:Word.int n1): Word.int n2 := 
+  Word.repr (Word.signed w).
+Definition zero_extend8_32 := @zero_extend 7 31.
+Definition sign_extend8_32 := @sign_extend 7 31.
+Definition zero_extend16_32 := @zero_extend 15 31.
+Definition sign_extend16_32 := @sign_extend 15 31.
+
 Definition port_number := int8.
 Definition interrupt_type := int8.  
 Definition selector := int16.  

@@ -482,56 +482,133 @@ End X86_PARSER_ARG.
   Lemma Z_to_scale_inv : forall r, Z_to_scale (scale_to_Z r) = r.
   Proof. destruct r; crush. Qed.
 
-  (* testing if a signed 32-bit immediate can be represented in a byte;
-     that is, if it's within [-128,127] *)
-  Definition repr_in_signed_byte (w:int32) :=
-    (Word.min_signed 7 <= Word.signed w <= Word.max_signed 7)%Z.
+  
+  (* testing if a signed (n1+1)-bit immediate can be represented in a
+     (n2+1)-bit immediate without loss of precision *)
+  Definition repr_in_signed n1 n2 (w:Word.int n1) :=
+    (Word.min_signed n2 <= Word.signed w <= Word.max_signed n2)%Z.
 
-  Definition repr_in_signed_byte_dec (w:int32) :
-    {repr_in_signed_byte w} + {~(repr_in_signed_byte w)}.
-    intro.
+  Definition repr_in_signed_dec n1 n2 (w:Word.int n1) :
+    {repr_in_signed n2 w} + {~(repr_in_signed n2 w)}.
+    intros.
     refine (
-      match (Z_le_dec (Word.signed w) (Word.max_signed 7)), 
-            (Z_le_dec (Word.min_signed 7) (Word.signed w)) with
+      match (Z_le_dec (Word.signed w) (Word.max_signed n2)), 
+            (Z_le_dec (Word.min_signed n2) (Word.signed w)) with
         | left _, left _ => left _ 
         | _, _ => right _
-      end); unfold repr_in_signed_byte; intuition.
+      end); unfold repr_in_signed; intuition.
   Defined.
 
-  Definition sign_shrink32_8 (w:int32): int8 := Word.repr (Word.signed w).
+  Definition repr_in_signed_byte (w:int32) := repr_in_signed 7 w.
+  Definition repr_in_signed_halfword (w:int32) := repr_in_signed 15 w.
 
-  Lemma sign_extend8_32_inv (w:int32) : 
-    repr_in_signed_byte w -> sign_extend8_32 (sign_shrink32_8 w) = w.
-  Proof. 
-    unfold sign_extend8_32, sign_shrink32_8; intros.
+  Definition repr_in_signed_byte_dec (w:int32) :
+    {repr_in_signed_byte w} + {~(repr_in_signed_byte w)} :=
+    repr_in_signed_dec 7 w.
+
+  Definition repr_in_signed_halfword_dec (w:int32) :
+    {repr_in_signed_halfword w} + {~(repr_in_signed_halfword w)} :=
+    repr_in_signed_dec 15 w.
+
+  Lemma sign_extend_inv1 n1 n2 (w:Word.int n2):
+    n1 <= n2 -> repr_in_signed n1 w ->
+    @sign_extend n1 n2 (@sign_extend n2 n1 w) = w.
+  Proof. unfold sign_extend; intros.
     rewrite Word.signed_repr by trivial.
     rewrite Word.repr_signed; trivial.
   Qed.
-  
-  Lemma sign_shrink32_8_inv (b:int8) : 
-    sign_shrink32_8 (sign_extend8_32 b) = b.
-  Proof. unfold sign_extend8_32, sign_shrink32_8; intros.
-    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
-      generalize (Word.signed_range 7 b).
-      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
-      lineararith.
+
+(* todo: move to Bits.v *)
+  Lemma max_signed_mono n1 n2:
+    n1 <= n2 -> (Word.max_signed n1 <= Word.max_signed n2)%Z.
+  Proof. unfold Word.max_signed, Word.half_modulus, Word.modulus, Word.wordsize.
+    intros.
+    use_lemma (two_power_nat_monotone (S n1) (S n2)) by omega.
+    use_lemma (Z.div_le_mono (two_power_nat (S n1))
+                             (two_power_nat (S n2)) 2)
+      by omega.
+    omega.
+  Qed.
+      
+  Lemma min_signed_mono n1 n2:
+    n1 <= n2 -> (Word.min_signed n2 <= Word.min_signed n1)%Z.
+  Proof. unfold Word.min_signed, Word.half_modulus, Word.modulus, Word.wordsize.
+    intros.
+    use_lemma (two_power_nat_monotone (S n1) (S n2)) by omega.
+    use_lemma (Z.div_le_mono (two_power_nat (S n1))
+                             (two_power_nat (S n2)) 2)
+      by omega.
+    omega.
+  Qed.
+    
+
+  Lemma sign_extend_inv2 n1 n2 (w:Word.int n2):
+    n2 <= n1 -> @sign_extend n1 n2 (@sign_extend n2 n1 w) = w.
+  Proof. unfold sign_extend; intros.
+    assert (Word.min_signed n1 <= Word.signed w <= Word.max_signed n1)%Z.
+      generalize (Word.signed_range n2 w).
+      use_lemma max_signed_mono by eassumption.
+      use_lemma min_signed_mono by eassumption.
+      omega.
     rewrite Word.signed_repr by assumption.
     rewrite Word.repr_signed; trivial.
   Qed.
 
+  Lemma repr_in_signed_extend n1 n2 (w:Word.int n1):
+    n1 <= n2 -> repr_in_signed n1 (@sign_extend n1 n2 w).
+  Proof. unfold repr_in_signed, sign_extend; intros.
+    assert (Word.min_signed n2 <= Word.signed w <= Word.max_signed n2)%Z.
+      generalize (Word.signed_range n1 w).
+      use_lemma max_signed_mono by eassumption.
+      use_lemma min_signed_mono by eassumption.
+      omega.
+    rewrite Word.signed_repr by assumption.
+    apply Word.signed_range.
+  Qed.         
+
+  Definition sign_shrink32_8 := @sign_extend 31 7.
+  Definition sign_shrink32_16 := @sign_extend 31 15.
+
+  Lemma sign_extend8_32_inv (w:int32) : 
+    repr_in_signed_byte w -> sign_extend8_32 (sign_shrink32_8 w) = w.
+  Proof. unfold sign_extend8_32, sign_shrink32_8, repr_in_signed_byte. intros.
+    apply sign_extend_inv1; [omega | trivial].
+  Qed.
+  
+  Lemma sign_shrink32_8_inv (b:int8) : 
+    sign_shrink32_8 (sign_extend8_32 b) = b.
+  Proof. unfold sign_extend8_32, sign_shrink32_8. intros.
+    apply sign_extend_inv2; omega.
+  Qed.
   Hint Rewrite sign_shrink32_8_inv: inv_db.
   Hint Rewrite sign_extend8_32_inv using assumption: inv_db.
 
   Lemma repr_in_signed_byte_extend8_32 b: 
     repr_in_signed_byte (sign_extend8_32 b).
   Proof. unfold repr_in_signed_byte, sign_extend8_32; intros.
-    assert (Word.min_signed 31 <= Word.signed b <= Word.max_signed 31)%Z.
-      generalize (Word.signed_range 7 b).
-      unfold Word.min_signed, Word.max_signed, Word.half_modulus, Word.modulus.
-      lineararith.
-    rewrite Word.signed_repr by assumption.
-    apply Word.signed_range.
-  Qed.         
+    apply repr_in_signed_extend; omega.
+  Qed.
+
+  Lemma sign_extend16_32_inv (w:int32) : 
+    repr_in_signed_halfword w -> sign_extend16_32 (sign_shrink32_16 w) = w.
+  Proof. unfold sign_extend16_32, sign_shrink32_16, repr_in_signed_halfword. intros.
+    apply sign_extend_inv1; [omega | trivial].
+  Qed.
+  
+  Lemma sign_shrink32_16_inv (hw:int16) : 
+    sign_shrink32_16 (sign_extend16_32 hw) = hw.
+  Proof. unfold sign_extend16_32, sign_shrink32_16. intros.
+    apply sign_extend_inv2; omega.
+  Qed.
+  Hint Rewrite sign_shrink32_16_inv: inv_db.
+  Hint Rewrite sign_extend16_32_inv using assumption: inv_db.
+
+  Lemma repr_in_signed_byte_extend16_32 hw: 
+    repr_in_signed_halfword (sign_extend16_32 hw).
+  Proof. unfold repr_in_signed_halfword, sign_extend16_32; intros.
+    apply repr_in_signed_extend; omega.
+  Qed.
+
 
   (** * Basic grammar constructors *)
 
@@ -1759,8 +1836,6 @@ End X86_PARSER_ARG.
   Defined.
 
 
-TBC
-          
   (** * An X86 bigrammar *)
   (* A better bigrammar for x86 instruction decoder/encoder. The encoder
      spec is more efficient:
@@ -1781,6 +1856,105 @@ TBC
   Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
   Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
   Definition AAS_p : wf_bigrammar unit_t := ! "00111111".
+
+
+  (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
+
+  (* todo: move earlier *)
+  Definition Imm_op_inv op := 
+    match op with 
+      | Imm_op w => Some w
+      | _ => None
+    end.
+
+  Definition imm_op (opsize_override: bool) : wf_bigrammar operand_t. 
+    intros.
+    refine(match opsize_override with
+             | false => word @ (fun w => Imm_op w %% operand_t) & Imm_op_inv & _
+             | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t)
+                                & (fun op with
+                                     | Imm_op w => 
+                                  & _
+           end); invertible_tac.
+    -
+
+
+TBC
+
+  (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
+
+  Definition imm_op (opsize_override: bool) : grammar operand_t :=
+    match opsize_override with
+      | false => word @ (fun w => Imm_op w %% operand_t)
+      | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t)
+    end.
+      
+  Definition logic_or_arith_p (opsize_override: bool)
+    (op1 : string) (* first 5 bits for most cases *)
+    (op2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
+                      that determine the opcode *)
+    (InstCon : bool->operand->operand->instr) (* instruction constructor *)
+    : grammar instruction_t
+    :=
+  (* register/memory to register and vice versa -- the d bit specifies
+   * the direction. *)
+  op1 $$ "0" $$ anybit $ anybit $ modrm @
+    (fun p => match p with 
+                | (d, (w, (op1, op2))) => 
+                  if d then InstCon w op1 op2 else InstCon w op2 op1
+              end %% instruction_t)
+  |+|
+  (* sign extend immediate byte to register *)
+  "1000" $$ "0011" $$ "11" $$ op2 $$ reg $ byte @ 
+    (fun p => 
+      let (r,imm) := p in InstCon true (Reg_op r) (Imm_op (sign_extend8_32 imm)) %%
+    instruction_t)
+  |+|
+  (* zero-extend immediate byte to register *)
+  "1000" $$ "0000" $$ "11" $$ op2 $$ reg $ byte @ 
+    (fun p => 
+      let (r,imm) := p in InstCon false (Reg_op r) (Imm_op (zero_extend8_32 imm)) %%
+    instruction_t)
+  |+|
+  (* immediate word to register *)
+  "1000" $$ "0001" $$ "11" $$ op2 $$ reg $ imm_op opsize_override @ 
+    (fun p => let (r,imm) := p in InstCon true (Reg_op r) imm %% instruction_t)
+  |+|
+  (* zero-extend immediate byte to EAX *)
+  op1 $$ "100" $$ byte @
+    (fun imm => InstCon false (Reg_op EAX) (Imm_op (zero_extend8_32 imm)) %% instruction_t)
+  |+|
+  (* word to EAX *)
+  op1 $$ "101" $$ imm_op opsize_override @
+    (fun imm => InstCon true (Reg_op EAX)  imm %% instruction_t)
+  |+|
+  (* zero-extend immediate byte to memory *)
+  "1000" $$ "0000" $$ ext_op_modrm op2 $ byte @ 
+    (fun p => let (op,imm) := p in InstCon false op (Imm_op (zero_extend8_32 imm)) %% 
+    instruction_t)
+  |+|
+  (* sign-extend immediate byte to memory *)
+  "1000" $$ "0011" $$ ext_op_modrm op2 $ byte @ 
+    (fun p => let (op,imm) := p in InstCon true op (Imm_op (sign_extend8_32 imm)) %%
+    instruction_t)
+  |+|
+  (* immediate word to memory *)
+  "1000" $$ "0001" $$ ext_op_modrm op2 $ imm_op opsize_override @ 
+    (fun p => let (op,imm) := p in InstCon true op imm %% instruction_t).
+
+  Definition ADC_p s := logic_or_arith_p s "00010" "010" ADC.
+  Definition ADD_p s := logic_or_arith_p s "00000" "000" ADD.
+  Definition AND_p s := logic_or_arith_p s "00100" "100" AND.
+  Definition CMP_p s := logic_or_arith_p s "00111" "111" CMP.
+  Definition OR_p  s := logic_or_arith_p s "00001" "001" OR.
+  Definition SBB_p s := logic_or_arith_p s "00011" "011" SBB.
+  Definition SUB_p s := logic_or_arith_p s "00101" "101" SUB.
+  Definition XOR_p s := logic_or_arith_p s "00110" "110" XOR.
+
+TBC
+          
+
+
 
   Definition BSWAP_p : wf_bigrammar register_t := 
     "0000" $$ "1111" $$ "1100" $$ "1" $$ reg.
@@ -1870,11 +2044,11 @@ TBC
 
 
 
-  (* Grammars for the individual instructions *)
-  Definition AAA_p := bits "00110111" @ (fun _ => AAA %% instruction_t).
-  Definition AAD_p := bits "1101010100001010" @ (fun _ => AAD %% instruction_t).
-  Definition AAM_p := bits "1101010000001010" @ (fun _ => AAM %% instruction_t).
-  Definition AAS_p := bits "00111111" @ (fun _ => AAS %% instruction_t).
+
+
+
+Old grammars:
+
 
   (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
 
