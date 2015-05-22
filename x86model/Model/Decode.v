@@ -1488,34 +1488,32 @@ End X86_PARSER_ARG.
         destruct addrIndex as [[sc idx] | ]; parsable_tac.
   Defined.
 
-  (** a general modrm grammar for integer, floating-point, sse, mmx instructions *)
-  (* using |\/| below as it's messy to distinguish the four cases in the inverse 
-     function *)
-  Definition modrm_gen (res_t: type) 
-    (reg_p : wf_bigrammar res_t)  (* the grammar that parse a register *)
-    (addr_op: funinv address_t res_t)  (* the constructor that converts an address to result
-                                          and its inerse *)
+  (* same as modrm_gen but no mod "11" case;
+     that is, the second operand must be a mem operand *)
+  Definition modrm_gen_noreg (reg_t res_t: type) 
+    (reg_p : wf_bigrammar reg_t) 
+    (addr_op: funinv address_t res_t)  (* the constructor that converts an
+                                          address to result and its inverse *)
     (pf: strong_invertible addr_op)
-    : wf_bigrammar (Pair_t res_t res_t).
+    : wf_bigrammar (pair_t reg_t res_t). 
     intros.
-    refine (((     ("00" $$ reg_p $ rm00)
-              |\/| ("01" $$ reg_p $ rm01)
-              |\/| ("10" $$ reg_p $ rm10))
-               @ (fun p => match p with
-                             | (op1, addr) => (op1, fst addr_op addr)
-                           end %% (Pair_t res_t res_t))
-               & (fun p => match p with
-                             | (op1, op2) => 
-                               match snd addr_op op2 with
-                                 | Some addr => Some (op1, addr)
-                                 | None => None
-                               end
-                           end)
-               & _)
-           |\/| ("11" $$ reg_p $ reg_p)); invertible_tac;
-      destruct addr_op as [f1 f2]; 
-      unfold strong_invertible in pf; simpl in pf;
-      destruct pf as [pf1 pf2]. 
+    refine ((     ("00" $$ reg_p $ rm00) 
+             |\/| ("01" $$ reg_p $ rm01)
+             |\/| ("10" $$ reg_p $ rm10))
+              @ (fun p => match p with
+                            | (op1, addr) => (op1, fst addr_op addr)
+                          end %% (pair_t reg_t res_t))
+              & (fun p => match p with
+                            | (op1, op2) =>
+                              match snd addr_op op2 with
+                                | Some addr => Some (op1, addr)
+                                | None => None
+                              end
+                          end)
+              & _); invertible_tac;
+    destruct addr_op as [f1 f2]; 
+    unfold strong_invertible in pf; simpl in pf;
+    destruct pf as [pf1 pf2]. 
     - exists v. destruct v as [res addr]. 
       rewrite pf1. intuition.
     - destruct v as [res addr].
@@ -1524,9 +1522,40 @@ End X86_PARSER_ARG.
       + rewrite (pf2 addr op2); clear pf1 pf2 H; crush.
       + discriminate.
   Defined.
+  Implicit Arguments modrm_gen_noreg [reg_t res_t].
+
+  (** a general modrm grammar for integer, floating-point, sse, mmx instructions *)
+  (* using |\/| below as it's messy to distinguish the four cases in the inverse 
+     function *)
+  Definition modrm_gen (res_t: type) 
+    (reg_p : wf_bigrammar res_t)  (* the grammar that parse a register *)
+    (addr_op: funinv address_t res_t)  (* the constructor that converts an
+                                          address to result and its inverse *)
+    (pf: strong_invertible addr_op)
+    : wf_bigrammar (pair_t res_t res_t) := 
+          modrm_gen_noreg reg_p addr_op pf
+     |\/| "11" $$ reg_p $ reg_p.
   Implicit Arguments modrm_gen [res_t].
 
-  Definition reg_op : wf_bigrammar operand_t.
+  Definition Address_op_inv op := 
+    match op with
+      | Address_op addr => Some addr
+      | _ => None
+    end.
+
+  Definition SSE_Addr_op_inv op := 
+    match op with
+      | SSE_Addr_op addr => Some addr
+      | _ => None
+    end.
+
+  Definition MMX_Addr_op_inv op := 
+    match op with
+      | MMX_Addr_op addr => Some addr
+      | _ => None
+    end.
+
+  Definition Reg_op_p : wf_bigrammar operand_t.
     refine(reg @ (fun r => Reg_op r : interp operand_t)
                & (fun op => match op with
                               | Reg_op r => Some r
@@ -1537,21 +1566,40 @@ End X86_PARSER_ARG.
     - destruct w; crush.
   Defined.
 
-  Definition modrm : wf_bigrammar (Pair_t operand_t operand_t).
-    refine (modrm_gen
-              reg_op 
-              ((fun addr => Address_op addr),
-               (fun op => match op with
-                            | Address_op addr => Some addr
-                            | _ => None
-                          end))
-              _).    
-    unfold strong_invertible; split.
-    - crush.
+  Definition SSE_XMM_Reg_op_p: wf_bigrammar sse_operand_t.
+    refine (sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t)
+                    & (fun op => match op with
+                                   | SSE_XMM_Reg_op r => Some r
+                                   | _ => None
+                                 end)
+                    & _); invertible_tac.
+    - printable_tac.
     - destruct w; crush.
   Defined.
 
-  Definition mmx_reg_op: wf_bigrammar mmx_operand_t.
+  Definition SSE_GP_Reg_op_p: wf_bigrammar sse_operand_t.
+    refine (reg @ (fun r => SSE_GP_Reg_op r : interp sse_operand_t)
+                & (fun op => match op with
+                               | SSE_GP_Reg_op r => Some r
+                               | _ => None
+                             end)
+                & _); invertible_tac.
+    - printable_tac.
+    - destruct w; crush.
+  Defined.
+
+  Definition SSE_MM_Reg_op_p: wf_bigrammar sse_operand_t.
+    refine (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t)
+                & (fun op => match op with
+                               | SSE_MM_Reg_op r => Some r
+                               | _ => None
+                             end)
+                & _); invertible_tac.
+    - printable_tac.
+    - destruct w; crush.
+  Defined.
+
+  Definition MMX_Reg_op_p: wf_bigrammar mmx_operand_t.
     refine (mmx_reg @ (fun r => MMX_Reg_op r : interp mmx_operand_t)
                     & (fun op => match op with 
                                    | MMX_Reg_op r => Some r
@@ -1562,123 +1610,167 @@ End X86_PARSER_ARG.
     - destruct w; crush.
   Defined.
 
-  Definition modrm_mmx : wf_bigrammar (Pair_t mmx_operand_t mmx_operand_t).
-    refine (modrm_gen
-              mmx_reg_op 
-              ((fun addr => MMX_Addr_op addr),
-               (fun op => match op with
-                            | MMX_Addr_op addr => Some addr
-                            | _ => None
-                          end))
-              _).    
-    unfold strong_invertible; split.
-    - crush.
-    - destruct w; crush.
+  Local Ltac strong_invertible_tac :=
+    unfold strong_invertible; split; 
+    [crush | intros v w; destruct w; crush].
+
+  Definition modrm : wf_bigrammar (Pair_t operand_t operand_t).
+    refine (modrm_gen Reg_op_p
+              (Address_op, Address_op_inv)
+              _);
+    strong_invertible_tac.
   Defined.
 
-
-TBC
-
-
-  Definition sse_reg_op := sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t).
+  Definition modrm_mmx : wf_bigrammar (Pair_t mmx_operand_t mmx_operand_t).
+    refine (modrm_gen MMX_Reg_op_p
+              (MMX_Addr_op, MMX_Addr_op_inv)
+              _);
+    strong_invertible_tac.
+  Defined.
 
   (* mod xmmreg r/m in manual*)
-  Definition modrm_xmm : grammar (Pair_t sse_operand_t sse_operand_t) := 
-    modrm_gen sse_reg_op SSE_Addr_op.
+  Definition modrm_xmm : wf_bigrammar (Pair_t sse_operand_t sse_operand_t).
+    refine (modrm_gen SSE_XMM_Reg_op_p
+              (SSE_Addr_op, SSE_Addr_op_inv)
+              _);
+    strong_invertible_tac.
+  Defined.
 
   (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
-  Definition modrm_mm : grammar (Pair_t sse_operand_t sse_operand_t) := 
-    modrm_gen 
-      (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t))
-      SSE_Addr_op.
+  Definition modrm_mm : wf_bigrammar (Pair_t sse_operand_t sse_operand_t).
+    refine (modrm_gen SSE_MM_Reg_op_p
+              (SSE_Addr_op, SSE_Addr_op_inv)
+              _);
+    strong_invertible_tac.
+  Defined.
 
+  Definition modrm_noreg : wf_bigrammar (pair_t register_t operand_t).
+    refine (modrm_gen_noreg reg 
+              (Address_op: address -> [|operand_t|], Address_op_inv) _);
+    strong_invertible_tac.
+  Defined.
 
-
-  (* same as modrm_gen but no mod "11" case;
-     that is, the second operand must be a mem operand *)
-  Definition modrm_gen_noreg (reg_t res_t: type) 
-    (reg_p : grammar reg_t) 
-    (addr_op : address -> interp res_t)
-    : grammar (Pair_t reg_t res_t) :=
-    (     ("00" $$ reg_p $ rm00) 
-      |+| ("01" $$ reg_p $ rm01)
-      |+| ("10" $$ reg_p $ rm10)) @
-            (fun p => match p with
-                      | (op1, addr) => (op1, addr_op addr)
-                      end %% (Pair_t reg_t res_t)).
-  Implicit Arguments modrm_gen_noreg [reg_t res_t].
-
-  Definition modrm_noreg : grammar (Pair_t register_t operand_t) := 
-    modrm_gen_noreg reg (Address_op: address -> interp operand_t).
-
-  Definition modrm_xmm_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
-    modrm_gen_noreg sse_reg_op (SSE_Addr_op: address -> interp sse_operand_t).
+  Definition modrm_xmm_noreg : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine (modrm_gen_noreg SSE_XMM_Reg_op_p
+               (SSE_Addr_op: address -> interp sse_operand_t, SSE_Addr_op_inv)
+            _);
+    strong_invertible_tac.
+  Defined.
 
   (* general-purpose regs used in SSE instructions *)
-  Definition modrm_xmm_gp_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
-    modrm_gen_noreg 
-      (reg @ (fun r => SSE_GP_Reg_op r : interp sse_operand_t))
-      (SSE_Addr_op : address -> interp sse_operand_t).
+  Definition modrm_xmm_gp_noreg : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine (modrm_gen_noreg SSE_GP_Reg_op_p
+               (SSE_Addr_op: address -> [|sse_operand_t|], SSE_Addr_op_inv)
+            _);
+    strong_invertible_tac.
+  Defined.
 
-  Definition modrm_mm_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
-    modrm_gen_noreg
-      (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t))
-      (SSE_Addr_op : address -> interp sse_operand_t).
+  Definition modrm_mm_noreg : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine (modrm_gen_noreg SSE_MM_Reg_op_p
+              (SSE_Addr_op : address -> [|sse_operand_t|], SSE_Addr_op_inv)
+              _);
+    strong_invertible_tac.
+  Defined.
 
+(* todo: fix Pair_t *)
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern, and the pattern starting with "11" is excluded. *)
   Definition ext_op_modrm_gen (res_t: type) 
-    (addr_op : address -> interp res_t)
-    (bs:string) : grammar res_t :=
-    (      (bits "00" $ bits bs $ rm00)
-     |+|   (bits "01" $ bits bs $ rm01)
-     |+|   (bits "10" $ bits bs $ rm10) ) @
-           (fun p => match p with 
-                       | (_,(_,addr)) => addr_op addr
-                     end %% res_t).
+    (addr_op : funinv address_t res_t)
+    (pf: strong_invertible addr_op)
+    (bs:string) : wf_bigrammar res_t. 
+    intros.
+    refine ((     ("00" $$ bs $$ rm00)
+             |\/| ("01" $$ bs $$ rm01)
+             |\/| ("10" $$ bs $$ rm10))
+              @ (fst addr_op)
+              & (snd addr_op)
+              & _); invertible_tac;
+    destruct addr_op as [f1 f2];
+    unfold strong_invertible in pf; destruct pf as [pf1 pf2].
+    - rewrite pf1. printable_tac.
+    - apply pf2. simpl. trivial.
+  Defined.
   Implicit Arguments ext_op_modrm_gen [res_t].
 
-  Definition ext_op_modrm : string -> grammar operand_t := 
-    ext_op_modrm_gen (Address_op: address -> interp operand_t).
-  
+  Definition ext_op_modrm : string -> wf_bigrammar operand_t. 
+    refine (ext_op_modrm_gen
+              (Address_op:address -> [|operand_t|], Address_op_inv) _);
+    strong_invertible_tac.
+  Defined.
+
   (*mod^A "bbb" mem in manual for SSE instructions*)
-  Definition ext_op_modrm_sse : string -> grammar sse_operand_t := 
-    ext_op_modrm_gen (SSE_Addr_op: address -> interp sse_operand_t).
-    
-  Definition ext_op_modrm_FPM16 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM16_op: address -> interp fp_operand_t).
+  Definition ext_op_modrm_sse : string -> wf_bigrammar sse_operand_t.
+    refine (ext_op_modrm_gen
+              (SSE_Addr_op: address -> [|sse_operand_t|], SSE_Addr_op_inv) _);
+    strong_invertible_tac.
+  Defined.
 
-  Definition ext_op_modrm_FPM32 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM32_op: address -> interp fp_operand_t).
+  Definition FPM16_op_inv op := 
+    match op with
+      | FPM16_op addr => Some addr
+      | _ => None
+    end.
 
-  Definition ext_op_modrm_FPM64 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM64_op: address -> interp fp_operand_t).
+  Definition FPM32_op_inv op := 
+    match op with
+      | FPM32_op addr => Some addr
+      | _ => None
+    end.
 
-  Definition ext_op_modrm_FPM80 : string -> grammar fp_operand_t := 
-    ext_op_modrm_gen (FPM80_op: address -> interp fp_operand_t).
+  Definition FPM64_op_inv op := 
+    match op with
+      | FPM64_op addr => Some addr
+      | _ => None
+    end.
+
+  Definition FPM80_op_inv op := 
+    match op with
+      | FPM80_op addr => Some addr
+      | _ => None
+    end.
+
+  Definition ext_op_modrm_FPM16 : string -> wf_bigrammar fp_operand_t.
+    refine (ext_op_modrm_gen
+              (FPM16_op: address -> [|fp_operand_t|], FPM16_op_inv) _);
+    strong_invertible_tac.
+  Defined.
+
+  Definition ext_op_modrm_FPM32 : string -> wf_bigrammar fp_operand_t.
+    refine (ext_op_modrm_gen
+              (FPM32_op: address -> [|fp_operand_t|], FPM32_op_inv) _);
+    strong_invertible_tac.
+  Defined.
+
+  Definition ext_op_modrm_FPM64 : string -> wf_bigrammar fp_operand_t.
+    refine (ext_op_modrm_gen
+              (FPM64_op: address -> [|fp_operand_t|], FPM64_op_inv) _);
+    strong_invertible_tac.
+  Defined.
+
+  Definition ext_op_modrm_FPM80 : string -> wf_bigrammar fp_operand_t.
+    refine (ext_op_modrm_gen
+              (FPM80_op: address -> [|fp_operand_t|], FPM80_op_inv) _);
+    strong_invertible_tac.
+  Defined.
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern*)
   Definition ext_op_modrm2_gen (res_t: type) 
-    (reg_p: grammar res_t)
-    (addr_op: address -> interp res_t)
-    (bs:string) : grammar res_t :=
-    (      (bits "00" $ bits bs $ rm00)
-     |+|   (bits "01" $ bits bs $ rm01)
-     |+|   (bits "10" $ bits bs $ rm10) ) @
-           (fun p => match p with 
-                       | (_,(_,addr)) => addr_op addr
-                     end %% res_t)
-     |+|   ("11" $$ bits bs $ reg_p) @ 
-           (fun p => match p with 
-                       | (_, op) => op
-                     end %% res_t).
+    (reg_p: wf_bigrammar res_t)
+    (addr_op: funinv address_t res_t)
+    (pf: strong_invertible addr_op)
+    (bs:string) : wf_bigrammar res_t :=
+    ext_op_modrm_gen addr_op pf bs |\/| "11" $$ bs $$ reg_p.
   Implicit Arguments ext_op_modrm2_gen [res_t].
 
   Definition ext_op_modrm2 :=
-    ext_op_modrm2_gen reg_op Address_op.
+    ext_op_modrm2_gen Reg_op_p (Address_op, Address_op_inv).
 
+
+
+TBC
           
   (** * An X86 bigrammar *)
   (* A better bigrammar for x86 instruction decoder/encoder. The encoder
