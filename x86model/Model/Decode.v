@@ -176,8 +176,6 @@ End X86_PARSER_ARG.
   Local Ltac localsimpl :=
     repeat match goal with
       | [v: unit |- _ ] => destruct v
-      (* | [ |- context[char_dec ?x ?y] ] => destruct (char_dec x y) *)
-      (* | [_: context[char_dec ?x ?y] |- _] => destruct (char_dec x y) *)
       | [H: wf_bigrammar _ |- _] => destruct H
       | _ => unfold in_bigrammar_rng in *; in_bigrammar_inv; localcrush
     end.
@@ -615,7 +613,7 @@ End X86_PARSER_ARG.
   Program Definition empty : wf_bigrammar Unit_t := Eps.
   Program Definition anybit : wf_bigrammar Char_t := Any.
 
-  Program Definition bit (x:bool) : wf_bigrammar Char_t := Char x.
+  Program Definition bit (b:bool) : wf_bigrammar Char_t := Char b.
   Program Definition never t : wf_bigrammar t := Zero t.
 
   Program Definition map t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2)
@@ -625,7 +623,7 @@ End X86_PARSER_ARG.
   Notation "g @ f & fi & pf" :=(map g (f, fi) pf) (at level 75).
 
   (* Note: could also have the test return option(a=b) instead of {a=b}+{a<>b}. *)
-  Program Definition always t (teq : forall (a b:interp t), {a=b}+{a<>b})(x:interp t)
+  Program Definition always t (teq: forall (a b:interp t), {a=b}+{a<>b})(x:interp t)
   : wf_bigrammar t := 
     Eps @ (fun (_:unit) => x) & (fun y => if teq x y then Some tt else None)
         & _.
@@ -652,10 +650,10 @@ End X86_PARSER_ARG.
 
   (** A union operator for two grammars; it uses the pretty printer to try
       the left branch; only if it fails, it tries the right branch.  This
-      operator should be avoided if possible. Suppose we union n grammars,
-      each of size m. Pretty-print each grammar takes times linear to m.
-      Pretty print (g1+g2+...gn) would take the worst case n*m time as it
-      may try all n possibilities. *)
+      operator should be avoided if possible for the following reasons.
+      Suppose we union n grammars, each of size m. Pretty-print each
+      grammar takes times linear to m.  Pretty print (g1+g2+...gn) would
+      take the worst case n*m time as it may try all n possibilities. *)
   Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
     intros.
     refine ((alt g1 g2)
@@ -715,11 +713,11 @@ End X86_PARSER_ARG.
   Infix "$" := seq (right associativity, at level 70).
   Notation "e %% t" := (e : interp t) (at level 80).
 
-  Fixpoint bits (x:string) : wf_bigrammar (bits_n (String.length x)) := 
-    match x with 
+  Fixpoint bits (s:string) : wf_bigrammar (bits_n (String.length s)) := 
+    match s with 
       | EmptyString => empty
-      | String c s => 
-        (seq (bit (if ascii_dec c "0"%char then false else true)) (bits s))
+      | String c s' => 
+        (seq (bit (if ascii_dec c "0"%char then false else true)) (bits s'))
     end.
 
   (** Turn a string of 0s and 1s into a right-associated tuple of trues and
@@ -727,8 +725,8 @@ End X86_PARSER_ARG.
   Fixpoint tuples_of_string (s:string): interp (bits_n (String.length s)) := 
     match s with
       | EmptyString => tt
-      | String a s =>
-        (if ascii_dec a "0"%char then false else true, tuples_of_string s)
+      | String a s' =>
+        (if ascii_dec a "0"%char then false else true, tuples_of_string s')
     end.
 
   Lemma in_bits_intro: forall str,
@@ -753,14 +751,6 @@ End X86_PARSER_ARG.
   Defined.
   Notation "! s" := (bitsmatch s) (at level 60).
 
-  Program Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t :=
-    (bits s $ p) @ (@snd _ _)
-                 & (fun v => Some (tuples_of_string s, v)) & _.
-  Next Obligation.
-    destruct v; printable_tac; ibr_simpl. 
-  Defined.
-  Infix "$$" := bitsleft (right associativity, at level 70).
-
   Lemma in_bitsmatch_intro str s v: 
     in_bigrammar (` (bits str)) s v -> in_bigrammar (` (! str)) s ().
   Proof. crush. Qed.
@@ -777,6 +767,23 @@ End X86_PARSER_ARG.
     eapply in_bitsmatch_intro. eapply in_bits_intro.
   Qed.
   Hint Resolve bitsmatch_rng: ibr_rng_db.
+
+  (* immtodo: move to bigrammar.v *)
+  Local Ltac parsable_tac := 
+    match goal with
+      | [H:None = Some _ |- _] => discriminate
+      | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial
+    end.
+
+  Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t.
+    intros.
+    refine ((bitsmatch s $ p) @ (@snd _ _)
+                              & (fun v => Some (tt, v)) & _).
+    invertible_tac.
+    + destruct v as [v1 v2]; destruct v1. printable_tac.
+    + parsable_tac.
+  Defined.
+  Infix "$$" := bitsleft (right associativity, at level 70).
 
   Lemma in_bitsleft_intro: forall t (g: wf_bigrammar t) str s1 s2 v1 v2,
     in_bigrammar (` (bits str)) s1 v1 -> in_bigrammar (` g) s2 v2
@@ -872,7 +879,7 @@ End X86_PARSER_ARG.
     - crush; destruct v; destruct (pred w); crush. 
   Defined.
 
-  (* This version also works, but doesn't extract efficient code *)
+  (* This version also works, but its extracted code is inefficient *)
   (* Program Definition predicated_union t (g1 g2: wf_bigrammar t) *)
   (*         (pred: forall x:interp t,  {in_bigrammar_rng g1 x} +  *)
   (*                                    {in_bigrammar_rng g2 x}) : *)
@@ -992,6 +999,7 @@ End X86_PARSER_ARG.
     - generalize Z_to_register_inv. crush.
   Defined.
 
+  (* immtodo: simplify the proof if possible *)
   Lemma reg_rng: forall r, in_bigrammar_rng (` reg) r.
   Proof. destruct r;
     match goal with
@@ -1087,7 +1095,7 @@ End X86_PARSER_ARG.
 
   (** * A bigrammar for modrm *)
 
-  Definition bitvector (n:nat) (bs: [|bits_n n|]) : Word.int n.
+  (* Definition bitvector (n:nat) (bs:[|bits_n n|]) : Word.int n. *)
 
   Program Definition field_intn (n:nat) : wf_bigrammar (bitvector_t n) :=
     (field' (S n)) @ (@intn_of_bitsn n: _ -> [|bitvector_t n|])
@@ -1372,12 +1380,6 @@ End X86_PARSER_ARG.
   Lemma sib_p_rng_none r: in_bigrammar_rng (` sib_p) (None, r).
   Proof. intros; unfold sib_p. ibr_prover. Qed.
   Hint Resolve sib_p_rng_none: ibr_rng_db.
-
-  Local Ltac parsable_tac := 
-    match goal with
-      | [H:None = Some _ |- _] => discriminate
-      | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial
-    end.
 
   Definition rm00 : wf_bigrammar address_t.
     refine (((reg_no_esp_ebp |+| ("100" $$ si_p $ reg_no_ebp)) |+|
@@ -1872,22 +1874,38 @@ End X86_PARSER_ARG.
     refine(match opsize_override with
              | false => word @ (fun w => Imm_op w %% operand_t) & Imm_op_inv & _
              | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t)
-                                & (fun op with
-                                     | Imm_op w => 
+                                & (fun op =>
+                                     match op with
+                                       | Imm_op w => 
+                                         if repr_in_signed_halfword_dec w then
+                                           Some (sign_shrink32_16 w)
+                                         else None
+                                       | _ => None
+                                     end)
                                   & _
-           end); invertible_tac.
-    -
-
+           end); unfold Imm_op_inv; invertible_tac.
+    - rewrite sign_shrink32_16_inv. 
+      generalize (repr_in_signed_byte_extend16_32 v); intro.
+      destruct_head; [printable_tac | intuition].
+    - destruct w; try discriminate.
+      destruct (repr_in_signed_halfword_dec i); [idtac | discriminate].
+      match goal with
+        | [H: Some _ = Some _ |- _] =>
+          inversion H; rewrite sign_extend16_32_inv; crush
+      end.
+    - printable_tac.
+    - destruct w; crush.
+  Defined.
 
 TBC
 
-  (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
+  (* (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *) *)
 
-  Definition imm_op (opsize_override: bool) : grammar operand_t :=
-    match opsize_override with
-      | false => word @ (fun w => Imm_op w %% operand_t)
-      | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t)
-    end.
+  (* Definition imm_op (opsize_override: bool) : grammar operand_t := *)
+  (*   match opsize_override with *)
+  (*     | false => word @ (fun w => Imm_op w %% operand_t) *)
+  (*     | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t) *)
+  (*   end. *)
       
   Definition logic_or_arith_p (opsize_override: bool)
     (op1 : string) (* first 5 bits for most cases *)
