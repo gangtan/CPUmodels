@@ -157,10 +157,10 @@ End X86_PARSER_ARG.
   (* Definition result_m := interp. *)
   (* Definition result := type. *)
   (* Definition tipe_t := User_t. *)
-  Definition char_t := Char_t.
-  Definition list_t := List_t.
-  Definition unit_t := Unit_t.
-  Definition pair_t := Pair_t.
+  Notation char_t := Char_t.
+  Notation list_t := List_t.
+  Notation unit_t := Unit_t.
+  Notation pair_t := Pair_t.
   Definition Any_p := Any.
   Definition Eps_p := Eps.
 
@@ -627,8 +627,10 @@ End X86_PARSER_ARG.
   : wf_bigrammar t := 
     Eps @ (fun (_:unit) => x) & (fun y => if teq x y then Some tt else None)
         & _.
-  Next Obligation.
-    - destruct (teq x x); printable_tac; apply in_bigrammar_rng_eps.
+  Next Obligation. 
+    - destruct (teq x x).
+      + printable_tac. 
+      + crush.
     - destruct (teq x w); crush.
   Defined.
 
@@ -747,8 +749,6 @@ End X86_PARSER_ARG.
   Program Definition bitsmatch (s:string): wf_bigrammar Unit_t := 
     (bits s) @ (fun _ => tt:[|Unit_t|])
        & (fun _ => Some (tuples_of_string s)) & _.
-  Next Obligation. printable_tac. auto with ibr_rng_db.
-  Defined.
   Notation "! s" := (bitsmatch s) (at level 60).
 
   Lemma in_bitsmatch_intro str s v: 
@@ -768,21 +768,9 @@ End X86_PARSER_ARG.
   Qed.
   Hint Resolve bitsmatch_rng: ibr_rng_db.
 
-  (* immtodo: move to bigrammar.v *)
-  Local Ltac parsable_tac := 
-    match goal with
-      | [H:None = Some _ |- _] => discriminate
-      | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial
-    end.
-
-  Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t.
-    intros.
-    refine ((bitsmatch s $ p) @ (@snd _ _)
-                              & (fun v => Some (tt, v)) & _).
-    invertible_tac.
-    + destruct v as [v1 v2]; destruct v1. printable_tac.
-    + parsable_tac.
-  Defined.
+  Program Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t :=
+    (bitsmatch s $ p) @ (@snd _ _)
+                      & (fun v => Some (tt, v)) & _.
   Infix "$$" := bitsleft (right associativity, at level 70).
 
   Lemma in_bitsleft_intro: forall t (g: wf_bigrammar t) str s1 s2 v1 v2,
@@ -871,7 +859,8 @@ End X86_PARSER_ARG.
     wf_bigrammar t.
     intros;
     refine ((alt g1 g2)
-              @ (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end)
+              @ (fun v : interp (Sum_t t t) => 
+                   match v with inl x => x | inr y => y end)
               & (fun w : [|t|] => if (pred w) then Some (inl w) else Some (inr w))
               & _); invertible_tac.
     - destruct v as [v|v]; simpl;
@@ -896,9 +885,9 @@ End X86_PARSER_ARG.
       & (fun w : [|t|] => Some (inl w))
       & _.
   Next Obligation.
-    intros. destruct v; try crush.
+    destruct v; try crush.
     eexists; crush.
-    ibr_prover; crush.
+    ibr_prover.
   Defined.
 
   (* The following def works for g1 and g2 that have different types; we
@@ -1100,10 +1089,6 @@ End X86_PARSER_ARG.
   Program Definition field_intn (n:nat) : wf_bigrammar (bitvector_t n) :=
     (field' (S n)) @ (@intn_of_bitsn n: _ -> [|bitvector_t n|])
                    & (fun i => Some (bitsn_of_intn i)) & _.
-  Next Obligation.
-    - autorewrite with inv_db. printable_tac.
-    - autorewrite with inv_db. trivial.
-  Defined.
 
   Definition fpu_reg  : wf_bigrammar fpu_register_t := field_intn 2.
   Definition mmx_reg : wf_bigrammar mmx_register_t := field_intn 2.
@@ -1174,7 +1159,7 @@ End X86_PARSER_ARG.
   Proof. intros.
     compute - [in_bigrammar_rng bitsmatch].
     destruct r;
-    breakHyp;
+    break_hyp;
     match goal with
       | [H: ?V <> ?V |- _] => contradiction H; trivial
       | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
@@ -1239,7 +1224,7 @@ End X86_PARSER_ARG.
   Proof. intros.
     compute - [in_bigrammar_rng bitsmatch].
     destruct r;
-    breakHyp;
+    break_hyp;
     match goal with
       | [H: ?V <> ?V |- _] => contradiction H; trivial
       | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
@@ -1305,7 +1290,7 @@ End X86_PARSER_ARG.
   Proof. intros.
     compute - [in_bigrammar_rng bitsmatch].
     destruct r;
-      breakHyp;
+      break_hyp;
       match goal with
         | [H: ?V <> ?V |- _] => contradiction H; trivial
         | [ |- in_bigrammar_rng (Map ?fi _) EAX] => 
@@ -1381,6 +1366,14 @@ End X86_PARSER_ARG.
   Proof. intros; unfold sib_p. ibr_prover. Qed.
   Hint Resolve sib_p_rng_none: ibr_rng_db.
 
+  (* todo: move earlier *)
+  Local Ltac local_printable_tac := 
+    break_hyp;
+    match goal with
+      | [H: ?V <> ?V |- _] => contradict H; trivial
+      | _ => printable_tac
+    end.
+
   Definition rm00 : wf_bigrammar address_t.
     refine (((reg_no_esp_ebp |+| ("100" $$ si_p $ reg_no_ebp)) |+|
              (("100" $$ si_p $ "101" $$ word) |+| ("101" $$ word)))
@@ -1423,7 +1416,7 @@ End X86_PARSER_ARG.
         rewrite Word.int_eq_refl.
         assert (v<>ESP /\ v<>EBP).
           ibr_prover. apply reg_no_esp_ebp_neq. trivial.
-        destruct v; printable_tac.
+        destruct v; local_printable_tac.
       + (* case (! "100" $ si_p $ reg_no_ebp)) *)
         destruct v as [si base].
         rewrite Word.int_eq_refl.
@@ -1432,8 +1425,8 @@ End X86_PARSER_ARG.
         destruct si as [[sc idx] | ].
         * assert (idx <> ESP).
             ibr_prover. eapply si_p_rng_some. eassumption.
-          destruct idx; destruct base; printable_tac.
-        * destruct base; printable_tac; ibr_prover.
+          destruct idx; destruct base; local_printable_tac.
+        * destruct base; local_printable_tac; ibr_prover.
       + (* case ! "100" $ si_p $ ! "101" $ word *)
         destruct v as [si disp].
         destruct si as [[sc idx] | ].
@@ -1503,7 +1496,7 @@ End X86_PARSER_ARG.
         * assert (idx <> ESP).
             unfold sib_p in *; ibr_prover.
             eapply si_p_rng_some. eassumption.
-          destruct idx; printable_tac.
+          destruct idx; local_printable_tac.
         * destruct bs; printable_tac; ibr_prover.
     - destruct w. compute [X86Syntax.addrDisp] in *.
       destruct (repr_in_signed_byte_dec addrDisp); [idtac | discriminate].
@@ -1555,7 +1548,7 @@ End X86_PARSER_ARG.
         * assert (idx <> ESP).
             unfold sib_p in *; ibr_prover.
             eapply si_p_rng_some. eassumption.
-          destruct idx; printable_tac.
+          destruct idx; local_printable_tac.
         * destruct bs; printable_tac; ibr_prover.
     - destruct w. compute [X86Syntax.addrDisp] in *.
       destruct addrBase as [bs | ].
@@ -1611,10 +1604,10 @@ End X86_PARSER_ARG.
     end.
 
   Local Ltac operand_p_tac :=
-    invertible_tac; [printable_tac | 
-                     match goal with
-                       | [ |- _ = ?w] => destruct w; crush
-                     end].
+    invertible_tac; 
+    match goal with
+      | [ |- _ = ?w] => destruct w; crush
+    end.
 
   Definition Reg_op_p : wf_bigrammar operand_t.
     refine(reg @ (fun r => Reg_op r : interp operand_t)
@@ -1624,6 +1617,7 @@ End X86_PARSER_ARG.
                             end)
                & _); operand_p_tac.
   Defined.
+
 
   Definition SSE_XMM_Reg_op_p: wf_bigrammar sse_operand_t.
     refine (sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t)
@@ -1893,7 +1887,6 @@ End X86_PARSER_ARG.
         | [H: Some _ = Some _ |- _] =>
           inversion H; rewrite sign_extend16_32_inv; crush
       end.
-    - printable_tac.
     - destruct w; crush.
   Defined.
 

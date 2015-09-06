@@ -305,13 +305,20 @@ Definition in_bigrammar_rng t (g: bigrammar t) (v: interp t) :=
 Definition bigrammar_rng_subset t (g1 g2: bigrammar t) := 
   forall v, in_bigrammar_rng g1 v -> in_bigrammar_rng g2 v.
 
+Definition printable t1 t2 (fi: funinv t1 t2) (g:bigrammar t1) :=
+  forall v: [|t1|],
+    in_bigrammar_rng g v ->
+    (* need the second conjunct to prove pretty_print_corr1 for the map case *)
+    (exists v', (snd fi) (fst fi v) = Some v' /\ in_bigrammar_rng g v').
+Implicit Arguments printable [t1 t2].
+
+Definition parsable t1 t2 (fi: funinv t1 t2) (g:bigrammar t1) :=
+  forall (v:[|t1|]) (w:[|t2|]),
+    in_bigrammar_rng g v -> snd fi w = Some v -> fst fi v = w.
+Implicit Arguments parsable [t1 t2].
+
 Definition invertible t1 t2 (fi: funinv t1 t2) (g:bigrammar t1) :=
-  (forall v: [|t1|],
-     in_bigrammar_rng g v ->
-     (* need the second conjunct to prove pretty_print_corr1 for the map case *)
-     (exists v', (snd fi) (fst fi v) = Some v' /\ in_bigrammar_rng g v')) /\
-  (forall (v:[|t1|]) (w:[|t2|]),
-     in_bigrammar_rng g v -> snd fi w = Some v -> fst fi v = w).
+  printable fi g /\ parsable fi g.
 Implicit Arguments invertible [t1 t2].
 
 (** A stronger notion of invertibility; doesn't require this
@@ -359,18 +366,36 @@ Fixpoint wf_grammar t (g:bigrammar t) : Prop :=
 (* a well-formed bigrammar: a bigrammar with a proof that it is well-formed *)
 Notation wf_bigrammar t := {g:bigrammar t | wf_grammar g}.
 
-Ltac invertible_tac := unfold invertible; compute [snd fst]; split; intros.
+Create HintDb ibr_rng_db.
+Create HintDb inv_db.
 
-(* a special tactic that's useful when proving the printable condition in
-     invertible. *)
+
+(** convert variables of grammar types to their interpreted types *)
+Ltac simpl_grammar_ty :=
+  repeat match goal with
+          | [v: [|Pair_t _ _|] |- _] => simpl in v
+        end.
+
+(* proving parsable in the special situation when the existential value
+   is the same as the original one. *)
 Ltac printable_tac := 
-  breakHyp;
+  break_hyp; simpl_grammar_ty; destruct_vars;
+  autorewrite with inv_db; 
   match goal with 
-    | [H: ?V <> ?V |- _] => contradiction H; trivial
     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] => 
-      exists v; split; trivial
+      exists v; split; auto with ibr_rng_db
   end.
 
+Ltac parsable_tac := 
+  match goal with
+    | [H:None = Some _ |- _] => discriminate
+    | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial
+  end.
+
+Ltac invertible_tac := 
+  unfold invertible; split; [unfold printable | unfold parsable]; 
+  compute [snd fst]; intros;
+  [try (printable_tac; fail) | try (parsable_tac; fail)].
 
 (********************************* Pretty Printer *************************************)
 
@@ -423,7 +448,8 @@ Local Ltac localsimpl :=
       | [ |- context[char_dec ?x ?y] ] => destruct (char_dec x y)
       | [_: context[char_dec ?x ?y] |- _] => destruct (char_dec x y)
       | [H: wf_bigrammar _ |- _] => destruct H
-      | _ => unfold invertible, in_bigrammar_rng in *; in_bigrammar_inv; crush
+      | _ => unfold invertible, printable, parsable, in_bigrammar_rng in *; 
+            in_bigrammar_inv; crush
     end.
 
 Lemma in_bigrammar_rng_eps: in_bigrammar_rng Eps ().
@@ -451,8 +477,6 @@ Lemma in_bigrammar_rng_map t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
   in_bigrammar_rng g v ->
   in_bigrammar_rng (Map fi g) (fst fi v).
 Proof. localsimpl. Qed.
-
-Create HintDb ibr_rng_db.
 
 Ltac ibr_simpl :=
   repeat match goal with 
@@ -485,13 +509,15 @@ Ltac ibr_simpl :=
 
 Lemma strong_inv_imp_inv t1 t2 (fi: funinv t1 t2) g : 
   strong_invertible fi -> invertible fi g.
-Proof. unfold strong_invertible, invertible. crush. Qed.
-      
+Proof. unfold strong_invertible, invertible, printable, parsable. crush. Qed.
+
 Lemma compose_invertible
       t1 t2 t3 (g:bigrammar t1) (fi1:funinv t1 t2) (fi2: funinv t2 t3):
       invertible fi1 g -> invertible fi2 (Map fi1 g) ->
       invertible (funinv_compose fi2 fi1) g.
-Proof. unfold invertible; intros; breakHyp; simpl; unfold compose.
+Proof. 
+  unfold invertible, printable, parsable; 
+  intros; break_hyp; simpl; unfold compose.
   split; intros;
   use_lemma (@in_bigrammar_rng_map _ _ g fi1) by eassumption.
   - match goal with

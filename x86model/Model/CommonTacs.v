@@ -193,12 +193,19 @@ Tactic Notation "use_lemma" constr(lm) "by" tactic(tac) :=
            end.
 
 (* simple hypothesis simplification *)
-Ltac breakHyp :=
+Ltac break_hyp :=
   repeat match goal with
            | [ H : _ /\ _ |- _ ] => destruct H
            | [ H : _ <-> _ |- _] => destruct H
            | [ H : exists x, _ |- _ ] => destruct H
          end.
+
+(* break variables of tuple and unit types *)
+Ltac destruct_vars := 
+  repeat match goal with
+    | [v: unit |- _ ] => destruct v
+    | [v: prod _ _ |- _ ] => destruct v
+  end.
 
 (* ----------------------------------------------------------------------- *)
 (* Begin of tactics from Adam Chlipala's cpdt book. 
