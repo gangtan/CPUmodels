@@ -989,22 +989,13 @@ End X86_PARSER_ARG.
   Defined.
 
   Lemma reg_rng: forall r, in_bigrammar_rng (` reg) r.
-  Proof. destruct r;
-    match goal with
-      | [ |- in_bigrammar_rng _ ?R] => 
-        first [replace R with (Z_to_register 0) by trivial |
-               replace R with (Z_to_register 1) by trivial |
-               replace R with (Z_to_register 2) by trivial |
-               replace R with (Z_to_register 3) by trivial |
-               replace R with (Z_to_register 4) by trivial |
-               replace R with (Z_to_register 5) by trivial |
-               replace R with (Z_to_register 6) by trivial |
-               replace R with (Z_to_register 7) by trivial ]
-    end; apply in_bigrammar_rng_map;
-    apply field_rng; lineararith.
+  Proof. 
+    destruct r; apply in_bigrammar_rng_map;
+    [exists 0%Z | exists 1%Z | exists 2%Z | exists 3%Z |
+     exists 4%Z | exists 5%Z | exists 6%Z | exists 7%Z ]; 
+    (split; [(apply field_rng; lineararith) | trivial]).
   Qed.
   Hint Resolve reg_rng: ibr_rng_db.
-
 
   Definition int_n : forall n, wf_bigrammar (User_t (BitVector_t n)).
     intro;
@@ -1107,17 +1098,12 @@ End X86_PARSER_ARG.
 
   Lemma scale_rng : forall s, in_bigrammar_rng (` scale_p) s.
   Proof. 
-    destruct s;
-    match goal with
-      | [ |- in_bigrammar_rng _ ?S] => 
-        first [replace S with (Z_to_scale 0) by trivial |
-               replace S with (Z_to_scale 1) by trivial |
-               replace S with (Z_to_scale 2) by trivial |
-               replace S with (Z_to_scale 3) by trivial]
-    end; apply in_bigrammar_rng_map;
-      apply field_rng; lineararith.
-  Qed.
+    destruct s; apply in_bigrammar_rng_map;
+    [exists 0%Z | exists 1%Z | exists 2%Z | exists 3%Z];
+    (split; [apply field_rng; lineararith | trivial]).
+  Qed.    
   Hint Resolve scale_rng: ibr_rng_db.
+
 
   (* This is used in a strange edge-case for modrm parsing. See the
      footnotes on p37 of the manual in the repo This is a case where I
@@ -1355,9 +1341,9 @@ End X86_PARSER_ARG.
     match goal with
       | [ |- in_bigrammar_rng (Map ?fi ?g) None] => 
         assert (H:None = (fst fi (Scale1, ESP))) by trivial;
-        rewrite H; clear H; apply in_bigrammar_rng_map
+        rewrite H; clear H; apply in_bigrammar_rng_map2
     end; ibr_prover.
-  Qed.    
+  Qed.
   Hint Resolve si_p_rng_none: ibr_rng_db.
 
   Definition sib_p := si_p $ reg.
@@ -1946,13 +1932,6 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
   (*   in_bigrammar_rng (` (g1 |+| g2))  *)
 
 (* todo: add notation for in_bigrammar_rng *)
-
-  Lemma in_bigrammar_rng_map2 t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
-    in_bigrammar_rng (Map fi g) v -> 
-    exists v', in_bigrammar_rng g v' /\ v = fst fi v'.
-  Proof. unfold in_bigrammar_rng. intros.
-    destruct H as [cs H]. in_bigrammar_inv. crush.
-  Qed.
 
   Lemma in_bigrammar_rng_union t (g1 g2:wf_bigrammar t) v:
     in_bigrammar_rng (` (g1 |\/| g2)) v ->

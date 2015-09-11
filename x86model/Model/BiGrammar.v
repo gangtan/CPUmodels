@@ -474,6 +474,11 @@ Lemma in_bigrammar_rng_cat
 Proof. localsimpl. Qed.
 
 Lemma in_bigrammar_rng_map t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
+  (exists v', in_bigrammar_rng g v' /\ v = fst fi v') <->
+  in_bigrammar_rng (Map fi g) v.
+Proof. localsimpl. Qed.
+
+Lemma in_bigrammar_rng_map2 t1 t2 (g:bigrammar t1) (fi: funinv t1 t2) v:
   in_bigrammar_rng g v ->
   in_bigrammar_rng (Map fi g) (fst fi v).
 Proof. localsimpl. Qed.
@@ -484,6 +489,9 @@ Ltac ibr_simpl :=
              apply in_bigrammar_rng_alt_inl in H
            | [H: in_bigrammar_rng (Alt _ _) (inr _) |- _] =>
              apply in_bigrammar_rng_alt_inr in H
+           | [H: in_bigrammar_rng (Map _ _) _ |- _] =>
+             apply in_bigrammar_rng_map in H; 
+               destruct H as [_ [_ _]]
            | [ |- in_bigrammar_rng (Alt _ _) (inl _)] => 
              apply in_bigrammar_rng_alt_inl
            | [ |- in_bigrammar_rng (Alt _ _) (inr _)] => 
@@ -493,6 +501,8 @@ Ltac ibr_simpl :=
            | [ |- in_bigrammar_rng (Cat _ _) (_,_) ] => 
              apply in_bigrammar_rng_cat; split
            | [ |- in_bigrammar_rng (Map ?fi _) (fst _ _) ] =>
+             apply in_bigrammar_rng_map2
+           | [ |- in_bigrammar_rng (Map ?fi _) _ ] =>
              apply in_bigrammar_rng_map
            | [ |- in_bigrammar_rng Eps () ] =>
              apply in_bigrammar_rng_eps
@@ -519,7 +529,7 @@ Proof.
   unfold invertible, printable, parsable; 
   intros; break_hyp; simpl; unfold compose.
   split; intros;
-  use_lemma (@in_bigrammar_rng_map _ _ g fi1) by eassumption.
+  use_lemma (@in_bigrammar_rng_map2 _ _ g fi1) by crush.
   - match goal with
       | [H: forall x, in_bigrammar_rng (Map fi1 g) _ -> _ |- _] =>
         guess (fst fi1 v) H; localsimpl
