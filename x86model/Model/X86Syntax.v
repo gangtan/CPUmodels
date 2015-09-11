@@ -252,11 +252,19 @@ Inductive sse_operand : Set :=
 
 Inductive instr : Set :=
 (* two parts:  1-byte opcode instructions, followed by 2-byte in alphabetical order,
-   following Table B-13 and Table ??? *) 
+   following Table B-13 *) 
 | AAA 
 | AAD 
 | AAM 
 | AAS 
+(* w is the width bit; 
+   with no operand override prefix, 
+     when w is true, then it's a 32-bit operation;
+     when w is false, then it's a 8-bit operation;
+   with an operand override prefix,
+     when w is true, it's a 16-bit operation;
+     when w is false, it's a 8-bit operation;
+   See load_op/set-op in X86Semantics.v *)
 | ADC   : forall (w:bool)(op1 op2:operand), instr
 | ADD   : forall (w:bool)(op1 op2:operand), instr
 | AND   : forall (w:bool)(op1 op2:operand), instr
