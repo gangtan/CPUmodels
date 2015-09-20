@@ -170,7 +170,6 @@ End X86_PARSER_ARG.
              | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
              | [ |- invertible _ _ ] => invertible_tac
              | _ => crush
-             (* | _ => intros; (crush; fail) || idtac *)
            end.
 
   Local Ltac localsimpl :=
@@ -189,9 +188,7 @@ End X86_PARSER_ARG.
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
-  (* combinators for building well-formed bigrammars *)
   Obligation Tactic := localcrush.
-
 
   (** * Basic operartions for converting values between domains:
         bits_n, (Z->bool), int n, Z *)
@@ -369,8 +366,7 @@ End X86_PARSER_ARG.
         omega.
   Qed.
 
-  Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z
-       bitsn_of_sig_inv sig_of_bitsn_inv : inv_db.
+  Hint Rewrite bitsn_of_sig_inv sig_of_bitsn_inv : inv_db.
 
   Lemma int_of_bitsn_range n v : (0 <= int_of_bitsn n v < two_power_nat n)%Z.
   Proof. unfold int_of_bitsn. intros.
@@ -608,112 +604,10 @@ End X86_PARSER_ARG.
   Qed.
 
 
-  (** * Basic grammar constructors *)
-
-  Program Definition empty : wf_bigrammar Unit_t := Eps.
-  Program Definition anybit : wf_bigrammar Char_t := Any.
+  (** * Additional bigrammar constructors (assuming chars are bits) *)
 
   Program Definition bit (b:bool) : wf_bigrammar Char_t := Char b.
-  Program Definition never t : wf_bigrammar t := Zero t.
-
-  Program Definition map t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2)
-               (pf: invertible fi (` g)) : wf_bigrammar t2 := 
-    Map fi (` g).
-  Implicit Arguments map [t1 t2].
-  Notation "g @ f & fi & pf" :=(map g (f, fi) pf) (at level 75).
-
-  (* Note: could also have the test return option(a=b) instead of {a=b}+{a<>b}. *)
-  Program Definition always t (teq: forall (a b:interp t), {a=b}+{a<>b})(x:interp t)
-  : wf_bigrammar t := 
-    Eps @ (fun (_:unit) => x) & (fun y => if teq x y then Some tt else None)
-        & _.
-  Next Obligation. 
-    - destruct (teq x x).
-      + printable_tac. 
-      + crush.
-    - destruct (teq x w); crush.
-  Defined.
-
-  Program Definition seq t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) : 
-    wf_bigrammar (pair_t t1 t2) :=
-    Cat p1 p2.
-
-  (* Definition cons t (pair : interp (Pair_t t (List_t t))) : interp (List_t t) :=  *)
-  (*   (fst pair)::(snd pair). *)
-
-  (* doesn't seem that this is used; removed for now *)
-  (* Definition seqs t (ps:list (wf_bigrammar t)) : wf_bigrammar (List_t t) :=  *)
-  (*   List.fold_right (fun p1 p2 => map (seq p1 p2) (@cons t))  *)
-  (*     (@always (List_t t) (@nil (interp t))) ps. *)
-
-  Program Definition alt t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) : 
-    wf_bigrammar (Sum_t t1 t2) :=
-    Alt p1 p2.
-
-  (** A union operator for two grammars; it uses the pretty printer to try
-      the left branch; only if it fails, it tries the right branch.  This
-      operator should be avoided if possible for the following reasons.
-      Suppose we union n grammars, each of size m. Pretty-print each
-      grammar takes times linear to m.  Pretty print (g1+g2+...gn) would
-      take the worst case n*m time as it may try all n possibilities. *)
-  Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
-    intros.
-    refine ((alt g1 g2)
-              @ (fun w : interp (Sum_t t t) => match w with inl x => x | inr y => y end)
-              & (fun v : interp t => 
-                   match pretty_print (Alt (` g1) (` g2)) (inl _ v) with 
-                     | Some _ => Some (inl _ v)
-                     | None => match pretty_print (Alt (` g1)  (` g2)) (inr _ v) with 
-                                 | Some _ => Some (inr _ v)
-                                 | None => None
-                               end
-                   end)
-              & _); invertible_tac.
-    - destruct v.
-      + remember_destruct_head as v1; eauto.
-        remember_destruct_head as v2.
-        * localsimpl. eexists. eauto using pretty_print_corr1, pretty_print_corr2.
-        * localsimpl. generalize pretty_print_corr1; crush_hyp.
-      + localsimpl.
-        remember_destruct_head as v1; eauto 6 using pretty_print_corr2.
-        remember_destruct_head as v2; eauto 6.
-        generalize pretty_print_corr1; crush_hyp.
-    - remember_head_in_hyp as e1; destruct e1; try crush.
-      remember_head_in_hyp as e2; destruct e2; crush.
-  Defined.
-
-  Fixpoint unions0 t (ps:list (wf_bigrammar t)) : wf_bigrammar t := 
-    match ps with 
-      | nil => @never t
-      | p::nil => p
-      | p::rest => union p (unions0 rest)
-    end.
-
-  Fixpoint half A (xs ys zs: list A) : (list A) * (list A) := 
-    match xs with 
-      | nil => (ys,zs) 
-      | h::t => half t zs (h::ys)
-    end.
-
-  Fixpoint unions' n t (ps:list (wf_bigrammar t)) : wf_bigrammar t := 
-    match n, ps with 
-      | 0, _ => unions0 ps
-      | S n, nil => @never t
-      | S n, p::nil => p
-      | S n, ps => 
-        let (ps1,ps2) := half ps nil nil in 
-          let g1 := unions' n ps1 in 
-            let g2 := unions' n ps2 in 
-              union g1 g2
-    end.
-
-  Definition unions t (ps:list (wf_bigrammar t)) : wf_bigrammar t := unions' 20 ps.
-
-  (* notation for building grammars *)
-  Infix "|+|" := alt (right associativity, at level 80).
-  Infix "|\/|" := union (right associativity, at level 80).
-  Infix "$" := seq (right associativity, at level 70).
-  Notation "e %% t" := (e : interp t) (at level 80).
+  Program Definition anybit : wf_bigrammar Char_t := Any.
 
   Fixpoint bits (s:string) : wf_bigrammar (bits_n (String.length s)) := 
     match s with 
@@ -802,14 +696,6 @@ End X86_PARSER_ARG.
 
   Ltac ibr_prover :=
     repeat match goal with 
-      | [H: in_bigrammar_rng (` (_ |+| _)) _ |- _] =>
-        unfold proj1_sig at 1, alt at 1 in H
-      | [ |- in_bigrammar_rng (` (_ |+| _)) _] =>
-        unfold proj1_sig at 1, alt at 1
-      | [H: in_bigrammar_rng (` (_ $ _)) _ |- _] => 
-        unfold proj1_sig at 1, seq at 1 in H
-      | [ |- in_bigrammar_rng (` (_ $ _)) _ ] => 
-        unfold proj1_sig at 1, seq at 1
       | [H: in_bigrammar_rng (` (_ $$ _)) _ |- _] =>
         apply in_bigrammar_rng_bitsleft in H
       | [ |- in_bigrammar_rng (` (_ $$ _)) _ ] =>
@@ -818,104 +704,6 @@ End X86_PARSER_ARG.
         apply bitsmatch_rng
       | _ => ibr_simpl
     end.
-
-  Definition pred_options t (g1 g2: wf_bigrammar t) := 
-    forall x: [|t|], ({in_bigrammar_rng (` g1) x} + {in_bigrammar_rng (` g2) x}) +
-                     {not (in_bigrammar_rng (` g1) x) /\ 
-                      not (in_bigrammar_rng (` g2) x)}.
-
-  (** Three-way predicated union: the pretty printer for "g1 + g2" uses the
-      left one if x is in the range of g1, uses the right one if x is in
-      the range of g2, or it aborts when x is not in the range of either g1
-      or g2.*)
-  Definition predicated_union_three_way t (g1 g2: wf_bigrammar t)
-          (pred: @pred_options t g1 g2) : wf_bigrammar t.
-    intros.
-    refine((alt g1 g2)
-      @ (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end)
-      & (fun w : [|t|] => 
-           match (pred w) with
-             | inleft (left _) => Some (inl w)
-             | inleft (right _) => Some (inr w)
-             | inright _ => None
-           end)
-      & _); invertible_tac.
-    - destruct v as [v|v]; simpl.
-      + destruct (pred v) as [[H2|H2]|H2];
-        try (eexists; localsimpl; fail).
-        ibr_prover; crush.
-      + destruct (pred v) as [[H2|H2]|H2];
-        try (eexists; localsimpl; fail).
-        ibr_prover; crush.
-    - destruct v; destruct (pred w) as [[H2|H2]|H2]; crush.
-  Defined. 
-
-  (** Predicated union: the pretty printer for "g1 + g2" uses the left one
-      if x is in the range of g1 and uses the right one if x is in the
-      range of g2; it bias towards g1 if x is in the range of both. *)
-  Definition predicated_union t (g1 g2: wf_bigrammar t)
-          (pred: forall x:interp t,  {in_bigrammar_rng (` g1) x} + 
-                                     {in_bigrammar_rng (` g2) x}) :
-    wf_bigrammar t.
-    intros;
-    refine ((alt g1 g2)
-              @ (fun v : interp (Sum_t t t) => 
-                   match v with inl x => x | inr y => y end)
-              & (fun w : [|t|] => if (pred w) then Some (inl w) else Some (inr w))
-              & _); invertible_tac.
-    - destruct v as [v|v]; simpl;
-      destruct (pred v); printable_tac; ibr_prover; crush.
-    - crush; destruct v; destruct (pred w); crush. 
-  Defined.
-
-  (* This version also works, but its extracted code is inefficient *)
-  (* Program Definition predicated_union t (g1 g2: wf_bigrammar t) *)
-  (*         (pred: forall x:interp t,  {in_bigrammar_rng g1 x} +  *)
-  (*                                    {in_bigrammar_rng g2 x}) : *)
-  (*   wf_bigrammar t :=  *)
-  (*   @predicated_union_three_way t g1 g2 (fun w => inleft (pred w)). *)
-
-
-  (* Left biased toward g1, for the special case when rng(g2) is 
-     a subset of rng(g1). *)
-  Program Definition biased_union t (g1 g2: wf_bigrammar t)
-          (ss: bigrammar_rng_subset g2 g1) : wf_bigrammar t := 
-    (alt g1 g2) 
-      @ (fun v : interp (Sum_t t t) => match v with inl x => x | inr y => y end)
-      & (fun w : [|t|] => Some (inl w))
-      & _.
-  Next Obligation.
-    destruct v; try crush.
-    eexists; crush.
-    ibr_prover.
-  Defined.
-
-  (* The following def works for g1 and g2 that have different types; we
-     could use the above def together with a map that uses f to go from
-     t1 to t2, at the cost of some inefficiency. *)
-  (* Definition bigrammar_rng_subset t1 t2 (g1: bigrammar t1) (f: interp t1 -> interp t2) *)
-  (*            (g2: bigrammar t2) :=  *)
-  (*   forall v1, in_bigrammar_rng g1 v1 -> in_bigrammar_rng g2 (f v1). *)
-  (* Program Definition biased_union t1 t2 (g1: wf_bigrammar t1) (g2: wf_bigrammar t2) *)
-  (*         (f: interp t2 -> interp t1) *)
-  (*         (pfs: bigrammar_rng_subset g2 f g1) : wf_bigrammar t1 :=  *)
-  (*   @Map (Sum_t t1 t2) t1 *)
-  (*        (fun v : interp (Sum_t t1 t2) => match v with inl x => x | inr y => f y end, *)
-  (*         fun w : interp t1 => Some (inl w)) *)
-  (*        (Alt g1 g2). *)
-  (* Next Obligation. *)
-  (*   - localsimpl.  *)
-  (*   - localsimpl. *)
-  (*   - unfold invertible; split. *)
-  (*     * intros. destruct v. crush. *)
-  (*       unfold bigrammar_rng_subset, in_bigrammar_rng in *. *)
-  (*       guess i pfs.  *)
-  (*       assert (exists s, in_bigrammar (` g2) s i).  *)
-  (*         crush. in_bigrammar_inv. crush. inversion H0. crush. *)
-  (*       apply pfs in H0. *)
-  (*       crush. *)
-  (*     * crush. *)
-  (* Defined. *)
 
   Fixpoint field'(n:nat) : wf_bigrammar (bits_n n) := 
     match n with 
@@ -1931,21 +1719,20 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
   (* Lemma in_bigrammar_rng_alt:  *)
   (*   in_bigrammar_rng (` (g1 |+| g2))  *)
 
-(* todo: add notation for in_bigrammar_rng *)
+(* todo: finish the following lemma and move some common operators to BiGrammar.v *)
+
+TBC
 
   Lemma in_bigrammar_rng_union t (g1 g2:wf_bigrammar t) v:
     in_bigrammar_rng (` (g1 |\/| g2)) v ->
     in_bigrammar_rng (` g1) v \/ in_bigrammar_rng (` g2) v.
   Proof. intros. unfold union in H.
-    (* todo: move this clause earlier *)
-    match goal with
-      | [H: in_bigrammar_rng (` (map _ _ _)) _ |- _] => 
-        unfold proj1_sig at 1, map in H
-    end.
-
     ibr_prover.    
+    destruct v0; ibr_prover; crush.
+  Qed.   
 
-     unfold proj1_sig at 1, alt at 1 in H.
+
+
 
   Lemma modrm_gen_noreg_op1_rng reg_t res_t
         (reg_p: wf_bigrammar reg_t) 
