@@ -698,8 +698,12 @@ End X86_PARSER_ARG.
     repeat match goal with 
       | [H: in_bigrammar_rng (` (_ $$ _)) _ |- _] =>
         apply in_bigrammar_rng_bitsleft in H
+      | [H: in_bigrammar_rng (` (_ |\/| _)) _ |- _] =>
+        apply in_bigrammar_rng_union in H
       | [ |- in_bigrammar_rng (` (_ $$ _)) _ ] =>
         rewrite -> in_bigrammar_rng_bitsleft
+      | [ |- in_bigrammar_rng (` (_ |\/| _)) _ ] =>
+        apply in_bigrammar_rng_union
       | [ |- in_bigrammar_rng (` (! _)) () ] =>
         apply bitsmatch_rng
       | _ => ibr_simpl
@@ -1693,58 +1697,200 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
     unfold invertible; split; [unfold printable | unfold parsable];
     compute [snd fst]; intros.
 
-  (* Definition modrm_gen (res_t: type)  *)
-  (*   (reg_p : wf_bigrammar res_t)  (* the grammar that parse a register *) *)
-  (*   (addr_op: funinv address_t res_t)  (* the constructor that converts an *)
-  (*                                         address to result and its inverse *) *)
-  (*   (pf: strong_invertible addr_op) *)
-  (*   : wf_bigrammar (pair_t res_t res_t) :=  *)
-  (*         modrm_gen_noreg reg_p addr_op pf *)
-  (*    |\/| "11" $$ reg_p $ reg_p. *)
+(* TBC *)
 
-  (* Definition modrm_gen_noreg (reg_t res_t: type)  *)
-  (*   (reg_p : wf_bigrammar reg_t)  *)
-  (*   (addr_op: funinv address_t res_t)  (* the constructor that converts an *)
-  (*                                         address to result and its inverse *) *)
-  (*   (pf: strong_invertible addr_op) *)
-    (* : wf_bigrammar (pair_t reg_t res_t).  *)
-
-
-(* MapInv: *)
-(*   forall (t1 t2 : type) (fi : funinv t1 t2) (g : bigrammar t1) *)
-(*     (cs : list char_p) (v : [|t2|]), *)
-(*   in_bigrammar (Map fi g) cs v -> *)
-(*   exists v' : [|t1|], in_bigrammar g cs v' /\ v = fst fi v' *)
-
-  (* Lemma in_bigrammar_rng_alt:  *)
-  (*   in_bigrammar_rng (` (g1 |+| g2))  *)
-
-(* todo: finish the following lemma and move some common operators to BiGrammar.v *)
-
-TBC
-
-  Lemma in_bigrammar_rng_union t (g1 g2:wf_bigrammar t) v:
-    in_bigrammar_rng (` (g1 |\/| g2)) v ->
-    in_bigrammar_rng (` g1) v \/ in_bigrammar_rng (` g2) v.
-  Proof. intros. unfold union in H.
-    ibr_prover.    
-    destruct v0; ibr_prover; crush.
-  Qed.   
-
-
-
-
-  Lemma modrm_gen_noreg_op1_rng reg_t res_t
+  Lemma modrm_gen_noreg_rng_inv reg_t res_t
         (reg_p: wf_bigrammar reg_t) 
         (addr_op: funinv address_t res_t) pf_addr
-        (op1:[|reg_t|]) (op2:[|res_t|]):
-    in_bigrammar_rng (` (modrm_gen_noreg reg_p addr_op pf_addr)) (op1,op2) <->
-    in_bigrammar_rng (` reg_p) op1.
-  Proof. intros; split; intros.
-    + (* -> *)
-      unfold modrm_gen_noreg in *; simpl in H.
-      
+        (r:[|reg_t|]) (res:[|res_t|]):
+    in_bigrammar_rng (` (modrm_gen_noreg reg_p addr_op pf_addr)) (r,res) ->
+    in_bigrammar_rng (` reg_p) r /\
+    exists addr, res = fst addr_op addr.
+  Proof. unfold modrm_gen_noreg; intros; ibr_prover.
+    destruct v as [r1 addr].
+    sim; subst res.
+    - ibr_prover. 
+    - ibr_prover; sim; ibr_prover.
+    - eexists; trivial.
+    - eexists; trivial.
+  Qed.
+  
+  Lemma modrm_noreg_rng_inv r op2: 
+    in_bigrammar_rng (` modrm_noreg) (r,op2) -> 
+    in_bigrammar_rng (` reg) r /\
+    exists addr, op2 = Address_op addr.
+  Proof. intros. apply modrm_gen_noreg_rng_inv in H. trivial. Qed.
 
+  Lemma modrm_gen_rng_inv res_t
+        (reg_p: wf_bigrammar res_t) 
+        (addr_op: funinv address_t res_t) pf_addr
+        (res1:[|res_t|]) (res2:[|res_t|]):
+    in_bigrammar_rng (` (modrm_gen reg_p addr_op pf_addr)) (res1,res2) ->
+    in_bigrammar_rng (` reg_p) res1 /\
+    (in_bigrammar_rng (` reg_p) res2 \/
+     exists addr, res2 = fst addr_op addr).
+  Proof. unfold modrm_gen; intros; ibr_prover.
+    sim.
+    - eapply modrm_gen_noreg_rng_inv. eassumption.
+    - ibr_prover.
+    - right. eapply modrm_gen_noreg_rng_inv. eassumption.
+    - left. ibr_prover.
+  Qed.
+
+  Lemma Reg_op_p_rng op : 
+    (exists r, op = Reg_op r) <-> in_bigrammar_rng (`Reg_op_p) op.
+  Proof. intros. unfold Reg_op_p; split; intro; ibr_prover.
+    - compute [fst]. generalize reg_rng. crush.
+    - crush.
+  Qed.
+
+  Lemma Reg_op_p_rng2 r: in_bigrammar_rng (`Reg_op_p) (Reg_op r).
+  Proof. intros; apply Reg_op_p_rng. eexists; trivial. Qed.
+  Hint Resolve Reg_op_p_rng2: ibr_rng_db.
+
+  Lemma modrm_rng_inv op1 op2: 
+    in_bigrammar_rng (` modrm) (op1,op2) -> 
+    (exists r, op1 = Reg_op r) /\
+    ((exists r, op2 = Reg_op r) \/ (exists addr, op2 = Address_op addr)).
+  Proof. intros. apply modrm_gen_rng_inv in H. 
+    sim; try (eapply Reg_op_p_rng; trivial).
+    - left. eapply Reg_op_p_rng; trivial.
+    - right. eexists. eassumption.
+  Qed.
+
+  (* with more work, this lemma could be made more general; will do it if necessary *)
+  Lemma modrm_gen_rng res_t
+        (reg_p: wf_bigrammar res_t) 
+        (addr_op: funinv address_t res_t) pf_addr
+        (res1:[|res_t|]) (res2:[|res_t|]):
+    in_bigrammar_rng (` reg_p) res1 /\ in_bigrammar_rng (` reg_p) res2 ->
+    in_bigrammar_rng (` (modrm_gen reg_p addr_op pf_addr)) (res1,res2).
+  Proof. unfold modrm_gen; intros; ibr_prover.
+    right; sim; ibr_prover.
+  Qed.
+
+  Lemma modrm_rng r1 r2: in_bigrammar_rng (` modrm) (Reg_op r1, Reg_op r2).
+  Proof. intros; apply modrm_gen_rng. sim; ibr_prover. Qed.
+  Hint Resolve modrm_rng: ibr_rng_db.
+ 
+  Definition logic_or_arith_p (opsize_override: bool)
+    (opcode1 : string) (* first 5 bits for most cases *)
+    (opcode2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
+                      that determine the opcode *)
+    : wf_bigrammar (pair_t char_t (pair_t operand_t operand_t)).
+    intros.
+    refine(
+        (( 
+          (* case 1: register/memory to register and vice versa --
+             the d bit specifies * the direction. *)
+          (opcode1 $$ "0" $$ anybit $ anybit $ modrm |+|
+          (* case 2: sign extend immediate byte to register *)
+           "1000" $$ "0011" $$ "11" $$ opcode2 $$ reg $ byte) |+|
+          (
+            (* case 3: zero-extend immediate byte to register *)
+            "1000" $$ "0000" $$ "11" $$ opcode2 $$ reg $ byte |+|
+            (* case 4: immediate word to register *)
+            "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_op opsize_override ))
+           |+|
+          (
+            (* case 5: zero-extend immediate byte to EAX *)
+           (opcode1 $$ "100" $$ byte |+|
+            (* case 6: word to EAX *)
+            opcode1 $$ "101" $$ imm_op opsize_override) |+|
+           (
+            (* case 7: zero-extend immediate byte to memory *)
+            "1000" $$ "0000" $$ ext_op_modrm opcode2 $ byte |+|
+            (* case 8: sign-extend immediate byte to memory *)
+            "1000" $$ "0011" $$ ext_op_modrm opcode2 $ byte  |+|
+            (* case 9: immediate word to memory *)
+            "1000" $$ "0001" $$ ext_op_modrm opcode2 $ imm_op opsize_override)))
+          @ (fun v => 
+               match v with
+                 (* case 1 *)
+                 | inl (inl (inl (d, (w, (op1, op2))))) => 
+                   if (d:bool) then (w, (op1, op2)) else (w, (op2, op1))
+                 (* case 2 *)
+                 | inl (inl (inr (r,imm))) =>
+                   (true, (Reg_op r, Imm_op (sign_extend8_32 imm)))
+                 (* case 3 *)
+                 | inl (inr (inl (r, imm))) =>
+                   (false, (Reg_op r, Imm_op (zero_extend8_32 imm)))
+                 (* case 4 *)
+                 | inl (inr (inr (r, imm))) => (true, (Reg_op r, imm))
+                 (* case 5 *)
+                 | inr (inl (inl imm)) => 
+                   (false, (Reg_op EAX, Imm_op (zero_extend8_32 imm)))
+                 (* case 6 *)
+                 | inr (inl (inr imm)) => (true, (Reg_op EAX, imm))
+                 (* case 7 *)
+                 | inr (inr (inl (op, imm))) => 
+                   (false, (op, Imm_op (zero_extend8_32 imm)))
+                 (* case 8 *)
+                 | inr (inr (inr (inl (op, imm)))) => 
+                   (true, (op, Imm_op (sign_extend8_32 imm)))
+                 (* case 9 *)
+                 | inr (inr (inr (inr (op, imm)))) =>
+                   (true, (op, imm))
+               end %% (pair_t char_t (pair_t operand_t operand_t)))
+          & (fun v: [|pair_t char_t (pair_t operand_t operand_t)|] =>
+               let (w, ops) := v in
+               let (op1, op2) := ops in
+               let immToOp1 := fun (w:bool) (op1:operand) imm => 
+                 if w then
+                   if (repr_in_signed_byte_dec imm) then
+                     Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm))))))
+                   else
+                     Some (inr (inr (inr (inr (op1, (Imm_op imm))))))
+                 else Some (inr (inr (inl (op1, (zero_shrink32_8 imm)))))
+               in
+               match op1 with
+                 | Reg_op r1 => 
+                   match op2 with
+                     | Reg_op r2 => 
+                       (* alternate encoding: 
+                          set the d bit false and reverse the two regs *)
+                       Some (inl (inl (inl (true, v))))
+                     | Address_op a => 
+                       Some (inl (inl (inl (true, v))))
+                     | Imm_op imm =>
+                       match r1 with
+                         | EAX => 
+                           (* alternate encoding: use case 3 and 4 above *)
+                           if w then Some (inr (inl (inr op2)))
+                           else Some (inr (inl (inl (zero_shrink32_8 imm))))
+                         | _ => immToOp1 w op1 imm
+                       end
+                     | _ => None
+                   end
+                 | Address_op a =>
+                   match op2 with
+                     | Reg_op r2 =>
+                       Some (inl (inl (inl (false, (w, (Reg_op r2, Address_op a))))))
+                     | Imm_op imm => immToOp1 w op1 imm
+                     | _ => None
+                   end
+                 | _ => None
+               end)
+          & _); simple_invertible_tac.
+  destruct_union.
+  - (* case 1 *)
+    destruct v as [d [w [op1 op2]]]. ibr_prover.
+    use_lemma modrm_rng_inv by eassumption.
+    destruct d;
+    match goal with
+      | [H: (exists _, _) /\ _ |- _] => 
+        destruct H as [[r1 H6] H8]; subst op1;
+        destruct H8 as [[r2 H8] | [addr H8]]; subst op2;
+        printable_tac; ibr_prover
+    end.
+  - 
+
+
+
+Todo: do we need Bool_t since we already have Char_t, whose interp is bool
+Todo: Record thoughts: 
+  - different defs of the inverse function; one is easier to prove
+  - 
 
 
   Definition logic_or_arith_p (opsize_override: bool)
@@ -1792,7 +1938,8 @@ TBC
                  (* case 4 *)
                  | inl (inr (inr (r, imm))) => (true, (Reg_op r, imm))
                  (* case 5 *)
-                 | inr (inl (inl imm)) => (false, (Reg_op EAX, Imm_op (zero_extend8_32 imm)))
+                 | inr (inl (inl imm)) => 
+                   (false, (Reg_op EAX, Imm_op (zero_extend8_32 imm)))
                  (* case 6 *)
                  | inr (inl (inr imm)) => (true, (Reg_op EAX, imm))
                  (* case 7 *)
@@ -1807,7 +1954,7 @@ TBC
                end %% (pair_t bool_t (pair_t operand_t operand_t)))
           & (fun v =>
                match v with
-                 | (w, (Reg_op _, Reg_op _)) =>
+                 | (w, (Reg_op r1, Reg_op r2)) =>
                    (* alternate encoding: set the d bit false and reverse the two regs *)
                    Some (inl (inl (inl (true, v))))
                  | (w, (Reg_op _, Address_op _)) =>
@@ -1831,19 +1978,25 @@ TBC
                end)
           & _); simple_invertible_tac.
   destruct_union.
-  + (* case 1 *)
-    ibr_prover. destruct v as [d [w [op1 op2]]].
+  - (* case 1 *)
+    destruct v as [d [w [op1 op2]]]. ibr_prover. 
     destruct d.
-    - (* d = true *)
+    + (* d = true *)
+      use_lemma modrm_rng by eassumption.
+      destruct H2 as [[r1 H2] H4].
+      subst op1.
+      destruct H4 as [[r2 H4] | H4].
+      * subst op2.
+        destruct w; destruct r1; printable_tac; ibr_prover.
+      * 
+      rewrite H2. clear H2.
 
-   
+      destruct op2.
+
       
 
+      
 
-    TBC: prove range lemmas about modrm; 
-         prove op1 must be Reg_op to eliminate many cases
-
-  Time invertible_tac.
 
 
 

@@ -419,6 +419,10 @@ Local Ltac localsimpl :=
 Lemma in_bigrammar_rng_eps: in_bigrammar_rng Eps ().
 Proof. unfold in_bigrammar_rng; crush. Qed.
 
+Lemma in_bigrammar_rng_any c: in_bigrammar_rng Any c.
+Proof. localsimpl. Qed.
+Hint Resolve in_bigrammar_rng_any: ibr_rng_db.
+
 Lemma in_bigrammar_rng_alt_inl
       t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) (v:[|t1|]) :
   in_bigrammar_rng (Alt g1 g2) (inl v) <->
@@ -705,9 +709,9 @@ Ltac ibr_simpl :=
                destruct H as [v [h1 h2]]; simpl in h2
            | [H: in_bigrammar_rng (Cat _ _) (_,_) |- _] => 
              apply in_bigrammar_rng_cat in H; destruct H
-           | [ |- in_bigrammar_rng (Alt _ _) (inl _)] => 
+           | [ |- in_bigrammar_rng (Alt _ _) (inl _)] =>
              apply in_bigrammar_rng_alt_inl
-           | [ |- in_bigrammar_rng (Alt _ _) (inr _)] => 
+           | [ |- in_bigrammar_rng (Alt _ _) (inr _)] =>
              apply in_bigrammar_rng_alt_inr
            | [ |- in_bigrammar_rng (Cat _ _) (_,_) ] => 
              apply in_bigrammar_rng_cat; split
@@ -836,7 +840,3 @@ Proof. intros; unfold union; split; intros.
     + exists (inl [|t|] v). split; ibr_simpl.
     + exists (inr [|t|] v). split; ibr_simpl.
 Qed.
-
-
-
-
