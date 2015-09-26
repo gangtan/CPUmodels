@@ -548,17 +548,33 @@ End X86_PARSER_ARG.
     rewrite Word.repr_signed; trivial.
   Qed.
 
-  Lemma repr_in_signed_extend n1 n2 (w:Word.int n1):
-    n1 <= n2 -> repr_in_signed n1 (@sign_extend n1 n2 w).
+  Lemma repr_in_signed_extend n1 n2 n3 w:
+    n1 <= n3 -> n1 <= n2 ->
+    repr_in_signed n2 (@sign_extend n1 n3 w).
   Proof. unfold repr_in_signed, sign_extend; intros.
-    assert (Word.min_signed n2 <= Word.signed w <= Word.max_signed n2)%Z.
-      generalize (Word.signed_range n1 w).
-      use_lemma max_signed_mono by eassumption.
-      use_lemma min_signed_mono by eassumption.
+    generalize (Word.signed_range n1 w); intros.
+    assert (Word.min_signed n3 <= Word.signed w <= Word.max_signed n3)%Z.
+      use_lemma (@max_signed_mono n1 n3) by eassumption.
+      use_lemma (@min_signed_mono n1 n3) by eassumption.
       omega.
     rewrite Word.signed_repr by assumption.
-    apply Word.signed_range.
-  Qed.         
+    use_lemma (@max_signed_mono n1 n2) by eassumption.
+    use_lemma (@min_signed_mono n1 n2) by eassumption.
+    omega.
+  Qed.
+
+  (* todo: remove *)
+  (* Lemma repr_in_signed_extend n1 n2 (w:Word.int n1): *)
+  (*   n1 <= n2 -> repr_in_signed n1 (@sign_extend n1 n2 w). *)
+  (* Proof. unfold repr_in_signed, sign_extend; intros. *)
+  (*   assert (Word.min_signed n2 <= Word.signed w <= Word.max_signed n2)%Z. *)
+  (*     generalize (Word.signed_range n1 w). *)
+  (*     use_lemma max_signed_mono by eassumption. *)
+  (*     use_lemma min_signed_mono by eassumption. *)
+  (*     omega. *)
+  (*   rewrite Word.signed_repr by assumption. *)
+  (*   apply Word.signed_range. *)
+  (* Qed.          *)
 
   Definition sign_shrink32_8 := @sign_extend 31 7.
   Definition sign_shrink32_16 := @sign_extend 31 15.
@@ -767,7 +783,8 @@ End X86_PARSER_ARG.
     - unfold field, in_bigrammar_rng in *.
       intros. crush; in_bigrammar_inv; crush' int_of_bitsn_range fail.
   Qed.
-  Hint Resolve field_rng: ibr_rng_db.
+  Hint Extern 1 (in_bigrammar_rng (` (field _)) _) =>
+    apply field_rng; omega : ibr_rng_db.
 
   Definition reg : wf_bigrammar register_t.
     refine (field 3 @ (Z_to_register : _ -> [|register_t|])
@@ -818,7 +835,7 @@ End X86_PARSER_ARG.
   Lemma int_n_rng:
     forall n (v: Word.int n), in_bigrammar_rng (` (int_n n)) v.
   Proof. unfold in_bigrammar_rng. intros; eexists; eapply in_int_n_intro. Qed.
-  Hint Resolve int_n_rng: ibr_rng_db.
+  Hint Extern 1 (in_bigrammar_rng (` (int_n _)) _) => apply int_n_rng : ibr_rng_db.
 
   Definition byte : wf_bigrammar byte_t := int_n 7.
   Definition halfword : wf_bigrammar half_t := int_n 15.
@@ -1772,7 +1789,29 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
   Lemma modrm_rng r1 r2: in_bigrammar_rng (` modrm) (Reg_op r1, Reg_op r2).
   Proof. intros; apply modrm_gen_rng. sim; ibr_prover. Qed.
   Hint Resolve modrm_rng: ibr_rng_db.
- 
+
+  Lemma imm_op_false_rng w: in_bigrammar_rng (` (imm_op false)) (Imm_op w).
+  Proof. unfold imm_op; intros. ibr_prover. exists w. ibr_prover. Qed.
+
+Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
+
+  Lemma imm_op_true_rng w:
+    repr_in_signed_halfword w -> 
+    in_bigrammar_rng (` (imm_op true)) (Imm_op w).
+  Proof. unfold imm_op; intros. ibr_prover. compute [fst].
+    exists (sign_shrink32_16 w); split.
+      - ibr_prover.
+      - autorewrite with inv_db. trivial.
+  Qed.
+
+  Lemma imm_op_rng w opsize_override:
+    repr_in_signed_halfword w -> 
+    in_bigrammar_rng (` (imm_op opsize_override)) (Imm_op w).
+  Proof. destruct opsize_override; intros.
+    - apply imm_op_true_rng; trivial.
+    - apply imm_op_false_rng.
+  Qed.
+
   Definition logic_or_arith_p (opsize_override: bool)
     (opcode1 : string) (* first 5 bits for most cases *)
     (opcode2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
@@ -1835,14 +1874,26 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
           & (fun v: [|pair_t char_t (pair_t operand_t operand_t)|] =>
                let (w, ops) := v in
                let (op1, op2) := ops in
-               let immToOp1 := fun (w:bool) (op1:operand) imm => 
-                 if w then
-                   if (repr_in_signed_byte_dec imm) then
-                     Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm))))))
-                   else
-                     Some (inr (inr (inr (inr (op1, (Imm_op imm))))))
-                 else Some (inr (inr (inl (op1, (zero_shrink32_8 imm)))))
-               in
+               (* let immToOp1 := fun (w:bool) (op1:operand) imm =>  *)
+                 (* match w, opsize_override with *)
+                 (*   | false, _ => Some (inr (inr (inl (op1, (zero_shrink32_8 imm))))) *)
+                 (*   | true, false =>  *)
+                 (*     if (repr_in_signed_byte_dec imm) then *)
+                 (*       Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm)))))) *)
+                 (*     else *)
+                 (*       Some (inr (inr (inr (inr (op1, (Imm_op imm)))))) *)
+                 (*   | true, true => *)
+                 (*     if (repr_in_signed_byte_dec imm) then *)
+                 (*       Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm)))))) *)
+                 (*     else *)
+                 (*       Some (inr (inr (inr (inr (op1, (Imm_op imm)))))) *)
+               (*   if w then *)
+               (*     if (repr_in_signed_byte_dec imm) then *)
+               (*       Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm)))))) *)
+               (*     else *)
+               (*       Some (inr (inr (inr (inr (op1, (Imm_op imm)))))) *)
+               (*   else Some (inr (inr (inl (op1, (zero_shrink32_8 imm))))) *)
+               (* in *)
                match op1 with
                  | Reg_op r1 => 
                    match op2 with
@@ -1855,10 +1906,16 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
                      | Imm_op imm =>
                        match r1 with
                          | EAX => 
-                           (* alternate encoding: use case 3 and 4 above *)
+                           (* alternate encoding: use case 2, 3 and 4 above *)
                            if w then Some (inr (inl (inr op2)))
                            else Some (inr (inl (inl (zero_shrink32_8 imm))))
-                         | _ => immToOp1 w op1 imm
+                         | _ => 
+                           if w then
+                             if (repr_in_signed_byte_dec imm) then
+                               Some (inl (inl (inr (r1, (sign_shrink32_8 imm)))))
+                             else
+                               Some (inl (inr (inr (r1, (Imm_op imm)))))
+                           else Some (inl (inr (inl (r1, (zero_shrink32_8 imm)))))
                        end
                      | _ => None
                    end
@@ -1866,7 +1923,13 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
                    match op2 with
                      | Reg_op r2 =>
                        Some (inl (inl (inl (false, (w, (Reg_op r2, Address_op a))))))
-                     | Imm_op imm => immToOp1 w op1 imm
+                     | Imm_op imm => 
+                       if w then
+                         if (repr_in_signed_byte_dec imm) then
+                           Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm))))))
+                         else
+                           Some (inr (inr (inr (inr (op1, (Imm_op imm))))))
+                       else Some (inr (inr (inl (op1, (zero_shrink32_8 imm)))))
                      | _ => None
                    end
                  | _ => None
@@ -1883,6 +1946,17 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
         destruct H8 as [[r2 H8] | [addr H8]]; subst op2;
         printable_tac; ibr_prover
     end.
+  - (* case 2 *)
+    destruct v as [r b]. ibr_prover.
+    destruct r;
+      try (destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2];
+           [printable_tac; ibr_prover |
+            contradict H2; apply repr_in_signed_byte_extend8_32]). 
+    (* EAX case *)
+    apply imm_op_rng; apply repr_in_signed_extend; omega.
+  - (* case 3 *)
+
+
   - 
 
 
@@ -1890,8 +1964,9 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
 Todo: do we need Bool_t since we already have Char_t, whose interp is bool
 Todo: Record thoughts: 
   - different defs of the inverse function; one is easier to prove
-  - 
-
+  - bugs in the original pretty printer:
+    * when op1 is Imm_op, and op2 is Imm_op, should get none, but the original
+      one doesn't
 
   Definition logic_or_arith_p (opsize_override: bool)
     (opcode1 : string) (* first 5 bits for most cases *)
