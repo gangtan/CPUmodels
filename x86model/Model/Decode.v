@@ -1651,44 +1651,62 @@ End X86_PARSER_ARG.
 
   (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
 
-  (* todo: move earlier *)
-  Definition Imm_op_inv op := 
-    match op with 
-      | Imm_op w => Some w
-      | _ => None
-    end.
-
-  Definition imm_op (opsize_override: bool) : wf_bigrammar operand_t. 
+  (** An parser that parses immediates; takes the opsize override into account; 
+      always returns a word *)
+  Definition imm_p (opsize_override: bool) : wf_bigrammar word_t. 
     intros.
     refine(match opsize_override with
-             | false => word @ (fun w => Imm_op w %% operand_t) & Imm_op_inv & _
-             | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t)
-                                & (fun op =>
-                                     match op with
-                                       | Imm_op w => 
-                                         if repr_in_signed_halfword_dec w then
-                                           Some (sign_shrink32_16 w)
-                                         else None
-                                       | _ => None
-                                     end)
+             | false => word 
+             | true => halfword @ (fun w => sign_extend16_32 w %% word_t)
+                                & (fun w => 
+                                     if repr_in_signed_halfword_dec w then
+                                       Some (sign_shrink32_16 w)
+                                     else None
+                                  )
                                   & _
-           end); unfold Imm_op_inv; invertible_tac.
+           end); invertible_tac.
     - rewrite sign_shrink32_16_inv. 
       generalize (repr_in_signed_byte_extend16_32 v); intro.
       destruct_head; [printable_tac | intuition].
-    - destruct w; try discriminate.
-      destruct (repr_in_signed_halfword_dec i); [idtac | discriminate].
-      match goal with
-        | [H: Some _ = Some _ |- _] =>
-          inversion H; rewrite sign_extend16_32_inv; crush
-      end.
-    - destruct w; crush.
+    - destruct (repr_in_signed_halfword_dec w); parsable_tac.
   Defined.
 
+  (* todo: remove *)
+  (* Definition Imm_op_inv op :=  *)
+  (*   match op with  *)
+  (*     | Imm_op w => Some w *)
+  (*     | _ => None *)
+  (*   end. *)
 
-(* TBO: move some common grammar operators and lemmas to bigrammar.v *)
+  (* Definition imm_op (opsize_override: bool) : wf_bigrammar operand_t.  *)
+  (*   intros. *)
+  (*   refine(match opsize_override with *)
+  (*            | false => word @ (fun w => Imm_op w %% operand_t) & Imm_op_inv & _ *)
+  (*            | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t) *)
+  (*                               & (fun op => *)
+  (*                                    match op with *)
+  (*                                      | Imm_op w =>  *)
+  (*                                        if repr_in_signed_halfword_dec w then *)
+  (*                                          Some (sign_shrink32_16 w) *)
+  (*                                        else None *)
+  (*                                      | _ => None *)
+  (*                                    end) *)
+  (*                                 & _ *)
+  (*          end); unfold Imm_op_inv; invertible_tac. *)
+  (*   - rewrite sign_shrink32_16_inv.  *)
+  (*     generalize (repr_in_signed_byte_extend16_32 v); intro. *)
+  (*     destruct_head; [printable_tac | intuition]. *)
+  (*   - destruct w; try discriminate. *)
+  (*     destruct (repr_in_signed_halfword_dec i); [idtac | discriminate]. *)
+  (*     match goal with *)
+  (*       | [H: Some _ = Some _ |- _] => *)
+  (*         inversion H; rewrite sign_extend16_32_inv; crush *)
+  (*     end. *)
+  (*   - destruct w; crush. *)
+  (* Defined. *)
 
-Definition zero_shrink32_8 := @zero_extend 31 7.
+
+  Definition zero_shrink32_8 := @zero_extend 31 7.
 
   (* todo: move to Bits.v *)
   Lemma max_unsigned_mono n1 n2:
@@ -1790,34 +1808,35 @@ Definition zero_shrink32_8 := @zero_extend 31 7.
   Proof. intros; apply modrm_gen_rng. sim; ibr_prover. Qed.
   Hint Resolve modrm_rng: ibr_rng_db.
 
-  Lemma imm_op_false_rng w: in_bigrammar_rng (` (imm_op false)) (Imm_op w).
-  Proof. unfold imm_op; intros. ibr_prover. exists w. ibr_prover. Qed.
+  Lemma imm_p_false_rng w: in_bigrammar_rng (` (imm_p false)) w.
+  Proof. unfold imm_p; intros. ibr_prover. Qed.
 
 Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
 
-  Lemma imm_op_true_rng w:
+  Lemma imm_p_true_rng w:
     repr_in_signed_halfword w -> 
-    in_bigrammar_rng (` (imm_op true)) (Imm_op w).
-  Proof. unfold imm_op; intros. ibr_prover. compute [fst].
+    in_bigrammar_rng (` (imm_p true)) w.
+  Proof. unfold imm_p; intros. ibr_prover. compute [fst].
     exists (sign_shrink32_16 w); split.
       - ibr_prover.
       - autorewrite with inv_db. trivial.
   Qed.
 
-  Lemma imm_op_rng w opsize_override:
+  Lemma imm_p_rng w opsize_override:
     repr_in_signed_halfword w -> 
-    in_bigrammar_rng (` (imm_op opsize_override)) (Imm_op w).
+    in_bigrammar_rng (` (imm_p opsize_override)) w.
   Proof. destruct opsize_override; intros.
-    - apply imm_op_true_rng; trivial.
-    - apply imm_op_false_rng.
+    - apply imm_p_true_rng; trivial.
+    - apply imm_p_false_rng.
   Qed.
 
-  Lemma imm_op_rng_inv op opsize_override: 
-    in_bigrammar_rng (` (imm_op opsize_override)) op -> 
-    exists w, op = Imm_op w.
-  Proof. unfold imm_op; intros;
-         destruct opsize_override; ibr_prover; eexists; eassumption.
-  Qed.
+  (* todo: remove *)
+  (* Lemma imm_op_rng_inv op opsize_override:  *)
+  (*   in_bigrammar_rng (` (imm_op opsize_override)) op ->  *)
+  (*   exists w, op = Imm_op w. *)
+  (* Proof. unfold imm_op; intros; *)
+  (*        destruct opsize_override; ibr_prover; eexists; eassumption. *)
+  (* Qed. *)
 
   Lemma ext_op_modrm_gen_rng_inv res_t
     (addr_op: funinv address_t res_t)
@@ -1834,8 +1853,8 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
     (exists addr, op = Address_op addr).
   Proof. intros. apply ext_op_modrm_gen_rng_inv in H. crush. Qed.
 
-  TBC: need to add repr_in_byte to decide whether a 32-bit imm can be 
-       represented in a unsigned byte
+  (* TBC: need to add repr_in_byte to decide whether a 32-bit imm can be  *)
+  (*      represented in a unsigned byte *)
 
   Definition logic_or_arith_p (opsize_override: bool)
     (opcode1 : string) (* first 5 bits for most cases *)
@@ -1854,20 +1873,20 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
             (* case 3: zero-extend immediate byte to register *)
             "1000" $$ "0000" $$ "11" $$ opcode2 $$ reg $ byte |+|
             (* case 4: immediate word to register *)
-            "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_op opsize_override ))
+            "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_p opsize_override ))
            |+|
           (
             (* case 5: zero-extend immediate byte to EAX *)
            (opcode1 $$ "100" $$ byte |+|
             (* case 6: word to EAX *)
-            opcode1 $$ "101" $$ imm_op opsize_override) |+|
+            opcode1 $$ "101" $$ imm_p opsize_override) |+|
            (
             (* case 7: zero-extend immediate byte to memory *)
             "1000" $$ "0000" $$ ext_op_modrm opcode2 $ byte |+|
             (* case 8: sign-extend immediate byte to memory *)
             "1000" $$ "0011" $$ ext_op_modrm opcode2 $ byte  |+|
             (* case 9: immediate word to memory *)
-            "1000" $$ "0001" $$ ext_op_modrm opcode2 $ imm_op opsize_override)))
+            "1000" $$ "0001" $$ ext_op_modrm opcode2 $ imm_p opsize_override)))
           @ (fun v => 
                match v with
                  (* case 1 *)
@@ -1880,12 +1899,12 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                  | inl (inr (inl (r, imm))) =>
                    (false, (Reg_op r, Imm_op (zero_extend8_32 imm)))
                  (* case 4 *)
-                 | inl (inr (inr (r, imm))) => (true, (Reg_op r, imm))
+                 | inl (inr (inr (r, imm))) => (true, (Reg_op r, Imm_op imm))
                  (* case 5 *)
                  | inr (inl (inl imm)) => 
                    (false, (Reg_op EAX, Imm_op (zero_extend8_32 imm)))
                  (* case 6 *)
-                 | inr (inl (inr imm)) => (true, (Reg_op EAX, imm))
+                 | inr (inl (inr imm)) => (true, (Reg_op EAX, Imm_op imm))
                  (* case 7 *)
                  | inr (inr (inl (op, imm))) => 
                    (false, (op, Imm_op (zero_extend8_32 imm)))
@@ -1894,33 +1913,33 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                    (true, (op, Imm_op (sign_extend8_32 imm)))
                  (* case 9 *)
                  | inr (inr (inr (inr (op, imm)))) =>
-                   (true, (op, imm))
+                   (true, (op, Imm_op imm))
                end %% (pair_t char_t (pair_t operand_t operand_t)))
-          & (fun v: [|pair_t char_t (pair_t operand_t operand_t)|] =>
-               let (w, ops) := v in
+          & (fun u: [|pair_t char_t (pair_t operand_t operand_t)|] =>
+               let (w, ops) := u in
                let (op1, op2) := ops in
                match op1 with
                  | Reg_op r1 => 
                    match op2 with
-                     | Reg_op r2 => 
-                       (* alternate encoding: 
+                     | Reg_op r2 =>
+                       (* alternate encoding:  
                           set the d bit false and reverse the two regs *)
-                       Some (inl (inl (inl (true, v))))
-                     | Address_op a => 
-                       Some (inl (inl (inl (true, v))))
-                     | Imm_op imm =>
+                       Some (inl (inl (inl (true, u))))
+                     | Address_op a =>
+                       Some (inl (inl (inl (true, u))))
+                     | Imm_op imm => 
                        match r1 with
-                         | EAX => 
+                         | EAX =>
                            (* alternate encoding: use case 2, 3 and 4 above *)
-                           if w then Some (inr (inl (inr op2)))
-                           else 
+                           if w then Some (inr (inl (inr imm)))
+                           else
                              Some (inr (inl (inl (zero_shrink32_8 imm))))
-                         | _ => 
+                         | _ =>
                            if w then
                              if (repr_in_signed_byte_dec imm) then
                                Some (inl (inl (inr (r1, (sign_shrink32_8 imm)))))
                              else
-                               Some (inl (inr (inr (r1, (Imm_op imm)))))
+                               Some (inl (inr (inr (r1, imm))))
                            else Some (inl (inr (inl (r1, (zero_shrink32_8 imm)))))
                        end
                      | _ => None
@@ -1934,7 +1953,7 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                          if (repr_in_signed_byte_dec imm) then
                            Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm))))))
                          else
-                           Some (inr (inr (inr (inr (op1, (Imm_op imm))))))
+                           Some (inr (inr (inr (inr (op1, imm)))))
                        else Some (inr (inr (inl (op1, (zero_shrink32_8 imm)))))
                      | _ => None
                    end
@@ -1959,28 +1978,18 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
            [printable_tac; ibr_prover |
             contradict H2; apply repr_in_signed_byte_extend8_32]). 
     (* EAX case *)
-    apply imm_op_rng; apply repr_in_signed_extend; omega.
+    apply imm_p_rng; apply repr_in_signed_extend; omega.
   - (* case 3 *)
     destruct v as [r b]; ibr_prover.
     destruct r; printable_tac; ibr_prover.
   - (* case 4 *)
     destruct v as [r op2]; ibr_prover.
-    use_lemma imm_op_rng_inv by eassumption.
-    repeat match goal with
-      | [H: exists _, op2 = _ |- _] => 
-        destruct H as [w H10]; subst op2; destruct r
-      | [ |- context[repr_in_signed_byte_dec ?imm]] => 
-        destruct (repr_in_signed_byte_dec w)
-    end; printable_tac; ibr_prover.
+    destruct r; destruct (repr_in_signed_byte_dec op2); 
+    printable_tac; ibr_prover.
   - (* case 5 *)
     printable_tac; ibr_prover.
   - (* case 6 *)
-    ibr_prover.
-    use_lemma imm_op_rng_inv by eassumption.
-    match goal with 
-      | [H: exists _, v = _ |- _] => 
-        destruct H as [w H10]; subst v
-    end; printable_tac; ibr_prover.
+    ibr_prover. printable_tac; ibr_prover.
   - (* case 7 *)
     destruct v as [op b]. ibr_prover.
     use_lemma ext_op_modrm_rng_inv by eassumption.
@@ -2001,13 +2010,15 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
   - (* case 9 *)
     destruct v as [op1 op2]; ibr_prover.
     use_lemma ext_op_modrm_rng_inv by eassumption.
-    use_lemma imm_op_rng_inv by eassumption.
     repeat match goal with 
       | [H: exists _, ?v = _ |- _] => 
         destruct H; subst v
       | [ |- context[repr_in_signed_byte_dec ?imm]] => 
         destruct (repr_in_signed_byte_dec imm)
     end; printable_tac; ibr_prover.
+  - 
+
+
   - destruct w as [w [op1 op2]].
     destruct op1; try parsable_tac.
     destruct op2. 
@@ -2027,9 +2038,10 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
 (* destruct r; destruct w; parsable_tac. *)
 
 
-Todo: fix name v in the reverse fun above
 Todo: change imm_op to return an immediate instead of an operand so that
-      we can avoid the use of imm_op_rng_inv lemmas
+      we can avoid the use of imm_op_rng_inv lemmas;
+      also ext_op_modrm_gen
+
 Todo: do we need Bool_t since we already have Char_t, whose interp is bool
 Todo: Record thoughts: 
   - different defs of the inverse function; one is easier to prove
