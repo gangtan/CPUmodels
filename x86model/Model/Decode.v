@@ -161,6 +161,7 @@ End X86_PARSER_ARG.
   Notation list_t := List_t.
   Notation unit_t := Unit_t.
   Notation pair_t := Pair_t.
+  Notation sum_t := Sum_t.
   Definition Any_p := Any.
   Definition Eps_p := Eps.
 
@@ -562,19 +563,6 @@ End X86_PARSER_ARG.
     use_lemma (@min_signed_mono n1 n2) by eassumption.
     omega.
   Qed.
-
-  (* todo: remove *)
-  (* Lemma repr_in_signed_extend n1 n2 (w:Word.int n1): *)
-  (*   n1 <= n2 -> repr_in_signed n1 (@sign_extend n1 n2 w). *)
-  (* Proof. unfold repr_in_signed, sign_extend; intros. *)
-  (*   assert (Word.min_signed n2 <= Word.signed w <= Word.max_signed n2)%Z. *)
-  (*     generalize (Word.signed_range n1 w). *)
-  (*     use_lemma max_signed_mono by eassumption. *)
-  (*     use_lemma min_signed_mono by eassumption. *)
-  (*     omega. *)
-  (*   rewrite Word.signed_repr by assumption. *)
-  (*   apply Word.signed_range. *)
-  (* Qed.          *)
 
   Definition sign_shrink32_8 := @sign_extend 31 7.
   Definition sign_shrink32_16 := @sign_extend 31 15.
@@ -1451,32 +1439,40 @@ End X86_PARSER_ARG.
   Defined.
 
   (* same as modrm_gen but no mod "11" case;
-     that is, the second operand must be a mem operand *)
-  Definition modrm_gen_noreg (reg_t res_t: type) 
+     that is, the second must produce an address in a mem operand *)
+  (* using |\/| below as it's messy to distinguish the three cases in the inverse 
+     function *)
+  Program Definition modrm_gen_noreg (reg_t: type) 
     (reg_p: wf_bigrammar reg_t) 
-    (addr_op: funinv address_t res_t)  (* the constructor that converts an
-                                          address to result and its inverse *)
+    : wf_bigrammar (pair_t reg_t address_t) := 
+           ("00" $$ reg_p $ rm00)
+      |\/| ("01" $$ reg_p $ rm01)
+      |\/| ("10" $$ reg_p $ rm10).
+  Implicit Arguments modrm_gen_noreg [reg_t].
+
+  Definition modrm_gen_noreg2 (reg_t res_t: type)
+    (reg_p: wf_bigrammar reg_t) 
+    (addr_op: funinv address_t res_t)  (* the constructor that converts an *)
+                                       (* address to result and its inverse *)
     (pf: strong_invertible addr_op)
-    : wf_bigrammar (pair_t reg_t res_t). 
+    : wf_bigrammar (pair_t reg_t res_t).
     intros.
-    refine ((     ("00" $$ reg_p $ rm00) 
-             |\/| ("01" $$ reg_p $ rm01)
-             |\/| ("10" $$ reg_p $ rm10))
-              @ (fun p => match p with
-                            | (op1, addr) => (op1, fst addr_op addr)
+    refine ((modrm_gen_noreg reg_p)
+              @ (fun v => match v with
+                            | (r, addr) => (r, fst addr_op addr)
                           end %% (pair_t reg_t res_t))
-              & (fun p => match p with
-                            | (op1, op2) =>
+              & (fun u => match u with
+                            | (r, op2) =>
                               match snd addr_op op2 with
-                                | Some addr => Some (op1, addr)
+                                | Some addr => Some (r, addr)
                                 | None => None
                               end
                           end)
               & _); invertible_tac;
-    destruct addr_op as [f1 f2]; 
+    destruct addr_op as [f1 f2];
     unfold strong_invertible in pf; simpl in pf;
-    destruct pf as [pf1 pf2]. 
-    - exists v. destruct v as [res addr]. 
+    destruct pf as [pf1 pf2].
+    - exists v. destruct v as [res addr].
       rewrite pf1. intuition.
     - destruct v as [res addr].
       destruct w as [op1 op2].
@@ -1484,31 +1480,28 @@ End X86_PARSER_ARG.
       + rewrite (pf2 addr op2); clear pf1 pf2 H; crush.
       + discriminate.
   Defined.
-  Implicit Arguments modrm_gen_noreg [reg_t res_t].
+  Implicit Arguments modrm_gen_noreg2 [reg_t res_t].
 
   (** a general modrm grammar for integer, floating-point, sse, mmx instructions *)
-  (* using |\/| below as it's messy to distinguish the four cases in the inverse 
-     function *)
-  Definition modrm_gen (res_t: type) 
-    (reg_p : wf_bigrammar res_t)  (* the grammar that parse a register *)
-    (addr_op: funinv address_t res_t)  (* the constructor that converts an
-                                          address to result and its inverse *)
-    (pf: strong_invertible addr_op)
-    : wf_bigrammar (pair_t res_t res_t) := 
-          modrm_gen_noreg reg_p addr_op pf
-     |\/| "11" $$ reg_p $ reg_p.
-  Implicit Arguments modrm_gen [res_t].
+  Definition modrm_gen (reg_t: type) 
+    (reg_p : wf_bigrammar reg_t)  (* the grammar that parse a register *)
+    : wf_bigrammar (sum_t (pair_t reg_t address_t) (pair_t reg_t reg_t)) :=
+    modrm_gen_noreg reg_p |+| "11" $$ reg_p $ reg_p.
+  Implicit Arguments modrm_gen [reg_t].
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern, and the pattern starting with "11" is excluded. *)
-  Definition ext_op_modrm_gen (res_t: type) 
+  Program Definition ext_op_modrm_gen_noreg (bs: string) : wf_bigrammar address_t :=
+         ("00" $$ bs $$ rm00)
+    |\/| ("01" $$ bs $$ rm01)
+    |\/| ("10" $$ bs $$ rm10).
+  
+  Definition ext_op_modrm_gen_noreg2 (res_t: type)
     (addr_op: funinv address_t res_t)
     (pf: strong_invertible addr_op)
-    (bs: string) : wf_bigrammar res_t. 
+    (bs: string) : wf_bigrammar res_t.
     intros.
-    refine ((     ("00" $$ bs $$ rm00)
-             |\/| ("01" $$ bs $$ rm01)
-             |\/| ("10" $$ bs $$ rm10))
+    refine ((ext_op_modrm_gen_noreg bs)
               @ (fst addr_op)
               & (snd addr_op)
               & _); invertible_tac;
@@ -1517,115 +1510,190 @@ End X86_PARSER_ARG.
     - rewrite pf1. printable_tac.
     - apply pf2. simpl. trivial.
   Defined.
-  Implicit Arguments ext_op_modrm_gen [res_t].
+  Implicit Arguments ext_op_modrm_gen_noreg2 [res_t].
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern*)
-  Definition ext_op_modrm2_gen (res_t: type) 
-    (reg_p: wf_bigrammar res_t)
-    (addr_op: funinv address_t res_t)
-    (pf: strong_invertible addr_op)
-    (bs:string) : wf_bigrammar res_t :=
-    ext_op_modrm_gen addr_op pf bs |\/| "11" $$ bs $$ reg_p.
-  Implicit Arguments ext_op_modrm2_gen [res_t].
+  Definition ext_op_modrm_gen (reg_t: type)
+    (reg_p: wf_bigrammar reg_t)
+    (bs:string) : wf_bigrammar (sum_t address_t reg_t) :=
+    ext_op_modrm_gen_noreg bs |+| "11" $$ bs $$ reg_p.
+  Implicit Arguments ext_op_modrm_gen [reg_t].
 
+  (* todo: remove *)
+  (* Definition ext_op_modrm_gen (res_t: type) *)
+  (*   (reg_p: wf_bigrammar res_t) *)
+  (*   (addr_op: funinv address_t res_t) *)
+  (*   (pf: strong_invertible addr_op) *)
+  (*   (bs:string) : wf_bigrammar res_t := *)
+  (*   ext_op_modrm_gen_noreg2 addr_op pf bs |\/| "11" $$ bs $$ reg_p. *)
+  (* Implicit Arguments ext_op_modrm_gen [res_t]. *)
+
+  (* todo: move to Bigrammar.v *)
   Local Ltac strong_invertible_tac :=
     unfold strong_invertible; split; 
     [crush | intros v w; destruct w; crush].
 
-  Definition modrm : wf_bigrammar (pair_t operand_t operand_t).
-    refine (modrm_gen Reg_op_p
-              (Address_op, Address_op_inv)
-              _); strong_invertible_tac.
+  (** modrm returns a register as the first operand, and a second operand *)
+  Definition modrm: wf_bigrammar (pair_t register_t operand_t).
+    refine ((modrm_gen reg) 
+            @ (fun v =>
+                 match v with
+                   | inl (r, addr) => (r, Address_op addr)
+                   | inr (r1, r2) => (r1, Reg_op r2)
+                 end %% (pair_t register_t operand_t))
+            & (fun u => 
+                 match u with
+                   | (r, Address_op addr) => Some (inl (r, addr))
+                   | (r1, Reg_op r2) => Some (inr (r1, r2))
+                   | _ => None
+                 end)
+            & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
   Defined.
 
-  Definition modrm_mmx : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
-    refine (modrm_gen MMX_Reg_op_p
-              (MMX_Addr_op, MMX_Addr_op_inv)
-              _); strong_invertible_tac.
+  Definition modrm_mmx : wf_bigrammar (pair_t mmx_register_t mmx_operand_t).
+    refine ((modrm_gen mmx_reg)
+            @ (fun v =>
+                 match v with
+                   | inl (r, addr) => (r, MMX_Addr_op addr)
+                   | inr (r1, r2) => (r1, MMX_Reg_op r2)
+                 end %% (pair_t mmx_register_t mmx_operand_t))
+            & (fun u => 
+                 match u with
+                   | (r, MMX_Addr_op addr) => Some (inl (r, addr))
+                   | (r1, MMX_Reg_op r2) => Some (inr (r1, r2))
+                   | _ => None
+                 end)
+            & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
   Defined.
 
   (* mod xmmreg r/m in manual*)
-  Definition modrm_xmm : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
-    refine (modrm_gen SSE_XMM_Reg_op_p
-              (SSE_Addr_op, SSE_Addr_op_inv)
-              _); strong_invertible_tac.
+  Definition modrm_xmm : wf_bigrammar (pair_t sse_register_t sse_operand_t).
+    refine ((modrm_gen sse_reg)
+            @ (fun v =>
+                 match v with
+                   | inl (r, addr) => (r, SSE_Addr_op addr)
+                   | inr (r1, r2) => (r1, SSE_XMM_Reg_op r2)
+                 end %% (pair_t sse_register_t sse_operand_t))
+            & (fun u => 
+                 match u with
+                   | (r, SSE_Addr_op addr) => Some (inl (r, addr))
+                   | (r1, SSE_XMM_Reg_op r2) => Some (inr (r1, r2))
+                   | _ => None
+                 end)
+            & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
   Defined.
 
   (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
-  Definition modrm_mm : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
-    refine (modrm_gen SSE_MM_Reg_op_p
-              (SSE_Addr_op, SSE_Addr_op_inv)
-              _); strong_invertible_tac.
+  Definition modrm_mm : wf_bigrammar (pair_t mmx_register_t sse_operand_t).
+    refine ((modrm_gen mmx_reg)
+            @ (fun v =>
+                 match v with
+                   | inl (r, addr) => (r, SSE_Addr_op addr)
+                   | inr (r1, r2) => (r1, SSE_MM_Reg_op r2)
+                 end %% (pair_t mmx_register_t sse_operand_t))
+            & (fun u => 
+                 match u with
+                   | (r, SSE_Addr_op addr) => Some (inl (r, addr))
+                   | (r1, SSE_MM_Reg_op r2) => Some (inr (r1, r2))
+                   | _ => None
+                 end)
+            & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
   Defined.
 
-  Definition modrm_noreg : wf_bigrammar (pair_t register_t operand_t).
-    refine (modrm_gen_noreg reg 
-              (Address_op: address -> [|operand_t|], Address_op_inv) _);
-    strong_invertible_tac.
-  Defined.
+  Definition modrm_noreg : wf_bigrammar (pair_t register_t address_t) :=
+    modrm_gen_noreg reg.
 
-  Definition modrm_xmm_noreg : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
-    refine (modrm_gen_noreg SSE_XMM_Reg_op_p
-               (SSE_Addr_op: address -> interp sse_operand_t, SSE_Addr_op_inv)
-            _); strong_invertible_tac.
-  Defined.
+  (* todo: remove *)
+  (* Definition modrm_noreg : wf_bigrammar (pair_t register_t operand_t). *)
+  (*   refine (modrm_gen_noreg2 reg *)
+  (*              (Address_op: address -> [|operand_t|], Address_op_inv) *)
+  (*           _); strong_invertible_tac. *)
+  (* Defined. *)
 
+  Definition modrm_bv2_noreg: wf_bigrammar (pair_t (bitvector_t 2) address_t) :=
+    modrm_gen_noreg (field_intn 2).
+  Notation modrm_xmm_noreg := modrm_bv2_noreg.
+  Notation modrm_mm_noreg := modrm_bv2_noreg.
+
+ (* note: can be replaced by modrm_noreg since it now produces register_t, address_t *)
   (* general-purpose regs used in SSE instructions *)
-  Definition modrm_xmm_gp_noreg : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
-    refine (modrm_gen_noreg SSE_GP_Reg_op_p
-               (SSE_Addr_op: address -> [|sse_operand_t|], SSE_Addr_op_inv)
-            _); strong_invertible_tac.
+  (* Definition modrm_xmm_gp_noreg : wf_bigrammar (pair_t register_t address_t) := *)
+  (*   modrm_gen_noreg reg. *)
+
+  Definition ext_op_modrm (bs: string): wf_bigrammar operand_t.
+    intros.
+    refine ((ext_op_modrm_gen reg bs)
+              @ (fun v => match v with
+                            | inl addr => Address_op addr
+                            | inr r => Reg_op r
+                          end %% operand_t)
+              & (fun u => match u with
+                            | Address_op addr => Some (inl addr)
+                            | Reg_op r => Some (inr r)
+                            | _ => None
+                          end)
+              & _); invertible_tac.
+    - destruct v; printable_tac.
+    - destruct v; destruct w; parsable_tac.
   Defined.
 
-  Definition modrm_mm_noreg : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
-    refine (modrm_gen_noreg SSE_MM_Reg_op_p
-              (SSE_Addr_op : address -> [|sse_operand_t|], SSE_Addr_op_inv)
-              _); strong_invertible_tac.
-  Defined.
+  (* todo: remove *)
+  (* Definition ext_op_modrm : string -> wf_bigrammar operand_t. *)
+  (*   refine (ext_op_modrm_gen Reg_op_p (Address_op, Address_op_inv) _); *)
+  (*   strong_invertible_tac. *)
+  (* Defined. *)
 
-  Definition ext_op_modrm : string -> wf_bigrammar operand_t. 
-    refine (ext_op_modrm_gen
-              (Address_op:address -> [|operand_t|], Address_op_inv) _);
-    strong_invertible_tac.
-  Defined.
+  (* todo: remove *)
+  (* Definition ext_op_modrm_noreg : string -> wf_bigrammar operand_t.  *)
+  (*   refine (ext_op_modrm_gen_noreg2 *)
+  (*             (Address_op:address -> [|operand_t|], Address_op_inv) _); *)
+  (*   strong_invertible_tac. *)
+  (* Defined. *)
 
+  (* todo: remove *)
   (*mod^A "bbb" mem in manual for SSE instructions*)
-  Definition ext_op_modrm_sse : string -> wf_bigrammar sse_operand_t.
-    refine (ext_op_modrm_gen
-              (SSE_Addr_op: address -> [|sse_operand_t|], SSE_Addr_op_inv) _);
-    strong_invertible_tac.
-  Defined.
+  (* Definition ext_op_modrm_sse_noreg : string -> wf_bigrammar sse_operand_t. *)
+  (*   refine (ext_op_modrm_gen_noreg2 *)
+  (*             (SSE_Addr_op: address -> [|sse_operand_t|], SSE_Addr_op_inv) _); *)
+  (*   strong_invertible_tac. *)
+  (* Defined. *)
 
-  Definition ext_op_modrm_FPM16 : string -> wf_bigrammar fp_operand_t.
-    refine (ext_op_modrm_gen
-              (FPM16_op: address -> [|fp_operand_t|], FPM16_op_inv) _);
-    strong_invertible_tac.
-  Defined.
+  (* todo: remove *)
+  (* Definition ext_op_modrm_FPM16_noreg : string -> wf_bigrammar fp_operand_t. *)
+  (*   refine (ext_op_modrm_gen_noreg2 *)
+  (*             (FPM16_op: address -> [|fp_operand_t|], FPM16_op_inv) _); *)
+  (*   strong_invertible_tac. *)
+  (* Defined. *)
 
-  Definition ext_op_modrm_FPM32 : string -> wf_bigrammar fp_operand_t.
-    refine (ext_op_modrm_gen
-              (FPM32_op: address -> [|fp_operand_t|], FPM32_op_inv) _);
-    strong_invertible_tac.
-  Defined.
+  (* todo: remove *)
+  (* Definition ext_op_modrm_FPM32_noreg : string -> wf_bigrammar fp_operand_t. *)
+  (*   refine (ext_op_modrm_gen_noreg2 *)
+  (*             (FPM32_op: address -> [|fp_operand_t|], FPM32_op_inv) _); *)
+  (*   strong_invertible_tac. *)
+  (* Defined. *)
 
-  Definition ext_op_modrm_FPM64 : string -> wf_bigrammar fp_operand_t.
-    refine (ext_op_modrm_gen
-              (FPM64_op: address -> [|fp_operand_t|], FPM64_op_inv) _);
-    strong_invertible_tac.
-  Defined.
+  (* todo: remove *)
+  (* Definition ext_op_modrm_FPM64_noreg : string -> wf_bigrammar fp_operand_t. *)
+  (*   refine (ext_op_modrm_gen_noreg2 *)
+  (*             (FPM64_op: address -> [|fp_operand_t|], FPM64_op_inv) _); *)
+  (*   strong_invertible_tac. *)
+  (* Defined. *)
 
-  Definition ext_op_modrm_FPM80 : string -> wf_bigrammar fp_operand_t.
-    refine (ext_op_modrm_gen
-              (FPM80_op: address -> [|fp_operand_t|], FPM80_op_inv) _);
-    strong_invertible_tac.
-  Defined.
-
-  Definition ext_op_modrm2 : string -> wf_bigrammar operand_t.
-    refine (ext_op_modrm2_gen Reg_op_p (Address_op, Address_op_inv) _);
-    strong_invertible_tac.
-  Defined.
-
+  (* todo: remove *)
+  (* Definition ext_op_modrm_FPM80_noreg : string -> wf_bigrammar fp_operand_t. *)
+  (*   refine (ext_op_modrm_gen_noreg2 *)
+  (*             (FPM80_op: address -> [|fp_operand_t|], FPM80_op_inv) _); *)
+  (*   strong_invertible_tac. *)
+  (* Defined. *)
 
   (** * An X86 bigrammar *)
   (* A better bigrammar for x86 instruction decoder/encoder. The encoder
@@ -1671,41 +1739,6 @@ End X86_PARSER_ARG.
     - destruct (repr_in_signed_halfword_dec w); parsable_tac.
   Defined.
 
-  (* todo: remove *)
-  (* Definition Imm_op_inv op :=  *)
-  (*   match op with  *)
-  (*     | Imm_op w => Some w *)
-  (*     | _ => None *)
-  (*   end. *)
-
-  (* Definition imm_op (opsize_override: bool) : wf_bigrammar operand_t.  *)
-  (*   intros. *)
-  (*   refine(match opsize_override with *)
-  (*            | false => word @ (fun w => Imm_op w %% operand_t) & Imm_op_inv & _ *)
-  (*            | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t) *)
-  (*                               & (fun op => *)
-  (*                                    match op with *)
-  (*                                      | Imm_op w =>  *)
-  (*                                        if repr_in_signed_halfword_dec w then *)
-  (*                                          Some (sign_shrink32_16 w) *)
-  (*                                        else None *)
-  (*                                      | _ => None *)
-  (*                                    end) *)
-  (*                                 & _ *)
-  (*          end); unfold Imm_op_inv; invertible_tac. *)
-  (*   - rewrite sign_shrink32_16_inv.  *)
-  (*     generalize (repr_in_signed_byte_extend16_32 v); intro. *)
-  (*     destruct_head; [printable_tac | intuition]. *)
-  (*   - destruct w; try discriminate. *)
-  (*     destruct (repr_in_signed_halfword_dec i); [idtac | discriminate]. *)
-  (*     match goal with *)
-  (*       | [H: Some _ = Some _ |- _] => *)
-  (*         inversion H; rewrite sign_extend16_32_inv; crush *)
-  (*     end. *)
-  (*   - destruct w; crush. *)
-  (* Defined. *)
-
-
   Definition zero_shrink32_8 := @zero_extend 31 7.
 
   (* todo: move to Bits.v *)
@@ -1732,45 +1765,37 @@ End X86_PARSER_ARG.
     unfold invertible; split; [unfold printable | unfold parsable];
     compute [snd fst]; intros.
 
-(* TBC *)
-
-  Lemma modrm_gen_noreg_rng_inv reg_t res_t
-        (reg_p: wf_bigrammar reg_t) 
-        (addr_op: funinv address_t res_t) pf_addr
-        (r:[|reg_t|]) (res:[|res_t|]):
-    in_bigrammar_rng (` (modrm_gen_noreg reg_p addr_op pf_addr)) (r,res) ->
-    in_bigrammar_rng (` reg_p) r /\
-    exists addr, res = fst addr_op addr.
-  Proof. unfold modrm_gen_noreg; intros; ibr_prover.
-    destruct v as [r1 addr].
-    sim; subst res.
+  Lemma modrm_gen_noreg_rng_inv reg_t (reg_p: wf_bigrammar reg_t)
+        (r:[|reg_t|]) (addr:[|address_t|]):
+    in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r,addr) ->
+    in_bigrammar_rng (` reg_p) r.
+  Proof. unfold modrm_gen_noreg; intros.
+    ibr_prover; destruct H.
     - ibr_prover. 
-    - ibr_prover; sim; ibr_prover.
-    - eexists; trivial.
-    - eexists; trivial.
+    - ibr_prover; destruct H; ibr_prover.
   Qed.
-  
-  Lemma modrm_noreg_rng_inv r op2: 
-    in_bigrammar_rng (` modrm_noreg) (r,op2) -> 
-    in_bigrammar_rng (` reg) r /\
-    exists addr, op2 = Address_op addr.
-  Proof. intros. apply modrm_gen_noreg_rng_inv in H. trivial. Qed.
 
-  Lemma modrm_gen_rng_inv res_t
-        (reg_p: wf_bigrammar res_t) 
-        (addr_op: funinv address_t res_t) pf_addr
-        (res1:[|res_t|]) (res2:[|res_t|]):
-    in_bigrammar_rng (` (modrm_gen reg_p addr_op pf_addr)) (res1,res2) ->
-    in_bigrammar_rng (` reg_p) res1 /\
-    (in_bigrammar_rng (` reg_p) res2 \/
-     exists addr, res2 = fst addr_op addr).
-  Proof. unfold modrm_gen; intros; ibr_prover.
-    sim.
-    - eapply modrm_gen_noreg_rng_inv. eassumption.
-    - ibr_prover.
-    - right. eapply modrm_gen_noreg_rng_inv. eassumption.
-    - left. ibr_prover.
-  Qed.
+  (* todo: remove *)
+  (* Lemma modrm_gen_noreg2_rng_inv reg_t res_t *)
+  (*       (reg_p: wf_bigrammar reg_t)  *)
+  (*       (addr_op: funinv address_t res_t) pf_addr *)
+  (*       (r:[|reg_t|]) (res:[|res_t|]): *)
+  (*   in_bigrammar_rng (` (modrm_gen_noreg2 reg_p addr_op pf_addr)) (r,res) -> *)
+  (*   in_bigrammar_rng (` reg_p) r /\ *)
+  (*   exists addr, res = fst addr_op addr. *)
+  (* Proof. unfold modrm_gen_noreg2; intros; ibr_prover. *)
+  (*   destruct v as [r1 addr]. *)
+  (*   sim; subst res. *)
+  (*   - eapply modrm_gen_noreg_rng_inv. eassumption. *)
+  (*   - eexists; trivial. *)
+  (* Qed. *)
+
+  (* todo: remove *)
+  (* Lemma modrm_noreg_rng_inv r op2: *)
+  (*   in_bigrammar_rng (` modrm_noreg) (r,op2) -> *)
+  (*   in_bigrammar_rng (` reg) r /\ *)
+  (*   exists addr, op2 = Address_op addr. *)
+  (* Proof. intros. apply modrm_gen_noreg2_rng_inv in H. trivial. Qed. *)
 
   Lemma Reg_op_p_rng op : 
     (exists r, op = Reg_op r) <-> in_bigrammar_rng (`Reg_op_p) op.
@@ -1783,29 +1808,21 @@ End X86_PARSER_ARG.
   Proof. intros; apply Reg_op_p_rng. eexists; trivial. Qed.
   Hint Resolve Reg_op_p_rng2: ibr_rng_db.
 
-  Lemma modrm_rng_inv op1 op2: 
-    in_bigrammar_rng (` modrm) (op1,op2) -> 
-    (exists r, op1 = Reg_op r) /\
-    ((exists r, op2 = Reg_op r) \/ (exists addr, op2 = Address_op addr)).
-  Proof. intros. apply modrm_gen_rng_inv in H. 
-    sim; try (eapply Reg_op_p_rng; trivial).
-    - left. eapply Reg_op_p_rng; trivial.
-    - right. eexists. eassumption.
+  Lemma modrm_rng_inv r op:
+    in_bigrammar_rng (` modrm) (r,op) -> 
+    (exists r, op = Reg_op r) \/ (exists addr, op = Address_op addr).
+  Proof. unfold modrm; intros. ibr_prover.
+    destruct v as [[r1 addr] | [r1 r2]]; clear H0.
+    - right. crush. 
+    - left. crush. 
   Qed.
 
   (* with more work, this lemma could be made more general; will do it if necessary *)
-  Lemma modrm_gen_rng res_t
-        (reg_p: wf_bigrammar res_t) 
-        (addr_op: funinv address_t res_t) pf_addr
-        (res1:[|res_t|]) (res2:[|res_t|]):
-    in_bigrammar_rng (` reg_p) res1 /\ in_bigrammar_rng (` reg_p) res2 ->
-    in_bigrammar_rng (` (modrm_gen reg_p addr_op pf_addr)) (res1,res2).
-  Proof. unfold modrm_gen; intros; ibr_prover.
-    right; sim; ibr_prover.
+  Lemma modrm_rng r1 r2: in_bigrammar_rng (` modrm) (r1, Reg_op r2).
+  Proof. intros. unfold modrm, modrm_gen. ibr_prover. compute [fst].
+    exists (inr [|pair_t register_t address_t|] (r1, r2)).
+    split; [ibr_prover | trivial].
   Qed.
-
-  Lemma modrm_rng r1 r2: in_bigrammar_rng (` modrm) (Reg_op r1, Reg_op r2).
-  Proof. intros; apply modrm_gen_rng. sim; ibr_prover. Qed.
   Hint Resolve modrm_rng: ibr_rng_db.
 
   Lemma imm_p_false_rng w: in_bigrammar_rng (` (imm_p false)) w.
@@ -1831,27 +1848,21 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
   Qed.
 
   (* todo: remove *)
-  (* Lemma imm_op_rng_inv op opsize_override:  *)
-  (*   in_bigrammar_rng (` (imm_op opsize_override)) op ->  *)
-  (*   exists w, op = Imm_op w. *)
-  (* Proof. unfold imm_op; intros; *)
-  (*        destruct opsize_override; ibr_prover; eexists; eassumption. *)
+  (* Lemma ext_op_modrm_gen_noreg2_rng_inv res_t *)
+  (*   (addr_op: funinv address_t res_t) *)
+  (*   (pf_addr: strong_invertible addr_op) *)
+  (*   (bs: string) (res:[|res_t|]):  *)
+  (*   in_bigrammar_rng (` (ext_op_modrm_gen_noreg2 addr_op pf_addr bs)) res -> *)
+  (*   exists addr, res = fst addr_op addr. *)
+  (* Proof. unfold ext_op_modrm_gen_noreg2; intros; ibr_prover. *)
+  (*   eexists. eassumption. *)
   (* Qed. *)
 
-  Lemma ext_op_modrm_gen_rng_inv res_t
-    (addr_op: funinv address_t res_t)
-    (pf_addr: strong_invertible addr_op)
-    (bs: string) (res:[|res_t|]): 
-    in_bigrammar_rng (` (ext_op_modrm_gen addr_op pf_addr bs)) res ->
-    exists addr, res = fst addr_op addr.
-  Proof. unfold ext_op_modrm_gen; intros; ibr_prover.
-    eexists. eassumption.
-  Qed.
-
-  Lemma ext_op_modrm_rng_inv bs op:
-    in_bigrammar_rng (` (ext_op_modrm bs)) op -> 
-    (exists addr, op = Address_op addr).
-  Proof. intros. apply ext_op_modrm_gen_rng_inv in H. crush. Qed.
+  (* todo: remove *)
+  (* Lemma ext_op_modrm_noreg_rng_inv bs op: *)
+  (*   in_bigrammar_rng (` (ext_op_modrm_noreg bs)) op ->  *)
+  (*   (exists addr, op = Address_op addr). *)
+  (* Proof. intros. apply ext_op_modrm_gen_noreg2_rng_inv in H. crush. Qed. *)
 
   (* TBC: need to add repr_in_byte to decide whether a 32-bit imm can be  *)
   (*      represented in a unsigned byte *)
@@ -1882,16 +1893,17 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
             opcode1 $$ "101" $$ imm_p opsize_override) |+|
            (
             (* case 7: zero-extend immediate byte to memory *)
-            "1000" $$ "0000" $$ ext_op_modrm opcode2 $ byte |+|
+            "1000" $$ "0000" $$ ext_op_modrm_gen_noreg opcode2 $ byte |+|
             (* case 8: sign-extend immediate byte to memory *)
-            "1000" $$ "0011" $$ ext_op_modrm opcode2 $ byte  |+|
+            "1000" $$ "0011" $$ ext_op_modrm_gen_noreg opcode2 $ byte  |+|
             (* case 9: immediate word to memory *)
-            "1000" $$ "0001" $$ ext_op_modrm opcode2 $ imm_p opsize_override)))
+            "1000" $$ "0001" $$ ext_op_modrm_gen_noreg opcode2 $
+            imm_p opsize_override)))
           @ (fun v => 
                match v with
                  (* case 1 *)
-                 | inl (inl (inl (d, (w, (op1, op2))))) => 
-                   if (d:bool) then (w, (op1, op2)) else (w, (op2, op1))
+                 | inl (inl (inl (d, (w, (r1, op2))))) => 
+                   if (d:bool) then (w, (Reg_op r1, op2)) else (w, (op2, Reg_op r1))
                  (* case 2 *)
                  | inl (inl (inr (r,imm))) =>
                    (true, (Reg_op r, Imm_op (sign_extend8_32 imm)))
@@ -1906,14 +1918,14 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                  (* case 6 *)
                  | inr (inl (inr imm)) => (true, (Reg_op EAX, Imm_op imm))
                  (* case 7 *)
-                 | inr (inr (inl (op, imm))) => 
-                   (false, (op, Imm_op (zero_extend8_32 imm)))
+                 | inr (inr (inl (addr, imm))) => 
+                   (false, (Address_op addr, Imm_op (zero_extend8_32 imm)))
                  (* case 8 *)
-                 | inr (inr (inr (inl (op, imm)))) => 
-                   (true, (op, Imm_op (sign_extend8_32 imm)))
+                 | inr (inr (inr (inl (addr, imm)))) => 
+                   (true, (Address_op addr, Imm_op (sign_extend8_32 imm)))
                  (* case 9 *)
-                 | inr (inr (inr (inr (op, imm)))) =>
-                   (true, (op, Imm_op imm))
+                 | inr (inr (inr (inr (addr, imm)))) =>
+                   (true, (Address_op addr, Imm_op imm))
                end %% (pair_t char_t (pair_t operand_t operand_t)))
           & (fun u: [|pair_t char_t (pair_t operand_t operand_t)|] =>
                let (w, ops) := u in
@@ -1924,9 +1936,9 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                      | Reg_op r2 =>
                        (* alternate encoding:  
                           set the d bit false and reverse the two regs *)
-                       Some (inl (inl (inl (true, u))))
+                       Some (inl (inl (inl (true, (w, (r1, Reg_op r2))))))
                      | Address_op a =>
-                       Some (inl (inl (inl (true, u))))
+                       Some (inl (inl (inl (true, (w, (r1, Address_op a))))))
                      | Imm_op imm => 
                        match r1 with
                          | EAX =>
@@ -1947,14 +1959,14 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                  | Address_op a =>
                    match op2 with
                      | Reg_op r2 =>
-                       Some (inl (inl (inl (false, (w, (Reg_op r2, Address_op a))))))
+                       Some (inl (inl (inl (false, (w, (r2, Address_op a))))))
                      | Imm_op imm => 
                        if w then
                          if (repr_in_signed_byte_dec imm) then
-                           Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm))))))
+                           Some (inr (inr (inr (inl (a, (sign_shrink32_8 imm))))))
                          else
-                           Some (inr (inr (inr (inr (op1, imm)))))
-                       else Some (inr (inr (inl (op1, (zero_shrink32_8 imm)))))
+                           Some (inr (inr (inr (inr (a, imm)))))
+                       else Some (inr (inr (inl (a, (zero_shrink32_8 imm)))))
                      | _ => None
                    end
                  | _ => None
@@ -1966,9 +1978,8 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
     use_lemma modrm_rng_inv by eassumption.
     destruct d;
     match goal with
-      | [H: (exists _, _) /\ _ |- _] => 
-        destruct H as [[r1 H6] H8]; subst op1;
-        destruct H8 as [[r2 H8] | [addr H8]]; subst op2;
+      | [H: (exists _, _) \/ _ |- _] => 
+        destruct H as [[r2 H8] | [addr H8]]; subst op2;
         printable_tac; ibr_prover
     end.
   - (* case 2 *)
@@ -1991,32 +2002,22 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
   - (* case 6 *)
     ibr_prover. printable_tac; ibr_prover.
   - (* case 7 *)
-    destruct v as [op b]. ibr_prover.
-    use_lemma ext_op_modrm_rng_inv by eassumption.
-    match goal with 
-      | [H: exists _, op = _ |- _] => 
-        destruct H as [w H10]; subst op
-    end; printable_tac; ibr_prover.
+    destruct v as [op b]. 
+    printable_tac. ibr_prover.
   - (* case 8 *)
     destruct v as [op b]. ibr_prover.
-    use_lemma ext_op_modrm_rng_inv by eassumption.
-    match goal with 
-      | [H: exists _, op = _ |- _] => 
-        destruct H as [w H10]; subst op
-    end.
     destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2].
     + printable_tac; ibr_prover.
     + contradict H2; apply repr_in_signed_byte_extend8_32.
   - (* case 9 *)
     destruct v as [op1 op2]; ibr_prover.
-    use_lemma ext_op_modrm_rng_inv by eassumption.
-    repeat match goal with 
-      | [H: exists _, ?v = _ |- _] => 
-        destruct H; subst v
+    match goal with 
       | [ |- context[repr_in_signed_byte_dec ?imm]] => 
-        destruct (repr_in_signed_byte_dec imm)
-    end; printable_tac; ibr_prover.
-  - 
+        destruct (repr_in_signed_byte_dec imm);
+          printable_tac; ibr_prover
+    end.
+
+
 
 
   - destruct w as [w [op1 op2]].
@@ -2225,17 +2226,17 @@ TBC
     (fun imm => InstCon true (Reg_op EAX)  imm %% instruction_t)
   |+|
   (* zero-extend immediate byte to memory *)
-  "1000" $$ "0000" $$ ext_op_modrm opcode2 $ byte @ 
+  "1000" $$ "0000" $$ ext_op_modrm_noreg opcode2 $ byte @ 
     (fun p => let (op,imm) := p in InstCon false op (Imm_op (zero_extend8_32 imm)) %% 
     instruction_t)
   |+|
   (* sign-extend immediate byte to memory *)
-  "1000" $$ "0011" $$ ext_op_modrm opcode2 $ byte @ 
+  "1000" $$ "0011" $$ ext_op_modrm_noreg opcode2 $ byte @ 
     (fun p => let (op,imm) := p in InstCon true op (Imm_op (sign_extend8_32 imm)) %%
     instruction_t)
   |+|
   (* immediate word to memory *)
-  "1000" $$ "0001" $$ ext_op_modrm opcode2 $ imm_op opsize_override @ 
+  "1000" $$ "0001" $$ ext_op_modrm_noreg opcode2 $ imm_op opsize_override @ 
     (fun p => let (op,imm) := p in InstCon true op imm %% instruction_t).
 
 
@@ -2322,21 +2323,21 @@ end.
     "1111" $$ "111" $$ anybit $ "11001" $$ reg.
   Definition DEC_p2 := "0100" $$ "1" $$ reg.
 
-  (*Definition DEC_p3 : //todo: Skipped due to ext_op_modrm function*)
+  (*Definition DEC_p3 : //todo: Skipped due to ext_op_modrm_noreg function*)
   
   Definition DIV_p1 : wf_bigrammar (Pair_t Char_t register_t) := 
   "1111" $$ "011" $$ anybit $ "11110" $$ reg.
 
-  (*Definition DIV_p2 : //todo: Skipped due to ext_op_modrm function*)
+  (*Definition DIV_p2 : //todo: Skipped due to ext_op_modrm_noreg function*)
   
   Definition HLT_p : wf_bigrammar unit_t := "1111" $$ ! "0100".
   
   Definition IDIV_p1 : wf_bigrammar (Pair_t Char_t register_t)  :=
  "1111" $$ "011" $$ anybit $ "11111" $$ reg.
 
- (*Definition IDIV_p2 : //todo: ext_op_modrm function*)
+ (*Definition IDIV_p2 : //todo: ext_op_modrm_noreg function*)
  
- (*Definition IMUL_p : //todo: ext_op_modrm, modrm*)
+ (*Definition IMUL_p : //todo: ext_op_modrm_noreg, modrm*)
  
   Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
   Definition IN_p2 := "1110" $$ "110" $$ anybit.
@@ -2362,7 +2363,7 @@ end.
 
   Definition INC_p2 := "0100" $$ "0" $$ reg.
 
-  (*todo: Definition INC_p3 := "1111" $$ "111" $$ anybit $ ext_op_modrm "000".*)
+  (*todo: Definition INC_p3 := "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "000".*)
   
   Definition INS_p : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
   
@@ -2374,7 +2375,7 @@ end.
   
   Definition INVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "1000".
   
-  (*todo: Definition INVLPG_p := //ext_op_modrm function*)
+  (*todo: Definition INVLPG_p := //ext_op_modrm_noreg function*)
   
   Definition IRET_p : wf_bigrammar unit_t := "1100" $$ ! "1111".
 
@@ -2442,17 +2443,17 @@ Old grammars:
     (fun imm => InstCon true (Reg_op EAX)  imm %% instruction_t)
   |+|
   (* zero-extend immediate byte to memory *)
-  "1000" $$ "0000" $$ ext_op_modrm op2 $ byte @ 
+  "1000" $$ "0000" $$ ext_op_modrm_noreg op2 $ byte @ 
     (fun p => let (op,imm) := p in InstCon false op (Imm_op (zero_extend8_32 imm)) %% 
     instruction_t)
   |+|
   (* sign-extend immediate byte to memory *)
-  "1000" $$ "0011" $$ ext_op_modrm op2 $ byte @ 
+  "1000" $$ "0011" $$ ext_op_modrm_noreg op2 $ byte @ 
     (fun p => let (op,imm) := p in InstCon true op (Imm_op (sign_extend8_32 imm)) %%
     instruction_t)
   |+|
   (* immediate word to memory *)
-  "1000" $$ "0001" $$ ext_op_modrm op2 $ imm_op opsize_override @ 
+  "1000" $$ "0001" $$ ext_op_modrm_noreg op2 $ imm_op opsize_override @ 
     (fun p => let (op,imm) := p in InstCon true op imm %% instruction_t).
 
   Definition ADC_p s := logic_or_arith_p s "00010" "010" ADC.
@@ -2490,7 +2491,7 @@ Old grammars:
     (fun p => 
       let (r,imm) := p in Instr (Reg_op r) (Imm_op (zero_extend8_32 imm)) %% instruction_t)
   |+| 
-    "0000" $$ "1111" $$ "1011" $$ "1010" $$ ext_op_modrm opcode1 $ byte @
+    "0000" $$ "1111" $$ "1011" $$ "1010" $$ ext_op_modrm_noreg opcode1 $ byte @
     (fun p => 
       let (op1,imm) := p in Instr op1 (Imm_op (zero_extend8_32 imm)) %% instruction_t)
   |+|
@@ -2506,13 +2507,13 @@ Old grammars:
     "1110" $$ "1000" $$ word  @ 
     (fun w => CALL true false (Imm_op w) None %% instruction_t)
   |+|
-    "1111" $$ "1111" $$ ext_op_modrm2 "010" @ 
+    "1111" $$ "1111" $$ ext_op_modrm "010" @ 
     (fun op => CALL true true op None %% instruction_t)
   |+| 
     "1001" $$ "1010" $$ word $ halfword @ 
     (fun p => CALL false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
   |+|
-    "1111" $$ "1111" $$ ext_op_modrm2 "011" @ 
+    "1111" $$ "1111" $$ ext_op_modrm "011" @ 
     (fun op => CALL false true op None %% instruction_t).
 
   Definition CDQ_p := "1001" $$ bits "1001" @ (fun _ => CDQ %% instruction_t).
@@ -2542,14 +2543,14 @@ Old grammars:
     "0100" $$ "1" $$ reg @ 
       (fun r => DEC true (Reg_op r) %% instruction_t)
   |+| 
-    "1111" $$ "111" $$ anybit $ ext_op_modrm "001" @
+    "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "001" @
       (fun p => let (w,op1) := p in DEC w op1 %% instruction_t).
 
   Definition DIV_p := 
     "1111" $$ "011" $$ anybit $ "11110" $$ reg @ 
       (fun p => let (w,r) := p in DIV w (Reg_op r) %% instruction_t)
   |+| 
-    "1111" $$ "011" $$ anybit $ ext_op_modrm "110" @ 
+    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "110" @ 
       (fun p => let (w,op1) := p in DIV w op1 %% instruction_t).
 
   Definition HLT_p := "1111" $$ bits "0100" @ (fun _ => HLT %% instruction_t).
@@ -2558,11 +2559,11 @@ Old grammars:
     "1111" $$ "011" $$ anybit $ "11111" $$ reg @ 
     (fun p => let (w,r) := p in IDIV w (Reg_op r) %% instruction_t)
   |+|
-    "1111" $$ "011" $$ anybit $ ext_op_modrm "111" @ 
+    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "111" @ 
      (fun p => let (w,op1) := p in IDIV w op1 %% instruction_t).
 
   Definition IMUL_p opsize_override := 
-    "1111" $$ "011" $$ anybit $ ext_op_modrm2 "101" @
+    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "101" @
     (fun p => let (w,op1) := p in IMUL w op1 None None %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "1010" $$ "1111" $$ modrm @
@@ -2601,7 +2602,7 @@ Old grammars:
   |+|
     "0100" $$ "0" $$ reg @ (fun r => INC true (Reg_op r) %% instruction_t)
   |+|
-    "1111" $$ "111" $$ anybit $ ext_op_modrm "000" @ 
+    "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "000" @ 
        (fun p => let (w,op1) := p in INC w op1 %% instruction_t).
 
   Definition INS_p := "0110" $$ "110" $$ anybit @ (fun x => INS x %% instruction_t).
@@ -2614,7 +2615,7 @@ Old grammars:
     (fun _ => INVD %% instruction_t).
 
   Definition INVLPG_p := 
-    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "111" @ 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "111" @ 
     (fun x => INVLPG x %% instruction_t).
 
   Definition IRET_p := "1100" $$ bits "1111" @ (fun _ => IRET %% instruction_t).
@@ -2635,13 +2636,13 @@ Old grammars:
     "1110" $$ "1001" $$ word @ 
     (fun w => JMP true false (Imm_op w) None %% instruction_t)
   |+|
-    "1111" $$ "1111" $$ ext_op_modrm2 "100" @ 
+    "1111" $$ "1111" $$ ext_op_modrm "100" @ 
     (fun op => JMP true true op None %% instruction_t)
   |+|
     "1110" $$ "1010" $$ word $ halfword @ 
       (fun p => JMP false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
   |+|
-    "1111" $$ "1111" $$ ext_op_modrm2 "101" @ 
+    "1111" $$ "1111" $$ ext_op_modrm "101" @ 
     (fun op => JMP false true op None %% instruction_t).
 
   Definition LAHF_p := "1001" $$ bits "1111" @ (fun _ => LAHF %% instruction_t).
@@ -2660,24 +2661,24 @@ Old grammars:
     (fun p => LES (fst p) (snd p) %% instruction_t).
   Definition LFS_p := "0000" $$ "1111" $$ "1011" $$ "0100" $$ modrm @ 
     (fun p => LFS (fst p) (snd p) %% instruction_t).
-  Definition LGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "010" @ 
+  Definition LGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "010" @ 
     (fun x => LGDT x %% instruction_t).
   Definition LGS_p := "0000" $$ "1111" $$ "1011" $$ "0101" $$ modrm @ 
     (fun p => LGS (fst p) (snd p) %% instruction_t).
-  Definition LIDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "011" @ 
+  Definition LIDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "011" @ 
     (fun x => LIDT x %% instruction_t).
   Definition LLDT_p := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ "11" $$ "010" $$ reg @ 
     (fun r => LLDT (Reg_op r) %% instruction_t)
   |+| 
-    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "010" @ 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm_noreg "010" @ 
     (fun x => LLDT x %% instruction_t).
 
   Definition LMSW_p := 
     "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ "110" $$ reg @ 
       (fun r => LMSW (Reg_op r) %% instruction_t)
   |+|
-    "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ ext_op_modrm "110" @ 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ ext_op_modrm_noreg "110" @ 
       (fun x => LMSW x %% instruction_t).
 
   (* JGM: note, this isn't really an instruction, but rather a prefix.  So it
@@ -2691,7 +2692,7 @@ Old grammars:
     (fun p => LSL (fst p) (snd p) %% instruction_t).
   Definition LSS_p := "0000" $$ "1111" $$ "1011" $$ "0010" $$ modrm @ 
     (fun p => LSS (fst p) (snd p) %% instruction_t).
-  Definition LTR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "011" @ 
+  Definition LTR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "011" @ 
     (fun x => LTR x %% instruction_t).
 
   (* This may not be right. Need to test this thoroughly. 
@@ -2725,10 +2726,10 @@ Old grammars:
                   | (r,b) => MOV false (Reg_op r) (Imm_op (zero_extend8_32 b))
                 end %% instruction_t)
   |+|
-    "1100" $$ "0111" $$ ext_op_modrm "000" $ imm_op opsize_override @ 
+    "1100" $$ "0111" $$ ext_op_modrm_noreg "000" $ imm_op opsize_override @ 
       (fun p => match p with | (op,w) => MOV true op w end %% instruction_t)
   |+|
-    "1100" $$ "0110" $$ ext_op_modrm "000" $ byte @ 
+    "1100" $$ "0110" $$ ext_op_modrm_noreg "000" $ byte @ 
     (fun p => match p with | (op,b) => MOV false op (Imm_op (zero_extend8_32 b)) end %% instruction_t)
   |+|
     "1010" $$ "0001" $$ word @ (fun w => MOV true  (Reg_op EAX) (Offset_op w) %% instruction_t)
@@ -2813,22 +2814,22 @@ Old grammars:
     (fun p => match p with | (w,(op1,op2)) => MOVZX w op1 op2 end %% instruction_t).
 
   Definition MUL_p := 
-  "1111" $$ "011" $$ anybit $ ext_op_modrm2 "100" @ 
+  "1111" $$ "011" $$ anybit $ ext_op_modrm "100" @ 
     (fun p => MUL (fst p) (snd p) %% instruction_t).
 
   Definition NEG_p := 
-  "1111" $$ "011" $$ anybit $ ext_op_modrm2 "011" @ 
+  "1111" $$ "011" $$ anybit $ ext_op_modrm "011" @ 
     (fun p => NEG (fst p) (snd p) %% instruction_t).
 
   Definition NOP_p := 
   (* The following is the same as the encoding of "XCHG EAX, EAX"
     "1001" $$ bits "0000" @ (fun _ => NOP None %% instruction_t)
   |+| *)
-    "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm2 "000" @ 
+    "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm "000" @ 
     (fun op => NOP op %% instruction_t).
 
   Definition NOT_p := 
-    "1111" $$ "011" $$ anybit $ ext_op_modrm2 "010" @ 
+    "1111" $$ "011" $$ anybit $ ext_op_modrm "010" @ 
     (fun p => NOT (fst p) (snd p) %% instruction_t).
 
   Definition OUT_p := 
@@ -2840,7 +2841,7 @@ Old grammars:
   Definition OUTS_p := "0110" $$ "111" $$ anybit @ (fun x => OUTS x %% instruction_t).
 
   Definition POP_p := 
-  "1000" $$ "1111" $$ ext_op_modrm2 "000" @ (fun x => POP x %% instruction_t)
+  "1000" $$ "1111" $$ ext_op_modrm "000" @ (fun x => POP x %% instruction_t)
   |+|
     "0101" $$ "1" $$ reg @ (fun r => POP (Reg_op r) %% instruction_t).
 
@@ -2861,7 +2862,7 @@ Old grammars:
   Definition POPF_p := "1001" $$ bits "1101" @ (fun _ => POPF %% instruction_t).
   
   Definition PUSH_p := 
-    "1111" $$ "1111" $$ ext_op_modrm "110" @ (fun x => PUSH true x %% instruction_t)
+    "1111" $$ "1111" $$ ext_op_modrm_noreg "110" @ (fun x => PUSH true x %% instruction_t)
   |+|
     "0101" $$ "0" $$ reg @ (fun r => PUSH true (Reg_op r) %% instruction_t)
   |+|
@@ -2890,13 +2891,13 @@ Old grammars:
   Definition PUSHF_p := "1001" $$ bits "1100" @ (fun _ => PUSHF %% instruction_t).
 
   Definition rotate_p extop (inst : bool -> operand -> reg_or_immed -> instr) := 
-    "1101" $$ "000" $$ anybit $ ext_op_modrm2 extop @ 
+    "1101" $$ "000" $$ anybit $ ext_op_modrm extop @ 
     (fun p => inst (fst p) (snd p) (Imm_ri (Word.repr 1)) %% instruction_t)
   |+|
-    "1101" $$ "001" $$ anybit $ ext_op_modrm2 extop @
+    "1101" $$ "001" $$ anybit $ ext_op_modrm extop @
     (fun p => inst (fst p) (snd p) (Reg_ri ECX) %% instruction_t)
   |+|
-    "1100" $$ "000" $$ anybit $ ext_op_modrm2 extop $ byte @
+    "1100" $$ "000" $$ anybit $ ext_op_modrm extop $ byte @
     (fun p => match p with | (w, (op,b)) => inst w op (Imm_ri b) end %% instruction_t).
 
   Definition RCL_p := rotate_p "010" RCL.
@@ -2952,7 +2953,7 @@ Old grammars:
   Definition SETcc_p := 
   "0000" $$ "1111" $$ "1001" $$ tttn $ modrm @ 
     (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
-  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "000" @ 
+  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "000" @ 
     (fun x => SGDT x %% instruction_t).
   Definition SHL_p := rotate_p "100" SHL.
 
@@ -2972,13 +2973,13 @@ Old grammars:
   Definition SHLD_p := shiftdouble_p "01" SHLD.
   Definition SHR_p := rotate_p "101" SHR.
   Definition SHRD_p := shiftdouble_p "11" SHRD.
-  Definition SIDT_p := ("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "001") @ 
+  Definition SIDT_p := ("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "001") @ 
     (fun x => SIDT x %% instruction_t).
 
-  Definition SLDT_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "000" @ 
+  Definition SLDT_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "000" @ 
     (fun x => SLDT x %% instruction_t).
 
-  Definition SMSW_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "100" @ 
+  Definition SMSW_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "100" @ 
     (fun x => SMSW x %% instruction_t).
   Definition STC_p := "1111" $$ bits "1001" @ (fun _ => STC %% instruction_t).
   Definition STD_p := "1111" $$ bits "1101" @ (fun _ => STD %% instruction_t).
@@ -2986,14 +2987,14 @@ Old grammars:
   Definition STOS_p := "1010" $$ "101" $$ anybit @ 
     (fun x => STOS x %% instruction_t).
   Definition STR_p := 
-    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "001" @ 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001" @ 
     (fun x => STR x %% instruction_t).
 
   Definition TEST_p (opsize_override: bool) := 
-    "1111" $$ "0111" $$ ext_op_modrm2 "000" $ imm_op opsize_override @ 
+    "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_op opsize_override @ 
     (fun p => TEST true (fst p) (snd p) %% instruction_t)
   |+| 
-    "1111" $$ "0110" $$ ext_op_modrm2 "000" $ byte @ 
+    "1111" $$ "0110" $$ ext_op_modrm "000" $ byte @ 
     (fun p => TEST false (fst p) (Imm_op (zero_extend8_32 (snd p))) %% instruction_t)
   |+|
     "1000" $$ "010" $$ anybit $ modrm @
@@ -3007,9 +3008,9 @@ Old grammars:
   Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ bits "1011" @ 
     (fun _ => UD2 %% instruction_t).
 
-  Definition VERR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "100" @ 
+  Definition VERR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "100" @ 
     (fun x => VERR x %% instruction_t).
-  Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "101" @ 
+  Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "101" @ 
     (fun x => VERW x %% instruction_t).
   Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1001" @ 
     (fun _ => WBINVD %% instruction_t).
@@ -3031,18 +3032,18 @@ Old grammars:
   Definition FABS_p :=  "11011" $$ "001111" $$ bits "00001" @ (fun _ => FABS %% instruction_t). 
 
   Definition FADD_p := 
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "000" @ 
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "000" @ 
       (fun x => FADD true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "000" @
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "000" @
       (fun x => FADD true x %% instruction_t) 
   |+|  
     "11011" $$ anybit $ "0011000" $$ fpu_reg @ (fun p => let (d,s) := p in FADD d (FPS_op s) %% instruction_t).
 
   Definition FADDP_p := "11011" $$ "110" $$ "11000" $$ fpu_reg @ (fun x => FADDP (FPS_op x) %% instruction_t).
-  Definition FBLD_p := "11011" $$ "111" $$ ext_op_modrm_FPM64 "100" @
+  Definition FBLD_p := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "100" @
                           (fun x => FBLD x %% instruction_t).
-  Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_FPM64 "110" @
+  Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "110" @
                           (fun x => FBSTP x %% instruction_t).
   Definition FCHS_p := "11011" $$ "001111" $$ bits "00000" @ (fun _ => FCHS %% instruction_t).
 
@@ -3056,19 +3057,19 @@ Old grammars:
       end).
 
   Definition FCOM_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "010" @
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "010" @
         (fun x => FCOM x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "010" @
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "010" @
         (fun x => FCOM x %% instruction_t) 
   |+|  
     "11011" $$ "000" $$ "11010" $$ fpu_reg @ (fun x => FCOM (FPS_op x) %% instruction_t).
 
   Definition FCOMP_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "011" @
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "011" @
        (fun x => FCOMP x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "011" @
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "011" @
        (fun x => FCOMP x %% instruction_t) 
   |+|  
     "11011" $$ "000" $$ "11011" $$ fpu_reg @ (fun x => FCOMP (FPS_op x) %% instruction_t).
@@ -3079,10 +3080,10 @@ Old grammars:
   Definition FDECSTP_p := "11011" $$ "001" $$ "111" $$ bits "10110" @ (fun _=> FDECSTP %% instruction_t).
 
   Definition FDIV_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "110" @ 
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_nroeg "110" @ 
        (fun x => FDIV true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "110" @
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "110" @
        (fun x => FDIV true x %% instruction_t)
   |+|  
     "11011" $$ "0" $$ "00" $$ "1111" $$ "0" $$ fpu_reg @ 
@@ -3094,10 +3095,10 @@ Old grammars:
   Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg @ (fun x => FDIVP (FPS_op x) %% instruction_t).
 
   Definition FDIVR_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "111" @
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "111" @
        (fun x => FDIVR true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "111" @
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "111" @
        (fun x => FDIVR true x  %% instruction_t)
   |+|  
     "11011" $$ "0" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
@@ -3109,75 +3110,75 @@ Old grammars:
   Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg @ (fun x => FDIVRP (FPS_op x) %% instruction_t).
   Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg @ (fun x => FFREE (FPS_op x) %% instruction_t).
   Definition FIADD_p := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "000" @ (fun x => FIADD x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "000" @ (fun x => FIADD x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "000" @ (fun x => FIADD x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "000" @ (fun x => FIADD x %% instruction_t).
   
   Definition FICOM_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "010" @ (fun x => FICOM x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "010" @ (fun x => FICOM x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "010" @ (fun x => FICOM x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "010" @ (fun x => FICOM x %% instruction_t).
 
   Definition FICOMP_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "011" @ (fun x => FICOMP x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "011" @ (fun x => FICOMP x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "011" @ (fun x => FICOMP x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "011" @ (fun x => FICOMP x %% instruction_t).
 
   Definition FIDIV_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "110" @ (fun x => FIDIV x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "110" @ (fun x => FIDIV x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "110" @ (fun x => FIDIV x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "110" @ (fun x => FIDIV x %% instruction_t).
 
   Definition FIDIVR_p  := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "111" @ (fun x => FIDIVR x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "111" @ (fun x => FIDIVR x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "111" @ (fun x => FIDIVR x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "111" @ (fun x => FIDIVR x %% instruction_t).
 
   Definition FILD_p  := 
-    "11011" $$ "111" $$ ext_op_modrm_FPM16 "000" @ (fun x => FILD x %% instruction_t)
+    "11011" $$ "111" $$ ext_op_modrm_FPM16_noreg "000" @ (fun x => FILD x %% instruction_t)
   |+|
-    "11011" $$ "011" $$ ext_op_modrm_FPM32 "000" @ (fun x => FILD x %% instruction_t)
+    "11011" $$ "011" $$ ext_op_modrm_FPM32_noreg "000" @ (fun x => FILD x %% instruction_t)
   |+|
-    "11011" $$ "111" $$ ext_op_modrm_FPM64 "101" @ (fun x => FILD x %% instruction_t).
+    "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "101" @ (fun x => FILD x %% instruction_t).
   Definition FIMUL_p := 
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "001" @ (fun x => FIMUL x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "001" @ (fun x => FIMUL x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "001" @ (fun x => FIMUL x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "001" @ (fun x => FIMUL x %% instruction_t).
   Definition FINCSTP_p := "11011" $$ "001111" $$ bits "10111" @ (fun _ => FINCSTP %% instruction_t).
   Definition FIST_p :=
-    "11011" $$ "111" $$ ext_op_modrm_FPM16 "010" @ (fun x => FIST x %% instruction_t)
+    "11011" $$ "111" $$ ext_op_modrm_FPM16_noreg "010" @ (fun x => FIST x %% instruction_t)
   |+|
-    "11011" $$ "011" $$ ext_op_modrm_FPM32 "010" @ (fun x => FIST x %% instruction_t).
+    "11011" $$ "011" $$ ext_op_modrm_FPM32_noreg "010" @ (fun x => FIST x %% instruction_t).
 
   Definition FISTP_p :=
-    "11011" $$ "111" $$ ext_op_modrm_FPM16 "011" @ (fun x => FISTP x %% instruction_t)
+    "11011" $$ "111" $$ ext_op_modrm_FPM16_noreg "011" @ (fun x => FISTP x %% instruction_t)
   |+|
-    "11011" $$ "011" $$ ext_op_modrm_FPM32 "011" @ (fun x => FISTP x %% instruction_t)
+    "11011" $$ "011" $$ ext_op_modrm_FPM32_noreg "011" @ (fun x => FISTP x %% instruction_t)
   |+|
-    "11011" $$ "111" $$ ext_op_modrm_FPM64 "111" @ (fun x => FISTP x %% instruction_t).
+    "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "111" @ (fun x => FISTP x %% instruction_t).
 
   Definition FISUB_p :=
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "100" @ (fun x => FISUB x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "100" @ (fun x => FISUB x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "100" @ (fun x => FISUB x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "100" @ (fun x => FISUB x %% instruction_t).
 
   Definition FISUBR_p :=
-    "11011" $$ "110" $$ ext_op_modrm_FPM16 "101" @ (fun x => FISUBR x %% instruction_t)
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "101" @ (fun x => FISUBR x %% instruction_t)
   |+|
-    "11011" $$ "010" $$ ext_op_modrm_FPM32 "101" @ (fun x => FISUBR x %% instruction_t).
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "101" @ (fun x => FISUBR x %% instruction_t).
 
   Definition FLD_p :=
-    "11011" $$ "001" $$ ext_op_modrm_FPM32 "000" @ (fun x => FLD x %% instruction_t)
+    "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "000" @ (fun x => FLD x %% instruction_t)
   |+|
-    "11011" $$ "101" $$ ext_op_modrm_FPM64 "000" @ (fun x => FLD x %% instruction_t)
+    "11011" $$ "101" $$ ext_op_modrm_FPM64_noreg "000" @ (fun x => FLD x %% instruction_t)
   |+|
-    "11011" $$ "011" $$ ext_op_modrm_FPM80 "101" @ (fun x => FLD x %% instruction_t)
+    "11011" $$ "011" $$ ext_op_modrm_FPM80_noreg "101" @ (fun x => FLD x %% instruction_t)
   |+|
     "11011" $$ "001" $$ "11000" $$ fpu_reg @ (fun x => FLD (FPS_op x) %% instruction_t).
 
   Definition FLD1_p := "11011" $$ "001111" $$ bits "01000" @ (fun _ => FLD1 %% instruction_t).
-  Definition FLDCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "101" @ (fun x => FLDCW x %% instruction_t).
-  Definition FLDENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "100" @ (fun x => FLDENV x %% instruction_t).
+  Definition FLDCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "101" @ (fun x => FLDCW x %% instruction_t).
+  Definition FLDENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "100" @ (fun x => FLDENV x %% instruction_t).
   Definition FLDL2E_p := "11011" $$ "001111" $$ bits "01010" @ (fun _ => FLDL2E %% instruction_t). 
   Definition FLDL2T_p := "11011" $$ "001111" $$ bits "01001" @ (fun _ => FLDL2T %% instruction_t). 
   Definition FLDLG2_p := "11011" $$ "001111" $$ bits "01100" @ (fun _ => FLDLG2 %% instruction_t). 
@@ -3186,9 +3187,9 @@ Old grammars:
   Definition FLDZ_p := "11011" $$ "001111" $$ bits "01110" @ (fun _ => FLDZ %% instruction_t).
 
   Definition FMUL_p := 
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "001" @ (fun x => FMUL true x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "001" @ (fun x => FMUL true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "001" @ (fun x => FMUL true x %% instruction_t) 
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "001" @ (fun x => FMUL true x %% instruction_t) 
   |+|  
     "11011" $$ anybit $ "00" $$ "11001" $$ fpu_reg @ (fun p => let (d,s) := p in FMUL d (FPS_op s) %% instruction_t).
 
@@ -3196,12 +3197,12 @@ Old grammars:
   Definition FNCLEX_p := "11011" $$ "011111" $$ bits "00010" @ (fun _ => FNCLEX %% instruction_t).
   Definition FNINIT_p := "11011" $$ "011111" $$ bits "00011" @ (fun _ => FNINIT %% instruction_t).
   Definition FNOP_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FNOP %% instruction_t).
-  Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64 "110" @ (fun x => FNSAVE x %% instruction_t).
-  Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "111" @ (fun x => FNSTCW x %% instruction_t).
+  Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64_noreg "110" @ (fun x => FNSAVE x %% instruction_t).
+  Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "111" @ (fun x => FNSTCW x %% instruction_t).
   Definition FNSTSW_p := 
     "11011" $$ "111" $$ "111" $$ bits "00000" @ (fun _ => FNSTSW None %% instruction_t)
   |+|
-    "11011" $$ "101" $$ ext_op_modrm_FPM32 "111" @ (fun x => FNSTSW (Some x) %% instruction_t).
+    "11011" $$ "101" $$ ext_op_modrm_FPM32_noreg "111" @ (fun x => FNSTSW (Some x) %% instruction_t).
 
   Definition FPATAN_p := "11011" $$ "001111" $$ bits "10011" @ (fun _ => FPATAN %% instruction_t).
   Definition FPREM_p := "11011" $$ "001111" $$ bits "11000" @ (fun _ => FPREM %% instruction_t).
@@ -3209,7 +3210,7 @@ Old grammars:
   Definition FPTAN_p := "11011" $$ "001111" $$ bits "10010" @ (fun _ => FPTAN %% instruction_t).
   Definition FRNDINT_p := "11011" $$ "001111" $$ bits "11100" @ (fun _ => FRNDINT %% instruction_t).
 
-  Definition FRSTOR_p := "11011" $$ "101" $$ ext_op_modrm_FPM32 "100" @ (fun x => FRSTOR x %% instruction_t).
+  Definition FRSTOR_p := "11011" $$ "101" $$ ext_op_modrm_FPM32_noreg "100" @ (fun x => FRSTOR x %% instruction_t).
 
   Definition FSCALE_p := "11011" $$ "001111" $$ bits "11101" @ (fun _ => FSCALE %% instruction_t).
   Definition FSIN_p := "11011" $$ "001111" $$ bits "11110" @ (fun _ => FSIN %% instruction_t).
@@ -3217,28 +3218,28 @@ Old grammars:
   Definition FSQRT_p := "11011" $$ "001111" $$ bits "11010" @ (fun _ => FSQRT %% instruction_t).
 
   Definition FST_p := 
-    "11011" $$ "001" $$ ext_op_modrm_FPM32 "010" @ (fun x => FST x %% instruction_t)
+    "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "010" @ (fun x => FST x %% instruction_t)
   |+|
-    "11011" $$ "101" $$ ext_op_modrm_FPM64 "010" @ (fun x => FST x %% instruction_t)
+    "11011" $$ "101" $$ ext_op_modrm_FPM64_noreg "010" @ (fun x => FST x %% instruction_t)
   |+|
     "11011" $$ "101" $$ "11010" $$ fpu_reg @ (fun x => FST (FPS_op x) %% instruction_t).
 
   (* FSTCW's encoding is the same as FWAIT followed by FNSTCW *)
   (* Definition FSTCW_p := "10011011" $$ "11011" $$ "001" $$ ext_op_modrm_FPM32 "111" @ (fun x => FSTCW x %% instruction_t). *)
-  Definition FSTENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "110" @ (fun x => FSTENV x %% instruction_t).
+  Definition FSTENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "110" @ (fun x => FSTENV x %% instruction_t).
   Definition FSTP_p := 
-    "11011" $$ "001" $$ ext_op_modrm_FPM32 "011" @ (fun x => FSTP x %% instruction_t)
+    "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "011" @ (fun x => FSTP x %% instruction_t)
   |+|
-    "11011" $$ "101" $$ ext_op_modrm_FPM64 "011" @ (fun x => FSTP x %% instruction_t)
+    "11011" $$ "101" $$ ext_op_modrm_FPM64_noreg "011" @ (fun x => FSTP x %% instruction_t)
   |+|
-    "11011" $$ "011" $$ ext_op_modrm_FPM80 "111" @ (fun x => FSTP x %% instruction_t) 
+    "11011" $$ "011" $$ ext_op_modrm_FPM80_noreg "111" @ (fun x => FSTP x %% instruction_t) 
   |+|  
     "11011" $$ "101" $$ "11011" $$ fpu_reg @ (fun x => FSTP (FPS_op x) %% instruction_t). 
 
   Definition FSUB_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "100" @ (fun x => FSUB true x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "100" @ (fun x => FSUB true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "100" @ (fun x => FSUB true x %% instruction_t) 
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "100" @ (fun x => FSUB true x %% instruction_t) 
   |+|  
     "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
     (fun i => FSUB true (FPS_op i) %% instruction_t)
@@ -3249,9 +3250,9 @@ Old grammars:
   Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg @ (fun x => FSUBP (FPS_op x) %% instruction_t).
 
   Definition FSUBR_p := 
-    "11011" $$ "000" $$ ext_op_modrm_FPM32 "101" @ (fun x => FSUBR true x %% instruction_t)
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "101" @ (fun x => FSUBR true x %% instruction_t)
   |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64 "101" @ (fun x => FSUBR true x %% instruction_t)
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "101" @ (fun x => FSUBR true x %% instruction_t)
   |+|  
     "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
     (fun i => FSUBR true (FPS_op i) %% instruction_t)
@@ -3500,7 +3501,7 @@ Definition DIVSS_p :=
     (fun p => let (op1, op2) := p in DIVSS op1 op2 %% instruction_t).
 
 Definition LDMXCSR_p := 
-  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse "010" @ (fun x => LDMXCSR x %% instruction_t).
+  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "010" @ (fun x => LDMXCSR x %% instruction_t).
 
 Definition MAXPS_p := 
   "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm @ 
@@ -3607,7 +3608,7 @@ Definition SQRTSS_p :=
     (fun p => let (op1, op2) := p in SQRTSS op1 op2 %% instruction_t).
 
 Definition STMXCSR_p := 
-  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse "011" @ (fun x => STMXCSR x %% instruction_t).
+  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "011" @ (fun x => STMXCSR x %% instruction_t).
 
 Definition SUBPS_p :=
   "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm @ 
@@ -3705,16 +3706,16 @@ Definition MOVNTQ_p :=
     (fun p => let (op1, mem) := p in MOVNTQ mem op1 %% instruction_t).
 
 Definition PREFETCHT0_p :=
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "001" @ (fun x => PREFETCHT0 x %% instruction_t).
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "001" @ (fun x => PREFETCHT0 x %% instruction_t).
 
 Definition PREFETCHT1_p :=
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "010" @ (fun x => PREFETCHT1 x %% instruction_t).
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "010" @ (fun x => PREFETCHT1 x %% instruction_t).
 
 Definition PREFETCHT2_p := 
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "011" @ (fun x => PREFETCHT2 x %% instruction_t).
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "011" @ (fun x => PREFETCHT2 x %% instruction_t).
 
 Definition PREFETCHNTA_p :=
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "000" @ (fun x => PREFETCHNTA x %% instruction_t).
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "000" @ (fun x => PREFETCHNTA x %% instruction_t).
 
 Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$ 
                                    bits "1000" @ (fun _ => SFENCE %% instruction_t).
@@ -4077,8 +4078,8 @@ Extraction Implicit seqs [t].
 Extraction Implicit bitsleft [t].
 Extraction Implicit modrm_gen [res_t].
 Extraction Implicit modrm_gen_noreg [reg_t res_t].
+Extraction Implicit ext_op_modrm_gen_noreg2 [res_t].
 Extraction Implicit ext_op_modrm_gen [res_t].
-Extraction Implicit ext_op_modrm2_gen [res_t].
 Extraction Implicit perm2 [t1 t2].
 Extraction Implicit perm3 [t1 t2 t3].
 Extraction Implicit perm4 [t1 t2 t3 t4].
