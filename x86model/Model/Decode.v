@@ -1450,37 +1450,38 @@ End X86_PARSER_ARG.
       |\/| ("10" $$ reg_p $ rm10).
   Implicit Arguments modrm_gen_noreg [reg_t].
 
-  Definition modrm_gen_noreg2 (reg_t res_t: type)
-    (reg_p: wf_bigrammar reg_t) 
-    (addr_op: funinv address_t res_t)  (* the constructor that converts an *)
-                                       (* address to result and its inverse *)
-    (pf: strong_invertible addr_op)
-    : wf_bigrammar (pair_t reg_t res_t).
-    intros.
-    refine ((modrm_gen_noreg reg_p)
-              @ (fun v => match v with
-                            | (r, addr) => (r, fst addr_op addr)
-                          end %% (pair_t reg_t res_t))
-              & (fun u => match u with
-                            | (r, op2) =>
-                              match snd addr_op op2 with
-                                | Some addr => Some (r, addr)
-                                | None => None
-                              end
-                          end)
-              & _); invertible_tac;
-    destruct addr_op as [f1 f2];
-    unfold strong_invertible in pf; simpl in pf;
-    destruct pf as [pf1 pf2].
-    - exists v. destruct v as [res addr].
-      rewrite pf1. intuition.
-    - destruct v as [res addr].
-      destruct w as [op1 op2].
-      remember_rev (f2 op2) as fo. destruct fo.
-      + rewrite (pf2 addr op2); clear pf1 pf2 H; crush.
-      + discriminate.
-  Defined.
-  Implicit Arguments modrm_gen_noreg2 [reg_t res_t].
+  (* todo: remove *)
+  (* Definition modrm_gen_noreg2 (reg_t res_t: type) *)
+  (*   (reg_p: wf_bigrammar reg_t)  *)
+  (*   (addr_op: funinv address_t res_t)  (* the constructor that converts an *) *)
+  (*                                      (* address to result and its inverse *) *)
+  (*   (pf: strong_invertible addr_op) *)
+  (*   : wf_bigrammar (pair_t reg_t res_t). *)
+  (*   intros. *)
+  (*   refine ((modrm_gen_noreg reg_p) *)
+  (*             @ (fun v => match v with *)
+  (*                           | (r, addr) => (r, fst addr_op addr) *)
+  (*                         end %% (pair_t reg_t res_t)) *)
+  (*             & (fun u => match u with *)
+  (*                           | (r, op2) => *)
+  (*                             match snd addr_op op2 with *)
+  (*                               | Some addr => Some (r, addr) *)
+  (*                               | None => None *)
+  (*                             end *)
+  (*                         end) *)
+  (*             & _); invertible_tac; *)
+  (*   destruct addr_op as [f1 f2]; *)
+  (*   unfold strong_invertible in pf; simpl in pf; *)
+  (*   destruct pf as [pf1 pf2]. *)
+  (*   - exists v. destruct v as [res addr]. *)
+  (*     rewrite pf1. intuition. *)
+  (*   - destruct v as [res addr]. *)
+  (*     destruct w as [op1 op2]. *)
+  (*     remember_rev (f2 op2) as fo. destruct fo. *)
+  (*     + rewrite (pf2 addr op2); clear pf1 pf2 H; crush. *)
+  (*     + discriminate. *)
+  (* Defined. *)
+  (* Implicit Arguments modrm_gen_noreg2 [reg_t res_t]. *)
 
   (** a general modrm grammar for integer, floating-point, sse, mmx instructions *)
   Definition modrm_gen (reg_t: type) 
@@ -1491,33 +1492,34 @@ End X86_PARSER_ARG.
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern, and the pattern starting with "11" is excluded. *)
-  Program Definition ext_op_modrm_gen_noreg (bs: string) : wf_bigrammar address_t :=
+  Program Definition ext_op_modrm_noreg (bs: string) : wf_bigrammar address_t :=
          ("00" $$ bs $$ rm00)
     |\/| ("01" $$ bs $$ rm01)
     |\/| ("10" $$ bs $$ rm10).
-  
-  Definition ext_op_modrm_gen_noreg2 (res_t: type)
-    (addr_op: funinv address_t res_t)
-    (pf: strong_invertible addr_op)
-    (bs: string) : wf_bigrammar res_t.
-    intros.
-    refine ((ext_op_modrm_gen_noreg bs)
-              @ (fst addr_op)
-              & (snd addr_op)
-              & _); invertible_tac;
-    destruct addr_op as [f1 f2];
-    unfold strong_invertible in pf; destruct pf as [pf1 pf2].
-    - rewrite pf1. printable_tac.
-    - apply pf2. simpl. trivial.
-  Defined.
-  Implicit Arguments ext_op_modrm_gen_noreg2 [res_t].
+
+  (* todo: remove *)
+  (* Definition ext_op_modrm_gen_noreg2 (res_t: type) *)
+  (*   (addr_op: funinv address_t res_t) *)
+  (*   (pf: strong_invertible addr_op) *)
+  (*   (bs: string) : wf_bigrammar res_t. *)
+  (*   intros. *)
+  (*   refine ((ext_op_modrm_gen_noreg bs) *)
+  (*             @ (fst addr_op) *)
+  (*             & (snd addr_op) *)
+  (*             & _); invertible_tac; *)
+  (*   destruct addr_op as [f1 f2]; *)
+  (*   unfold strong_invertible in pf; destruct pf as [pf1 pf2]. *)
+  (*   - rewrite pf1. printable_tac. *)
+  (*   - apply pf2. simpl. trivial. *)
+  (* Defined. *)
+  (* Implicit Arguments ext_op_modrm_gen_noreg2 [res_t]. *)
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern*)
   Definition ext_op_modrm_gen (reg_t: type)
     (reg_p: wf_bigrammar reg_t)
     (bs:string) : wf_bigrammar (sum_t address_t reg_t) :=
-    ext_op_modrm_gen_noreg bs |+| "11" $$ bs $$ reg_p.
+    ext_op_modrm_noreg bs |+| "11" $$ bs $$ reg_p.
   Implicit Arguments ext_op_modrm_gen [reg_t].
 
   (* todo: remove *)
@@ -1612,13 +1614,6 @@ End X86_PARSER_ARG.
   Definition modrm_noreg : wf_bigrammar (pair_t register_t address_t) :=
     modrm_gen_noreg reg.
 
-  (* todo: remove *)
-  (* Definition modrm_noreg : wf_bigrammar (pair_t register_t operand_t). *)
-  (*   refine (modrm_gen_noreg2 reg *)
-  (*              (Address_op: address -> [|operand_t|], Address_op_inv) *)
-  (*           _); strong_invertible_tac. *)
-  (* Defined. *)
-
   Definition modrm_bv2_noreg: wf_bigrammar (pair_t (bitvector_t 2) address_t) :=
     modrm_gen_noreg (field_intn 2).
   Notation modrm_xmm_noreg := modrm_bv2_noreg.
@@ -1626,6 +1621,7 @@ End X86_PARSER_ARG.
 
  (* note: can be replaced by modrm_noreg since it now produces register_t, address_t *)
   (* general-purpose regs used in SSE instructions *)
+  (* todo: remove *)
   (* Definition modrm_xmm_gp_noreg : wf_bigrammar (pair_t register_t address_t) := *)
   (*   modrm_gen_noreg reg. *)
 
@@ -1645,55 +1641,6 @@ End X86_PARSER_ARG.
     - destruct v; printable_tac.
     - destruct v; destruct w; parsable_tac.
   Defined.
-
-  (* todo: remove *)
-  (* Definition ext_op_modrm : string -> wf_bigrammar operand_t. *)
-  (*   refine (ext_op_modrm_gen Reg_op_p (Address_op, Address_op_inv) _); *)
-  (*   strong_invertible_tac. *)
-  (* Defined. *)
-
-  (* todo: remove *)
-  (* Definition ext_op_modrm_noreg : string -> wf_bigrammar operand_t.  *)
-  (*   refine (ext_op_modrm_gen_noreg2 *)
-  (*             (Address_op:address -> [|operand_t|], Address_op_inv) _); *)
-  (*   strong_invertible_tac. *)
-  (* Defined. *)
-
-  (* todo: remove *)
-  (*mod^A "bbb" mem in manual for SSE instructions*)
-  (* Definition ext_op_modrm_sse_noreg : string -> wf_bigrammar sse_operand_t. *)
-  (*   refine (ext_op_modrm_gen_noreg2 *)
-  (*             (SSE_Addr_op: address -> [|sse_operand_t|], SSE_Addr_op_inv) _); *)
-  (*   strong_invertible_tac. *)
-  (* Defined. *)
-
-  (* todo: remove *)
-  (* Definition ext_op_modrm_FPM16_noreg : string -> wf_bigrammar fp_operand_t. *)
-  (*   refine (ext_op_modrm_gen_noreg2 *)
-  (*             (FPM16_op: address -> [|fp_operand_t|], FPM16_op_inv) _); *)
-  (*   strong_invertible_tac. *)
-  (* Defined. *)
-
-  (* todo: remove *)
-  (* Definition ext_op_modrm_FPM32_noreg : string -> wf_bigrammar fp_operand_t. *)
-  (*   refine (ext_op_modrm_gen_noreg2 *)
-  (*             (FPM32_op: address -> [|fp_operand_t|], FPM32_op_inv) _); *)
-  (*   strong_invertible_tac. *)
-  (* Defined. *)
-
-  (* todo: remove *)
-  (* Definition ext_op_modrm_FPM64_noreg : string -> wf_bigrammar fp_operand_t. *)
-  (*   refine (ext_op_modrm_gen_noreg2 *)
-  (*             (FPM64_op: address -> [|fp_operand_t|], FPM64_op_inv) _); *)
-  (*   strong_invertible_tac. *)
-  (* Defined. *)
-
-  (* todo: remove *)
-  (* Definition ext_op_modrm_FPM80_noreg : string -> wf_bigrammar fp_operand_t. *)
-  (*   refine (ext_op_modrm_gen_noreg2 *)
-  (*             (FPM80_op: address -> [|fp_operand_t|], FPM80_op_inv) _); *)
-  (*   strong_invertible_tac. *)
-  (* Defined. *)
 
   (** * An X86 bigrammar *)
   (* A better bigrammar for x86 instruction decoder/encoder. The encoder
@@ -1847,23 +1794,6 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
     - apply imm_p_false_rng.
   Qed.
 
-  (* todo: remove *)
-  (* Lemma ext_op_modrm_gen_noreg2_rng_inv res_t *)
-  (*   (addr_op: funinv address_t res_t) *)
-  (*   (pf_addr: strong_invertible addr_op) *)
-  (*   (bs: string) (res:[|res_t|]):  *)
-  (*   in_bigrammar_rng (` (ext_op_modrm_gen_noreg2 addr_op pf_addr bs)) res -> *)
-  (*   exists addr, res = fst addr_op addr. *)
-  (* Proof. unfold ext_op_modrm_gen_noreg2; intros; ibr_prover. *)
-  (*   eexists. eassumption. *)
-  (* Qed. *)
-
-  (* todo: remove *)
-  (* Lemma ext_op_modrm_noreg_rng_inv bs op: *)
-  (*   in_bigrammar_rng (` (ext_op_modrm_noreg bs)) op ->  *)
-  (*   (exists addr, op = Address_op addr). *)
-  (* Proof. intros. apply ext_op_modrm_gen_noreg2_rng_inv in H. crush. Qed. *)
-
   (* TBC: need to add repr_in_byte to decide whether a 32-bit imm can be  *)
   (*      represented in a unsigned byte *)
 
@@ -1893,11 +1823,11 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
             opcode1 $$ "101" $$ imm_p opsize_override) |+|
            (
             (* case 7: zero-extend immediate byte to memory *)
-            "1000" $$ "0000" $$ ext_op_modrm_gen_noreg opcode2 $ byte |+|
+            "1000" $$ "0000" $$ ext_op_modrm_noreg opcode2 $ byte |+|
             (* case 8: sign-extend immediate byte to memory *)
-            "1000" $$ "0011" $$ ext_op_modrm_gen_noreg opcode2 $ byte  |+|
+            "1000" $$ "0011" $$ ext_op_modrm_noreg opcode2 $ byte  |+|
             (* case 9: immediate word to memory *)
-            "1000" $$ "0001" $$ ext_op_modrm_gen_noreg opcode2 $
+            "1000" $$ "0001" $$ ext_op_modrm_noreg opcode2 $
             imm_p opsize_override)))
           @ (fun v => 
                match v with
@@ -2045,12 +1975,12 @@ Todo: change imm_op to return an immediate instead of an operand so that
 
 Todo: do we need Bool_t since we already have Char_t, whose interp is bool
 Todo: Record thoughts: 
+  - avoid operators that are partial: for example, from imm_op to parsing a
+    single immediate
   - different defs of the inverse function; one is easier to prove
   - bugs in the original pretty printer:
     * when op1 is Imm_op, and op2 is Imm_op, should get none, but the original
       one doesn't
-  - avoid operators that are partial: for example, from imm_op to parsing a
-    single immediate
 
                (* let immToOp1 := fun (w:bool) (op1:operand) imm =>  *)
                  (* match w, opsize_override with *)
