@@ -525,6 +525,7 @@ End X86_PARSER_ARG.
     omega.
   Qed.
       
+(* todo: move to Bits.v *)
   Lemma min_signed_mono n1 n2:
     n1 <= n2 -> (Word.min_signed n2 <= Word.min_signed n1)%Z.
   Proof. unfold Word.min_signed, Word.half_modulus, Word.modulus, Word.wordsize.
@@ -536,6 +537,14 @@ End X86_PARSER_ARG.
     omega.
   Qed.
     
+(* todo: move to Bits.v *)
+  Lemma max_unsigned_mono n1 n2:
+    n1 <= n2 -> (Word.max_unsigned n1 <= Word.max_unsigned n2)%Z.
+  Proof. unfold Word.max_unsigned, Word.half_modulus, Word.modulus, Word.wordsize.
+    intros.
+    use_lemma (two_power_nat_monotone (S n1) (S n2)) by omega.
+    omega.
+  Qed.
 
   Lemma sign_extend_inv2 n1 n2 (w:Word.int n2):
     n2 <= n1 -> @sign_extend n1 n2 (@sign_extend n2 n1 w) = w.
@@ -607,6 +616,75 @@ End X86_PARSER_ARG.
     apply repr_in_signed_extend; omega.
   Qed.
 
+  Definition zero_shrink32_8 := @zero_extend 31 7.
+
+  Definition repr_in_unsigned n1 n2 (w:Word.int n1) :=
+    (Word.unsigned w <= Word.max_unsigned n2)%Z.
+
+  Definition repr_in_unsigned_dec n1 n2 (w:Word.int n1) :
+    {repr_in_unsigned n2 w} + {~(repr_in_unsigned n2 w)} :=
+    Z_le_dec (Word.unsigned w) (Word.max_unsigned n2).
+
+  Definition repr_in_unsigned_byte (w:int32) := repr_in_unsigned 7 w.
+  Definition repr_in_unsigned_halfword (w:int32) := repr_in_unsigned 15 w.
+
+  Definition repr_in_unsigned_byte_dec (w:int32) :
+    {repr_in_unsigned_byte w} + {~(repr_in_unsigned_byte w)} :=
+    repr_in_unsigned_dec 7 w.
+
+  Lemma repr_in_unsigned_extend n1 n2 n3 w:
+    n1 <= n3 -> n1 <= n2 ->
+    repr_in_unsigned n2 (@zero_extend n1 n3 w).
+  Proof. unfold repr_in_unsigned, zero_extend; intros.
+    generalize (Word.unsigned_range w); intros.
+    assert (0 <= Word.unsigned w <= Word.max_unsigned n3)%Z.
+      use_lemma (@max_unsigned_mono n1 n3) by eassumption.
+      unfold Word.max_unsigned in *.
+      omega.
+    rewrite Word.unsigned_repr by eassumption.
+    use_lemma (@max_unsigned_mono n1 n2) by eassumption.
+    unfold Word.max_unsigned in *.
+    omega.
+  Qed.
+
+  Lemma repr_in_unsigned_byte_extend8_32 b: 
+    repr_in_unsigned_byte (zero_extend8_32 b).
+  Proof. unfold repr_in_unsigned_byte, zero_extend8_32; intros.
+    apply repr_in_unsigned_extend; omega.
+  Qed.
+
+  Lemma zero_extend_inv1 n1 n2 (w:Word.int n2):
+    n1 <= n2 -> repr_in_unsigned n1 w ->
+    @zero_extend n1 n2 (@zero_extend n2 n1 w) = w.
+  Proof. unfold zero_extend, repr_in_unsigned; intros.
+    generalize (Word.unsigned_range w); intro.
+    rewrite Word.unsigned_repr by omega.
+    rewrite Word.repr_unsigned; trivial.
+  Qed.
+
+  Lemma zero_extend_inv2 n1 n2 (w:Word.int n2):
+    n2 <= n1 -> @zero_extend n1 n2 (@zero_extend n2 n1 w) = w.
+  Proof. unfold zero_extend. intros. 
+    assert (0 <= Word.unsigned w <= Word.max_unsigned n1)%Z.
+      generalize (Word.unsigned_range_2 n2 w); intros.
+      use_lemma max_unsigned_mono by eassumption.
+      omega.
+    rewrite Word.unsigned_repr by assumption.
+    rewrite Word.repr_unsigned; trivial.
+  Qed.
+
+  Lemma zero_extend8_32_inv (w:int32) : 
+    repr_in_unsigned_byte w -> zero_extend8_32 (zero_shrink32_8 w) = w.
+  Proof. unfold zero_extend8_32, zero_shrink32_8, repr_in_unsigned_byte. intros.
+    apply zero_extend_inv1; [omega | trivial].
+  Qed.
+
+  Lemma zero_shrink32_8_inv (b:int8) : 
+    zero_shrink32_8 (zero_extend8_32 b) = b.
+  Proof. intros. apply zero_extend_inv2. omega. Qed.
+
+  Hint Rewrite zero_shrink32_8_inv: inv_db.
+  Hint Rewrite zero_extend8_32_inv using assumption: inv_db.
 
   (** * Additional bigrammar constructors (assuming chars are bits) *)
 
@@ -1686,28 +1764,6 @@ End X86_PARSER_ARG.
     - destruct (repr_in_signed_halfword_dec w); parsable_tac.
   Defined.
 
-  Definition zero_shrink32_8 := @zero_extend 31 7.
-
-  (* todo: move to Bits.v *)
-  Lemma max_unsigned_mono n1 n2:
-    n1 <= n2 -> (Word.max_unsigned n1 <= Word.max_unsigned n2)%Z.
-  Proof. unfold Word.max_unsigned, Word.modulus, Word.wordsize.
-    intros.
-    use_lemma (two_power_nat_monotone (S n1) (S n2)) by omega.
-    omega.
-  Qed.
-
-  Lemma zero_extend_inv1 n1 n2 (w:Word.int n2):
-    n2 <= n1 -> @zero_extend n1 n2 (@zero_extend n2 n1 w) = w.
-  Proof. unfold zero_extend. intros. 
-    assert (0 <= Word.unsigned w <= Word.max_unsigned n1)%Z.
-      generalize (Word.unsigned_range_2 n2 w); intros.
-      use_lemma max_unsigned_mono by eassumption.
-      omega.
-    rewrite Word.unsigned_repr by assumption.
-    rewrite Word.repr_unsigned; trivial.
-  Qed.
-
   Ltac simple_invertible_tac :=
     unfold invertible; split; [unfold printable | unfold parsable];
     compute [snd fst]; intros.
@@ -1794,8 +1850,8 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
     - apply imm_p_false_rng.
   Qed.
 
-  (* TBC: need to add repr_in_byte to decide whether a 32-bit imm can be  *)
-  (*      represented in a unsigned byte *)
+  (* TBC: change the inverse fun to add repr_in_unsigned_byte to decide whether a 32-bit imm can be  *)
+  (*      represented in an unsigned byte *)
 
   Definition logic_or_arith_p (opsize_override: bool)
     (opcode1 : string) (* first 5 bits for most cases *)
@@ -1875,14 +1931,19 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                            (* alternate encoding: use case 2, 3 and 4 above *)
                            if w then Some (inr (inl (inr imm)))
                            else
-                             Some (inr (inl (inl (zero_shrink32_8 imm))))
+                             if (repr_in_unsigned_byte_dec imm) then
+                               Some (inr (inl (inl (zero_shrink32_8 imm))))
+                             else None
                          | _ =>
                            if w then
                              if (repr_in_signed_byte_dec imm) then
                                Some (inl (inl (inr (r1, (sign_shrink32_8 imm)))))
                              else
                                Some (inl (inr (inr (r1, imm))))
-                           else Some (inl (inr (inl (r1, (zero_shrink32_8 imm)))))
+                           else
+                             if (repr_in_unsigned_byte_dec imm) then
+                               Some (inl (inr (inl (r1, (zero_shrink32_8 imm)))))
+                             else None
                        end
                      | _ => None
                    end
@@ -1896,87 +1957,103 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                            Some (inr (inr (inr (inl (a, (sign_shrink32_8 imm))))))
                          else
                            Some (inr (inr (inr (inr (a, imm)))))
-                       else Some (inr (inr (inl (a, (zero_shrink32_8 imm)))))
+                       else 
+                         if (repr_in_unsigned_byte_dec imm) then
+                           Some (inr (inr (inl (a, (zero_shrink32_8 imm)))))
+                         else None
                      | _ => None
                    end
                  | _ => None
                end)
           & _); simple_invertible_tac.
-  destruct_union.
-  - (* case 1 *)
-    destruct v as [d [w [op1 op2]]]. ibr_prover.
-    use_lemma modrm_rng_inv by eassumption.
-    destruct d;
-    match goal with
-      | [H: (exists _, _) \/ _ |- _] => 
-        destruct H as [[r2 H8] | [addr H8]]; subst op2;
-        printable_tac; ibr_prover
-    end.
-  - (* case 2 *)
-    destruct v as [r b]. ibr_prover.
-    destruct r;
-      try (destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2];
-           [printable_tac; ibr_prover |
-            contradict H2; apply repr_in_signed_byte_extend8_32]). 
-    (* EAX case *)
-    apply imm_p_rng; apply repr_in_signed_extend; omega.
-  - (* case 3 *)
-    destruct v as [r b]; ibr_prover.
-    destruct r; printable_tac; ibr_prover.
-  - (* case 4 *)
-    destruct v as [r op2]; ibr_prover.
-    destruct r; destruct (repr_in_signed_byte_dec op2); 
-    printable_tac; ibr_prover.
-  - (* case 5 *)
-    printable_tac; ibr_prover.
-  - (* case 6 *)
-    ibr_prover. printable_tac; ibr_prover.
-  - (* case 7 *)
-    destruct v as [op b]. 
-    printable_tac. ibr_prover.
-  - (* case 8 *)
-    destruct v as [op b]. ibr_prover.
-    destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2].
-    + printable_tac; ibr_prover.
-    + contradict H2; apply repr_in_signed_byte_extend8_32.
-  - (* case 9 *)
-    destruct v as [op1 op2]; ibr_prover.
-    match goal with 
-      | [ |- context[repr_in_signed_byte_dec ?imm]] => 
-        destruct (repr_in_signed_byte_dec imm);
+  - destruct_union.
+    + (* case 1 *)
+      destruct v as [d [w [op1 op2]]]. ibr_prover.
+      use_lemma modrm_rng_inv by eassumption.
+      destruct d;
+      match goal with
+        | [H: (exists _, _) \/ _ |- _] => 
+          destruct H as [[r2 H8] | [addr H8]]; subst op2;
           printable_tac; ibr_prover
-    end.
-
-
-
-
-  - destruct w as [w [op1 op2]].
+      end.
+    + (* case 2 *)
+      destruct v as [r b]. ibr_prover.
+      destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2];
+        [idtac |
+         contradict H2; apply repr_in_signed_byte_extend8_32].
+      destruct r; printable_tac; ibr_prover.
+      (* EAX case *)
+      apply imm_p_rng; apply repr_in_signed_extend; omega.
+    + (* case 3 *)
+      destruct v as [r b]; ibr_prover.
+      match goal with 
+        | [ |- context[repr_in_unsigned_byte_dec ?imm]] => 
+          destruct (repr_in_unsigned_byte_dec imm) as [H2|H2];
+            [idtac | contradict H2; apply repr_in_unsigned_byte_extend8_32]
+      end.
+      destruct r; printable_tac; ibr_prover.
+    + (* case 4 *)
+      destruct v as [r op2]; ibr_prover.
+      destruct r; destruct (repr_in_signed_byte_dec op2); 
+      printable_tac; ibr_prover.
+    + (* case 5 *)
+      destruct (repr_in_unsigned_byte_dec (zero_extend8_32 v)) as [H2|H2];
+        [idtac | contradict H2; apply repr_in_unsigned_byte_extend8_32].
+      printable_tac; ibr_prover.
+    + (* case 6 *)
+      ibr_prover. printable_tac; ibr_prover.
+    + (* case 7 *)
+      destruct v as [op b].
+      destruct (repr_in_unsigned_byte_dec (zero_extend8_32 b)) as [H2|H2];
+        [idtac | contradict H2; apply repr_in_unsigned_byte_extend8_32].
+      printable_tac.
+    + (* case 8 *)
+      destruct v as [op b]. ibr_prover.
+      destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2].
+      * printable_tac; ibr_prover.
+      * contradict H2; apply repr_in_signed_byte_extend8_32.
+    + (* case 9 *)
+      destruct v as [op1 op2]; ibr_prover.
+      match goal with 
+        | [ |- context[repr_in_signed_byte_dec ?imm]] => 
+          destruct (repr_in_signed_byte_dec imm);
+            printable_tac; ibr_prover
+      end.
+  - destruct w as [wd [op1 op2]].
     destruct op1; try parsable_tac.
-    destruct op2. 
-    destruct r.
-      * destruct w. parsable_tac.
-        inversion H0. autorewrite with inv_db.
-      * 
+    + (* op1 = Reg_op _ *)
+      destruct op2; try parsable_tac.
+      destruct r;
+      destruct wd; 
+      repeat match goal with
+               | [ H: context [repr_in_unsigned_byte_dec ?imm] |- _] =>
+                 destruct (repr_in_unsigned_byte_dec i)
+               | [ H: context [repr_in_signed_byte_dec ?imm] |- _] =>
+                 destruct (repr_in_signed_byte_dec i)
+             end; try parsable_tac.
+    + (* op1 = Address_op _ *)
+      destruct op2; try parsable_tac.
+      destruct wd; 
+      repeat match goal with
+               | [ H: context [repr_in_unsigned_byte_dec ?imm] |- _] =>
+                 destruct (repr_in_unsigned_byte_dec i)
+               | [ H: context [repr_in_signed_byte_dec ?imm] |- _] =>
+                 destruct (repr_in_signed_byte_dec i)
+             end; try parsable_tac.
+  Defined.
 
+  Definition ADC_p s := logic_or_arith_p s "00010" "010".
+  Definition ADD_p s := logic_or_arith_p s "00000" "000".
+  Definition AND_p s := logic_or_arith_p s "00100" "100".
+  Definition CMP_p s := logic_or_arith_p s "00111" "111".
+  Definition OR_p  s := logic_or_arith_p s "00001" "001".
+  Definition SBB_p s := logic_or_arith_p s "00011" "011".
+  Definition SUB_p s := logic_or_arith_p s "00101" "101".
+  Definition XOR_p s := logic_or_arith_p s "00110" "110".
 
-(*   - destruct_union.  *)
-(*     + destruct w as [w [op1 op2]]. *)
-(*       destruct v as [d1 [w1 [op11 op12]]]. *)
-(*       destruct d1.  *)
-(*       destruct op1; try parsable_tac. *)
-
-(* destruct v as [d [w [op1 op2]]]. ibr_prover. *)
-(* destruct r; destruct w; parsable_tac. *)
-
-
-Todo: change imm_op to return an immediate instead of an operand so that
-      we can avoid the use of imm_op_rng_inv lemmas;
-      also ext_op_modrm_gen
-
+Todo: simplify the above proof to take care of common cases repr_in_signed_byte_dec
 Todo: do we need Bool_t since we already have Char_t, whose interp is bool
 Todo: Record thoughts: 
-  - avoid operators that are partial: for example, from imm_op to parsing a
-    single immediate
   - different defs of the inverse function; one is easier to prove
   - bugs in the original pretty printer:
     * when op1 is Imm_op, and op2 is Imm_op, should get none, but the original
