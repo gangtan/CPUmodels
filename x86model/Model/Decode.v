@@ -1696,6 +1696,13 @@ End X86_PARSER_ARG.
     - ibr_prover; destruct H; ibr_prover.
   Qed.
 
+  Lemma ext_op_modrm_rng_inv (bs:string) op :
+    in_bigrammar_rng (` (ext_op_modrm bs)) op ->
+    (exists r, op = Reg_op r) \/ (exists addr, op = Address_op addr).
+  Proof. unfold ext_op_modrm; intros; ibr_prover.
+    destruct v; subst op; [right | left]; eexists; trivial.
+  Qed.
+
   Lemma Reg_op_p_rng op : 
     (exists r, op = Reg_op r) <-> in_bigrammar_rng (`Reg_op_p) op.
   Proof. intros. unfold Reg_op_p; split; intro; ibr_prover.
@@ -1786,7 +1793,7 @@ End X86_PARSER_ARG.
     (opcode1 : string) (* first 5 bits for most cases *)
     (opcode2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
                       that determine the opcode *)
-    : wf_bigrammar (pair_t char_t (pair_t operand_t operand_t)).
+    : wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros.
     refine(
         (( 
@@ -1841,8 +1848,8 @@ End X86_PARSER_ARG.
                  (* case 9 *)
                  | inr (inr (inr (inr (addr, imm)))) =>
                    (true, (Address_op addr, Imm_op imm))
-               end %% (pair_t char_t (pair_t operand_t operand_t)))
-          & (fun u: [|pair_t char_t (pair_t operand_t operand_t)|] =>
+               end %% (pair_t bool_t (pair_t operand_t operand_t)))
+          & (fun u: [|pair_t bool_t (pair_t operand_t operand_t)|] =>
                let (w, ops) := u in
                let (op1, op2) := ops in
                match op1 with
@@ -1962,9 +1969,6 @@ End X86_PARSER_ARG.
   Definition SUB_p s := logic_or_arith_p s "00101" "101".
   Definition XOR_p s := logic_or_arith_p s "00110" "110".
 
-
-(* Todo: do we need Bool_t since we already have Char_t, whose interp is bool *)
-
   Definition ARPL_p := "0110" $$ "0011" $$ modrm.
   Definition BOUND_p := "0110" $$ "0010" $$ modrm.
   Definition BSF_p := "0000" $$ "1111" $$ "1011" $$ "1100" $$ modrm.
@@ -2045,44 +2049,75 @@ End X86_PARSER_ARG.
 
  (* to be organized *)
 
-todo: bool_t vs. char_t
+  (* todo: move earlier *)
+  Definition selector_t := BitVector_t 15.
 
-  Definition CALL_p : wf_bigrammar (pair_t (bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t))))).
+(* todo: record errors in enc_bit_test *)
 
- := 
-    "1110" $$ "1000" $$ word  @ 
-    (fun w => CALL true false (Imm_op w) None %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "010" @ 
-    (fun op => CALL true true op None %% instruction_t)
-  |+| 
-    "1001" $$ "1010" $$ word $ halfword @ 
-    (fun p => CALL false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "011" @ 
-    (fun op => CALL false true op None %% instruction_t).
-
-        
-
-TBC: 
-
-  Definition CALL_p := 
-    "1110" $$ "1000" $$ word  @ 
-    (fun w => CALL true false (Imm_op w) None %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "010" @ 
-    (fun op => CALL true true op None %% instruction_t)
-  |+| 
-    "1001" $$ "1010" $$ word $ halfword @ 
-    (fun p => CALL false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "011" @ 
-    (fun op => CALL false true op None %% instruction_t).
-
-
-
-
-Some defs (working; just ordering is a bit wrong *)
+  Definition CALL_p : 
+    wf_bigrammar (pair_t bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t)))).
+    refine((((* case 1 *)
+             "1110" $$ "1000" $$ word |+|
+             (* case 2 *)
+             "1111" $$ "1111" $$ ext_op_modrm "010")
+              |+|
+            ((* case 3 *)
+             "1001" $$ "1010" $$ word $ halfword |+|
+             (* case 4 *)
+             "1111" $$ "1111" $$ ext_op_modrm "011"))
+             @ (fun v =>
+                  match v with
+                    | inl (inl w) => (true, (false, (Imm_op w, None)))
+                    | inl (inr op) => (true, (true, (op, None)))
+                    | inr (inl (w,hw)) => (false, (true, (Imm_op w, Some hw)))
+                    | inr (inr op) => (false, (true, (op, None)))
+                  end %% pair_t bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t))))
+             & (fun u: [|pair_t bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t)))|] => 
+                  let (near, u1) := u in
+                  let (absolute,opsel) := u1 in
+                  match near, absolute with
+                    | true, false => 
+                      match opsel with
+                        | (Imm_op w, None) => Some (inl (inl w))
+                        | _ => None
+                      end
+                    | true, true =>
+                      match opsel with
+                        | (Reg_op _, None) 
+                        | (Address_op _, None) => Some (inl (inr (fst opsel)))
+                        | _ => None
+                      end
+                    | false, true =>
+                      match opsel with
+                        | (Imm_op w, Some hw) => Some (inr (inl (w,hw)))
+                        | (Reg_op _, None) 
+                        | (Address_op _, None) => Some (inr (inr (fst opsel)))
+                        | _ => None
+                      end
+                    | _, _ => None
+                  end)
+             & _); invertible_tac.
+    - destruct_union; try printable_tac.
+      + (* case 2 *)
+        ibr_prover.
+        use_lemma ext_op_modrm_rng_inv by eassumption.
+        match goal with
+          | [H: (exists _, _) \/ _ |- _] =>
+            destruct H as [[r2 H8] | [addr H8]]; subst v;
+            printable_tac; ibr_prover
+        end.
+      + (* case 4 *)
+        ibr_prover.
+        use_lemma ext_op_modrm_rng_inv by eassumption.
+        match goal with
+          | [H: (exists _, _) \/ _ |- _] =>
+            destruct H as [[r2 H8] | [addr H8]]; subst v;
+            printable_tac; ibr_prover
+        end.
+    - destruct w as [near [absolute opsel]].
+      destruct near; destruct absolute; destruct opsel as [op sel];
+      destruct op; destruct sel; parsable_tac.
+  Defined.
 
   Definition CDQ_p : wf_bigrammar unit_t := "1001" $$  ! "1001".
   Definition CLC_p : wf_bigrammar unit_t := "1111" $$ ! "1000".
@@ -2092,19 +2127,44 @@ Some defs (working; just ordering is a bit wrong *)
   Definition CMC_p : wf_bigrammar unit_t := "1111" $$ ! "0101".
   Definition CMPS_p : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
 
-  (*todo: Skipped CMPXCHG_p, requires modrm*)
+  Definition CMPXCHG_p := 
+   "0000" $$ "1111" $$ "1011" $$ "000" $$ anybit $ modrm.
 
   Definition CPUID_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ ! "0010".
   Definition CWDE_p : wf_bigrammar unit_t := "1001" $$ ! "1000".
   Definition DAA_p : wf_bigrammar unit_t := "0010" $$ ! "0111".
   Definition DAS_p : wf_bigrammar unit_t := "0010" $$ ! "1111".
 
-  Definition DEC_p1  :=
-    "1111" $$ "111" $$ anybit $ "11001" $$ reg.
-  Definition DEC_p2 := "0100" $$ "1" $$ reg.
+  (* Definition DEC_p1  := *)
+  (*   "1111" $$ "111" $$ anybit $ "11001" $$ reg. *)
+  (* Definition DEC_p2 := "0100" $$ "1" $$ reg. *)
 
   (*Definition DEC_p3 : //todo: Skipped due to ext_op_modrm_noreg function*)
+
   
+
+
+
+
+todo: factor in common cases such as ext_op_modrm_rng_inv in tactics
+        
+  
+TBC: 
+
+  Definition DEC_p := 
+    "1111" $$ "111" $$ anybit $ "11001" $$ reg @ 
+      (fun p => let (w,r) := p in DEC w (Reg_op r) %% instruction_t)
+  |+|
+    "0100" $$ "1" $$ reg @ 
+      (fun r => DEC true (Reg_op r) %% instruction_t)
+  |+| 
+    "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "001" @
+      (fun p => let (w,op1) := p in DEC w op1 %% instruction_t).
+
+
+Some defs (working; just ordering is a bit wrong *)
+
+
   Definition DIV_p1 : wf_bigrammar (Pair_t Char_t register_t) := 
   "1111" $$ "011" $$ anybit $ "11110" $$ reg.
 
@@ -2173,40 +2233,6 @@ Some defs (working; just ordering is a bit wrong *)
 
 
 Old grammars:
-
-
-  Definition CALL_p := 
-    "1110" $$ "1000" $$ word  @ 
-    (fun w => CALL true false (Imm_op w) None %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "010" @ 
-    (fun op => CALL true true op None %% instruction_t)
-  |+| 
-    "1001" $$ "1010" $$ word $ halfword @ 
-    (fun p => CALL false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "011" @ 
-    (fun op => CALL false true op None %% instruction_t).
-
-  Definition CDQ_p := "1001" $$ bits "1001" @ (fun _ => CDQ %% instruction_t).
-  Definition CLC_p := "1111" $$ bits "1000" @ (fun _ => CLC %% instruction_t).
-  Definition CLD_p := "1111" $$ bits "1100" @ (fun _ => CLD %% instruction_t).
-  Definition CLI_p := "1111" $$ bits "1010" @ (fun _ => CLI %% instruction_t).
-  Definition CLTS_p := "0000" $$ "1111" $$ "0000" $$ bits "0110" @ 
-    (fun _ => CLTS %% instruction_t).
-  Definition CMC_p := "1111" $$ bits "0101" @ (fun _ => CMC %% instruction_t).
-  Definition CMPS_p := "1010" $$ "011" $$ anybit @ (fun x => CMPS x %% instruction_t).
-  Definition CMPXCHG_p := 
-   "0000" $$ "1111" $$ "1011" $$ "000" $$ anybit $ modrm @ 
-    (fun p => match p with 
-                | (w,(op1,op2)) => CMPXCHG w op2 op1
-              end %% instruction_t).
-
-  Definition CPUID_p := "0000" $$ "1111" $$ "1010" $$ bits "0010" @ 
-    (fun _ => CPUID %% instruction_t).
-  Definition CWDE_p := "1001" $$ bits "1000" @ (fun _ => CWDE %% instruction_t).
-  Definition DAA_p := "0010" $$ bits "0111" @ (fun _ => DAA %% instruction_t).
-  Definition DAS_p := "0010" $$ bits "1111" @ (fun _ => DAS %% instruction_t).
 
   Definition DEC_p := 
     "1111" $$ "111" $$ anybit $ "11001" $$ reg @ 
