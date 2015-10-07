@@ -2135,48 +2135,113 @@ End X86_PARSER_ARG.
   Definition DAA_p : wf_bigrammar unit_t := "0010" $$ ! "0111".
   Definition DAS_p : wf_bigrammar unit_t := "0010" $$ ! "1111".
 
-  (* Definition DEC_p1  := *)
-  (*   "1111" $$ "111" $$ anybit $ "11001" $$ reg. *)
-  (* Definition DEC_p2 := "0100" $$ "1" $$ reg. *)
+  Definition DEC_p: wf_bigrammar (pair_t bool_t operand_t).
+    refine(((* case 1 *)
+            "1111" $$ "111" $$ anybit $ "11001" $$ reg |+|
+            (* case 2 *)
+            "0100" $$ "1" $$ reg |+|
+            (* case 3 *)
+            "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "001")
+             @ (fun v =>
+                  match v with
+                    | inl (w,r) => (w, Reg_op r)
+                    | inr (inl r) => (true, Reg_op r)
+                    | inr (inr (w,addr)) => (w, Address_op addr)
+                  end %% pair_t bool_t operand_t)
+             & (fun u : [| pair_t bool_t operand_t |] => 
+                  match (snd u) with
+                    | Reg_op r => 
+                      (* alternate encoding possible, when "fst u" is true.
+                         use case 2 above *)
+                      Some (inl (fst u, r))
+                    | Address_op addr => Some (inr (inr (fst u, addr)))
+                    | _ => None
+                  end)
+             & _); invertible_tac.
+    - destruct_union; try printable_tac.
+      + (* case 2 *)
+        ibr_prover.
+    - destruct w as [bl op]; destruct op; parsable_tac.
+  Defined.
 
-  (*Definition DEC_p3 : //todo: Skipped due to ext_op_modrm_noreg function*)
+  Definition DIV_p: wf_bigrammar (pair_t bool_t operand_t).
+    refine (("1111" $$ "011" $$ anybit $ "11110" $$ reg |+|
+             "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "110")
+              @ (fun v =>
+                   match v with
+                     | inl (w,r) => (w, Reg_op r)
+                     | inr (w,addr) => (w, Address_op addr)
+                   end %% pair_t bool_t operand_t)
+              & (fun u: [|pair_t bool_t operand_t|] =>
+                   match snd u with
+                     | Reg_op r => Some (inl (fst u, r))
+                     | Address_op addr => Some (inr (fst u, addr))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; printable_tac.
+    - destruct w as [bl op]; destruct op; parsable_tac.
+  Defined.
+
+  Definition HLT_p : wf_bigrammar unit_t := "1111" $$ ! "0100".
+
+  Definition IDIV_p: wf_bigrammar (pair_t bool_t operand_t).
+    refine (("1111" $$ "011" $$ anybit $ "11111" $$ reg |+|
+             "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "111")
+              @ (fun v =>
+                   match v with
+                     | inl (w,r) => (w, Reg_op r)
+                     | inr (w, addr) => (w, Address_op addr)
+                   end %% pair_t bool_t operand_t)
+              & (fun u: [|pair_t bool_t operand_t|] =>
+                   match snd u with
+                     | Reg_op r => Some (inl (fst u, r))
+                     | Address_op addr => Some (inr (fst u, addr))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; printable_tac.
+    - destruct w as [bl op]; destruct op; parsable_tac.
+  Defined.
 
   
+TBC: 
 
+  Definition IMUL_p opsize_override := 
+    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "101" @
+    (fun p => let (w,op1) := p in IMUL w op1 None None %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "1010" $$ "1111" $$ modrm @
+    (fun p => let (op1,op2) := p in IMUL false op1 (Some op2) None %% instruction_t)
+  |+|
+    "0110" $$ "1011" $$ modrm $ byte @
+    (fun p => match p with 
+                | ((op1,op2),imm) => 
+                  IMUL true op1 (Some op2) (Some (sign_extend8_32 imm))
+              end %% instruction_t)
+  |+|
+    match opsize_override with
+      | false =>
+          "0110" $$ "1001" $$ modrm $ word @
+           (fun p => match p with 
+                | ((op1,op2),imm) => 
+                  IMUL true op1 (Some op2) (Some imm)
+              end  %% instruction_t)
+      | true => 
+          "0110" $$ "1001" $$ modrm $ halfword @
+           (fun p => match p with 
+                | ((op1,op2),imm) => 
+                  IMUL false op1 (Some op2) (Some (sign_extend16_32 imm))
+              end  %% instruction_t)
+    end.
 
 
 
 todo: factor in common cases such as ext_op_modrm_rng_inv in tactics
-        
-  
-TBC: 
-
-  Definition DEC_p := 
-    "1111" $$ "111" $$ anybit $ "11001" $$ reg @ 
-      (fun p => let (w,r) := p in DEC w (Reg_op r) %% instruction_t)
-  |+|
-    "0100" $$ "1" $$ reg @ 
-      (fun r => DEC true (Reg_op r) %% instruction_t)
-  |+| 
-    "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "001" @
-      (fun p => let (w,op1) := p in DEC w op1 %% instruction_t).
-
 
 Some defs (working; just ordering is a bit wrong *)
 
 
-  Definition DIV_p1 : wf_bigrammar (Pair_t Char_t register_t) := 
-  "1111" $$ "011" $$ anybit $ "11110" $$ reg.
-
-  (*Definition DIV_p2 : //todo: Skipped due to ext_op_modrm_noreg function*)
-  
-  Definition HLT_p : wf_bigrammar unit_t := "1111" $$ ! "0100".
-  
-  Definition IDIV_p1 : wf_bigrammar (Pair_t Char_t register_t)  :=
- "1111" $$ "011" $$ anybit $ "11111" $$ reg.
-
- (*Definition IDIV_p2 : //todo: ext_op_modrm_noreg function*)
- 
  (*Definition IMUL_p : //todo: ext_op_modrm_noreg, modrm*)
  
   Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
@@ -2233,32 +2298,6 @@ Some defs (working; just ordering is a bit wrong *)
 
 
 Old grammars:
-
-  Definition DEC_p := 
-    "1111" $$ "111" $$ anybit $ "11001" $$ reg @ 
-      (fun p => let (w,r) := p in DEC w (Reg_op r) %% instruction_t)
-  |+|
-    "0100" $$ "1" $$ reg @ 
-      (fun r => DEC true (Reg_op r) %% instruction_t)
-  |+| 
-    "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "001" @
-      (fun p => let (w,op1) := p in DEC w op1 %% instruction_t).
-
-  Definition DIV_p := 
-    "1111" $$ "011" $$ anybit $ "11110" $$ reg @ 
-      (fun p => let (w,r) := p in DIV w (Reg_op r) %% instruction_t)
-  |+| 
-    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "110" @ 
-      (fun p => let (w,op1) := p in DIV w op1 %% instruction_t).
-
-  Definition HLT_p := "1111" $$ bits "0100" @ (fun _ => HLT %% instruction_t).
-
-  Definition IDIV_p := 
-    "1111" $$ "011" $$ anybit $ "11111" $$ reg @ 
-    (fun p => let (w,r) := p in IDIV w (Reg_op r) %% instruction_t)
-  |+|
-    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "111" @ 
-     (fun p => let (w,op1) := p in IDIV w op1 %% instruction_t).
 
   Definition IMUL_p opsize_override := 
     "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "101" @
