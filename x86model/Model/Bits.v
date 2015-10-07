@@ -3853,6 +3853,40 @@ Definition int32 := Word.int 31.
 Definition int64 := Word.int 63.
 Definition int80 := Word.int 79.
 
+(** * Additional lemmas *)
+
+Lemma min_signed_mono n1 n2:
+  (n1 <= n2)%nat -> (Word.min_signed n2 <= Word.min_signed n1)%Z.
+Proof. unfold Word.min_signed, Word.half_modulus, Word.modulus, Word.wordsize.
+  intros.
+  assert (two_power_nat (S n1) <= two_power_nat (S n2)).
+    apply (two_power_nat_monotone (S n1) (S n2)); omega.
+  assert (two_power_nat (S n1) / 2 <= two_power_nat (S n2) / 2).
+    apply (Z.div_le_mono (two_power_nat (S n1))
+                         (two_power_nat (S n2)) 2); omega.
+  omega.
+Qed.
+    
+Lemma max_signed_mono n1 n2:
+  (n1 <= n2)%nat -> (Word.max_signed n1 <= Word.max_signed n2)%Z.
+Proof. unfold Word.max_signed, Word.half_modulus, Word.modulus, Word.wordsize.
+  intros.
+  assert (two_power_nat (S n1) <= two_power_nat (S n2)).
+    apply (two_power_nat_monotone (S n1) (S n2)); omega.
+  assert (two_power_nat (S n1) / 2 <= two_power_nat (S n2) / 2).
+    apply (Z.div_le_mono (two_power_nat (S n1))
+                         (two_power_nat (S n2)) 2); omega.
+  omega.
+Qed.
+      
+Lemma max_unsigned_mono n1 n2:
+  (n1 <= n2)%nat -> (Word.max_unsigned n1 <= Word.max_unsigned n2)%Z.
+Proof. unfold Word.max_unsigned, Word.half_modulus, Word.modulus, Word.wordsize.
+  intros.
+  assert (two_power_nat (S n1) <= two_power_nat (S n2)).
+    apply (two_power_nat_monotone (S n1) (S n2)); omega.
+  omega.
+Qed.
 
 (** * Tactics for int *)
 

@@ -403,6 +403,10 @@ Ltac invertible_tac :=
   compute [snd fst]; intros;
   [try (printable_tac; fail) | try (parsable_tac; fail)].
 
+Ltac strong_invertible_tac :=
+  unfold strong_invertible; split; 
+  [crush | intros v w; destruct w; crush].
+
 Local Ltac localsimpl :=
   repeat
     match goal with

@@ -189,6 +189,13 @@ End X86_PARSER_ARG.
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
+  Local Ltac local_printable_tac := 
+    break_hyp;
+    match goal with
+      | [H: ?V <> ?V |- _] => contradict H; trivial
+      | _ => printable_tac
+    end.
+
   Obligation Tactic := localcrush.
 
   (** * Basic operartions for converting values between domains:
@@ -513,38 +520,6 @@ End X86_PARSER_ARG.
     rewrite Word.repr_signed; trivial.
   Qed.
 
-(* todo: move to Bits.v *)
-  Lemma max_signed_mono n1 n2:
-    n1 <= n2 -> (Word.max_signed n1 <= Word.max_signed n2)%Z.
-  Proof. unfold Word.max_signed, Word.half_modulus, Word.modulus, Word.wordsize.
-    intros.
-    use_lemma (two_power_nat_monotone (S n1) (S n2)) by omega.
-    use_lemma (Z.div_le_mono (two_power_nat (S n1))
-                             (two_power_nat (S n2)) 2)
-      by omega.
-    omega.
-  Qed.
-      
-(* todo: move to Bits.v *)
-  Lemma min_signed_mono n1 n2:
-    n1 <= n2 -> (Word.min_signed n2 <= Word.min_signed n1)%Z.
-  Proof. unfold Word.min_signed, Word.half_modulus, Word.modulus, Word.wordsize.
-    intros.
-    use_lemma (two_power_nat_monotone (S n1) (S n2)) by omega.
-    use_lemma (Z.div_le_mono (two_power_nat (S n1))
-                             (two_power_nat (S n2)) 2)
-      by omega.
-    omega.
-  Qed.
-    
-(* todo: move to Bits.v *)
-  Lemma max_unsigned_mono n1 n2:
-    n1 <= n2 -> (Word.max_unsigned n1 <= Word.max_unsigned n2)%Z.
-  Proof. unfold Word.max_unsigned, Word.half_modulus, Word.modulus, Word.wordsize.
-    intros.
-    use_lemma (two_power_nat_monotone (S n1) (S n2)) by omega.
-    omega.
-  Qed.
 
   Lemma sign_extend_inv2 n1 n2 (w:Word.int n2):
     n2 <= n1 -> @sign_extend n1 n2 (@sign_extend n2 n1 w) = w.
@@ -907,13 +882,9 @@ End X86_PARSER_ARG.
   Definition halfword : wf_bigrammar half_t := int_n 15.
   Definition word : wf_bigrammar word_t := int_n 31.
 
-  Lemma byte_rng (v: [|byte_t|]): in_bigrammar_rng (` byte) v.
-  Proof. unfold byte. apply int_n_rng. Qed.
-
-  Lemma word_rng (v: [|word_t|]): in_bigrammar_rng (` word) v.
-  Proof. unfold word. apply int_n_rng. Qed.
-    
-  Hint Resolve byte_rng word_rng: ibr_rng_db.
+  Hint Extern 1 (in_bigrammar_rng (` byte) _) => apply int_n_rng.
+  Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
+  Hint Extern 1 (in_bigrammar_rng (` word) _) => apply int_n_rng.
 
   (* I used the above grammars for halfword and word because they are
      easier for the proofs. The following defs of halfword and word from
@@ -948,7 +919,7 @@ End X86_PARSER_ARG.
     - generalize Z_to_condition_type_inv. crush.
   Defined.
 
-  (** * A bigrammar for modrm *)
+  (** * A bigrammar for modrm and other parsers such as immediate parsers *)
 
   (* Definition bitvector (n:nat) (bs:[|bits_n n|]) : Word.int n. *)
 
@@ -1226,14 +1197,6 @@ End X86_PARSER_ARG.
   Lemma sib_p_rng_none r: in_bigrammar_rng (` sib_p) (None, r).
   Proof. intros; unfold sib_p. ibr_prover. Qed.
   Hint Resolve sib_p_rng_none: ibr_rng_db.
-
-  (* todo: move earlier *)
-  Local Ltac local_printable_tac := 
-    break_hyp;
-    match goal with
-      | [H: ?V <> ?V |- _] => contradict H; trivial
-      | _ => printable_tac
-    end.
 
   Definition rm00 : wf_bigrammar address_t.
     refine (((reg_no_esp_ebp |+| ("100" $$ si_p $ reg_no_ebp)) |+|
@@ -1528,7 +1491,6 @@ End X86_PARSER_ARG.
       |\/| ("10" $$ reg_p $ rm10).
   Implicit Arguments modrm_gen_noreg [reg_t].
 
-  (* todo: remove *)
   (* Definition modrm_gen_noreg2 (reg_t res_t: type) *)
   (*   (reg_p: wf_bigrammar reg_t)  *)
   (*   (addr_op: funinv address_t res_t)  (* the constructor that converts an *) *)
@@ -1575,23 +1537,6 @@ End X86_PARSER_ARG.
     |\/| ("01" $$ bs $$ rm01)
     |\/| ("10" $$ bs $$ rm10).
 
-  (* todo: remove *)
-  (* Definition ext_op_modrm_gen_noreg2 (res_t: type) *)
-  (*   (addr_op: funinv address_t res_t) *)
-  (*   (pf: strong_invertible addr_op) *)
-  (*   (bs: string) : wf_bigrammar res_t. *)
-  (*   intros. *)
-  (*   refine ((ext_op_modrm_gen_noreg bs) *)
-  (*             @ (fst addr_op) *)
-  (*             & (snd addr_op) *)
-  (*             & _); invertible_tac; *)
-  (*   destruct addr_op as [f1 f2]; *)
-  (*   unfold strong_invertible in pf; destruct pf as [pf1 pf2]. *)
-  (*   - rewrite pf1. printable_tac. *)
-  (*   - apply pf2. simpl. trivial. *)
-  (* Defined. *)
-  (* Implicit Arguments ext_op_modrm_gen_noreg2 [res_t]. *)
-
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern*)
   Definition ext_op_modrm_gen (reg_t: type)
@@ -1599,20 +1544,6 @@ End X86_PARSER_ARG.
     (bs:string) : wf_bigrammar (sum_t address_t reg_t) :=
     ext_op_modrm_noreg bs |+| "11" $$ bs $$ reg_p.
   Implicit Arguments ext_op_modrm_gen [reg_t].
-
-  (* todo: remove *)
-  (* Definition ext_op_modrm_gen (res_t: type) *)
-  (*   (reg_p: wf_bigrammar res_t) *)
-  (*   (addr_op: funinv address_t res_t) *)
-  (*   (pf: strong_invertible addr_op) *)
-  (*   (bs:string) : wf_bigrammar res_t := *)
-  (*   ext_op_modrm_gen_noreg2 addr_op pf bs |\/| "11" $$ bs $$ reg_p. *)
-  (* Implicit Arguments ext_op_modrm_gen [res_t]. *)
-
-  (* todo: move to Bigrammar.v *)
-  Local Ltac strong_invertible_tac :=
-    unfold strong_invertible; split; 
-    [crush | intros v w; destruct w; crush].
 
   (** modrm returns a register as the first operand, and a second operand *)
   Definition modrm: wf_bigrammar (pair_t register_t operand_t).
@@ -1699,7 +1630,6 @@ End X86_PARSER_ARG.
 
  (* note: can be replaced by modrm_noreg since it now produces register_t, address_t *)
   (* general-purpose regs used in SSE instructions *)
-  (* todo: remove *)
   (* Definition modrm_xmm_gp_noreg : wf_bigrammar (pair_t register_t address_t) := *)
   (*   modrm_gen_noreg reg. *)
 
@@ -1719,30 +1649,6 @@ End X86_PARSER_ARG.
     - destruct v; printable_tac.
     - destruct v; destruct w; parsable_tac.
   Defined.
-
-  (** * An X86 bigrammar *)
-  (* A better bigrammar for x86 instruction decoder/encoder. The encoder
-     spec is more efficient:
-
-     (1) Each individual instruction parser does not return values of
-         instr, but instead returns the instruction's arguments; as a
-         result, the inverse function does not need to perform a runtime
-         test to see what instruction it is as the previous version
-         does. At the top level, we disjoint union all instruction parsers
-         and use a conversion function to convert abstract syntax trees
-         (ast) produced by parsing to instructions.
-
-     (2) The Jcc parser uses the biased union for the two sub-parsers, 
-         avoiding runtime tests in those subparsers
-   *)
-
-  Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
-  Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
-  Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
-  Definition AAS_p : wf_bigrammar unit_t := ! "00111111".
-
-
-  (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
 
   (** An parser that parses immediates; takes the opsize override into account; 
       always returns a word *)
@@ -1764,9 +1670,7 @@ End X86_PARSER_ARG.
     - destruct (repr_in_signed_halfword_dec w); parsable_tac.
   Defined.
 
-  Ltac simple_invertible_tac :=
-    unfold invertible; split; [unfold printable | unfold parsable];
-    compute [snd fst]; intros.
+  (** ** Lemmas about previous parsers *)
 
   Lemma modrm_gen_noreg_rng_inv reg_t (reg_p: wf_bigrammar reg_t)
         (r:[|reg_t|]) (addr:[|address_t|]):
@@ -1777,28 +1681,6 @@ End X86_PARSER_ARG.
     - ibr_prover. 
     - ibr_prover; destruct H; ibr_prover.
   Qed.
-
-  (* todo: remove *)
-  (* Lemma modrm_gen_noreg2_rng_inv reg_t res_t *)
-  (*       (reg_p: wf_bigrammar reg_t)  *)
-  (*       (addr_op: funinv address_t res_t) pf_addr *)
-  (*       (r:[|reg_t|]) (res:[|res_t|]): *)
-  (*   in_bigrammar_rng (` (modrm_gen_noreg2 reg_p addr_op pf_addr)) (r,res) -> *)
-  (*   in_bigrammar_rng (` reg_p) r /\ *)
-  (*   exists addr, res = fst addr_op addr. *)
-  (* Proof. unfold modrm_gen_noreg2; intros; ibr_prover. *)
-  (*   destruct v as [r1 addr]. *)
-  (*   sim; subst res. *)
-  (*   - eapply modrm_gen_noreg_rng_inv. eassumption. *)
-  (*   - eexists; trivial. *)
-  (* Qed. *)
-
-  (* todo: remove *)
-  (* Lemma modrm_noreg_rng_inv r op2: *)
-  (*   in_bigrammar_rng (` modrm_noreg) (r,op2) -> *)
-  (*   in_bigrammar_rng (` reg) r /\ *)
-  (*   exists addr, op2 = Address_op addr. *)
-  (* Proof. intros. apply modrm_gen_noreg2_rng_inv in H. trivial. Qed. *)
 
   Lemma Reg_op_p_rng op : 
     (exists r, op = Reg_op r) <-> in_bigrammar_rng (`Reg_op_p) op.
@@ -1831,8 +1713,6 @@ End X86_PARSER_ARG.
   Lemma imm_p_false_rng w: in_bigrammar_rng (` (imm_p false)) w.
   Proof. unfold imm_p; intros. ibr_prover. Qed.
 
-Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
-
   Lemma imm_p_true_rng w:
     repr_in_signed_halfword w -> 
     in_bigrammar_rng (` (imm_p true)) w.
@@ -1850,9 +1730,44 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
     - apply imm_p_false_rng.
   Qed.
 
-  (* TBC: change the inverse fun to add repr_in_unsigned_byte to decide whether a 32-bit imm can be  *)
-  (*      represented in an unsigned byte *)
+  (** * An X86 bigrammar *)
+  (* A better bigrammar for x86 instruction decoder/encoder. The encoder
+     spec is more efficient:
 
+     (1) Each individual instruction parser does not return values of
+         instr, but instead returns the instruction's arguments; as a
+         result, the inverse function does not need to perform a runtime
+         test to see what instruction it is as the previous version
+         does. At the top level, we disjoint union all instruction parsers
+         and use a conversion function to convert abstract syntax trees
+         (ast) produced by parsing to instructions.
+
+     (2) The Jcc parser uses the biased union for the two sub-parsers, 
+         avoiding runtime tests in those subparsers
+   *)
+
+  (* a tactic used to simplify proofs when proving bidirectional grammars about instrs *)
+  Local Ltac bg_instr_sim :=
+    ibr_prover;
+    repeat match goal with
+      | [ |- context[if (repr_in_signed_byte_dec ?i)
+                     then _ else _ ]] => 
+        destruct (repr_in_signed_byte_dec i)
+      | [ H: ~ (repr_in_signed_byte (sign_extend8_32 ?i)) |- _ ] =>
+        contradict H; apply repr_in_signed_byte_extend8_32
+      | [ |- context[if (repr_in_unsigned_byte_dec ?i)
+                     then _ else _ ]] => 
+        destruct (repr_in_unsigned_byte_dec i) 
+      | [H: ~ (repr_in_unsigned_byte (zero_extend8_32 ?i)) |- _ ] =>
+        contradict H; apply repr_in_unsigned_byte_extend8_32
+    end.
+
+  Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
+  Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
+  Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
+  Definition AAS_p : wf_bigrammar unit_t := ! "00111111".
+
+  (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
   Definition logic_or_arith_p (opsize_override: bool)
     (opcode1 : string) (* first 5 bits for most cases *)
     (opcode2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
@@ -1965,7 +1880,7 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
                    end
                  | _ => None
                end)
-          & _); simple_invertible_tac.
+          & _); invertible_tac.
   - destruct_union.
     + (* case 1 *)
       destruct v as [d [w [op1 op2]]]. ibr_prover.
@@ -1977,48 +1892,30 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
           printable_tac; ibr_prover
       end.
     + (* case 2 *)
-      destruct v as [r b]. ibr_prover.
-      destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2];
-        [idtac |
-         contradict H2; apply repr_in_signed_byte_extend8_32].
+      destruct v as [r b]. bg_instr_sim.
       destruct r; printable_tac; ibr_prover.
       (* EAX case *)
       apply imm_p_rng; apply repr_in_signed_extend; omega.
     + (* case 3 *)
-      destruct v as [r b]; ibr_prover.
-      match goal with 
-        | [ |- context[repr_in_unsigned_byte_dec ?imm]] => 
-          destruct (repr_in_unsigned_byte_dec imm) as [H2|H2];
-            [idtac | contradict H2; apply repr_in_unsigned_byte_extend8_32]
-      end.
+      destruct v as [r b]; bg_instr_sim.
       destruct r; printable_tac; ibr_prover.
     + (* case 4 *)
-      destruct v as [r op2]; ibr_prover.
-      destruct r; destruct (repr_in_signed_byte_dec op2); 
-      printable_tac; ibr_prover.
+      destruct v as [r op2]; bg_instr_sim;
+      destruct r; printable_tac; ibr_prover.
     + (* case 5 *)
-      destruct (repr_in_unsigned_byte_dec (zero_extend8_32 v)) as [H2|H2];
-        [idtac | contradict H2; apply repr_in_unsigned_byte_extend8_32].
+      bg_instr_sim.
       printable_tac; ibr_prover.
     + (* case 6 *)
       ibr_prover. printable_tac; ibr_prover.
     + (* case 7 *)
-      destruct v as [op b].
-      destruct (repr_in_unsigned_byte_dec (zero_extend8_32 b)) as [H2|H2];
-        [idtac | contradict H2; apply repr_in_unsigned_byte_extend8_32].
-      printable_tac.
+      destruct v as [op b]. bg_instr_sim.
+      printable_tac. ibr_prover.
     + (* case 8 *)
-      destruct v as [op b]. ibr_prover.
-      destruct (repr_in_signed_byte_dec (sign_extend8_32 b)) as [H2 | H2].
-      * printable_tac; ibr_prover.
-      * contradict H2; apply repr_in_signed_byte_extend8_32.
+      destruct v as [op b]. bg_instr_sim.
+      printable_tac; ibr_prover.
     + (* case 9 *)
-      destruct v as [op1 op2]; ibr_prover.
-      match goal with 
-        | [ |- context[repr_in_signed_byte_dec ?imm]] => 
-          destruct (repr_in_signed_byte_dec imm);
-            printable_tac; ibr_prover
-      end.
+      destruct v as [op1 op2]; bg_instr_sim;
+      printable_tac; ibr_prover.
   - destruct w as [wd [op1 op2]].
     destruct op1; try parsable_tac.
     + (* op1 = Reg_op _ *)
@@ -2051,262 +1948,26 @@ Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
   Definition SUB_p s := logic_or_arith_p s "00101" "101".
   Definition XOR_p s := logic_or_arith_p s "00110" "110".
 
-Todo: simplify the above proof to take care of common cases repr_in_signed_byte_dec
-Todo: do we need Bool_t since we already have Char_t, whose interp is bool
-Todo: Record thoughts: 
-  - different defs of the inverse function; one is easier to prove
-  - bugs in the original pretty printer:
-    * when op1 is Imm_op, and op2 is Imm_op, should get none, but the original
-      one doesn't
 
-               (* let immToOp1 := fun (w:bool) (op1:operand) imm =>  *)
-                 (* match w, opsize_override with *)
-                 (*   | false, _ => Some (inr (inr (inl (op1, (zero_shrink32_8 imm))))) *)
-                 (*   | true, false =>  *)
-                 (*     if (repr_in_signed_byte_dec imm) then *)
-                 (*       Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm)))))) *)
-                 (*     else *)
-                 (*       Some (inr (inr (inr (inr (op1, (Imm_op imm)))))) *)
-                 (*   | true, true => *)
-                 (*     if (repr_in_signed_byte_dec imm) then *)
-                 (*       Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm)))))) *)
-                 (*     else *)
-                 (*       Some (inr (inr (inr (inr (op1, (Imm_op imm)))))) *)
-               (*   if w then *)
-               (*     if (repr_in_signed_byte_dec imm) then *)
-               (*       Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm)))))) *)
-               (*     else *)
-               (*       Some (inr (inr (inr (inr (op1, (Imm_op imm)))))) *)
-               (*   else Some (inr (inr (inl (op1, (zero_shrink32_8 imm))))) *)
-               (* in *)
-
-
-  Definition logic_or_arith_p (opsize_override: bool)
-    (opcode1 : string) (* first 5 bits for most cases *)
-    (opcode2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
-                      that determine the opcode *)
-    : wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
-    intros.
-    refine(
-        (( 
-          (* case 1: register/memory to register and vice versa --
-             the d bit specifies * the direction. *)
-          (opcode1 $$ "0" $$ anybit $ anybit $ modrm |+|
-          (* case 2: sign extend immediate byte to register *)
-           "1000" $$ "0011" $$ "11" $$ opcode2 $$ reg $ byte) |+|
-          (
-            (* case 3: zero-extend immediate byte to register *)
-            "1000" $$ "0000" $$ "11" $$ opcode2 $$ reg $ byte |+|
-            (* case 4: immediate word to register *)
-            "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_op opsize_override ))
-           |+|
-          (
-            (* case 5: zero-extend immediate byte to EAX *)
-           (opcode1 $$ "100" $$ byte |+|
-            (* case 6: word to EAX *)
-            opcode1 $$ "101" $$ imm_op opsize_override) |+|
-           (
-            (* case 7: zero-extend immediate byte to memory *)
-            "1000" $$ "0000" $$ ext_op_modrm opcode2 $ byte |+|
-            (* case 8: sign-extend immediate byte to memory *)
-            "1000" $$ "0011" $$ ext_op_modrm opcode2 $ byte  |+|
-            (* case 9: immediate word to memory *)
-            "1000" $$ "0001" $$ ext_op_modrm opcode2 $ imm_op opsize_override)))
-          @ (fun v => 
-               match v with
-                 (* case 1 *)
-                 | inl (inl (inl (d, (w, (op1, op2))))) => 
-                   if (d:bool) then (w, (op1, op2)) else (w, (op2, op1))
-                 (* case 2 *)
-                 | inl (inl (inr (r,imm))) =>
-                   (true, (Reg_op r, Imm_op (sign_extend8_32 imm)))
-                 (* case 3 *)
-                 | inl (inr (inl (r, imm))) =>
-                   (false, (Reg_op r, Imm_op (zero_extend8_32 imm)))
-                 (* case 4 *)
-                 | inl (inr (inr (r, imm))) => (true, (Reg_op r, imm))
-                 (* case 5 *)
-                 | inr (inl (inl imm)) => 
-                   (false, (Reg_op EAX, Imm_op (zero_extend8_32 imm)))
-                 (* case 6 *)
-                 | inr (inl (inr imm)) => (true, (Reg_op EAX, imm))
-                 (* case 7 *)
-                 | inr (inr (inl (op, imm))) => 
-                   (false, (op, Imm_op (zero_extend8_32 imm)))
-                 (* case 8 *)
-                 | inr (inr (inr (inl (op, imm)))) => 
-                   (true, (op, Imm_op (sign_extend8_32 imm)))
-                 (* case 9 *)
-                 | inr (inr (inr (inr (op, imm)))) =>
-                   (true, (op, imm))
-               end %% (pair_t bool_t (pair_t operand_t operand_t)))
-          & (fun v =>
-               match v with
-                 | (w, (Reg_op r1, Reg_op r2)) =>
-                   (* alternate encoding: set the d bit false and reverse the two regs *)
-                   Some (inl (inl (inl (true, v))))
-                 | (w, (Reg_op _, Address_op _)) =>
-                   Some (inl (inl (inl (true, v))))
-                 | (w, (Address_op a, (Reg_op r))) =>
-                   Some (inl (inl (inl (false, (w, (Reg_op r, Address_op a))))))
-                 | (false, (Reg_op EAX, Imm_op imm)) =>
-                   (* alternate encoding: see the case of (_, Immop i1) *)
-                   Some (inr (inl (inl (zero_shrink32_8 imm))))
-                 | (true, (Reg_op EAX, Imm_op imm as op2)) =>
-                   (* alternate encoding: see the case of (_, Immop i1) *)
-                   Some (inr (inl (inr op2)))
-                 | (false, (_ as op1, Imm_op imm)) =>
-                   Some (inr (inr (inl (op1, (zero_shrink32_8 imm)))))
-                 | (true, (_ as op1, Imm_op imm as op2)) =>
-                   if (repr_in_signed_byte_dec imm) then
-                     Some (inr (inr (inr (inl (op1, (sign_shrink32_8 imm))))))
-                   else
-                     Some (inr (inr (inr (inr (op1, op2)))))
-                 | _ => None
-               end)
-          & _); simple_invertible_tac.
-  destruct_union.
-  - (* case 1 *)
-    destruct v as [d [w [op1 op2]]]. ibr_prover. 
-    destruct d.
-    + (* d = true *)
-      use_lemma modrm_rng by eassumption.
-      destruct H2 as [[r1 H2] H4].
-      subst op1.
-      destruct H4 as [[r2 H4] | H4].
-      * subst op2.
-        destruct w; destruct r1; printable_tac; ibr_prover.
-      * 
-      rewrite H2. clear H2.
-
-      destruct op2.
-
-      
-
-      
-
-
-
-
+(* Todo: do we need Bool_t since we already have Char_t, whose interp is bool *)
 
 TBC
 
-  (* (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *) *)
+  Definition ARPL_p := 
+  "0110" $$ "0011" $$ modrm @ 
+    (fun p => let (op1,op2) := p in ARPL op1 op2 %% instruction_t).
 
-  Definition logic_or_arith_p (opsize_override: bool)
-    (opcode1 : string) (* first 5 bits for most cases *)
-    (opcode2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
-                      that determine the opcode *)
-    (InstCon : bool->operand->operand->instr) (* instruction constructor *)
-    : grammar instruction_t
-    :=
-  (* register/memory to register and vice versa -- the d bit specifies
-   * the direction. *)
-  opcode1 $$ "0" $$ anybit $ anybit $ modrm @
-    (fun p => match p with 
-                | (d, (w, (op1, op2))) => 
-                  if d then InstCon w op1 op2 else InstCon w op2 op1
-              end %% instruction_t)
-  |+|
-  (* sign extend immediate byte to register *)
-  "1000" $$ "0011" $$ "11" $$ opcode2 $$ reg $ byte @ 
-    (fun p => 
-      let (r,imm) := p in InstCon true (Reg_op r) (Imm_op (sign_extend8_32 imm)) %%
-    instruction_t)
-  |+|
-  (* zero-extend immediate byte to register *)
-  "1000" $$ "0000" $$ "11" $$ opcode2 $$ reg $ byte @ 
-    (fun p => 
-      let (r,imm) := p in InstCon false (Reg_op r) (Imm_op (zero_extend8_32 imm)) %%
-    instruction_t)
-  |+|
-  (* immediate word to register *)
-  "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_op opsize_override @ 
-    (fun p => let (r,imm) := p in InstCon true (Reg_op r) imm %% instruction_t)
-  |+|
-  (* zero-extend immediate byte to EAX *)
-  opcode1 $$ "100" $$ byte @
-    (fun imm => InstCon false (Reg_op EAX) (Imm_op (zero_extend8_32 imm)) %% instruction_t)
-  |+|
-  (* word to EAX *)
-  opcode1 $$ "101" $$ imm_op opsize_override @
-    (fun imm => InstCon true (Reg_op EAX)  imm %% instruction_t)
-  |+|
-  (* zero-extend immediate byte to memory *)
-  "1000" $$ "0000" $$ ext_op_modrm_noreg opcode2 $ byte @ 
-    (fun p => let (op,imm) := p in InstCon false op (Imm_op (zero_extend8_32 imm)) %% 
-    instruction_t)
-  |+|
-  (* sign-extend immediate byte to memory *)
-  "1000" $$ "0011" $$ ext_op_modrm_noreg opcode2 $ byte @ 
-    (fun p => let (op,imm) := p in InstCon true op (Imm_op (sign_extend8_32 imm)) %%
-    instruction_t)
-  |+|
-  (* immediate word to memory *)
-  "1000" $$ "0001" $$ ext_op_modrm_noreg opcode2 $ imm_op opsize_override @ 
-    (fun p => let (op,imm) := p in InstCon true op imm %% instruction_t).
+  Definition BOUND_p := 
+  "0110" $$ "0010" $$ modrm @ 
+    (fun p => let (op1,op2) := p in BOUND op1 op2 %% instruction_t).
 
+  Definition BSF_p := 
+  "0000" $$ "1111" $$ "1011" $$ "1100" $$ modrm @ 
+    (fun p => let (op1,op2) := p in BSF op1 op2 %% instruction_t).
 
-Definition enc_logic_or_arith 
-  (lb1: string) (* first 5 bits for most cases *)
-  (lb2 : string) (* when first 5 bits are 10000, lb2 is the extra opcode in
-                    the reg field of the modrm byte *)
-  (op_override :bool) (w: bool) (op1 op2 : operand) : Enc (list bool) :=
-match op1, op2 with
-  | Reg_op r1, Reg_op r2 => 
-    (* alternate encoding: set the d bit 0 and call enc_modrm op2 op1 *)
-    l1 <- enc_modrm op1 op2; 
-    ret (s2bl lb1 ++ s2bl "0" ++ enc_dbit true ++ enc_bit w ++ l1)
-  | Reg_op r1, Address_op a1 => 
-    l1 <- enc_modrm op1 op2; 
-    ret (s2bl lb1 ++ s2bl "0" ++ enc_dbit true ++ enc_bit w ++ l1)
-  | Address_op a1, Reg_op r1 => 
-    l1 <- enc_modrm op2 op1; 
-    ret (s2bl lb1 ++  s2bl "0" ++ enc_dbit false ++ enc_bit w ++ l1)
-  | Reg_op EAX, Imm_op i1 => 
-    (* alternate encoding possible; see the case of _, Immop i1 *)
-    l1 <- enc_imm op_override w i1;
-    ret (s2bl lb1 ++ s2bl "10" ++ enc_bit w ++ l1)
-  | _, Imm_op i1 =>
-    match op_override, w with
-      | _ , false => 
-        l1 <- enc_modrm_2 lb2 op1;
-        l_i1 <- enc_byte_i32 i1;
-        ret (s2bl "10000000" ++ l1 ++ l_i1)
-      | false, true => 
-        (* alternate encoding: even if i1 can be in a byte, 
-           we can encode it as imm32 *)
-        l1 <- enc_modrm_2 lb2 op1;
-        if (repr_in_signed_byte i1) then
-          l_i1 <- enc_byte_i32 i1;
-          ret (s2bl "10000011" ++ l1 ++ l_i1)
-          else ret (s2bl "10000001" ++ l1 ++ enc_word i1)
-      | true, true => 
-        (* alternate encoding: even if i1 can be in a byte, 
-           we can encode it as imm32 *)
-        l1 <- enc_modrm_2 lb2 op1;
-        if (repr_in_signed_byte i1) then
-          l_i1 <- enc_byte_i32 i1;
-          ret (s2bl "10000011" ++ l1 ++ l_i1)
-        else 
-          l_i1 <- enc_halfword_i32 i1;
-          ret (s2bl "10000001" ++ l1 ++ l_i1)
-    end
-  | _, _ => invalid
-end.
-
-
-  Definition ADC_p s := logic_or_arith_p s "00010" "010" ADC.
-  Definition ADD_p s := logic_or_arith_p s "00000" "000" ADD.
-  Definition AND_p s := logic_or_arith_p s "00100" "100" AND.
-  Definition CMP_p s := logic_or_arith_p s "00111" "111" CMP.
-  Definition OR_p  s := logic_or_arith_p s "00001" "001" OR.
-  Definition SBB_p s := logic_or_arith_p s "00011" "011" SBB.
-  Definition SUB_p s := logic_or_arith_p s "00101" "101" SUB.
-  Definition XOR_p s := logic_or_arith_p s "00110" "110" XOR.
-
-
-
+  Definition BSR_p := 
+  "0000" $$ "1111" $$ "1011" $$ "1101" $$ modrm @ 
+    (fun p => let (op1,op2) := p in BSR op1 op2 %% instruction_t).
 
   Definition BSWAP_p : wf_bigrammar register_t := 
     "0000" $$ "1111" $$ "1100" $$ "1" $$ reg.
