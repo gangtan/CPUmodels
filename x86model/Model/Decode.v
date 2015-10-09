@@ -1767,20 +1767,32 @@ End X86_PARSER_ARG.
          avoiding runtime tests in those subparsers
    *)
 
-  (* a tactic used to simplify proofs when proving bidirectional grammars about instrs *)
-  Local Ltac bg_instr_sim :=
+  (* a tactic used to simplify proofs when proving bidirectional grammars *)
+  Local Ltac bg_pf_sim :=
     ibr_prover;
     repeat match goal with
-      | [ |- context[if (repr_in_signed_byte_dec ?i)
-                     then _ else _ ]] => 
+      | [ |- context[repr_in_signed_byte_dec ?i]] => 
+        destruct (repr_in_signed_byte_dec i)
+      | [ H: context[repr_in_signed_byte_dec ?i] |- _] =>
         destruct (repr_in_signed_byte_dec i)
       | [ H: ~ (repr_in_signed_byte (sign_extend8_32 ?i)) |- _ ] =>
         contradict H; apply repr_in_signed_byte_extend8_32
-      | [ |- context[if (repr_in_unsigned_byte_dec ?i)
-                     then _ else _ ]] => 
+
+      | [ |- context[repr_in_unsigned_byte_dec ?i]] => 
         destruct (repr_in_unsigned_byte_dec i) 
+      | [ H: context[repr_in_unsigned_byte_dec ?i] |- _] =>
+        destruct (repr_in_unsigned_byte_dec i)
       | [H: ~ (repr_in_unsigned_byte (zero_extend8_32 ?i)) |- _ ] =>
         contradict H; apply repr_in_unsigned_byte_extend8_32
+
+      | [H: in_bigrammar_rng (` (modrm_ret_reg)) (?r1 ?op2) |- _] => 
+        let H2 := fresh "H" in
+        generalize (modrm_ret_reg_rng_inv H); intro H2;
+        destruct H2 as [H2 | H2]; destruct H2; subst op2
+      | [H: in_bigrammar_rng (` (ext_op_modrm _)) ?op |- _] => 
+        let H2 := fresh "H" in
+        generalize (ext_op_modrm_rng_inv H); intro H2;
+        destruct H2 as [H2 | H2]; destruct H2; subst op
     end.
 
   Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
@@ -1904,60 +1916,41 @@ End X86_PARSER_ARG.
           & _); invertible_tac.
   - destruct_union.
     + (* case 1 *)
-      destruct v as [d [w [op1 op2]]]. ibr_prover.
-      use_lemma modrm_ret_reg_rng_inv by eassumption.
-      destruct d;
-      match goal with
-        | [H: (exists _, _) \/ _ |- _] => 
-          destruct H as [[r2 H8] | [addr H8]]; subst op2;
-          printable_tac; ibr_prover
-      end.
+      destruct v as [d [w [r1 op2]]].
+      destruct d; bg_pf_sim; printable_tac; ibr_prover.
     + (* case 2 *)
-      destruct v as [r b]. bg_instr_sim.
+      destruct v as [r b]. bg_pf_sim.
       destruct r; printable_tac; ibr_prover.
       (* EAX case *)
       apply imm_p_rng; apply repr_in_signed_extend; omega.
     + (* case 3 *)
-      destruct v as [r b]; bg_instr_sim.
+      destruct v as [r b]; bg_pf_sim.
       destruct r; printable_tac; ibr_prover.
     + (* case 4 *)
-      destruct v as [r op2]; bg_instr_sim;
+      destruct v as [r op2]; bg_pf_sim;
       destruct r; printable_tac; ibr_prover.
     + (* case 5 *)
-      bg_instr_sim.
+      bg_pf_sim.
       printable_tac; ibr_prover.
     + (* case 6 *)
       ibr_prover. printable_tac; ibr_prover.
     + (* case 7 *)
-      destruct v as [op b]. bg_instr_sim.
+      destruct v as [op b]. bg_pf_sim.
       printable_tac. ibr_prover.
     + (* case 8 *)
-      destruct v as [op b]. bg_instr_sim.
+      destruct v as [op b]. bg_pf_sim.
       printable_tac; ibr_prover.
     + (* case 9 *)
-      destruct v as [op1 op2]; bg_instr_sim;
+      destruct v as [op1 op2]; bg_pf_sim;
       printable_tac; ibr_prover.
   - destruct w as [wd [op1 op2]].
     destruct op1; try parsable_tac.
     + (* op1 = Reg_op _ *)
       destruct op2; try parsable_tac.
-      destruct r;
-      destruct wd; 
-      repeat match goal with
-               | [ H: context [repr_in_unsigned_byte_dec ?imm] |- _] =>
-                 destruct (repr_in_unsigned_byte_dec i)
-               | [ H: context [repr_in_signed_byte_dec ?imm] |- _] =>
-                 destruct (repr_in_signed_byte_dec i)
-             end; try parsable_tac.
+      destruct r; destruct wd; bg_pf_sim; parsable_tac.
     + (* op1 = Address_op _ *)
       destruct op2; try parsable_tac.
-      destruct wd; 
-      repeat match goal with
-               | [ H: context [repr_in_unsigned_byte_dec ?imm] |- _] =>
-                 destruct (repr_in_unsigned_byte_dec i)
-               | [ H: context [repr_in_signed_byte_dec ?imm] |- _] =>
-                 destruct (repr_in_signed_byte_dec i)
-             end; try parsable_tac.
+      destruct wd; bg_pf_sim; parsable_tac.
   Defined.
 
   Definition ADC_p s := logic_or_arith_p s "00010" "010".
@@ -2022,24 +2015,14 @@ End X86_PARSER_ARG.
               & _); invertible_tac.
     - destruct_union.
       + (* case 1 *)
-         destruct v as [r1 b]. bg_instr_sim. printable_tac. ibr_prover.
+         destruct v as [r1 b]. bg_pf_sim. printable_tac. ibr_prover.
       + (* case 2 *)
-        destruct v as [addr b]. bg_instr_sim. printable_tac. ibr_prover.
+        destruct v as [addr b]. bg_pf_sim. printable_tac. ibr_prover.
       + (* case 3 *)
-        destruct v as [r1 op2]. ibr_prover.
-        use_lemma modrm_ret_reg_rng_inv by eassumption.
-        match goal with
-          | [H: (exists _, _) \/ _ |- _] => 
-            destruct H as [[r2 H8] | [addr H8]]; subst op2;
-            printable_tac; ibr_prover
-        end.
+        destruct v as [r1 op2]. 
+        bg_pf_sim; printable_tac; ibr_prover.
     - destruct w as [op1 op2]; destruct op1; destruct op2;
-      repeat match goal with
-               | [ H: context [repr_in_unsigned_byte_dec ?imm] |- _] =>
-                 destruct (repr_in_unsigned_byte_dec i)
-               | [ H: context [repr_in_signed_byte_dec ?imm] |- _] =>
-                 destruct (repr_in_signed_byte_dec i)
-             end; try parsable_tac.
+      bg_pf_sim; parsable_tac.
   Defined.
 
   Definition BT_p := bit_test_p "100" "00".
@@ -2097,23 +2080,7 @@ End X86_PARSER_ARG.
                     | _, _ => None
                   end)
              & _); invertible_tac.
-    - destruct_union; try printable_tac.
-      + (* case 2 *)
-        ibr_prover.
-        use_lemma ext_op_modrm_rng_inv by eassumption.
-        match goal with
-          | [H: (exists _, _) \/ _ |- _] =>
-            destruct H as [[r2 H8] | [addr H8]]; subst v;
-            printable_tac; ibr_prover
-        end.
-      + (* case 4 *)
-        ibr_prover.
-        use_lemma ext_op_modrm_rng_inv by eassumption.
-        match goal with
-          | [H: (exists _, _) \/ _ |- _] =>
-            destruct H as [[r2 H8] | [addr H8]]; subst v;
-            printable_tac; ibr_prover
-        end.
+    - destruct_union; bg_pf_sim; printable_tac; ibr_prover.
     - destruct w as [near [absolute opsel]].
       destruct near; destruct absolute; destruct opsel as [op sel];
       destruct op; destruct sel; parsable_tac.
@@ -2204,46 +2171,87 @@ End X86_PARSER_ARG.
     - destruct w as [bl op]; destruct op; parsable_tac.
   Defined.
 
+  Definition IMUL_p (opsize_override:bool): 
+    wf_bigrammar (pair_t bool_t (pair_t operand_t (pair_t (option_t Operand_t) (option_t Word_t)))).
+    intros.
+    refine((((* case 1 *)
+             "1111" $$ "011" $$ anybit $ ext_op_modrm "101" |+|
+             (* case 2 *)
+             "0000" $$ "1111" $$ "1010" $$ "1111" $$ modrm_ret_reg)
+              |+|
+            ((* case 3 *)
+              "0110" $$ "1011" $$ modrm_ret_reg $ byte |+|
+             (* case 4 *)
+              "0110" $$ "1001" $$ modrm_ret_reg $ imm_p opsize_override))
+             @ (fun u =>
+                  match u with
+                    | inl (inl (w,op1)) => (w, (op1, (None, None)))
+                    | inl (inr (r1,op2)) => (false, (Reg_op r1, (Some op2, None)))
+                    | inr (inl ((r1,op2),b)) =>
+                      (true, (Reg_op r1, (Some op2, Some (sign_extend8_32 b))))
+                    | inr (inr ((r1,op2),imm)) =>
+                      (negb opsize_override, (Reg_op r1, (Some op2, Some imm)))
+                  end %%
+                  pair_t bool_t (pair_t operand_t (pair_t (option_t Operand_t) (option_t Word_t))))
+             & (fun u:[|pair_t bool_t
+                          (pair_t operand_t (pair_t (option_t Operand_t) (option_t Word_t)))|] => 
+                  let (w,u1):= u in
+                  let (op1,u2):= u1 in
+                  match u2 with
+                    | (None,None) => 
+                      match op1 with
+                        | Reg_op _ | Address_op _ => Some (inl (inl (w,op1)))
+                        | _ => None
+                      end
+                    | (Some op2, None) => 
+                      match w,op1,op2 with
+                        | false,Reg_op r1,Reg_op _ 
+                        | false,Reg_op r1,Address_op _ => Some (inl (inr (r1, op2)))
+                        | _,_,_=> None
+                      end
+                    | (Some op2, Some imm) =>
+                      match op1, op2 with
+                        | Reg_op r1, Reg_op _ | Reg_op r1, Address_op _ =>
+                          if w then                                                 
+                            if repr_in_signed_byte_dec imm then
+                              (* alternate encoding possible when imm is a byte; use case 4 *)
+                              Some (inr (inl ((r1,op2), sign_shrink32_8 imm)))
+                            else if opsize_override then None
+                                 else Some (inr (inr ((r1,op2),imm)))
+                          else if opsize_override then Some (inr (inr ((r1,op2),imm)))
+                               else None
+                        | _,_ => None
+                      end
+                    | _ => None
+                  end)
+             & _); invertible_tac.
+    - destruct_union.
+      + (* case 1 *)
+        destruct v as [w op1].
+        bg_pf_sim; printable_tac; ibr_prover.
+      + (* case 2 *)
+        destruct v as [r1 op2]. 
+        bg_pf_sim; printable_tac; ibr_prover.
+      + (* case 3 *)
+        destruct v as [[r1 op2] b].
+        bg_pf_sim; printable_tac; ibr_prover.
+      + (* case 4 *)
+        destruct v as [[r1 op2] imm].
+        bg_pf_sim; destruct opsize_override; compute [negb];
+        printable_tac; ibr_prover.
+    - destruct w as [bl [op1 [w1 w2]]]. 
+      destruct op1; destruct bl;
+      destruct w1 as [op2 | ];
+      destruct w2; try parsable_tac;
+      destruct op2; destruct opsize_override;
+      bg_pf_sim; parsable_tac.
+  Defined.
+
   
 TBC: 
 
-  Definition IMUL_p opsize_override := 
-    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "101" @
-    (fun p => let (w,op1) := p in IMUL w op1 None None %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "1010" $$ "1111" $$ modrm @
-    (fun p => let (op1,op2) := p in IMUL false op1 (Some op2) None %% instruction_t)
-  |+|
-    "0110" $$ "1011" $$ modrm $ byte @
-    (fun p => match p with 
-                | ((op1,op2),imm) => 
-                  IMUL true op1 (Some op2) (Some (sign_extend8_32 imm))
-              end %% instruction_t)
-  |+|
-    match opsize_override with
-      | false =>
-          "0110" $$ "1001" $$ modrm $ word @
-           (fun p => match p with 
-                | ((op1,op2),imm) => 
-                  IMUL true op1 (Some op2) (Some imm)
-              end  %% instruction_t)
-      | true => 
-          "0110" $$ "1001" $$ modrm $ halfword @
-           (fun p => match p with 
-                | ((op1,op2),imm) => 
-                  IMUL false op1 (Some op2) (Some (sign_extend16_32 imm))
-              end  %% instruction_t)
-    end.
-
-
-
-todo: factor in common cases such as ext_op_modrm_rng_inv in tactics
-
 Some defs (working; just ordering is a bit wrong *)
 
-
- (*Definition IMUL_p : //todo: ext_op_modrm_noreg, modrm*)
- 
   Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
   Definition IN_p2 := "1110" $$ "110" $$ anybit.
 
@@ -2298,34 +2306,6 @@ Some defs (working; just ordering is a bit wrong *)
 
 
 Old grammars:
-
-  Definition IMUL_p opsize_override := 
-    "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg "101" @
-    (fun p => let (w,op1) := p in IMUL w op1 None None %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "1010" $$ "1111" $$ modrm @
-    (fun p => let (op1,op2) := p in IMUL false op1 (Some op2) None %% instruction_t)
-  |+|
-    "0110" $$ "1011" $$ modrm $ byte @
-    (fun p => match p with 
-                | ((op1,op2),imm) => 
-                  IMUL true op1 (Some op2) (Some (sign_extend8_32 imm))
-              end %% instruction_t)
-  |+|
-    match opsize_override with
-      | false =>
-          "0110" $$ "1001" $$ modrm $ word @
-           (fun p => match p with 
-                | ((op1,op2),imm) => 
-                  IMUL true op1 (Some op2) (Some imm)
-              end  %% instruction_t)
-      | true => 
-          "0110" $$ "1001" $$ modrm $ halfword @
-           (fun p => match p with 
-                | ((op1,op2),imm) => 
-                  IMUL false op1 (Some op2) (Some (sign_extend16_32 imm))
-              end  %% instruction_t)
-    end.
 
   Definition IN_p := 
     "1110" $$ "010" $$ anybit $ byte @ 
