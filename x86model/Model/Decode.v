@@ -2247,23 +2247,16 @@ End X86_PARSER_ARG.
       bg_pf_sim; parsable_tac.
   Defined.
 
-  
-TBC: 
-
-Some defs (working; just ordering is a bit wrong *)
-
-  Definition IN_p1 := "1110" $$ "010" $$ anybit $ byte.
-  Definition IN_p2 := "1110" $$ "110" $$ anybit.
-
-  Definition IN_p : wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
-    refine ((IN_p1 |+| IN_p2)
-              @ (fun x => 
-                   match x with
+  Definition IN_p: wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
+    refine (("1110" $$ "010" $$ anybit $ byte |+| 
+             "1110" $$ "110" $$ anybit)
+              @ (fun v => 
+                   match v with
                      | inl (w,b) => (w, Some b)
                      | inr w => (w, None)
                    end %% (Pair_t Char_t (User_t (Option_t Byte_t))))
-              & (fun x => 
-                   match x with
+              & (fun u => 
+                   match u with
                      | (w, Some b) => Some (inl (w,b))
                      | (w, None) => Some (inr w)
                    end)
@@ -2272,95 +2265,143 @@ Some defs (working; just ordering is a bit wrong *)
     - destruct w as [c [b | ]]; try discriminate; crush.
   Defined.
 
-  Definition INC_p1 :=  "1111" $$ "111" $$ anybit  $ "11000" $$ reg.
+  Definition INC_p: wf_bigrammar (pair_t bool_t operand_t).
+    refine (("1111" $$ "111" $$ anybit $ "11000" $$ reg |+|
+             "0100" $$ "0" $$ reg |+|
+             "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "000")
+              @ (fun v => 
+                   match v with
+                     | inl (w,r) => (w, Reg_op r)
+                     | inr (inl r) => (true, Reg_op r)
+                     | inr (inr (w,addr)) => (w,Address_op addr)
+                   end %% pair_t bool_t operand_t)
+              & (fun u: [|pair_t bool_t operand_t|] =>
+                   let (w,op):=u in
+                   match op with
+                     | Reg_op r => 
+                       if w then Some (inr (inl r)) (* alternate encoding: case 1 *)
+                       else Some (inl (w,r))
+                     | Address_op addr => Some (inr (inr (w,addr)))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; ibr_prover.
+      + destruct v as [w r].
+        destruct w; printable_tac; ibr_prover.
+      + printable_tac; ibr_prover.
+      + printable_tac; ibr_prover.
+    - destruct w as [w op]; destruct op; destruct w; parsable_tac.
+  Defined.
 
-  Definition INC_p2 := "0100" $$ "0" $$ reg.
-
-  (*todo: Definition INC_p3 := "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "000".*)
-  
   Definition INS_p : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
   
   Definition INTn_p : wf_bigrammar byte_t := "1100" $$ "1101" $$ byte.
-  
   Definition INT_p : wf_bigrammar unit_t := "1100" $$ ! "1100".
-  
   Definition INTO_p : wf_bigrammar unit_t := "1100" $$ ! "1110".
   
   Definition INVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "1000".
-  
-  (*todo: Definition INVLPG_p := //ext_op_modrm_noreg function*)
-  
-  Definition IRET_p : wf_bigrammar unit_t := "1100" $$ ! "1111".
 
-  (* todo: remove; int_of_bits defined in a different way *)
-  (* Fixpoint bits2Z(n:nat)(a:Z) : interp (bits_n n) -> interp int_t :=  *)
-  (*   match n with  *)
-  (*     | 0%nat => fun _ => a *)
-  (*     | S n => fun p => bits2Z n (2*a + (if (fst p) then 1 else 0)) (snd p) *)
-  (*   end. *)
-  (* Definition int_of_bits(n:nat)(bs:interp (bits_n n)) : interp int_t := bits2Z n 0 bs. *)
+  Definition INVLPG_p: wf_bigrammar operand_t. 
+    refine("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "111"
+             @ (Address_op: [|address_t|] -> [|operand_t|])
+             & Address_op_inv & _); unfold Address_op_inv; invertible_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
+  Definition IRET_p: wf_bigrammar unit_t := "1100" $$ ! "1111".
 
+  Definition Jcc_p: wf_bigrammar (pair_t condition_t word_t). 
+    refine (("0111" $$ tttn $ byte |+|
+             "0000" $$ "1111" $$ "1000" $$ tttn $ word)
+              @ (fun v => 
+                   match v with
+                     | inl (ct,b) => (ct, sign_extend8_32 b)
+                     | inr (ct,imm) => (ct, imm)
+                   end %% pair_t condition_t word_t)
+              & (fun u: [|pair_t condition_t word_t|] => 
+                   let (ct,imm) := u in
+                   if repr_in_signed_byte_dec imm then
+                     (* alternate encoding possible: case 2 *)
+                     Some (inl (ct, sign_shrink32_8 imm))
+                   else Some (inr (ct, imm)))
+              & _); invertible_tac.
+    - destruct_union.
+      + destruct v as [ct v]; bg_pf_sim; printable_tac; ibr_prover.
+      + destruct v as [ct imm]; bg_pf_sim; printable_tac; ibr_prover.
+    - destruct w; bg_pf_sim; parsable_tac.
+  Defined.
 
+  Definition JCXZ_p := "1110" $$ "0011" $$ byte.
 
+  Definition JMP_p: 
+    wf_bigrammar (pair_t bool_t
+                         (pair_t bool_t (pair_t operand_t (option_t selector_t)))).
+    refine ((((* case1: near relative jump; sign extend byte *)
+              "1110" $$ "1011" $$ byte |+|
+              (* case2: near relative jump via a word *)
+              "1110" $$ "1001" $$ word)
+               |+|
+             ((* case3: near absolute jump via an operand *)
+              "1111" $$ "1111" $$ ext_op_modrm "100" |+|
+              (* case4: far absolute jump via base and offset *) 
+              "1110" $$ "1010" $$ word $ halfword |+|
+              (* case5: far abslute jump via operand *)
+              "1111" $$ "1111" $$ ext_op_modrm "101"))
+              @ (fun v =>
+                   match v with
+                     | inl (inl b) =>
+                       (true, (false, (Imm_op (sign_extend8_32 b), None)))
+                     | inl (inr imm) => 
+                       (true, (false, (Imm_op imm, None)))
+                     | inr (inl op) => (true, (true, (op, None)))
+                     | inr (inr (inl (base,offset))) => 
+                       (false, (true, (Imm_op base, Some offset)))
+                     | inr (inr (inr op)) => (false, (true, (op, None)))
+                   end %% pair_t bool_t
+                           (pair_t bool_t (pair_t operand_t (option_t selector_t))))
+              & (fun u: [|pair_t bool_t
+                           (pair_t bool_t (pair_t operand_t (option_t selector_t)))|]
+                 =>
+                   let (near,u1):=u in
+                   let (absolute,u2):=u1 in
+                   match near, absolute with
+                     | true,false =>
+                       match u2 with
+                         | (Imm_op imm, None) =>
+                           if (repr_in_signed_byte_dec imm) then
+                             (* alternate encoding: case 2 *)
+                             Some (inl (inl (sign_shrink32_8 imm)))
+                           else Some (inl (inr imm))
+                         | _ => None
+                       end
+                     | true,true => 
+                       match u2 with
+                         | (Reg_op _, None)
+                         | (Address_op _, None) => Some (inr (inl (fst u2)))
+                         | _ => None
+                       end
+                     | false,true =>
+                       match u2 with
+                         | (Imm_op base, Some offset) =>
+                           Some (inr (inr (inl (base,offset))))
+                         | (Reg_op _, None)
+                         | (Address_op _, None) =>
+                           Some (inr (inr (inr (fst u2))))
+                         | _ => None
+                       end
+                     | _,_ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; bg_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [near [absolute [op w1]]]; destruct w1;
+      destruct near; destruct absolute; destruct op; bg_pf_sim; parsable_tac.
+  Defined.
+        
+TBC: 
 
+Todo: record changes to the structure of instruction proofs; record errors in imul
 
 Old grammars:
-
-  Definition IN_p := 
-    "1110" $$ "010" $$ anybit $ byte @ 
-    (fun p => let (w,pt) := p in IN w (Some pt) %% instruction_t)
-  |+|
-    "1110" $$ "110" $$ anybit @ (fun w => IN w None %% instruction_t).
-
-  Definition INC_p := 
-    "1111" $$ "111" $$ anybit  $ "11000" $$ reg @ 
-      (fun p => let (w,r) := p in INC w (Reg_op r) %% instruction_t)
-  |+|
-    "0100" $$ "0" $$ reg @ (fun r => INC true (Reg_op r) %% instruction_t)
-  |+|
-    "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg "000" @ 
-       (fun p => let (w,op1) := p in INC w op1 %% instruction_t).
-
-  Definition INS_p := "0110" $$ "110" $$ anybit @ (fun x => INS x %% instruction_t).
-
-  Definition INTn_p := "1100" $$ "1101" $$ byte @ (fun x => INTn x %% instruction_t).
-  Definition INT_p := "1100" $$ bits "1100" @ (fun _ => INT %% instruction_t).
-
-  Definition INTO_p := "1100" $$ bits "1110" @ (fun _ => INTO %% instruction_t).
-  Definition INVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1000" @ 
-    (fun _ => INVD %% instruction_t).
-
-  Definition INVLPG_p := 
-    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "111" @ 
-    (fun x => INVLPG x %% instruction_t).
-
-  Definition IRET_p := "1100" $$ bits "1111" @ (fun _ => IRET %% instruction_t).
-
-  Definition Jcc_p := 
-    "0111" $$ tttn $ byte @ 
-    (fun p => let (ct,imm) := p in Jcc ct (sign_extend8_32 imm) %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "1000" $$ tttn $ word @ 
-    (fun p => let (ct,imm) := p in Jcc ct imm %% instruction_t).
-
-  Definition JCXZ_p := "1110" $$ "0011" $$ byte @ (fun x => JCXZ x %% instruction_t).
-
-  Definition JMP_p := 
-    "1110" $$ "1011" $$ byte @
-    (fun b => JMP true false (Imm_op (sign_extend8_32 b)) None %% instruction_t)
-  |+|
-    "1110" $$ "1001" $$ word @ 
-    (fun w => JMP true false (Imm_op w) None %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "100" @ 
-    (fun op => JMP true true op None %% instruction_t)
-  |+|
-    "1110" $$ "1010" $$ word $ halfword @ 
-      (fun p => JMP false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
-  |+|
-    "1111" $$ "1111" $$ ext_op_modrm "101" @ 
-    (fun op => JMP false true op None %% instruction_t).
 
   Definition LAHF_p := "1001" $$ bits "1111" @ (fun _ => LAHF %% instruction_t).
 
