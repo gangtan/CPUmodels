@@ -2486,52 +2486,140 @@ End X86_PARSER_ARG.
      There is no 8bit mode for CMOVcc *)
   Definition CMOVcc_p := "0000" $$ "1111" $$ "0100" $$ tttn $ modrm.
 
-
+  Definition MOV_p (opsize_override:bool): 
+    wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
+    intros.
+    refine (((((* case1: op2 to op1 *)
+               "1000" $$ "101" $$ anybit $ modrm_ret_reg |+|
+               (* case2: op1 to op2 *)
+               "1000" $$ "100" $$ anybit $ modrm_ret_reg |+|
+               (* case3: immediate to reg *)
+               "1100" $$ "0111" $$ "11" $$ "000" $$ reg $ imm_p opsize_override)
+               |+|
+              ((* case4: zero-extend byte to reg *)
+               "1100" $$ "0110" $$ "11" $$ "000" $$ reg $ byte |+|
+               (* case5: immediate to reg; alternate encoding*)
+               "1011" $$ "1" $$ reg $ imm_p opsize_override |+|
+               (* case6: zero-extend byte to reg; alternate encoding *)
+               "1011" $$ "0" $$ reg $ byte))
+              |+|
+             (((* case7: immediate to mem *)
+               "1100" $$ "0111" $$ ext_op_modrm_noreg_ret_addr "000"
+                  $ imm_p opsize_override |+|
+               (* case8: zero-extend byte to mem *)
+               "1100" $$ "0110" $$ ext_op_modrm_noreg_ret_addr "000" $ byte |+|
+               (* case9: 32-bit memory to EAX *)
+               "1010" $$ "0001" $$ word)
+               |+|
+              ((* case10: 8-bit memory to EAX *)
+               "1010" $$ "0000" $$ word |+|
+               (* case11: EAX to memory (update 32 bits in mem) *)
+               "1010" $$ "0011" $$ word |+|
+               (* case12: EAX to memory (update 8 bits in mem) *)
+               "1010" $$ "0010" $$ word)))
+              @ (fun v => 
+                   match v with
+                       (* case1 *)
+                       | inl (inl (inl (w,(r1,op2)))) => (w,(Reg_op r1,op2))
+                       (* case2 *)
+                       | inl (inl (inr (inl (w,(r1,op2))))) => (w,(op2,Reg_op r1))
+                       (* case3 *)
+                       | inl (inl (inr (inr (r,imm)))) => 
+                         (true,  (Reg_op r, Imm_op imm))
+                       (* case4 *)
+                       | inl (inr (inl (r,b))) => 
+                         (false, (Reg_op r, Imm_op (zero_extend8_32 b)))
+                       (* case5 *)
+                       | inl (inr (inr (inl (r,imm)))) => 
+                         (true, (Reg_op r, Imm_op imm))
+                       (* case6 *)
+                       | inl (inr (inr (inr (r,b)))) =>
+                         (false, (Reg_op r, Imm_op (zero_extend8_32 b)))
+                       (* case7 *)
+                       | inr (inl (inl (addr,imm))) =>
+                         (true, (Address_op addr, Imm_op imm))
+                       (* case8 *)
+                       | inr (inl (inr (inl (addr,b)))) =>
+                         (false, (Address_op addr, Imm_op (zero_extend8_32 b)))
+                       (* case9 *)
+                       | inr (inl (inr (inr imm))) =>
+                         (true, (Reg_op EAX, Offset_op imm))
+                       (* case10 *)
+                       | inr (inr (inl imm)) => (false, (Reg_op EAX, Offset_op imm))
+                       (* case11 *)
+                       | inr (inr (inr (inl imm))) => 
+                         (true, (Offset_op imm, Reg_op EAX))
+                       (* case 12 *)
+                       | (inr (inr (inr (inr imm)))) => 
+                         (false, (Offset_op imm, Reg_op EAX))
+                   end %% pair_t bool_t (pair_t operand_t operand_t))
+              & (fun u: [|pair_t bool_t (pair_t operand_t operand_t)|] => 
+                   let (w,u1):=u in
+                   let (op1,op2):=u1 in
+                   match op1 with
+                     | Reg_op r1 => 
+                       match op2 with
+                         | Reg_op _
+                         | Address_op _ =>
+                           (* alternate encoding when both op1 and op2 are Reg_op: 
+                              case2 and swap op1 and op2 *)
+                           Some(inl (inl (inl (w, (r1, op2)))))
+                         | Imm_op imm => 
+                           if w then (* use case 5; alternate encoding: case 3 *)
+                             Some (inl (inr (inr (inl (r1,imm)))))
+                           else
+                             if (repr_in_unsigned_byte_dec imm)
+                             then
+                             (* use case 6; alternate encoding: case 4 *)
+                               Some (inl (inr (inr (inr (r1, zero_shrink32_8 imm)))))
+                             else None
+                         | Offset_op imm => 
+                           match r1 with
+                             | EAX => if w then Some (inr (inl (inr (inr imm))))
+                                      else Some (inr (inr (inl imm)))
+                             | _ => None
+                           end
+                       end
+                     | Address_op addr =>
+                       match op2 with
+                         | Reg_op r => 
+                           Some (inl (inl (inr (inl (w,(r, Address_op addr))))))
+                         | Imm_op imm =>
+                           if w then
+                             Some (inr (inl (inl (addr,imm))))
+                           else 
+                             if (repr_in_unsigned_byte_dec imm)
+                             then Some (inr (inl (inr (inl (addr, zero_shrink32_8 imm)))))
+                             else None
+                         | _ => None
+                       end
+                     | Offset_op imm => 
+                       match op2 with
+                         | Reg_op EAX => 
+                           if w then Some (inr (inr (inr (inl imm))))
+                           else Some (inr (inr (inr (inr imm))))
+                         | _ => None
+                       end
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union;
+      repeat match goal with 
+               | [v: [| pair_t _ _ |] |- _ ] => destruct v
+             end;
+      bg_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [wd [op1 op2]]; destruct op1; try parsable_tac;
+      destruct op2; bg_pf_sim; try parsable_tac;
+      destruct wd; try parsable_tac;
+      destruct r; parsable_tac.
+  Defined. 
+      
 TBC: 
-
 
 Todo: record changes to the structure of instruction proofs; record errors in imul
 
 Old grammars:
 
-  Definition MOV_p opsize_override := 
-    "1000" $$ "101" $$ anybit $ modrm @ 
-      (fun p => match p with | (w,(op1,op2)) => MOV w op1 op2 end %% instruction_t)
-  |+|
-    "1000" $$ "100" $$ anybit $ modrm @ 
-      (fun p => match p with | (w,(op1,op2)) => MOV w op2 op1 end %% instruction_t)
-  |+|
-   "1100" $$ "0111" $$ "11" $$ "000" $$ reg $ imm_op opsize_override @
-     (fun p => match p with | (r,w) => MOV true  (Reg_op r) w end %% instruction_t)
-  |+|
-   "1100" $$ "0110" $$ "11" $$ "000" $$ reg $ byte @
-     (fun p => match p with
-                 | (r,b) => MOV false (Reg_op r) (Imm_op (zero_extend8_32 b)) 
-               end %% instruction_t)
-  |+|
-    "1011" $$ "1" $$ reg $ imm_op opsize_override @ 
-      (fun p => match p with | (r,w) => MOV true (Reg_op r)  w
-                end %% instruction_t)
-  |+| 
-    "1011" $$ "0" $$ reg $ byte @ 
-      (fun p => match p with 
-                  | (r,b) => MOV false (Reg_op r) (Imm_op (zero_extend8_32 b))
-                end %% instruction_t)
-  |+|
-    "1100" $$ "0111" $$ ext_op_modrm_noreg_ret_addr "000" $ imm_op opsize_override @ 
-      (fun p => match p with | (op,w) => MOV true op w end %% instruction_t)
-  |+|
-    "1100" $$ "0110" $$ ext_op_modrm_noreg_ret_addr "000" $ byte @ 
-    (fun p => match p with | (op,b) => MOV false op (Imm_op (zero_extend8_32 b)) end %% instruction_t)
-  |+|
-    "1010" $$ "0001" $$ word @ (fun w => MOV true  (Reg_op EAX) (Offset_op w) %% instruction_t)
-  |+|
-    "1010" $$ "0000" $$ word @ (fun w => MOV false (Reg_op EAX) (Offset_op w)  %% instruction_t)
-  |+|
-    "1010" $$ "0011" $$ word @ (fun w => MOV true (Offset_op w) (Reg_op EAX) %% instruction_t)
-  |+|
-    "1010" $$ "0010" $$ word @ (fun w => MOV false (Offset_op w) (Reg_op EAX) %% instruction_t).
-  
 
   Definition control_reg_p := 
       bits "000" @ (fun _ => CR0 %% control_register_t) 
