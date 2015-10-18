@@ -661,6 +661,197 @@ End X86_PARSER_ARG.
   Hint Rewrite zero_shrink32_8_inv: inv_db.
   Hint Rewrite zero_extend8_32_inv using assumption: inv_db.
 
+  (** * Definitions and tactics for combining a list of grammars using
+        balanced ASTs *)
+
+  (* Assume we have a list of grammars of type "wf_bigrammar pt_i". We want
+     to combine them into a single grammar that produces semantic values of
+     type t. One easy way of combining them is to do "(g_1 @ f_1) |\/|
+     ... (g_n @ f_n)", where f_i is of type [|pt_i|] -> [|t|]. However,
+     this leads to a reverse function which tries all cases and
+     inefficient.
+
+     Oftentimes, t is an inductive type and each g_i injects into one (or a
+     few) case of the inductive type of t. The following definitions and
+     tactics take advantage of this for more efficient reverse
+     functions. Here are the general steps:
+
+      - combine g_i using |+| to get "g_1 |+| ... |+| g_n". This doesn't
+        lose any info as it generates values in an AST tree type.
+
+      - then we need a map function that converts AST tree values to type
+        t; tactic gen_ast_map is used to aotumate this process given an
+        ast_env that specifies g_i and f_i.
+
+      - for the reverse function, we should do case analysis over values of
+        type t, and construct corresponding tree values. Tactic
+        gen_rev_cases is used to facilitate the process by generating
+        a list of functions mapping from a value to an ast tree value
+       
+    See the def of control_reg_p for a typical definition.
+ *)
+   
+  (** The type for environments that include a list of grammars and
+      semantic functions going from AST values to semantic values of type
+      t.  An AST env is used in tactics that generate the map and the
+      reverse function. *)
+  Inductive AST_Env (t:type):= 
+  | ast_env_nil : AST_Env t
+  | ast_env_cons : 
+      (* each grammar in an AST_Env including an index nat, the type of a
+       grammar, the grammar, and a map function for constructing a semantic
+       value given values produced by the grammar *)
+      forall (n:nat) (pt:type), 
+        wf_bigrammar pt -> (interp pt -> interp t) -> AST_Env t -> AST_Env t.
+  Implicit Arguments ast_env_nil [t].
+  Notation "{ n , g , f } ::: al" := 
+    (ast_env_cons n g f al) (right associativity, at level 70).
+
+  Fixpoint env_length t (ae:AST_Env t) :=
+    match ae with
+      | ast_env_nil => O
+      | ast_env_cons _ _ _ _ ae' => S (env_length ae')
+    end.
+
+  (* compute ceiling(n/2) *)
+  Fixpoint divide_by_two n :=
+    match n with
+      | O => O
+      | S O => 1
+      | S (S n') => S (divide_by_two n')
+    end.
+
+  (** Split the env list into two halves at the middle *)
+  Fixpoint env_split t (ae:AST_Env t) := 
+    let len:= env_length ae in
+    let mid := divide_by_two len in
+    (* using CPS to build the two lists in one pass *)
+    let fix splitHelper i l k :=
+        match beq_nat i mid with
+          | true => k (ast_env_nil, l)
+          | false => 
+            match l with
+              | ast_env_cons n _ g f ae' =>
+                splitHelper (S i) ae'
+                  (fun v => k (ast_env_cons n g (f: _ -> [|t|]) (fst v), snd v))
+              | _ => (ast_env_nil, ast_env_nil) (* this case should never happen *)
+            end
+        end
+    in splitHelper O ae (fun u => u).
+
+  Ltac gen_ast_grammar ast_env :=
+  match ast_env with
+    | ast_env_cons ?n ?g ?f ast_env_nil => constr:(g)
+    | ast_env_nil => never (* should not happen *)
+    | _ =>
+      let aepair := eval simpl in (env_split ast_env) in
+      match aepair with
+        | (?ael, ?aer) => 
+          let g1 := gen_ast_grammar ael in
+          let g2 := gen_ast_grammar aer in
+          constr:(g1 |+| g2)
+      end
+  end.
+
+  Ltac gen_ast_type ast_env :=
+    match ast_env with
+      | ast_env_cons ?n ?g ?f ast_env_nil =>
+        let gt := type of g in
+        match gt with
+          | wf_bigrammar ?pt => pt
+        end
+      | ast_env_nil => unit_t (* should not happen *)
+      | _ =>
+        let aepair := eval simpl in (env_split ast_env) in
+        match aepair with
+          | (?ael, ?aer) => 
+            let t1 := gen_ast_type ael in
+            let t2 := gen_ast_type aer in
+            constr:(sum_t t1 t2)
+        end
+    end.
+
+  (** generate a map function from an AST tree to semantic values according
+      to an ast_env; should not call it with ast_env_nil *)
+  Ltac gen_ast_map_aux ast_env :=
+  match ast_env with
+    | ast_env_cons ?n ?g ?f ast_env_nil => 
+      constr: (fun v => f v)
+    | _ => 
+      let aepair := eval simpl in (env_split ast_env) in
+      match aepair with
+        | (?ael, ?aer) => 
+          let m1 := gen_ast_map_aux ael in
+          let m2 := gen_ast_map_aux aer in
+          constr:(fun v => 
+                    match v with
+                      | inl v1 => m1 v1
+                      | inr v2 => m2 v2
+                    end)
+      end
+  end.
+
+  Ltac gen_ast_map ast_env := 
+    let m := gen_ast_map_aux ast_env in
+    eval simpl in m.
+
+  Ltac gen_rev_case ast_env i := 
+    let len := (eval compute in (env_length ast_env)) in
+    let t := gen_ast_type ast_env in
+    let rec gen_rev_case_aux i n t:= 
+        let eq_1 := (eval compute in (beq_nat n 1)) in
+        match eq_1 with
+          | true => constr:(fun v: interp t => v)
+          | false =>
+            let n1 := (eval compute in (divide_by_two n)) in
+            let b := (eval compute in (NPeano.ltb i n1)) in
+            match t with
+              | sum_t ?t1 ?t2 =>
+                match b with
+                  | true => 
+                    let f := gen_rev_case_aux i n1 t1 in 
+                    constr:(fun v => (inl  (f v)):(interp t))
+                  | false => 
+                    let n2 := (eval compute in (minus n n1)) in
+                    let i1 := (eval compute in (minus i n1)) in
+                    let f := gen_rev_case_aux i1 n2 t2 in
+                    constr:(fun v => (inr (f v)):(interp t))
+                end
+            end
+        end
+    in gen_rev_case_aux i len t.
+
+  Ltac gen_rev_cases ast_env := 
+    let len := (eval compute in (env_length ast_env)) in
+    let rec gen_rev_cases_aux i := 
+        let eq_len := (eval compute in (beq_nat i len)) in
+        match eq_len with
+          | true => idtac
+          | false => 
+            let inj:=fresh "case" in
+            let f := gen_rev_case ast_env i in
+            pose (inj:=f); simpl in inj; 
+            gen_rev_cases_aux (S i)
+       end
+    in let dummyf := constr:(fun v:unit => v) in
+       pose (case:=dummyf);
+       gen_rev_cases_aux 0.
+
+  (** * given an ast env, generate a balanced grammar using |+|, a
+        map function from ast values to values of the target type, 
+        and a list of case functions for mapping from case values
+        to ast values *)
+  Ltac gen_ast_defs ast_env := 
+    let g := gen_ast_grammar ast_env in pose (gr:=g);
+    let m := gen_ast_map ast_env in pose (mp:=m);
+    gen_rev_cases ast_env.
+
+  Ltac clear_ast_defs :=
+    repeat match goal with
+             | [inj:= _ |- _] => compute [inj]; clear inj
+           end.
+
+
   (** * Additional bigrammar constructors (assuming chars are bits) *)
 
   Program Definition bit (b:bool) : wf_bigrammar Char_t := Char b.
@@ -2613,26 +2804,79 @@ End X86_PARSER_ARG.
       destruct wd; try parsable_tac;
       destruct r; parsable_tac.
   Defined. 
-      
+
+  (* todo: move earlier; with control_reg_p*)
+  Definition control_reg_env: AST_Env control_register_t := 
+    {0, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {1, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {2, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {3, ! "100", (fun v => CR4 %% control_register_t)} :::
+    ast_env_nil.
+
+  Definition control_reg_p : wf_bigrammar control_register_t.
+    gen_ast_defs control_reg_env.
+    refine(gr @ (mp: _ -> [|control_register_t|])
+             & (fun u =>
+                  match u with
+                    | CR0 => Some (case0 ())
+                    | CR2 => Some (case1 ())
+                    | CR3 => Some (case2 ())
+                    | CR4 => Some (case3 ())
+                  end)
+             & _); clear_ast_defs; invertible_tac.
+     - destruct_union; printable_tac.
+     - destruct w; crush.
+  Defined.
+
+
+(* todo: implicit argument deprecated *)
+
+
+
+Todo: 
+  * tactic for generating the a balanced-tree map function based on a bunch
+    of cases
+  * tactic for generating a bunch of inl/rs according to case number
+
+  Definition MOVCR_p :=
+    "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "0" $$ "11"
+           $$ control_reg_p $ reg.
+
+  (* todo: move earlier *)
+  (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
+   * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
+   * depending upon the value of some control register.  My guess is that it's
+   * okay for us to just consider this a fault. Something similar seems to
+   * happen with the CR registers above -- e.g., we don't have a CR1. *)
+  Definition debug_reg_p : wf_bigrammar debug_register_t.
+
+
 TBC: 
+
+  (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
+   * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
+   * depending upon the value of some control register.  My guess is that it's
+   * okay for us to just consider this a fault. Something similar seems to
+   * happen with the CR registers above -- e.g., we don't have a CR1. *)
+  Definition debug_reg_p := 
+      bits "000" @ (fun _ => DR0 %% debug_register_t) 
+  |+| bits "001" @ (fun _ => DR1 %% debug_register_t) 
+  |+| bits "010" @ (fun _ => DR2 %% debug_register_t) 
+  |+| bits "011" @ (fun _ => DR3 %% debug_register_t) 
+  |+| bits "110" @ (fun _ => DR6 %% debug_register_t) 
+  |+| bits "111" @ (fun _ => DR7 %% debug_register_t).
+
+  Definition MOVDR_p := 
+    "0000" $$ "1111" $$ "0010" $$ "0011" $$ "11" $$ debug_reg_p $ reg @
+    (fun p => MOVDR true (fst p) (snd p) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0010" $$ "0001" $$ "11" $$ debug_reg_p $ reg @
+    (fun p => MOVDR false (fst p) (snd p) %% instruction_t).
 
 Todo: record changes to the structure of instruction proofs; record errors in imul
 
 Old grammars:
 
-
-  Definition control_reg_p := 
-      bits "000" @ (fun _ => CR0 %% control_register_t) 
-  |+| bits "010" @ (fun _ => CR2 %% control_register_t) 
-  |+| bits "011" @ (fun _ => CR3 %% control_register_t) 
-  |+| bits "100" @ (fun _ => CR4 %% control_register_t).
-  
-  Definition MOVCR_p := 
-    "0000" $$ "1111" $$ "0010" $$ "0010" $$ "11" $$ control_reg_p $ reg @ 
-    (fun p => MOVCR true (fst p) (snd p) %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "0010" $$ "0000" $$ "11" $$ control_reg_p $ reg @ 
-    (fun p => MOVCR false (fst p) (snd p) %% instruction_t).
 
   (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
    * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
