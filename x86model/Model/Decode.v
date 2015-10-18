@@ -2844,13 +2844,19 @@ End X86_PARSER_ARG.
 
 (* todo: implicit argument deprecated *)
 
-TBC
-
-
   Definition MOVCR_p :=
     "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "0" $$ "11"
            $$ control_reg_p $ reg.
 
+  Definition debug_reg_env : AST_Env debug_register_t := 
+    {0, ! "000", (fun _ => DR0 %% debug_register_t)} :::
+    {1, ! "001", (fun _ => DR1 %% debug_register_t)} :::
+    {2, ! "010", (fun _ => DR2 %% debug_register_t)} :::
+    {3, ! "011", (fun _ => DR3 %% debug_register_t)} :::
+    {4, ! "110", (fun _ => DR6 %% debug_register_t)} :::
+    {5, ! "111", (fun _ => DR7 %% debug_register_t)} :::
+    ast_env_nil.
+     
   (* todo: move earlier *)
   (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
    * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
@@ -2858,54 +2864,31 @@ TBC
    * okay for us to just consider this a fault. Something similar seems to
    * happen with the CR registers above -- e.g., we don't have a CR1. *)
   Definition debug_reg_p : wf_bigrammar debug_register_t.
+    gen_ast_defs debug_reg_env.
+    refine(gr @ (mp: _ -> [|debug_register_t|])
+              & (fun u => 
+                   match u with
+                     | DR0 => case0 ()
+                     | DR1 => case1 ()
+                     | DR2 => case2 ()
+                     | DR3 => case3 ()
+                     | DR6 => case4 ()
+                     | DR7 => case5 ()
+                end)
+              & _); clear_ast_defs; invertible_tac.
+    - destruct_union; printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
+  Definition MOVDR_p := 
+    "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "111" $$ debug_reg_p $ reg.
+
+(* Todo: record changes to the structure of instruction proofs; record errors in imul *)
 
 TBC: 
 
-  (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
-   * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
-   * depending upon the value of some control register.  My guess is that it's
-   * okay for us to just consider this a fault. Something similar seems to
-   * happen with the CR registers above -- e.g., we don't have a CR1. *)
-  Definition debug_reg_p := 
-      bits "000" @ (fun _ => DR0 %% debug_register_t) 
-  |+| bits "001" @ (fun _ => DR1 %% debug_register_t) 
-  |+| bits "010" @ (fun _ => DR2 %% debug_register_t) 
-  |+| bits "011" @ (fun _ => DR3 %% debug_register_t) 
-  |+| bits "110" @ (fun _ => DR6 %% debug_register_t) 
-  |+| bits "111" @ (fun _ => DR7 %% debug_register_t).
-
-  Definition MOVDR_p := 
-    "0000" $$ "1111" $$ "0010" $$ "0011" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR true (fst p) (snd p) %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "0010" $$ "0001" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR false (fst p) (snd p) %% instruction_t).
-
-Todo: record changes to the structure of instruction proofs; record errors in imul
-
 Old grammars:
 
-
-  (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
-   * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
-   * depending upon the value of some control register.  My guess is that it's
-   * okay for us to just consider this a fault. Something similar seems to
-   * happen with the CR registers above -- e.g., we don't have a CR1. *)
-  Definition debug_reg_p := 
-      bits "000" @ (fun _ => DR0 %% debug_register_t) 
-  |+| bits "001" @ (fun _ => DR1 %% debug_register_t) 
-  |+| bits "010" @ (fun _ => DR2 %% debug_register_t) 
-  |+| bits "011" @ (fun _ => DR3 %% debug_register_t) 
-  |+| bits "110" @ (fun _ => DR6 %% debug_register_t) 
-  |+| bits "111" @ (fun _ => DR7 %% debug_register_t).
-
-  Definition MOVDR_p := 
-    "0000" $$ "1111" $$ "0010" $$ "0011" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR true (fst p) (snd p) %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "0010" $$ "0001" $$ "11" $$ debug_reg_p $ reg @
-    (fun p => MOVDR false (fst p) (snd p) %% instruction_t).
 
   Definition segment_reg_p := 
       bits "000" @ (fun _ => ES %% segment_register_t) 
