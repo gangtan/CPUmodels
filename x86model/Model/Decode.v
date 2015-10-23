@@ -151,6 +151,7 @@ End X86_PARSER_ARG.
   Definition bool_t := User_t Bool_t.
   Definition prefix_t := User_t Prefix_t.
   Definition bitvector_t n := User_t (BitVector_t n).
+  Definition selector_t := BitVector_t 15.
 
   (* Mapping old definitions to new . *)
   (* Definition parser r := wf_bigrammar r. *)
@@ -272,7 +273,6 @@ End X86_PARSER_ARG.
   (* Compared to repr (Z_of_bits f), this one doesn't do the extra modular op *)
   Definition intn_of_sig (n:nat) (f:Z->bool): Word.int n :=
     Word.mkint _ (Word.Z_of_bits (S n) f) (Word.Z_of_bits_range n f).
-  (* Implicit Arguments intn_of_sig [n]. *)
 
   Definition sig_of_intn (n:nat) (i:Word.int n) : Z->bool :=
     Word.bits_of_Z (S n) (Word.unsigned i).
@@ -703,7 +703,7 @@ End X86_PARSER_ARG.
        value given values produced by the grammar *)
       forall (n:nat) (pt:type), 
         wf_bigrammar pt -> (interp pt -> interp t) -> AST_Env t -> AST_Env t.
-  Implicit Arguments ast_env_nil [t].
+  Arguments ast_env_nil [t].
   Notation "{ n , g , f } ::: al" := 
     (ast_env_cons n g f al) (right associativity, at level 70).
 
@@ -1131,6 +1131,37 @@ End X86_PARSER_ARG.
              & _); clear_ast_defs; invertible_tac.
      - destruct_union; printable_tac.
      - destruct w; crush.
+  Defined.
+
+  Definition debug_reg_env : AST_Env debug_register_t := 
+    {0, ! "000", (fun _ => DR0 %% debug_register_t)} :::
+    {1, ! "001", (fun _ => DR1 %% debug_register_t)} :::
+    {2, ! "010", (fun _ => DR2 %% debug_register_t)} :::
+    {3, ! "011", (fun _ => DR3 %% debug_register_t)} :::
+    {4, ! "110", (fun _ => DR6 %% debug_register_t)} :::
+    {5, ! "111", (fun _ => DR7 %% debug_register_t)} :::
+    ast_env_nil.
+     
+  (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
+   * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
+   * depending upon the value of some control register.  My guess is that it's
+   * okay for us to just consider this a fault. Something similar seems to
+   * happen with the CR registers above -- e.g., we don't have a CR1. *)
+  Definition debug_reg_p : wf_bigrammar debug_register_t.
+    gen_ast_defs debug_reg_env.
+    refine(gr @ (mp: _ -> [|debug_register_t|])
+              & (fun u => 
+                   match u with
+                     | DR0 => case0 ()
+                     | DR1 => case1 ()
+                     | DR2 => case2 ()
+                     | DR3 => case3 ()
+                     | DR6 => case4 ()
+                     | DR7 => case5 ()
+                end)
+              & _); clear_ast_defs; invertible_tac.
+    - destruct_union; printable_tac.
+    - destruct w; parsable_tac.
   Defined.
 
   (** * A bigrammar for modrm and other parsers such as immediate parsers *)
@@ -1701,13 +1732,12 @@ End X86_PARSER_ARG.
      that is, the second must produce an address in a mem operand *)
   (* using |\/| below as it's messy to distinguish the three cases in the inverse 
      function *)
-  Program Definition modrm_gen_noreg (reg_t: type) 
+  Program Definition modrm_gen_noreg (reg_t: type)
     (reg_p: wf_bigrammar reg_t) 
     : wf_bigrammar (pair_t reg_t address_t) := 
            ("00" $$ reg_p $ rm00)
       |\/| ("01" $$ reg_p $ rm01)
       |\/| ("10" $$ reg_p $ rm10).
-  Implicit Arguments modrm_gen_noreg [reg_t].
 
   (* Definition modrm_gen_noreg2 (reg_t res_t: type) *)
   (*   (reg_p: wf_bigrammar reg_t)  *)
@@ -1739,14 +1769,14 @@ End X86_PARSER_ARG.
   (*     + rewrite (pf2 addr op2); clear pf1 pf2 H; crush. *)
   (*     + discriminate. *)
   (* Defined. *)
-  (* Implicit Arguments modrm_gen_noreg2 [reg_t res_t]. *)
+  (* Arguments modrm_gen_noreg2 [reg_t res_t]. *)
 
   (** a general modrm grammar for integer, floating-point, sse, mmx instructions *)
-  Definition modrm_gen (reg_t: type) 
+  Definition modrm_gen (reg_t: type)
     (reg_p : wf_bigrammar reg_t)  (* the grammar that parse a register *)
     : wf_bigrammar (sum_t (pair_t reg_t address_t) (pair_t reg_t reg_t)) :=
     modrm_gen_noreg reg_p |+| "11" $$ reg_p $ reg_p.
-  Implicit Arguments modrm_gen [reg_t].
+
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern, and the pattern starting with "11" is excluded. *)
@@ -1770,7 +1800,6 @@ End X86_PARSER_ARG.
     (reg_p: wf_bigrammar reg_t)
     (bs:string) : wf_bigrammar (sum_t address_t reg_t) :=
     ext_op_modrm_noreg_ret_addr bs |+| "11" $$ bs $$ reg_p.
-  Implicit Arguments ext_op_modrm_gen [reg_t].
 
   (** modrm_reg returns a register as the first operand, and a second operand *)
   Definition modrm_ret_reg: wf_bigrammar (pair_t register_t operand_t).
@@ -2257,13 +2286,6 @@ End X86_PARSER_ARG.
   Definition BTC_p := bit_test_p "111" "11".
   Definition BTR_p := bit_test_p "110" "10".
   Definition BTS_p := bit_test_p "101" "01".
-
- (* to be organized *)
-
-  (* todo: move earlier *)
-  Definition selector_t := BitVector_t 15.
-
-(* todo: record errors in enc_bit_test *)
 
   Definition CALL_p : 
     wf_bigrammar (pair_t bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t)))).
@@ -2778,7 +2800,6 @@ End X86_PARSER_ARG.
         %% pair_t bool_t (pair_t operand_t operand_t)} :::
     ast_env_nil.
 
-
   Definition MOV_p (opsize_override:bool): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros. gen_ast_defs (MOV_env opsize_override).
@@ -2842,150 +2863,213 @@ End X86_PARSER_ARG.
       destruct r; parsable_tac.
   Defined.
 
-(* todo: implicit argument deprecated *)
-
   Definition MOVCR_p :=
     "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "0" $$ "11"
            $$ control_reg_p $ reg.
 
-  Definition debug_reg_env : AST_Env debug_register_t := 
-    {0, ! "000", (fun _ => DR0 %% debug_register_t)} :::
-    {1, ! "001", (fun _ => DR1 %% debug_register_t)} :::
-    {2, ! "010", (fun _ => DR2 %% debug_register_t)} :::
-    {3, ! "011", (fun _ => DR3 %% debug_register_t)} :::
-    {4, ! "110", (fun _ => DR6 %% debug_register_t)} :::
-    {5, ! "111", (fun _ => DR7 %% debug_register_t)} :::
-    ast_env_nil.
-     
-  (* todo: move earlier *)
-  (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
-   * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
-   * depending upon the value of some control register.  My guess is that it's
-   * okay for us to just consider this a fault. Something similar seems to
-   * happen with the CR registers above -- e.g., we don't have a CR1. *)
-  Definition debug_reg_p : wf_bigrammar debug_register_t.
-    gen_ast_defs debug_reg_env.
-    refine(gr @ (mp: _ -> [|debug_register_t|])
-              & (fun u => 
-                   match u with
-                     | DR0 => case0 ()
-                     | DR1 => case1 ()
-                     | DR2 => case2 ()
-                     | DR3 => case3 ()
-                     | DR6 => case4 ()
-                     | DR7 => case5 ()
-                end)
-              & _); clear_ast_defs; invertible_tac.
-    - destruct_union; printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
   Definition MOVDR_p := 
     "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "111" $$ debug_reg_p $ reg.
 
-(* Todo: record changes to the structure of instruction proofs; record errors in imul *)
+(* to be organized *)
 
-TBC: 
+  (* todo: move earlier *)
+  Definition segment_reg_env : AST_Env segment_register_t := 
+    {0, ! "000", (fun _ => ES %% segment_register_t)} :::
+    {1, ! "001", (fun _ => CS %% segment_register_t)} :::
+    {2, ! "010", (fun _ => SS %% segment_register_t)} :::
+    {3, ! "011", (fun _ => DS %% segment_register_t)} :::
+    {4, ! "100", (fun _ => FS %% segment_register_t)} :::
+    {5, ! "101", (fun _ => GS %% segment_register_t)} :::
+    ast_env_nil.
 
-Old grammars:
+  Definition segment_reg_p : wf_bigrammar segment_register_t.
+    gen_ast_defs segment_reg_env.
+    refine (gr @ (mp: _ -> [|segment_register_t|])
+               & (fun u => 
+                    match u with
+                      | ES => case0 ()
+                      | CS => case1 ()
+                      | SS => case2 ()
+                      | DS => case3 ()
+                      | FS => case4 ()
+                      | GS => case5 ()
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+     - destruct_union; printable_tac.
+     - destruct w; crush.
+  Defined.
+    
+  (* todo: move earlier *)
+  Definition seg_modrm : wf_bigrammar (pair_t segment_register_t operand_t).
+    refine((("00" $$ segment_reg_p $ rm00
+             |\/| "01" $$ segment_reg_p $ rm01
+             |\/| "10" $$ segment_reg_p $ rm10)
+            |+| "11" $$ segment_reg_p $ reg)
+           @ (fun v =>
+                match v with
+                    | inl (sr, addr) => (sr, Address_op addr)
+                    | inr (sr, r) => (sr, Reg_op r)
+                end %% (pair_t segment_register_t operand_t))
+           & (fun u =>
+                match u with
+                  | (sr, Address_op addr) => Some (inl (sr, addr))
+                  | (sr, Reg_op r) => Some (inr (sr, r))
+                  | _ => None
+                end)
+           & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
+  Defined.
 
+  Definition MOVSR_p := "1000" $$ "11" $$ anybit $ "0" $$ seg_modrm.
 
-  Definition segment_reg_p := 
-      bits "000" @ (fun _ => ES %% segment_register_t) 
-  |+| bits "001" @ (fun _ => CS %% segment_register_t) 
-  |+| bits "010" @ (fun _ => SS %% segment_register_t) 
-  |+| bits "011" @ (fun _ => DS %% segment_register_t) 
-  |+| bits "100" @ (fun _ => FS %% segment_register_t) 
-  |+| bits "101" @ (fun _ => GS %% segment_register_t).
+  
+  Definition MOVBE_p : wf_bigrammar (pair_t operand_t operand_t). 
+    refine ("0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "000"
+                   $$ anybit $ modrm_ret_reg
+             @ (fun v: [|pair_t bool_t (pair_t register_t operand_t)|] => 
+                  match v with
+                    | (w,(r1,op2)) =>
+                      if w then (op2, Reg_op r1) else (Reg_op r1, op2)
+                  end %% pair_t operand_t operand_t)
+             & (fun u => 
+                  match u with
+                    | (Reg_op r1, Reg_op r2) =>
+                      (* alternate encoding: make w false and swap the two operands *)
+                      Some (true, (r2, Reg_op r1)) 
+                    | (Reg_op r1, Address_op _) => 
+                      Some (false, (r1, snd u))
+                    | (Address_op _, Reg_op r1) => 
+                      Some (true, (r1, fst u))
+                    | _ => None
+                  end)
+             & _); invertible_tac.
+    - destruct v as [w [r1 op2]]. 
+      destruct w; bg_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
+                                             
+  Definition MOVS_p := "1010" $$ "010" $$ anybit. 
+  Definition MOVSX_p := "0000" $$ "1111" $$ "1011" $$ "111" $$ anybit $ modrm.
+  Definition MOVZX_p := "0000" $$ "1111" $$ "1011" $$ "011" $$ anybit $ modrm.
 
-  Definition seg_modrm : grammar (Pair_t segment_register_t operand_t) := 
-    (     ("00" $$ segment_reg_p $ rm00) 
-      |+| ("01" $$ segment_reg_p $ rm01)
-      |+| ("10" $$ segment_reg_p $ rm10)) @
-            (fun p => match p with
-                      | (sr, addr) => (sr, Address_op addr)
-                      end %% (Pair_t segment_register_t operand_t))
-   |+| ("11" $$ segment_reg_p $ reg_op).
-
-  Definition MOVSR_p := 
-    "1000" $$ "1110" $$ seg_modrm @ 
-      (fun p => MOVSR true (fst p) (snd p) %% instruction_t)
-  |+|
-    "1000" $$ "1100" $$ seg_modrm @ 
-     (fun p => MOVSR false (fst p) (snd p) %% instruction_t).
-
-  Definition MOVBE_p := 
-    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0001" $$ modrm @
-    (fun p => MOVBE (snd p) (fst p) %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0000" $$ modrm @ 
-    (fun p => MOVBE (fst p) (snd p) %% instruction_t).
-
-  Definition MOVS_p := "1010" $$ "010" $$ anybit @ (fun x => MOVS x %% instruction_t).
-
-  Definition MOVSX_p := "0000" $$ "1111" $$ "1011" $$ "111" $$ anybit $ modrm @
-    (fun p => match p with | (w,(op1,op2)) => MOVSX w op1 op2 end %% instruction_t).
-
-  Definition MOVZX_p := "0000" $$ "1111" $$ "1011" $$ "011" $$ anybit $ modrm @
-    (fun p => match p with | (w,(op1,op2)) => MOVZX w op1 op2 end %% instruction_t).
-
-  Definition MUL_p := 
-  "1111" $$ "011" $$ anybit $ ext_op_modrm "100" @ 
-    (fun p => MUL (fst p) (snd p) %% instruction_t).
-
-  Definition NEG_p := 
-  "1111" $$ "011" $$ anybit $ ext_op_modrm "011" @ 
-    (fun p => NEG (fst p) (snd p) %% instruction_t).
+  Definition MUL_p := "1111" $$ "011" $$ anybit $ ext_op_modrm "100". 
+  Definition NEG_p := "1111" $$ "011" $$ anybit $ ext_op_modrm "011".
 
   Definition NOP_p := 
   (* The following is the same as the encoding of "XCHG EAX, EAX"
     "1001" $$ bits "0000" @ (fun _ => NOP None %% instruction_t)
   |+| *)
-    "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm "000" @ 
-    (fun op => NOP op %% instruction_t).
+    "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm "000". 
 
-  Definition NOT_p := 
-    "1111" $$ "011" $$ anybit $ ext_op_modrm "010" @ 
-    (fun p => NOT (fst p) (snd p) %% instruction_t).
+  Definition NOT_p := "1111" $$ "011" $$ anybit $ ext_op_modrm "010".
 
-  Definition OUT_p := 
-    "1110" $$ "011" $$ anybit $ byte @ 
-      (fun p => OUT (fst p) (Some (snd p)) %% instruction_t)
-  |+|
-    "1110" $$ "111" $$ anybit @ (fun w => OUT w None %% instruction_t).
+  Definition OUT_p :wf_bigrammar (pair_t bool_t (option_t Byte_t)).
+    refine ((("1110" $$ "011" $$ anybit $ byte) |+|
+             ("1110" $$ "111" $$ anybit))
+              @ (fun v =>
+                   match v with
+                     | inl (w, b) => (w, Some b)
+                     | inr w => (w, None)
+                   end %% pair_t bool_t (option_t Byte_t))
+              & (fun u:[|pair_t bool_t (option_t Byte_t)|] => 
+                   match u with
+                     | (w, Some b) => Some (inl (w,b))
+                     | (w, None) => Some (inr w)
+                   end)
+              & _); invertible_tac.
+    - destruct_union.
+      + destruct v as [w b]; ibr_prover; printable_tac; ibr_prover.
+      + ibr_prover; printable_tac; ibr_prover.
+    - destruct w as [wd [b | ]]; parsable_tac.
+  Defined.
 
-  Definition OUTS_p := "0110" $$ "111" $$ anybit @ (fun x => OUTS x %% instruction_t).
+  Definition OUTS_p := "0110" $$ "111" $$ anybit.
 
-  Definition POP_p := 
-  "1000" $$ "1111" $$ ext_op_modrm "000" @ (fun x => POP x %% instruction_t)
-  |+|
-    "0101" $$ "1" $$ reg @ (fun r => POP (Reg_op r) %% instruction_t).
+  Definition POP_p : wf_bigrammar operand_t. 
+    refine (("1000" $$ "1111" $$ ext_op_modrm "000" |+|
+             "0101" $$ "1" $$ reg) 
+              @ (fun v => 
+                   match v with
+                     | inl op => op
+                     | inr r => Reg_op r
+                   end %% operand_t)
+              & (fun u =>
+                   match u with
+                     | Reg_op r => Some (inr r) (* alterante encoding: the first case *)
+                     | Address_op addr => Some (inl u)
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union.
+      + ibr_prover; bg_pf_sim; printable_tac; ibr_prover.
+      + printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
-  Definition POPSR_p := 
-    "000" $$ "00" $$ bits "111" @ (fun _ => POPSR ES %% instruction_t)
-  |+|
-    "000" $$ "10" $$ bits "111" @ (fun _ => POPSR SS %% instruction_t)
-  |+|
-    "000" $$ "11" $$ bits "111" @ (fun _ => POPSR DS %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "10" $$ "100" $$ bits "001" @ 
-      (fun _ => POPSR FS %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "10" $$ "101" $$ bits "001" @ 
-      (fun _ => POPSR GS %% instruction_t).
+  Definition POPSR_env : AST_Env segment_register_t :=
+    {0, "000" $$ "00" $$ ! "111", (fun v => ES %% segment_register_t)} :::
+    {1, "000" $$ "10" $$ ! "111", (fun v => SS %% segment_register_t)} :::
+    {2, "000" $$ "11" $$ ! "111", (fun v => DS %% segment_register_t)} :::
+    {3, "0000" $$ "1111" $$ "10" $$ "100" $$ ! "001",
+     (fun _ => FS %% segment_register_t)} :::
+    {4, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "001",
+     (fun _ => GS %% segment_register_t)} :::
+    ast_env_nil.
 
-  Definition POPA_p := "0110" $$ bits "0001" @ (fun _ => POPA %% instruction_t).
-  Definition POPF_p := "1001" $$ bits "1101" @ (fun _ => POPF %% instruction_t).
-  
-  Definition PUSH_p := 
-    "1111" $$ "1111" $$ ext_op_modrm_noreg_ret_addr "110" @ (fun x => PUSH true x %% instruction_t)
-  |+|
-    "0101" $$ "0" $$ reg @ (fun r => PUSH true (Reg_op r) %% instruction_t)
-  |+|
-    "0110" $$ "1010" $$ byte @ 
-    (fun b => PUSH false (Imm_op (sign_extend8_32 b)) %% instruction_t)
-  |+|
-    "0110" $$ "1000" $$ word @ (fun w => PUSH true (Imm_op w) %% instruction_t).
+  Definition POPSR_p : wf_bigrammar segment_register_t.
+    gen_ast_defs POPSR_env.
+    refine (gr @ (mp: _ -> [|segment_register_t|])
+               & (fun u => match u with
+                             | ES => case0 ()
+                             | SS => case1 ()
+                             | DS => case2 ()
+                             | FS => case3 ()
+                             | GS => case4 ()
+                             | _ => None
+                           end)
+               & _); clear_ast_defs; invertible_tac.
+    - destruct_union; printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition POPA_p := "0110" $$ ! "0001".
+  Definition POPF_p := "1001" $$ ! "1101".
+
+  Definition PUSH_env : AST_Env (pair_t bool_t operand_t) :=
+    {0, "1111" $$ "1111" $$ ext_op_modrm_noreg_ret_addr "110", 
+     (fun addr => (true, Address_op addr) %% pair_t bool_t operand_t)} :::
+    {1, "0101" $$ "0" $$ reg, 
+     (fun r => (true, Reg_op r) %% pair_t bool_t operand_t)} :::
+    {2, "0110" $$ "1010" $$ byte,
+     (fun b => (false, Imm_op (sign_extend8_32 b)) %% pair_t bool_t operand_t)} :::
+    {3, "0110" $$ "1000" $$ word,
+     (fun w => (true, Imm_op w) %% pair_t bool_t operand_t)} :::
+    ast_env_nil.
+
+  Definition PUSH_p : wf_bigrammar (pair_t bool_t operand_t).
+    gen_ast_defs PUSH_env.
+    refine (gr @ (mp: _ -> [|pair_t bool_t operand_t|])
+               & (fun u =>
+                    match u with
+                      | (true, Address_op addr) => case0 addr
+                      | (true, Reg_op r) => case1 r
+                      | (true, Imm_op w) => case3 w
+                      | (false, Imm_op w) =>
+                        if (repr_in_signed_byte_dec w) then case2 (sign_shrink32_8 w)
+                        else None
+                      | _ => None
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+    - destruct_union; bg_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [b op]; destruct b; destruct op; bg_pf_sim; parsable_tac.
+  Defined.
+
+
+TBC: 
+
+
+Old grammars:
 
   Definition segment_reg2_p := 
         bits "00" @ (fun _ => ES %% segment_register_t) 
