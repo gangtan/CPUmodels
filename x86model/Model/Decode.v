@@ -142,6 +142,7 @@ End X86_PARSER_ARG.
   Definition sse_register_t := User_t SSE_Register_t.
   Definition address_t := User_t Address_t.
   Definition operand_t := User_t Operand_t.
+  Definition reg_or_immed_t := User_t Reg_or_Immed_t.
   Definition fp_operand_t := User_t Fp_Operand_t.  
   Definition instruction_t := User_t Instruction_t.
   Definition control_register_t := User_t Control_Register_t.
@@ -1164,6 +1165,32 @@ End X86_PARSER_ARG.
     - destruct w; parsable_tac.
   Defined.
 
+  Definition segment_reg_env : AST_Env segment_register_t := 
+    {0, ! "000", (fun _ => ES %% segment_register_t)} :::
+    {1, ! "001", (fun _ => CS %% segment_register_t)} :::
+    {2, ! "010", (fun _ => SS %% segment_register_t)} :::
+    {3, ! "011", (fun _ => DS %% segment_register_t)} :::
+    {4, ! "100", (fun _ => FS %% segment_register_t)} :::
+    {5, ! "101", (fun _ => GS %% segment_register_t)} :::
+    ast_env_nil.
+
+  Definition segment_reg_p : wf_bigrammar segment_register_t.
+    gen_ast_defs segment_reg_env.
+    refine (gr @ (mp: _ -> [|segment_register_t|])
+               & (fun u => 
+                    match u with
+                      | ES => case0 ()
+                      | CS => case1 ()
+                      | SS => case2 ()
+                      | DS => case3 ()
+                      | FS => case4 ()
+                      | GS => case5 ()
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+     - destruct_union; printable_tac.
+     - destruct w; crush.
+  Defined.
+    
   (** * A bigrammar for modrm and other parsers such as immediate parsers *)
 
   (* Definition bitvector (n:nat) (bs:[|bits_n n|]) : Word.int n. *)
@@ -1918,6 +1945,27 @@ End X86_PARSER_ARG.
               & _); invertible_tac.
     - destruct v; printable_tac.
     - destruct v; destruct w; parsable_tac.
+  Defined.
+
+  Definition seg_modrm : wf_bigrammar (pair_t segment_register_t operand_t).
+    refine((("00" $$ segment_reg_p $ rm00
+             |\/| "01" $$ segment_reg_p $ rm01
+             |\/| "10" $$ segment_reg_p $ rm10)
+            |+| "11" $$ segment_reg_p $ reg)
+           @ (fun v =>
+                match v with
+                    | inl (sr, addr) => (sr, Address_op addr)
+                    | inr (sr, r) => (sr, Reg_op r)
+                end %% (pair_t segment_register_t operand_t))
+           & (fun u =>
+                match u with
+                  | (sr, Address_op addr) => Some (inl (sr, addr))
+                  | (sr, Reg_op r) => Some (inr (sr, r))
+                  | _ => None
+                end)
+           & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
   Defined.
 
   (** An parser that parses immediates; takes the opsize override into account; 
@@ -2870,59 +2918,7 @@ End X86_PARSER_ARG.
   Definition MOVDR_p := 
     "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "111" $$ debug_reg_p $ reg.
 
-(* to be organized *)
-
-  (* todo: move earlier *)
-  Definition segment_reg_env : AST_Env segment_register_t := 
-    {0, ! "000", (fun _ => ES %% segment_register_t)} :::
-    {1, ! "001", (fun _ => CS %% segment_register_t)} :::
-    {2, ! "010", (fun _ => SS %% segment_register_t)} :::
-    {3, ! "011", (fun _ => DS %% segment_register_t)} :::
-    {4, ! "100", (fun _ => FS %% segment_register_t)} :::
-    {5, ! "101", (fun _ => GS %% segment_register_t)} :::
-    ast_env_nil.
-
-  Definition segment_reg_p : wf_bigrammar segment_register_t.
-    gen_ast_defs segment_reg_env.
-    refine (gr @ (mp: _ -> [|segment_register_t|])
-               & (fun u => 
-                    match u with
-                      | ES => case0 ()
-                      | CS => case1 ()
-                      | SS => case2 ()
-                      | DS => case3 ()
-                      | FS => case4 ()
-                      | GS => case5 ()
-                    end)
-               & _); clear_ast_defs; invertible_tac.
-     - destruct_union; printable_tac.
-     - destruct w; crush.
-  Defined.
-    
-  (* todo: move earlier *)
-  Definition seg_modrm : wf_bigrammar (pair_t segment_register_t operand_t).
-    refine((("00" $$ segment_reg_p $ rm00
-             |\/| "01" $$ segment_reg_p $ rm01
-             |\/| "10" $$ segment_reg_p $ rm10)
-            |+| "11" $$ segment_reg_p $ reg)
-           @ (fun v =>
-                match v with
-                    | inl (sr, addr) => (sr, Address_op addr)
-                    | inr (sr, r) => (sr, Reg_op r)
-                end %% (pair_t segment_register_t operand_t))
-           & (fun u =>
-                match u with
-                  | (sr, Address_op addr) => Some (inl (sr, addr))
-                  | (sr, Reg_op r) => Some (inr (sr, r))
-                  | _ => None
-                end)
-           & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
-    - destruct w as [r op]; destruct op; parsable_tac.
-  Defined.
-
   Definition MOVSR_p := "1000" $$ "11" $$ anybit $ "0" $$ seg_modrm.
-
   
   Definition MOVBE_p : wf_bigrammar (pair_t operand_t operand_t). 
     refine ("0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "000"
@@ -3007,6 +3003,8 @@ End X86_PARSER_ARG.
     - destruct w; parsable_tac.
   Defined.
 
+(* to be organized *)
+
   Definition POPSR_env : AST_Env segment_register_t :=
     {0, "000" $$ "00" $$ ! "111", (fun v => ES %% segment_register_t)} :::
     {1, "000" $$ "10" $$ ! "111", (fun v => SS %% segment_register_t)} :::
@@ -3065,52 +3063,76 @@ End X86_PARSER_ARG.
     - destruct w as [b op]; destruct b; destruct op; bg_pf_sim; parsable_tac.
   Defined.
 
+  Definition PUSHSR_env : AST_Env segment_register_t :=
+    {0, "000" $$ "00" $$ ! "110", (fun v => ES %% segment_register_t)} :::
+    {1, "000" $$ "01" $$ ! "110", (fun v => CS %% segment_register_t)} :::
+    {2, "000" $$ "10" $$ ! "110", (fun v => SS %% segment_register_t)} :::
+    {3, "000" $$ "11" $$ ! "110", (fun v => DS %% segment_register_t)} :::
+    {4, "0000" $$ "1111" $$ "10" $$ "100" $$ ! "000", 
+     (fun v => FS %% segment_register_t)} :::
+    {5, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "000",
+     (fun v => GS %% segment_register_t)} :::
+    ast_env_nil.
 
-TBC: 
+  Definition PUSHSR_p : wf_bigrammar segment_register_t.
+    gen_ast_defs PUSHSR_env.
+    refine (gr @ (mp: _ -> [|segment_register_t|])
+               & (fun u => 
+                    match u with
+                      | ES => case0 ()
+                      | CS => case1 ()
+                      | SS => case2 ()
+                      | DS => case3 ()
+                      | FS => case4 ()
+                      | GS => case5 ()
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+     - destruct_union; printable_tac.
+     - destruct w; crush.
+  Defined.
 
+  Definition PUSHA_p := "0110" $$ ! "0000".
+  Definition PUSHF_p := "1001" $$ ! "1100".
 
-Old grammars:
+  Definition rotate_p (extop:string): 
+    wf_bigrammar (pair_t bool_t (pair_t operand_t reg_or_immed_t)).
+    intros.
+    refine (("1101" $$ "000" $$ anybit $ ext_op_modrm extop |+|
+             "1101" $$ "001" $$ anybit $ ext_op_modrm extop |+|
+             "1100" $$ "000" $$ anybit $ ext_op_modrm extop $ byte)
+              @ (fun v => 
+                   match v with
+                     | inl (w, op) => (w, (op, Imm_ri (Word.repr 1)))
+                     | inr (inl (w, op)) => (w, (op, Reg_ri ECX))
+                     | inr (inr (w, (op, b))) => (w, (op, Imm_ri b))
+                   end %% pair_t bool_t (pair_t operand_t reg_or_immed_t))
+              & (fun u: [|pair_t bool_t (pair_t operand_t reg_or_immed_t)|] => 
+                   let (w,u1) := u in
+                   match u1 with
+                     | (Reg_op _, Imm_ri b) 
+                     | (Address_op _, Imm_ri b) => Some (inr (inr (w,(fst u1,b))))
+                     | (Reg_op _, Reg_ri ECX)
+                     | (Address_op _, Reg_ri ECX) => Some (inr (inl (w, fst u1)))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union.
+      + destruct v as [w op]; bg_pf_sim; printable_tac; ibr_prover.
+      + destruct v as [w op]; bg_pf_sim; printable_tac; ibr_prover.
+      + destruct v as [w [op b]]; bg_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [w [op ri]]; destruct op; try parsable_tac;
+      destruct ri as [rg | ]; try parsable_tac;
+      destruct rg; parsable_tac.
+  Defined.
 
-  Definition segment_reg2_p := 
-        bits "00" @ (fun _ => ES %% segment_register_t) 
-    |+| bits "01" @ (fun _ => CS %% segment_register_t) 
-    |+| bits "10" @ (fun _ => SS %% segment_register_t) 
-    |+| bits "11" @ (fun _ => DS %% segment_register_t).
+  Definition RCL_p := rotate_p "010".
+  Definition RCR_p := rotate_p "011".
 
-  Definition PUSHSR_p := 
-    "000" $$ segment_reg2_p $ bits "110" @ 
-    (fun p => PUSHSR (fst p) %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "10" $$ "100" $$ bits "000" @ 
-    (fun _ => PUSHSR FS %% instruction_t)
-  |+|
-    "0000" $$ "1111" $$ "10" $$ "101" $$ bits "000" @ 
-    (fun _ => PUSHSR GS %% instruction_t).
-
-  Definition PUSHA_p := "0110" $$ bits "0000" @ (fun _ => PUSHA %% instruction_t).
-  Definition PUSHF_p := "1001" $$ bits "1100" @ (fun _ => PUSHF %% instruction_t).
-
-  Definition rotate_p extop (inst : bool -> operand -> reg_or_immed -> instr) := 
-    "1101" $$ "000" $$ anybit $ ext_op_modrm extop @ 
-    (fun p => inst (fst p) (snd p) (Imm_ri (Word.repr 1)) %% instruction_t)
-  |+|
-    "1101" $$ "001" $$ anybit $ ext_op_modrm extop @
-    (fun p => inst (fst p) (snd p) (Reg_ri ECX) %% instruction_t)
-  |+|
-    "1100" $$ "000" $$ anybit $ ext_op_modrm extop $ byte @
-    (fun p => match p with | (w, (op,b)) => inst w op (Imm_ri b) end %% instruction_t).
-
-  Definition RCL_p := rotate_p "010" RCL.
-  Definition RCR_p := rotate_p "011" RCR.
-
-  Definition RDMSR_p := "0000" $$ "1111" $$ "0011" $$ bits "0010" @ 
-    (fun _ => RDMSR %% instruction_t).
-  Definition RDPMC_p := "0000" $$ "1111" $$ "0011" $$ bits "0011" @ 
-    (fun _ => RDPMC %% instruction_t).
-  Definition RDTSC_p := "0000" $$ "1111" $$ "0011" $$ bits "0001" @ 
-    (fun _ => RDTSC %% instruction_t).
-  Definition RDTSCP_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ "1111" $$ bits "1001" @
-    (fun _ => RDTSCP %% instruction_t).
+  Definition RDMSR_p := "0000" $$ "1111" $$ "0011" $$ ! "0010".
+  Definition RDPMC_p := "0000" $$ "1111" $$ "0011" $$ ! "0011".
+  Definition RDTSC_p := "0000" $$ "1111" $$ "0011" $$ ! "0001".
+  Definition RDTSCP_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ "1111"
+                                $$ ! "1001".
 
   (*
   Definition REPINS_p := "1111" $$ "0011" $$ "0110" $$ "110" $$ anybit @ 
@@ -3132,6 +3154,75 @@ Old grammars:
   Definition REPNESCAS_p := "1111" $$ "0010" $$ "1010" $$ "111" $$ anybit @ 
     (fun x => REPNESCAS x %% instruction_t).
   *)
+
+  Definition RET_env : AST_Env (pair_t bool_t (option_t Half_t)) := 
+    {0, "1100" $$ ! "0011", 
+     (fun v => (true, None) %% pair_t bool_t (option_t Half_t))} :::
+    {1, "1100" $$ "0010" $$ halfword,
+     (fun h => (true, Some h) %% pair_t bool_t (option_t Half_t))} :::
+    {2, "1100" $$ ! "1011",
+     (fun h => (false, None) %% pair_t bool_t (option_t Half_t))} :::
+    {3, "1100" $$ "1010" $$ halfword,
+     (fun h => (false, Some h) %% pair_t bool_t (option_t Half_t))} :::
+    ast_env_nil.
+
+  Definition RET_p : wf_bigrammar (pair_t bool_t (option_t Half_t)).
+    gen_ast_defs RET_env.
+    refine (gr @ (mp: _ -> [|pair_t bool_t (option_t Half_t)|])
+               & (fun u => 
+                    match u with
+                      | (true, None) => case0 ()
+                      | (true, Some h) => case1 h
+                      | (false, None) => case2 ()
+                      | (false, Some h) => case3 h
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+    - destruct_union; ibr_prover; printable_tac; ibr_prover.
+    - destruct w as [b [h | ]]; destruct b; parsable_tac.
+  Defined.
+
+  Definition ROL_p := rotate_p "000".
+  Definition ROR_p := rotate_p "001".
+  Definition RSM_p := "0000" $$ "1111" $$ "1010" $$ ! "1010".
+  Definition SAHF_p := "1001" $$ ! "1110".
+  Definition SAR_p := rotate_p "111".
+  Definition SCAS_p := "1010" $$ "111" $$ anybit.
+
+  (* Intel manual says the reg field in modrm must be 000; however, it
+     seems that an x86 processor accepts any combination in the reg field *)
+  Definition SETcc_p : wf_bigrammar (pair_t condition_t operand_t).
+    refine("0000" $$ "1111" $$ "1001" $$ tttn $ modrm_ret_reg
+             @ (fun v => (fst v, snd (snd v)) %% pair_t condition_t operand_t)
+             & (fun u => 
+                  match snd u with
+                    | Reg_op _ | Address_op _ =>
+                      (* alternate encoding: the reg can be any register *)
+                      Some (fst u, (EAX, snd u))
+                    | _ => None
+                  end)
+             & _); invertible_tac.
+    - destruct v as [ct [r op]]; bg_pf_sim; printable_tac; ibr_prover.
+
+
+Need: in_bigrammar_rng (` modrm_ret_reg) (EAX, Address_op x)
+
+
+    (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
+
+todo: record that SETcc parser loses info
+
+
+TBC:
+
+  Definition SETcc_p := 
+  "0000" $$ "1111" $$ "1001" $$ tttn $ modrm @ 
+    (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
+  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr "000" @ 
+    (fun x => SGDT x %% instruction_t).
+  Definition SHL_p := rotate_p "100" SHL.
+
+
+Old grammars:
 
   Definition RET_p := 
     "1100" $$ bits "0011" @ (fun _ => RET true None %% instruction_t)
