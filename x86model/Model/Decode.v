@@ -191,13 +191,6 @@ End X86_PARSER_ARG.
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
-  Local Ltac local_printable_tac := 
-    break_hyp;
-    match goal with
-      | [H: ?V <> ?V |- _] => contradict H; trivial
-      | _ => printable_tac
-    end.
-
   Obligation Tactic := localcrush.
 
   (** * Basic operartions for converting values between domains:
@@ -853,6 +846,31 @@ End X86_PARSER_ARG.
              | [inj:= _ |- _] => compute [inj]; clear inj
            end.
 
+  Local Ltac bg_pf_sim :=
+    repeat match goal with
+      | [ |- context[repr_in_signed_byte_dec ?i]] => 
+        destruct (repr_in_signed_byte_dec i)
+      | [ H: context[repr_in_signed_byte_dec ?i] |- _] =>
+        destruct (repr_in_signed_byte_dec i)
+      | [ H: ~ (repr_in_signed_byte (sign_extend8_32 ?i)) |- _ ] =>
+        contradict H; apply repr_in_signed_byte_extend8_32
+
+      | [ |- context[repr_in_unsigned_byte_dec ?i]] => 
+        destruct (repr_in_unsigned_byte_dec i) 
+      | [ H: context[repr_in_unsigned_byte_dec ?i] |- _] =>
+        destruct (repr_in_unsigned_byte_dec i)
+      | [H: ~ (repr_in_unsigned_byte (zero_extend8_32 ?i)) |- _ ] =>
+        contradict H; apply repr_in_unsigned_byte_extend8_32
+      | [H: context[register_eq_dec ?r1 ?r2] |- _] => 
+        destruct (register_eq_dec r1 r2); [subst r1 | idtac]
+      | [ |- context[register_eq_dec ?r1 ?r2]] => 
+        destruct (register_eq_dec r1 r2); [subst r1 | idtac]
+      | [H: context[if Word.eq ?disp Word.zero then _ else _] |- _] =>
+        let disp_eq := fresh "disp_eq" in
+        remember_rev (Word.eq disp Word.zero) as disp_eq;
+        destruct disp_eq
+      | [H: ?V <> ?V |- _] => contradict H; trivial
+    end.
 
   (** * Additional bigrammar constructors (assuming chars are bits) *)
 
@@ -1470,198 +1488,6 @@ End X86_PARSER_ARG.
   Proof. intros; unfold sib_p. ibr_prover. Qed.
   Hint Resolve sib_p_rng_none: ibr_rng_db.
 
-  Definition rm00_env: AST_Env address_t := 
-    {0, reg_no_esp_ebp, 
-       (fun r => mkAddress (Word.repr 0) (Some r) None %% address_t)} :::
-    {1, "100" $$ si_p $ reg_no_ebp,
-       (fun v => let (si,base):=v in
-                 mkAddress (Word.repr 0) (Some base) si %% address_t)} :::
-    {2, "100" $$ si_p $ "101" $$ word,
-       (fun v => let (si,disp):=v in
-                 mkAddress disp None si %% address_t)} :::
-    {3, "101" $$ word,
-       (fun disp => mkAddress disp None None %% address_t)} :::
-    ast_env_nil.
-  
-  Definition rm00 : wf_bigrammar address_t.
-    gen_ast_defs rm00_env.
-    refine (gr @ (mp: _ -> [|address_t|])
-            & (fun addr => 
-                 match addr with
-                   | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-                     case3 disp
-                   | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some si |} =>
-                     (* special case: disp32[index*scale]; the mod bits in mod/rm must be 00 *)
-                     case2 (Some si, disp)
-                   | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=siopt |} =>
-                     if (Word.eq disp Word.zero) then
-                       match siopt with
-                         | None => match bs with
-                                     | EBP => None
-                                     | ESP => case1 (None, ESP)
-                                     | _ => case0 bs
-                                   end
-                         | Some (sc, ESP) => None
-                         | Some (sc, idx) => 
-                           match bs with 
-                             | EBP => None
-                             | _ => case1 (Some (sc, idx), bs)
-                           end
-                       end
-                     else None
-                 end)
-            & _); clear_ast_defs; invertible_tac.
-    - destruct_union.
-      + (* case reg_no_esp_ebp *)
-        rewrite Word.int_eq_refl.
-        assert (v<>ESP /\ v<>EBP).
-          ibr_prover. apply reg_no_esp_ebp_neq. trivial.
-        destruct v; local_printable_tac.
-      + (* case (! "100" $ si_p $ reg_no_ebp)) *)
-        destruct v as [si base].
-        rewrite Word.int_eq_refl.
-        assert (base <> EBP).
-          ibr_prover. apply reg_no_ebp_neq. trivial.
-        destruct si as [[sc idx] | ].
-        * assert (idx <> ESP).
-            ibr_prover. eapply si_p_rng_some. eassumption.
-          destruct idx; destruct base; local_printable_tac.
-        * destruct base; local_printable_tac; ibr_prover.
-
-      + (* case ! "100" $ si_p $ ! "101" $ word *)
-        destruct v as [si disp].
-        destruct si as [[sc idx] | ].
-        * printable_tac.
-        * printable_tac; ibr_prover; trivial.
-      + (* case ! "101" $ word *)
-        printable_tac.
-    - destruct w.
-      destruct addrBase as [bs | ].
-      + (* addrBase = Some bs *)
-        remember_head_in_hyp as disp_eq. 
-        destruct disp_eq; [idtac | crush].
-        apply Word.int_eq_true_iff2 in Hdisp_eq; subst addrDisp.
-        destruct addrIndex as [[sc idx] | ].
-        * (* addrIndex = Some (sc,idx) *)
-          destruct idx; destruct bs; parsable_tac.
-        * destruct bs; parsable_tac.
-      + (* addrBase = None *)
-        destruct addrIndex as [[sc idx] | ].
-        * parsable_tac.
-        * parsable_tac.
-  Defined.
-
-  Definition rm01 : wf_bigrammar address_t. 
-    refine ((reg_no_esp $ byte |+| "100" $$ sib_p $ byte)
-              @ (fun v => 
-                   match v with
-                     | inl (bs,disp) => 
-                       (mkAddress (sign_extend8_32 disp) (Some bs) None)
-                     | inr ((si,bs),disp) => 
-                       (mkAddress (sign_extend8_32 disp) (Some bs) si)
-                   end %% address_t)
-              & (fun addr => 
-                   if (repr_in_signed_byte_dec addr.(addrDisp)) then
-                     match addr with
-                       | {| addrDisp:=disp; addrBase:=Some bs; 
-                            addrIndex:=siopt |} =>
-                         match siopt with
-                           | None => 
-                             match bs with
-                               | ESP => 
-                                 Some (inr ((siopt, ESP), sign_shrink32_8 disp))
-                               | _ => Some (inl (bs, sign_shrink32_8 disp))
-                             end
-                           | Some (_, ESP) => None
-                           | _ => 
-                             Some (inr ((siopt, bs), sign_shrink32_8 disp))
-                         end
-                       | _ => None
-                     end
-                   else None)
-              & _ ); invertible_tac.
-    - destruct_union.
-      + (* case reg_no_esp $ byte *)
-        destruct v as [bs disp].
-        compute [addrDisp].
-        generalize (repr_in_signed_byte_extend8_32 disp).
-        destruct_head; [intro | intuition].
-        rewrite sign_shrink32_8_inv.
-        destruct bs; printable_tac; ibr_prover.
-      + (* case ! "100" $ sib_p $ byte *)
-        destruct v as [[si bs] disp].
-        generalize (repr_in_signed_byte_extend8_32 disp).
-        destruct_head; [intro | intuition].
-        rewrite sign_shrink32_8_inv.
-        destruct si as [[sc idx] | ].
-        * assert (idx <> ESP).
-            unfold sib_p in *; ibr_prover.
-            eapply si_p_rng_some. eassumption.
-          destruct idx; local_printable_tac.
-        * destruct bs; printable_tac; ibr_prover.
-    - destruct w. compute [X86Syntax.addrDisp] in *.
-      destruct (repr_in_signed_byte_dec addrDisp); [idtac | discriminate].
-      destruct addrBase as [bs | ].
-      + (* addrBase = Some bs *)
-        destruct addrIndex as [[sc idx] | ].
-        * (* addrIndex = Some (sc,idx) *)
-          destruct idx; parsable_tac.
-        * destruct bs; parsable_tac.
-      + (* addrBase = None *)
-        destruct addrIndex as [[sc idx] | ]; parsable_tac.
-  Defined.
-
-  Definition rm10 : wf_bigrammar address_t. 
-    refine ((reg_no_esp $ word |+| "100" $$ sib_p $ word)
-              @ (fun v => 
-                   match v with
-                     | inl (bs,disp) => 
-                       (mkAddress disp (Some bs) None)
-                     | inr ((si,bs),disp) => 
-                       (mkAddress disp (Some bs) si)
-                   end %% address_t)
-              & (fun addr => 
-                   match addr with
-                     | {| addrDisp:=disp; addrBase:=Some bs; 
-                          addrIndex:=siopt |} =>
-                       match siopt with
-                         | None => 
-                           match bs with
-                             | ESP => 
-                               Some (inr ((siopt, ESP), disp))
-                             | _ => Some (inl (bs, disp))
-                           end
-                         | Some (_, ESP) => None
-                         | _ => 
-                           Some (inr ((siopt, bs), disp))
-                       end
-                     | _ => None
-                     end)
-              & _ ); invertible_tac.
-    - destruct_union.
-      + (* case reg_no_esp $ word *)
-        destruct v as [bs disp].
-        compute [addrDisp].
-        destruct bs; printable_tac; ibr_prover.
-      + (* case ! "100" $ sib_p $ byte *)
-        destruct v as [[si bs] disp].
-        destruct si as [[sc idx] | ].
-        * assert (idx <> ESP).
-            unfold sib_p in *; ibr_prover.
-            eapply si_p_rng_some. eassumption.
-          destruct idx; local_printable_tac.
-        * destruct bs; printable_tac; ibr_prover.
-    - destruct w. compute [X86Syntax.addrDisp] in *.
-      destruct addrBase as [bs | ].
-      + (* addrBase = Some bs *)
-        destruct addrIndex as [[sc idx] | ].
-        * (* addrIndex = Some (sc,idx) *)
-          destruct idx; parsable_tac.
-        * destruct bs; parsable_tac.
-      + (* addrBase = None *)
-        destruct addrIndex as [[sc idx] | ]; parsable_tac.
-  Defined.
-
   Definition Address_op_inv op := 
     match op with
       | Address_op addr => Some addr
@@ -1756,204 +1582,369 @@ End X86_PARSER_ARG.
                     & _); operand_p_tac.
   Defined.
 
-  Definition modrm_gen_env (reg_t:type) (reg_p:wf_bigrammar reg_t)
-            : AST_Env (pair_t reg_t address_t) :=
-    (* mode 00 *)
-    {0, "00" $$ reg_p $ reg_no_esp_ebp, 
-     fun v => 
-       let (r1,base):=v in (r1, mkAddress (Word.repr 0) (Some base) None)
-       %% pair_t reg_t address_t} :::
-    {1, "00" $$ reg_p $ "100" $$ si_p $ reg_no_ebp,
-     fun v => match v with
-                | (r,(si,base)) =>
-                  (r, mkAddress (Word.repr 0) (Some base) si)
-              end %% pair_t reg_t address_t} :::
-    {2, "00" $$ reg_p $ "100" $$ si_p $ "101" $$ word,
-     fun v => match v with
-                | (r,(si,disp)) => (r, mkAddress disp None si)
-              end %% pair_t reg_t address_t} :::
-    {3, "00" $$ reg_p $ "101" $$ word,
-     fun v => let (r,disp):=v in (r, mkAddress disp None None)
-       %% pair_t reg_t address_t} :::
-    (* mode 01 *)
-    {4, "01" $$ reg_p $ reg_no_esp $ byte,
-     fun v => match v with
-                | (r,(bs,disp)) =>
-                  (r, mkAddress (sign_extend8_32 disp) (Some bs) None)
-              end %% pair_t reg_t address_t} :::
-    {5, "01" $$ reg_p $ "100" $$ sib_p $ byte,
-     fun v => match v with
-                | (r, ((si,bs),disp)) => 
-                  (r, mkAddress (sign_extend8_32 disp) (Some bs) si)
-              end %% pair_t reg_t address_t} :::
-    (* mode 10 *)
-    {6, "10" $$ reg_p $ reg_no_esp $ word,
-     fun v => match v with
-                | (r,(bs,disp)) => (r, mkAddress disp (Some bs) None)
-              end %% pair_t reg_t address_t} :::
-    {7, "10" $$ reg_p $ "100" $$ sib_p $ word,
-     fun v => match v with
-                | (r,((si,bs),disp)) => (r, mkAddress disp (Some bs) si)
-              end %% pair_t reg_t address_t} :::
-    ast_env_nil.
+  (* Definition modrm_gen_noreg_env (reg_t:type) (reg_p:wf_bigrammar reg_t) *)
+  (*           : AST_Env (pair_t reg_t address_t) := *)
+  (*   (* mode 00 *) *)
+  (*   {0, "00" $$ reg_p $ reg_no_esp_ebp, *)
+  (*    fun v => *)
+  (*      let (r1,base):=v in (r1, mkAddress (Word.repr 0) (Some base) None) *)
+  (*      %% pair_t reg_t address_t} ::: *)
+  (*   {1, "00" $$ reg_p $ "100" $$ si_p $ reg_no_ebp, *)
+  (*    fun v => match v with *)
+  (*               | (r,(si,base)) => *)
+  (*                 (r, mkAddress (Word.repr 0) (Some base) si) *)
+  (*             end %% pair_t reg_t address_t} ::: *)
+  (*   {2, "00" $$ reg_p $ "100" $$ si_p $ "101" $$ word, *)
+  (*    fun v => match v with *)
+  (*               | (r,(si,disp)) => (r, mkAddress disp None si) *)
+  (*             end %% pair_t reg_t address_t} ::: *)
+  (*   {3, "00" $$ reg_p $ "101" $$ word, *)
+  (*    fun v => let (r,disp):=v in (r, mkAddress disp None None) *)
+  (*      %% pair_t reg_t address_t} ::: *)
+  (*   (* mode 01 *) *)
+  (*   {4, "01" $$ reg_p $ reg_no_esp $ byte, *)
+  (*    fun v => match v with *)
+  (*               | (r,(bs,disp)) => *)
+  (*                 (r, mkAddress (sign_extend8_32 disp) (Some bs) None) *)
+  (*             end %% pair_t reg_t address_t} ::: *)
+  (*   {5, "01" $$ reg_p $ "100" $$ sib_p $ byte, *)
+  (*    fun v => match v with *)
+  (*               | (r, ((si,bs),disp)) => *)
+  (*                 (r, mkAddress (sign_extend8_32 disp) (Some bs) si) *)
+  (*             end %% pair_t reg_t address_t} ::: *)
+  (*   (* mode 10 *) *)
+  (*   {6, "10" $$ reg_p $ reg_no_esp $ word, *)
+  (*    fun v => match v with *)
+  (*               | (r,(bs,disp)) => (r, mkAddress disp (Some bs) None) *)
+  (*             end %% pair_t reg_t address_t} ::: *)
+  (*   {7, "10" $$ reg_p $ "100" $$ sib_p $ word, *)
+  (*    fun v => match v with *)
+  (*               | (r,((si,bs),disp)) => (r, mkAddress disp (Some bs) si) *)
+  (*             end %% pair_t reg_t address_t} ::: *)
+  (*   ast_env_nil. *)
 
-(* todo: to be organized *)
+  (* Definition modrm_gen_noreg (reg_t: type) *)
+  (*   (reg_p: wf_bigrammar reg_t) : wf_bigrammar (pair_t reg_t address_t). *)
+  (*   intros; gen_ast_defs (modrm_gen_noreg_env reg_p). *)
+  (*   refine (gr @ (mp:_ -> [|pair_t reg_t address_t|]) *)
+  (*              & (fun u:[|pair_t reg_t address_t|] => *)
+  (*                   let (r,addr) := u in *)
+  (*                   match addr with *)
+  (*                     | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} => *)
+  (*                       (* alternate encoding: mod00 case2, making reg in si_p be ESP *) *)
+  (*                       case3 (r,disp) *)
+  (*                     | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some si |} => *)
+  (*                       (* special case: disp32[index*scale]; *)
+  (*                          the mod bits in mod/rm must be 00 *) *)
+  (*                       case2 (r,(Some si,disp)) *)
+  (*                     | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=None |} => *)
+  (*                       if (register_eq_dec bs ESP) then *)
+  (*                           (* alternate encoding: when disp is not zero or cannot *)
+  (*                              be represented as a byte, then case5/7 can always *)
+  (*                              be used *) *)
+  (*                           if (Word.eq disp Word.zero) then *)
+  (*                             case1 (r, (None, ESP)) *)
+  (*                           else *)
+  (*                             if (repr_in_signed_byte_dec disp) then *)
+  (*                               case5 (r, ((None, ESP), sign_shrink32_8 disp)) *)
+  (*                             else case7 (r, ((None, ESP), disp)) *)
+  (*                       else *)
+  (*                         if (register_eq_dec bs EBP) then *)
+  (*                           (* alternate encoding: case6 can always be used *) *)
+  (*                           if (repr_in_signed_byte_dec disp) *)
+  (*                           then case4 (r, (bs, sign_shrink32_8 disp)) *)
+  (*                           else case6 (r, (bs, disp)) *)
+  (*                         else *)
+  (*                           (* alternate encoding: case4/6 can always be used depending *)
+  (*                              on disp *) *)
+  (*                           if (Word.eq disp Word.zero) then *)
+  (*                             case0 (r, bs) *)
+  (*                           else *)
+  (*                             if (repr_in_signed_byte_dec disp) *)
+  (*                             then case4 (r, (bs, sign_shrink32_8 disp)) *)
+  (*                             else case6 (r, (bs, disp)) *)
+  (*                     | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=Some sci |} => *)
+  (*                       if (register_eq_dec (snd sci) ESP) then None *)
+  (*                       else if (register_eq_dec bs EBP) then *)
+  (*                              (* alternate encoding: case7 can always be used *) *)
+  (*                              if (repr_in_signed_byte_dec disp) then *)
+  (*                                case5 (r, ((Some sci, bs), sign_shrink32_8 disp)) *)
+  (*                              else case7 (r, ((Some sci, bs), disp)) *)
+  (*                            else *)
+  (*                              (* alternate encoding: case5/7 can be used *) *)
+  (*                              if (Word.eq disp Word.zero) then *)
+  (*                                case1 (r, (Some sci, bs)) *)
+  (*                              else *)
+  (*                                if (repr_in_signed_byte_dec disp) then *)
+  (*                                  case5 (r, ((Some sci, bs), sign_shrink32_8 disp)) *)
+  (*                                else case7 (r, ((Some sci, bs), disp)) *)
+  (*                   end) *)
+  (*              & _); clear_ast_defs. invertible_tac. *)
+  (*   - destruct_union. *)
+  (*     + (* case 0 *) *)
+  (*       destruct v as [r bs]. *)
+  (*       rewrite Word.int_eq_refl. *)
+  (*       assert (bs<>ESP /\ bs<>EBP). *)
+  (*         ibr_prover. apply reg_no_esp_ebp_neq. trivial. *)
+  (*       abstract (sim; bg_pf_sim; printable_tac; ibr_prover). *)
+  (*     + (* case 1 *) *)
+  (*       destruct v as [r [si bs]]. *)
+  (*       rewrite Word.int_eq_refl. *)
+  (*       assert (bs <> EBP). *)
+  (*         ibr_prover. apply reg_no_ebp_neq. trivial. *)
+  (*       destruct si as [[sc idx] | ]. *)
+  (*       * assert (idx <> ESP). *)
+  (*           ibr_prover. eapply si_p_rng_some. eassumption. *)
+  (*         abstract (bg_pf_sim; printable_tac). *)
+  (*       * abstract (bg_pf_sim; printable_tac; ibr_prover). *)
+  (*     + (* case 2 *) *)
+  (*       destruct v as [r [si disp]]. *)
+  (*       abstract (destruct si as [[sc idx] | ]; printable_tac; ibr_prover). *)
+  (*     + (* case 3 *) *)
+  (*       abstract printable_tac. *)
+  (*     + (* case 4 *) *)
+  (*       destruct v as [r [bs disp]]. *)
+  (*       abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*     + (* case 5 *) *)
+  (*       destruct v as [r [[si bs] disp]]. *)
+  (*       rewrite sign_shrink32_8_inv. *)
+  (*       destruct si as [[sc idx] | ]. *)
+  (*       * unfold sib_p in *; *)
+  (*         assert (idx <> ESP). *)
+  (*           ibr_prover. eapply si_p_rng_some. eassumption. *)
+  (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*     + (* case 6 *) *)
+  (*       destruct v as [r [bs disp]]. *)
+  (*       abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*     + (* case 7 *) *)
+  (*       destruct v as [r [[si bs] disp]]. *)
+  (*       destruct si as [[sc idx] | ]. *)
+  (*       * unfold sib_p in *; *)
+  (*         assert (idx <> ESP). *)
+  (*           ibr_prover. eapply si_p_rng_some. eassumption. *)
+  (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*   - destruct w as [r addr]. *)
+  (*     destruct addr. *)
+  (*     abstract (destruct addrBase as [bs | ]; *)
+  (*               destruct addrIndex as [[si idx] | ]; *)
+  (*               bg_pf_sim; try parsable_tac; *)
+  (*               apply Word.int_eq_true_iff2 in Hdisp_eq;  *)
+  (*               subst addrDisp; trivial). *)
+  (* Defined. *)
 
-  Local Ltac bg_pf_sim :=
-    repeat match goal with
-      | [ |- context[repr_in_signed_byte_dec ?i]] => 
-        destruct (repr_in_signed_byte_dec i)
-      | [ H: context[repr_in_signed_byte_dec ?i] |- _] =>
-        destruct (repr_in_signed_byte_dec i)
-      | [ H: ~ (repr_in_signed_byte (sign_extend8_32 ?i)) |- _ ] =>
-        contradict H; apply repr_in_signed_byte_extend8_32
+  (** Moderm mode 00 *)
+  Definition rm00 := 
+    (* case 0 *)
+    (reg_no_esp_ebp |+|
+    (* case 1 *)
+     "100" $$ si_p $ reg_no_ebp) |+|
+    (* case 2 *)
+    ("100" $$ si_p $ "101" $$ word |+|
+    (* case 3 *)
+     "101" $$ word).
 
-      | [ |- context[repr_in_unsigned_byte_dec ?i]] => 
-        destruct (repr_in_unsigned_byte_dec i) 
-      | [ H: context[repr_in_unsigned_byte_dec ?i] |- _] =>
-        destruct (repr_in_unsigned_byte_dec i)
-      | [H: ~ (repr_in_unsigned_byte (zero_extend8_32 ?i)) |- _ ] =>
-        contradict H; apply repr_in_unsigned_byte_extend8_32
-      | [H: context[register_eq_dec ?r1 ?r2] |- _] => 
-        destruct (register_eq_dec r1 r2); [subst r1 | idtac]
-      | [ |- context[register_eq_dec ?r1 ?r2]] => 
-        destruct (register_eq_dec r1 r2); [subst r1 | idtac]
-      (* | [H: context[if Word.eq ?disp Word.zero then _ else _] |- _] *)
-      (*   => remember_rev (Word.eq disp Word.zero) as disp_eq; *)
-      (*     destruct disp_eq *)
-      | [H: context[if Word.eq ?disp Word.zero then _ else _] |- _] =>
-        let disp_eq := fresh "disp_eq" in
-        remember_rev (Word.eq disp Word.zero) as disp_eq;
-        destruct disp_eq
-      | [H: ?V <> ?V |- _] => contradict H; trivial
-    end.
+  (** Moderm mode 01 *)
+  Definition rm01 := 
+    (* case 0 *)
+    reg_no_esp $ byte |+|
+    (* case 1 *)
+    "100" $$ sib_p $ byte.
 
-(* todo: remove local_printable_tac *)
+  (** Moderm mode 10 *)
+  Definition rm10 := 
+    (* case 0 *)
+    reg_no_esp $ word |+|
+    (* case 1 *)
+    "100" $$ sib_p $ word.
 
-  (** Same as modrm_gen but no mod "11" case;
-      that is, the second must produce an address in a mem operand *)
+  (** Same as modrm_gen but no mod "11" case; that is, the second must
+      produce an address in a mem operand *)
   (* The old modrm_gen_noreg parser has three help parsers defined first:
-     rm00, rm01, rm10; each of them constructs an address. However, 
-     combining those three is difficult. In this version, we list all
-     possible cases of modes 00, 01, 10 and have a big inverse function *)
+     rm00, rm01, rm10; each of them constructs an address. However,
+     combining those three would be difficult. In this version, we
+     essentially list all possible cases of modes 00, 01, 10 and have a big
+     inverse function; didn't use the gen_ast_def tactic because the following
+     version using inl/inr explicitly is a bit faster for proofs. *)
   Definition modrm_gen_noreg (reg_t: type)
     (reg_p: wf_bigrammar reg_t) : wf_bigrammar (pair_t reg_t address_t).
-    intros; gen_ast_defs (modrm_gen_env reg_p).
-    refine (gr @ (mp:_ -> [|pair_t reg_t address_t|])
+    intros.
+    refine ((    ("00" $$ reg_p $ rm00) 
+             |+| ("01" $$ reg_p $ rm01)
+             |+| ("10" $$ reg_p $ rm10))
+              @ (fun v => 
+                   match v with
+                     (* mode 00 *)
+                     | inl (r,v1) => 
+                       let addr := 
+                           match v1 with
+                             (* mode 00, case 0 *)
+                             | inl (inl base) =>
+                               mkAddress (Word.repr 0) (Some base) None
+                             (* mode 00, case 1 *)
+                             | inl (inr (si,base)) =>
+                               mkAddress (Word.repr 0) (Some base) si
+                             (* mode 00, case 2 *)
+                             | inr (inl (si,disp)) =>
+                               mkAddress disp None si
+                             (* mode 00, case 3 *)
+                             | inr (inr disp) =>
+                               mkAddress disp None None
+                           end
+                       in (r,addr)
+                     (* mode 01 *)
+                     | inr (inl (r,v1)) =>
+                       let addr := 
+                           match v1 with
+                             (* mode 01, case 0 *)
+                             | inl (bs,disp) =>
+                               mkAddress (sign_extend8_32 disp) (Some bs) None
+                             (* mode 01, case 1 *)
+                             | inr ((si,bs),disp) =>
+                               mkAddress (sign_extend8_32 disp) (Some bs) si
+                           end 
+                       in (r,addr)
+                     (* mode 10 *)
+                     | inr (inr (r,v1)) =>
+                       let addr :=
+                           match v1 with
+                             (* mode 10, case 0 *)
+                             | inl (bs,disp) =>
+                               mkAddress disp (Some bs) None
+                             (* mode 10, case 1 *)
+                             | inr ((si,bs),disp) =>
+                               mkAddress disp (Some bs) si
+                           end
+                       in (r,addr)
+                   end %% pair_t reg_t address_t)
                & (fun u:[|pair_t reg_t address_t|] => 
                     let (r,addr) := u in
                     match addr with
                       | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
                         (* alternate encoding: mod00 case2, making reg in si_p be ESP *)
-                        case3 (r,disp)
+                        Some (inl (r, (inr (inr disp))))
                       | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some si |} =>
                         (* special case: disp32[index*scale]; 
                            the mod bits in mod/rm must be 00 *)
-                        case2 (r,(Some si,disp))
+                        Some (inl (r, (inr (inl (Some si,disp)))))
                       | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=None |} =>
                         if (register_eq_dec bs ESP) then
-                            (* alternate encoding: when disp is not zero or cannot
-                               be represented as a byte, then case5/7 can always
-                               be used *)
+                            (* alternate encoding: when disp is not zero or cannot 
+                               be represented as a byte, then mode01 case 1 and
+                               mode10 case 1 can always be used *)
                             if (Word.eq disp Word.zero) then
-                              case1 (r, (None, ESP))
+                              Some (inl (r, (inl (inr (None, ESP)))))
                             else
                               if (repr_in_signed_byte_dec disp) then
-                                case5 (r, ((None, ESP), sign_shrink32_8 disp))
-                              else case7 (r, ((None, ESP), disp))
+                                Some (inr (inl (r, inr ((None, ESP), 
+                                                        sign_shrink32_8 disp))))
+                              else Some (inr (inr (r, inr ((None, ESP), disp))))
                         else
                           if (register_eq_dec bs EBP) then
-                            (* alternate encoding: case6 can always be used *)
+                            (* alternate encoding: mode 10 case0 can always be used *)
                             if (repr_in_signed_byte_dec disp)
-                            then case4 (r, (bs, sign_shrink32_8 disp))
-                            else case6 (r, (bs, disp))
+                            then Some (inr (inl (r, inl (bs, sign_shrink32_8 disp))))
+                            else Some (inr (inr (r, inl (bs, disp))))
                           else
-                            (* alternate encoding: case4/6 can always be used depending
-                               on disp *)
+                            (* alternate encoding: mode 01 case 0 and mode 10 case 0 
+                               can always be used depending on disp *)
                             if (Word.eq disp Word.zero) then
-                              case0 (r, bs)
+                              Some (inl (r, inl (inl bs)))
                             else
                               if (repr_in_signed_byte_dec disp)
-                              then case4 (r, (bs, sign_shrink32_8 disp))
-                              else case6 (r, (bs, disp))
+                              then Some (inr (inl (r, inl (bs,
+                                                           sign_shrink32_8 disp))))
+                              else Some (inr (inr (r, inl (bs, disp))))
                       | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=Some sci |} =>
                         if (register_eq_dec (snd sci) ESP) then None
                         else if (register_eq_dec bs EBP) then
-                               (* alternate encoding: case7 can always be used *)
+                               (* alternate encoding: mode10 case1 *)
                                if (repr_in_signed_byte_dec disp) then
-                                 case5 (r, ((Some sci, bs), sign_shrink32_8 disp))
-                               else case7 (r, ((Some sci, bs), disp))
-                             else
-                               (* alternate encoding: case5/7 can be used *)
+                                 Some (inr (inl (r, inr ((Some sci, bs),
+                                                         sign_shrink32_8 disp))))
+                               else Some (inr (inr (r, inr ((Some sci, bs), disp))))
+                             else 
+                               (* alternate encoding: mode01 case 1; mode10 case1 *)
                                if (Word.eq disp Word.zero) then
-                                 case1 (r, (Some sci, bs))
+                                 Some (inl (r, (inl (inr (Some sci, bs)))))
                                else
                                  if (repr_in_signed_byte_dec disp) then
-                                   case5 (r, ((Some sci, bs), sign_shrink32_8 disp))
-                                 else case7 (r, ((Some sci, bs), disp))
+                                   Some (inr (inl (r, (inr ((Some sci, bs),
+                                                            sign_shrink32_8 disp)))))
+                                 else Some (inr (inr (r, inr ((Some sci, bs), disp))))
                     end)
-               & _); clear_ast_defs. invertible_tac.
+               & _); invertible_tac.
     - destruct_union.
-      + (* case 0 *)
-        destruct v as [r bs].
+      + (* mode 00 *)
+        destruct v as [r v].
+        unfold rm00 in *; destruct_union.
+        * (* case 0 *)
          rewrite Word.int_eq_refl.
-        assert (bs<>ESP /\ bs<>EBP).
-          ibr_prover. apply reg_no_esp_ebp_neq. trivial.
-        sim; bg_pf_sim; printable_tac; ibr_prover.
-      + (* case 1 *)
-        destruct v as [r [si bs]].
-        rewrite Word.int_eq_refl.
-        assert (bs <> EBP).
-          ibr_prover. apply reg_no_ebp_neq. trivial.
-        destruct si as [[sc idx] | ].
-        * assert (idx <> ESP).
-            ibr_prover. eapply si_p_rng_some. eassumption.
-          bg_pf_sim; printable_tac.
-        * bg_pf_sim; printable_tac; ibr_prover.
-      + (* case 2 *)
-        destruct v as [r [si disp]].
-        destruct si as [[sc idx] | ].
-        * printable_tac.
-        * printable_tac; ibr_prover; trivial.
-      + (* case 3 *)
-        printable_tac.
-      + (* case 4 *)
-        destruct v as [r [bs disp]].
-        bg_pf_sim; try destruct_head; printable_tac; ibr_prover.
-      + (* case 5 *)
-        destruct v as [r [[si bs] disp]].
-        rewrite sign_shrink32_8_inv.
-        destruct si as [[sc idx] | ].
-        * unfold sib_p in *; 
-          assert (idx <> ESP).
-            ibr_prover. eapply si_p_rng_some. eassumption.
-          bg_pf_sim; try destruct_head; printable_tac; ibr_prover. 
-        * bg_pf_sim; try destruct_head; printable_tac; ibr_prover.
-      + (* case 6 *)
-        destruct v as [r [bs disp]].
-        bg_pf_sim; try destruct_head; printable_tac; ibr_prover.
-      + (* case 7 *)
-        destruct v as [r [[si bs] disp]].
-        destruct si as [[sc idx] | ].
-        * unfold sib_p in *; 
-          assert (idx <> ESP).
-            ibr_prover. eapply si_p_rng_some. eassumption.
-          bg_pf_sim; try destruct_head; printable_tac; ibr_prover.
-        * bg_pf_sim; try destruct_head; printable_tac; ibr_prover.
+         rename v into bs.
+         assert (bs<>ESP /\ bs<>EBP).
+           ibr_prover. apply reg_no_esp_ebp_neq. trivial.
+         abstract (sim; bg_pf_sim; printable_tac; ibr_prover).
+        * (* case 1 *)
+          destruct v as [si bs].
+          rewrite Word.int_eq_refl.
+          assert (bs <> EBP).
+            ibr_prover. apply reg_no_ebp_neq. trivial.
+          destruct si as [[sc idx] | ].
+          { assert (idx <> ESP).
+              ibr_prover. eapply si_p_rng_some. eassumption.
+            abstract (bg_pf_sim; printable_tac).
+          }
+          { abstract (bg_pf_sim; printable_tac; ibr_prover). }
+        * (* case 2 *)
+          destruct v as [si disp].
+          abstract (destruct si as [[sc idx] | ];
+                    printable_tac; ibr_prover).
+        * (* case 3 *) abstract printable_tac.
+      + (* mode 01 *)
+        destruct v as [r v].
+        unfold rm01 in *; destruct_union; ibr_prover.
+        * (* case 0 *)
+          destruct v as [bs disp].
+          abstract (unfold rm00; bg_pf_sim;
+                    try destruct_head; printable_tac; ibr_prover).
+        * (* case 1 *)
+          destruct v as [[si bs] disp].
+          rewrite sign_shrink32_8_inv.
+          destruct si as [[sc idx] | ].
+          { unfold sib_p in *; 
+            assert (idx <> ESP).
+              ibr_prover. eapply si_p_rng_some. eassumption.
+            abstract (unfold rm00; bg_pf_sim;
+                      try destruct_head; printable_tac; ibr_prover). }
+          { abstract (unfold rm00; bg_pf_sim;
+                      try destruct_head; printable_tac; ibr_prover). }
+      + (* mode 10 *)
+        destruct v as [r v].
+        unfold rm10 in *; destruct_union; ibr_prover.
+        * (* case 0 *)
+          destruct v as [bs disp].
+          abstract (unfold rm00, rm01; bg_pf_sim; 
+                    try destruct_head; printable_tac; ibr_prover).
+        * (* case 7 *)
+          destruct v as [[si bs] disp].
+          destruct si as [[sc idx] | ].
+          { unfold rm00, rm01, sib_p in *; 
+            assert (idx <> ESP).
+              ibr_prover. eapply si_p_rng_some. eassumption.
+            abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover).
+          }
+          { abstract (unfold rm00, rm01; bg_pf_sim; 
+                      try destruct_head; printable_tac; ibr_prover). }
     - destruct w as [r addr].
       destruct addr.
-      destruct addrBase as [bs | ].
-      + (* addrBase = Some bs *)
-        destruct addrIndex as [[si idx] | ].
-        * (* addrIndex = Some (si,idx) *)
-          bg_pf_sim; try parsable_tac;
-            apply Word.int_eq_true_iff2 in Hdisp_eq; subst addrDisp; trivial.
-        * (* addrIndex = None *)
-          bg_pf_sim; try parsable_tac;
-            apply Word.int_eq_true_iff2 in Hdisp_eq; subst addrDisp; trivial.
-      + (* addrBase = None *)
-        destruct addrIndex as [[si idx] | ]; parsable_tac.
+      abstract (destruct addrBase as [bs | ];
+                destruct addrIndex as [[si idx] | ];
+                bg_pf_sim; try parsable_tac;
+                apply Word.int_eq_true_iff2 in Hdisp_eq;
+                subst addrDisp; trivial).
   Defined.
+
 
 
   (* Definition modrm_gen_noreg2 (reg_t res_t: type) *)
@@ -2184,11 +2175,27 @@ End X86_PARSER_ARG.
         (r:[|reg_t|]) (addr:[|address_t|]):
     in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r,addr) ->
     in_bigrammar_rng (` reg_p) r.
-  Proof. unfold modrm_gen_noreg; intros; ibr_prover.
-    destruct_union;
-    repeat match goal with
-      | [v:[|pair_t _ _|] |- _] => destruct v
-    end; ibr_prover; crush.
+  Proof. intros; unfold modrm_gen_noreg in *. ibr_prover.
+    destruct_union; destruct v; ibr_prover; crush.
+  Qed.
+
+  (* can prove a more precise range lemma if necessary *)
+  Lemma modrm_gen_noreg_rng reg_t (reg_p: wf_bigrammar reg_t)
+        (r1 r2:[|reg_t|]) addr: 
+    in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r1, addr) ->
+    in_bigrammar_rng (` reg_p) r2 -> 
+    in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r2, addr).
+  Proof. intros; unfold modrm_gen_noreg in *. ibr_prover.
+    compute [fst].
+    match goal with
+      | [v: [|sum_t ?t1 (sum_t ?t2 ?t3)|] |- _] => 
+        destruct_union; ibr_prover;
+        destruct v as [r1' v];
+        [exists (inl [|sum_t t2 t3|] (r2, v)) | 
+         exists (inr [|t1|] (inl [|t3|] (r2,v))) |
+         eexists (inr [|t1|] (inr [|t2|] (r2,v))) ]
+    end;
+    split; ibr_prover; crush.
   Qed.
 
   Lemma ext_op_modrm_rng_inv (bs:string) op :
@@ -2218,13 +2225,28 @@ End X86_PARSER_ARG.
     - left. crush. 
   Qed.
 
-  (* with more work, this lemma could be made more general; will do it if necessary *)
-  Lemma modrm_ret_reg_rng r1 r2: in_bigrammar_rng (` modrm_ret_reg) (r1, Reg_op r2).
+  Lemma modrm_ret_reg_rng1 r1 r2: in_bigrammar_rng (` modrm_ret_reg) (r1, Reg_op r2).
   Proof. intros. unfold modrm_ret_reg, modrm_gen. ibr_prover. compute [fst].
     exists (inr [|pair_t register_t address_t|] (r1, r2)).
     split; [ibr_prover | trivial].
   Qed.
-  Hint Resolve modrm_ret_reg_rng: ibr_rng_db.
+  Hint Resolve modrm_ret_reg_rng1: ibr_rng_db.
+
+  (* with more work, this lemma could be made more general; will do it if necessary *)
+  Lemma modrm_ret_reg_rng2 r1 r2 addr: 
+    in_bigrammar_rng (` modrm_ret_reg) (r1, Address_op addr) ->
+    in_bigrammar_rng (` modrm_ret_reg) (r2, Address_op addr).
+  Proof. unfold modrm_ret_reg; intros; ibr_prover; compute [fst].
+    destruct v as [[r1' addr'] | [r1' r2']]; try congruence.
+    sim; subst r1' addr'.
+    unfold modrm_gen in *; ibr_prover.
+    exists (inl [|pair_t register_t register_t|] (r2,addr)).
+    split.
+    - ibr_prover. eapply modrm_gen_noreg_rng. eassumption. ibr_prover.
+    - trivial.
+  Qed.
+  Hint Extern 1 (in_bigrammar_rng (` (modrm_ret_reg)) (_, Address_op _)) =>
+    apply modrm_ret_reg_rng2; assumption : ibr_rng_db.
 
   Lemma imm_p_false_rng w: in_bigrammar_rng (` (imm_p false)) w.
   Proof. unfold imm_p; intros. ibr_prover. Qed.
@@ -3364,7 +3386,12 @@ End X86_PARSER_ARG.
   Definition SAR_p := rotate_p "111".
   Definition SCAS_p := "1010" $$ "111" $$ anybit.
 
-  (* Intel manual says the reg field in modrm must be 000; however, it
+  (* todo: move and replace the previous rule *)
+  Hint Extern 1 (in_bigrammar_rng (` (modrm_ret_reg)) (_, Address_op _)) =>
+    eapply modrm_ret_reg_rng2; eassumption : ibr_rng_db.
+
+
+  (* Intel manual says the reg field in modrm_ret_reg must be 000; however, it
      seems that an x86 processor accepts any combination in the reg field *)
   Definition SETcc_p : wf_bigrammar (pair_t condition_t operand_t).
     refine("0000" $$ "1111" $$ "1001" $$ tttn $ modrm_ret_reg
@@ -3378,51 +3405,64 @@ End X86_PARSER_ARG.
                   end)
              & _); invertible_tac.
     - destruct v as [ct [r op]]; ins_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [cd op]; destruct op; parsable_tac.
+  Defined.
+
+(* todo: record that SETcc parser loses info *)
+
+  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001"
+                              $$ ext_op_modrm_noreg "000".
+  Definition SHL_p := rotate_p "100".
 
 
-Need: in_bigrammar_rng (` modrm_ret_reg) (EAX, Address_op x)
+
+  Definition shiftdouble_env (opcode:string) : 
+    AST_Env (pair_t operand_t (pair_t register_t reg_or_immed_t)) :=
+    {0, "0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte,
+     (fun v => match v with | (r2,(r1,b)) => (Reg_op r1, (r2, Imm_ri b)) end
+                 %% 
+    ast_env_nil.
+    
+  
+
+  Definition shiftdouble_p opcode inst :=
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte) @
+    (fun p => match p with | (r2,(r1,b)) => inst (Reg_op r1) r2 (Imm_ri b) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte) @
+    (fun p => match p with | ((r,op), b) => inst op r (Imm_ri b) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg) @
+    (fun p => match p with | (r2,r1) => inst (Reg_op r1) r2 (Reg_ri ECX) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg) @
+    (fun p => match p with | (r,op) => inst op r (Reg_ri ECX) end %% instruction_t).
 
 
-    (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
-
-todo: record that SETcc parser loses info
-
+  todo: speed up the proof of modrm_gen_noreg
 
 TBC:
 
-  Definition SETcc_p := 
-  "0000" $$ "1111" $$ "1001" $$ tttn $ modrm @ 
-    (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
-  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr "000" @ 
-    (fun x => SGDT x %% instruction_t).
-  Definition SHL_p := rotate_p "100" SHL.
-
+  Definition shiftdouble_p opcode inst :=
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte) @
+    (fun p => match p with | (r2,(r1,b)) => inst (Reg_op r1) r2 (Imm_ri b) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte) @
+    (fun p => match p with | ((r,op), b) => inst op r (Imm_ri b) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg) @
+    (fun p => match p with | (r2,r1) => inst (Reg_op r1) r2 (Reg_ri ECX) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg) @
+    (fun p => match p with | (r,op) => inst op r (Reg_ri ECX) end %% instruction_t).
+ 
+  Definition SHLD_p := shiftdouble_p "01" SHLD.
+  Definition SHR_p := rotate_p "101" SHR.
+  Definition SHRD_p := shiftdouble_p "11" SHRD.
+  Definition SIDT_p := ("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr "001") @ 
+    (fun x => SIDT x %% instruction_t).
 
 Old grammars:
-
-  Definition RET_p := 
-    "1100" $$ bits "0011" @ (fun _ => RET true None %% instruction_t)
-  |+|
-    "1100" $$ "0010" $$ halfword @ (fun h => RET true (Some h) %% instruction_t)
-  |+|
-    "1100" $$ bits "1011" @ (fun _ => RET false None %% instruction_t)
-  |+|
-    "1100" $$ "1010" $$ halfword @ (fun h => RET false (Some h) %% instruction_t).
-
-  Definition ROL_p := rotate_p "000" ROL.
-  Definition ROR_p := rotate_p "001" ROR.
-  Definition RSM_p := "0000" $$ "1111" $$ "1010" $$ bits "1010" @ 
-    (fun _ => RSM %% instruction_t).
-  Definition SAHF_p := "1001" $$ bits "1110" @ 
-    (fun _ => SAHF %% instruction_t).
-  Definition SAR_p := rotate_p "111" SAR.
-  Definition SCAS_p := "1010" $$ "111" $$ anybit @ (fun x => SCAS x %% instruction_t).
-  Definition SETcc_p := 
-  "0000" $$ "1111" $$ "1001" $$ tttn $ modrm @ 
-    (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
-  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr "000" @ 
-    (fun x => SGDT x %% instruction_t).
-  Definition SHL_p := rotate_p "100" SHL.
 
   Definition shiftdouble_p opcode inst :=
     ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte) @
