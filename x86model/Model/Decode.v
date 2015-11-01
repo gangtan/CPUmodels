@@ -862,9 +862,9 @@ End X86_PARSER_ARG.
       | [H: ~ (repr_in_unsigned_byte (zero_extend8_32 ?i)) |- _ ] =>
         contradict H; apply repr_in_unsigned_byte_extend8_32
       | [H: context[register_eq_dec ?r1 ?r2] |- _] => 
-        destruct (register_eq_dec r1 r2); [subst r1 | idtac]
+        destruct (register_eq_dec r1 r2); subst
       | [ |- context[register_eq_dec ?r1 ?r2]] => 
-        destruct (register_eq_dec r1 r2); [subst r1 | idtac]
+        destruct (register_eq_dec r1 r2); subst
       | [H: context[if Word.eq ?disp Word.zero then _ else _] |- _] =>
         let disp_eq := fresh "disp_eq" in
         remember_rev (Word.eq disp Word.zero) as disp_eq;
@@ -2298,6 +2298,11 @@ End X86_PARSER_ARG.
         destruct H2 as [H2 | H2]; destruct H2; subst op
     end.
 
+  Local Ltac local_printable_tac := 
+    repeat match goal with
+             | [v: [|pair_t _ _|] |- _] => destruct v
+           end; ins_pf_sim; printable_tac; ibr_prover.
+
   Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
   Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
   Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
@@ -2417,29 +2422,27 @@ End X86_PARSER_ARG.
             & _)); clear_ast_defs; invertible_tac.
   - destruct_union.
     + (* case 0 *)
-      destruct v as [d [w [r1 op2]]].
+      destruct v as [d [w [r1 op2]]]. 
       destruct d; ins_pf_sim; printable_tac; ibr_prover.
     + (* case 1 *)
-      destruct v as [r b]. ins_pf_sim.
-      destruct r; printable_tac; ibr_prover.
+      destruct v as [r b]. 
+      destruct r; ins_pf_sim; printable_tac; ibr_prover.
       (* EAX case *)
       apply imm_p_rng; apply repr_in_signed_extend; omega.
     + (* case 2 *)
-      destruct v as [r b]; ins_pf_sim.
-      destruct r; printable_tac; ibr_prover.
+      destruct v as [r b]; 
+      destruct r; ins_pf_sim; printable_tac; ibr_prover.
     + (* case 3 *)
       destruct v as [r op2]; ins_pf_sim;
       destruct r; printable_tac; ibr_prover.
     + (* case 4 *)
-      ins_pf_sim.
-      printable_tac; ibr_prover.
+      ins_pf_sim; printable_tac; ibr_prover.
     + (* case 5 *)
-      ibr_prover. printable_tac; ibr_prover.
+      ibr_prover; printable_tac; ibr_prover.
     + (* case 6 *)
-      destruct v as [op b]. ins_pf_sim.
-      printable_tac. ibr_prover.
+      destruct v as [op b]; ins_pf_sim; printable_tac; ibr_prover.
     + (* case 7 *)
-      destruct v as [op b]. ins_pf_sim.
+      destruct v as [op b]; ins_pf_sim;
       printable_tac; ibr_prover.
     + (* case 8 *)
       destruct v as [op1 op2]; ins_pf_sim;
@@ -2516,17 +2519,10 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); clear_ast_defs; invertible_tac.
-    - destruct_union.
-      + (* case 0 *)
-         destruct v as [r1 b]. ins_pf_sim. printable_tac. ibr_prover.
-      + (* case 1 *)
-        destruct v as [addr b]. ins_pf_sim. printable_tac. ibr_prover.
-      + (* case 2 *)
-        destruct v as [r1 op2]. 
-        ins_pf_sim; printable_tac; ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2;
       ins_pf_sim; parsable_tac.
-  Defined.
+  Time Defined.
 
   Definition BT_p := bit_test_p "100" "00".
   Definition BTC_p := bit_test_p "111" "11".
@@ -2576,7 +2572,7 @@ End X86_PARSER_ARG.
                     | _, _ => None
                   end)
              & _); invertible_tac.
-    - destruct_union; ins_pf_sim; printable_tac; ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w as [near [absolute opsel]].
       destruct near; destruct absolute; destruct opsel as [op sel];
       destruct op; destruct sel; parsable_tac.
@@ -2621,9 +2617,7 @@ End X86_PARSER_ARG.
                     | _ => None
                   end)
              & _); invertible_tac.
-    - destruct_union; try printable_tac.
-      + (* case 1 *)
-        ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w as [bl op]; destruct op; parsable_tac.
   Defined.
 
@@ -2721,26 +2715,18 @@ End X86_PARSER_ARG.
                     | _ => None
                   end)
              & _); invertible_tac.
-    - destruct_union.
-      + (* case 0 *)
-        destruct v as [w op1].
-        ins_pf_sim; printable_tac; ibr_prover.
-      + (* case 1 *)
-        destruct v as [r1 op2]. 
-        ins_pf_sim; printable_tac; ibr_prover.
-      + (* case 2 *)
-        destruct v as [[r1 op2] b].
-        ins_pf_sim; printable_tac; ibr_prover.
+    - destruct_union; try local_printable_tac.
       + (* case 3 *)
         destruct v as [[r1 op2] imm].
-        ins_pf_sim; destruct opsize_override; compute [negb];
-        printable_tac; ibr_prover.
-    - destruct w as [bl [op1 [w1 w2]]]. 
-      destruct op1; destruct bl;
-      destruct w1 as [op2 | ];
-      destruct w2; try parsable_tac;
-      destruct op2; destruct opsize_override;
-      ins_pf_sim; parsable_tac.
+        destruct opsize_override; compute [negb];
+        ins_pf_sim; printable_tac; ibr_prover.
+    - abstract
+        (destruct w as [bl [op1 [w1 w2]]];
+         destruct op1; destruct bl;
+         destruct w1 as [op2 | ];
+         destruct w2; try parsable_tac;
+         destruct op2; destruct opsize_override;
+         ins_pf_sim; parsable_tac).
   Defined.
 
   Definition IN_p: wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
@@ -2781,11 +2767,10 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); invertible_tac.
-    - destruct_union; ibr_prover.
-      + destruct v as [w r].
+    - destruct_union; try local_printable_tac.
+      + (* case 0 *)
+        destruct v as [w r].
         destruct w; printable_tac; ibr_prover.
-      + printable_tac; ibr_prover.
-      + printable_tac; ibr_prover.
     - destruct w as [w op]; destruct op; destruct w; parsable_tac.
   Defined.
 
@@ -2817,9 +2802,7 @@ End X86_PARSER_ARG.
                      Some (inl (ct, sign_shrink32_8 imm))
                    else Some (inr (ct, imm)))
               & _); invertible_tac.
-    - destruct_union.
-      + destruct v as [ct v]; ins_pf_sim; printable_tac; ibr_prover.
-      + destruct v as [ct imm]; ins_pf_sim; printable_tac; ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w; ins_pf_sim; parsable_tac.
   Defined.
 
@@ -2896,9 +2879,11 @@ End X86_PARSER_ARG.
                      | _,_ => None
                    end)
               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; ins_pf_sim; printable_tac; ibr_prover.
-    - destruct w as [near [absolute [op w1]]]; destruct w1;
-      destruct near; destruct absolute; destruct op; ins_pf_sim; parsable_tac.
+    - abstract (destruct_union; local_printable_tac).
+    - abstract
+        (destruct w as [near [absolute [op w1]]]; destruct w1;
+         destruct near; destruct absolute; destruct op;
+         ins_pf_sim; parsable_tac).
   Defined.
 
   Definition LAHF_p := "1001" $$ ! "1111".
@@ -3098,15 +3083,12 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); clear_ast_defs; invertible_tac.
-    - destruct_union;
-      repeat match goal with 
-               | [v: [| pair_t _ _ |] |- _ ] => destruct v
-             end;
-      ins_pf_sim; printable_tac; ibr_prover.
-    - destruct w as [wd [op1 op2]]; destruct op1; try parsable_tac;
-      destruct op2; ins_pf_sim; try parsable_tac;
-      destruct wd; try parsable_tac;
-      destruct r; parsable_tac.
+    - abstract (destruct_union; local_printable_tac).
+    - abstract 
+        (destruct w as [wd [op1 op2]]; destruct op1; try parsable_tac;
+         destruct op2; ins_pf_sim; try parsable_tac;
+         destruct wd; try parsable_tac;
+         destruct r; parsable_tac).
   Defined.
 
   Definition MOVCR_p :=
@@ -3172,9 +3154,7 @@ End X86_PARSER_ARG.
                      | (w, None) => Some (inr w)
                    end)
               & _); invertible_tac.
-    - destruct_union.
-      + destruct v as [w b]; ibr_prover; printable_tac; ibr_prover.
-      + ibr_prover; printable_tac; ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w as [wd [b | ]]; parsable_tac.
   Defined.
 
@@ -3195,9 +3175,7 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); invertible_tac.
-    - destruct_union.
-      + ibr_prover; ins_pf_sim; printable_tac; ibr_prover.
-      + printable_tac.
+    - destruct_union; local_printable_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -3257,7 +3235,7 @@ End X86_PARSER_ARG.
                       | _ => None
                     end)
                & _); clear_ast_defs; invertible_tac.
-    - destruct_union; ins_pf_sim; printable_tac; ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w as [b op]; destruct b; destruct op; ins_pf_sim; parsable_tac.
   Defined.
 
@@ -3314,10 +3292,7 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); invertible_tac.
-    - destruct_union.
-      + destruct v as [w op]; ins_pf_sim; printable_tac; ibr_prover.
-      + destruct v as [w op]; ins_pf_sim; printable_tac; ibr_prover.
-      + destruct v as [w [op b]]; ins_pf_sim; printable_tac; ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w as [w [op ri]]; destruct op; try parsable_tac;
       destruct ri as [rg | ]; try parsable_tac;
       destruct rg; parsable_tac.
@@ -3375,7 +3350,7 @@ End X86_PARSER_ARG.
                       | (false, Some h) => case3 h
                     end)
                & _); clear_ast_defs; invertible_tac.
-    - destruct_union; ibr_prover; printable_tac; ibr_prover.
+    - destruct_union; local_printable_tac.
     - destruct w as [b [h | ]]; destruct b; parsable_tac.
   Defined.
 
@@ -3414,125 +3389,236 @@ End X86_PARSER_ARG.
                               $$ ext_op_modrm_noreg "000".
   Definition SHL_p := rotate_p "100".
 
-
-
   Definition shiftdouble_env (opcode:string) : 
     AST_Env (pair_t operand_t (pair_t register_t reg_or_immed_t)) :=
     {0, "0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte,
      (fun v => match v with | (r2,(r1,b)) => (Reg_op r1, (r2, Imm_ri b)) end
-                 %% 
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
+    {1, "0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte,
+     (fun v => match v with
+                 | ((r,addr), b) => (Address_op addr, (r, Imm_ri b)) end
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
+    {2, "0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg,
+    (fun v => match v with | (r2,r1) => (Reg_op r1, (r2, Reg_ri ECX)) end
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
+    {3, "0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg,
+    (fun v => match v with
+                | (r,addr) => (Address_op addr, (r, Reg_ri ECX)) end
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
     ast_env_nil.
+
+  Definition shiftdouble_p (opcode:string) :
+    wf_bigrammar (pair_t operand_t (pair_t register_t reg_or_immed_t)).
+    intros; gen_ast_defs (shiftdouble_env opcode).
+    refine (gr @ (mp: _ -> 
+                      [|pair_t operand_t (pair_t register_t reg_or_immed_t)|])
+               & (fun u:[|pair_t operand_t (pair_t register_t reg_or_immed_t)|] => 
+                    let (op1,u1):=u in
+                    let (r2,ri):=u1 in
+                    match op1 with
+                      | Reg_op r1 => 
+                        match ri with
+                          | Imm_ri b => case0 (r2,(r1,b))
+                          | Reg_ri ECX => case2 (r2,r1)
+                          | _ => None
+                        end
+                      | Address_op addr =>
+                        match ri with
+                          | Imm_ri b => case1 ((r2,addr),b)
+                          | Reg_ri ECX => case3 (r2,addr)
+                          | _ => None
+                        end
+                      | _ => None
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+    - destruct_union; local_printable_tac.
+    - destruct w as [op [r2 ri]]. 
+      destruct op; destruct ri as [r3 | addr]; try parsable_tac;
+      destruct r3; parsable_tac.
+  Defined.
+        
+  Definition SHLD_p := shiftdouble_p "01".
+  Definition SHR_p := rotate_p "101".
+  Definition SHRD_p := shiftdouble_p "11".
+
+  Definition SIDT_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "001".
+  Definition SLDT_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "000".
+  Definition SMSW_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "100".
+  Definition STC_p := "1111" $$ ! "1001".
+  Definition STD_p := "1111" $$ ! "1101".
+  Definition STI_p := "1111" $$ ! "1011".
+  Definition STOS_p := "1010" $$ "101" $$ anybit.
+  Definition STR_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001".
+
+
+(* todo: move earlier *)
+  Lemma ext_op_modrm_rng1 bs r: 
+    in_bigrammar_rng (` (ext_op_modrm bs)) (Reg_op r).
+  Proof. unfold ext_op_modrm; intros; ibr_prover.
+    exists (inr [|address_t|] r); compute [fst]. 
+    split. 
+    + unfold ext_op_modrm_gen; ibr_prover.
+    + trivial.
+  Qed.
+  Hint Resolve ext_op_modrm_rng1: ibr_rng_db.
+
+
+(*   Lemma repr_in_signed_zextend n1 n2 n3 w: *)
+(*     n1 <= n3 -> n1 <= n2 -> *)
+(*     repr_in_signed n2 (@zero_extend n1 n3 w). *)
+(*   Proof. unfold repr_in_signed, zero_extend; intros. *)
+(* rewrite Word.signed_repr. *)
+
+(*     generalize (Word.signed_range n1 w); intros. *)
+(*     assert (Word.min_signed n3 <= Word.signed w <= Word.max_signed n3)%Z. *)
+(*       use_lemma (@max_signed_mono n1 n3) by eassumption. *)
+(*       use_lemma (@min_signed_mono n1 n3) by eassumption. *)
+(*       omega. *)
+(*     rewrite Word.signed_repr by assumption. *)
+(*     use_lemma (@max_signed_mono n1 n2) by eassumption. *)
+(*     use_lemma (@min_signed_mono n1 n2) by eassumption. *)
+(*     omega. *)
+(*   Qed. *)
     
-  
+  Definition Test_env (opsize_override:bool) : 
+    AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
+    {0, "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_p opsize_override,
+     (fun v => (true, (fst v, Imm_op (snd v)))
+                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
+    {1, "1111" $$ "0110" $$ ext_op_modrm "000" $ byte,
+     (fun v => (false, (fst v, Imm_op (zero_extend8_32 (snd v))))
+                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
+    {2, "1000" $$ "010" $$ anybit $ modrm_ret_reg,
+     (fun v => 
+        match v with
+          | (w,(r1,op2)) => (w, (Reg_op r1, op2))
+        end %% pair_t bool_t (pair_t operand_t operand_t))} :::
+    {3, "1010" $$ "1001" $$ imm_p opsize_override,
+     (fun v => (true, (Imm_op v, Reg_op EAX))
+                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
+    {4, "1010" $$ "1000" $$ byte,
+     (fun b => (false, (Reg_op EAX, Imm_op (zero_extend8_32 b)))
+                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
+    ast_env_nil.
 
-  Definition shiftdouble_p opcode inst :=
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte) @
-    (fun p => match p with | (r2,(r1,b)) => inst (Reg_op r1) r2 (Imm_ri b) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte) @
-    (fun p => match p with | ((r,op), b) => inst op r (Imm_ri b) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg) @
-    (fun p => match p with | (r2,r1) => inst (Reg_op r1) r2 (Reg_ri ECX) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg) @
-    (fun p => match p with | (r,op) => inst op r (Reg_ri ECX) end %% instruction_t).
+(* todo: record error in the original test_p, the last case should be
+   about byte bit-wise and, so the width field should be false *)
 
+  Definition Test_p (opsize_override: bool) : 
+    wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
+    intros; gen_ast_defs (Test_env opsize_override).
+    refine (gr @ (mp: _ -> [|pair_t bool_t (pair_t operand_t operand_t)|])
+               & (fun u:[|pair_t bool_t (pair_t operand_t operand_t)|] => 
+                    let (w,u1) := u in
+                    let (op1,op2):=u1 in
+                    match op2 with
+                      | Imm_op imm =>
+                        match op1 with
+                          | Reg_op _ | Address_op _ => 
+                            if w then 
+                              case0 (op1, imm)
+                            else
+                              if repr_in_unsigned_byte_dec imm then
+                                (* alternate encoding: case4 when op1 is EAX
+                                   and imm within a byte *)
+                                case1 (op1, zero_shrink32_8 imm)
+                              else None
+                          | _ => None
+                        end
+                      | Reg_op r2 =>
+                        match op1 with
+                          | Reg_op r1 => case2 (w, (r1, op2))
+                          | Imm_op i => 
+                            if (register_eq_dec r2 EAX) then
+                              if w then case3 i
+                              else None
+                            else None
+                          | _ => None
+                        end
+                      | Address_op _ =>
+                        match op1 with
+                          | Reg_op r1 => case2 (w, (r1, op2))
+                          | _ => None
+                        end
+                      | _ => None
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+    - abstract (destruct_union; local_printable_tac).
+    - abstract 
+        (destruct w as [b [op1 op2]]; destruct op2; destruct op1; destruct b;
+         ins_pf_sim; parsable_tac).
+  Defined.
 
-  todo: speed up the proof of modrm_gen_noreg
+  Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ ! "1011".
+  Definition VERR_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "100".
+  Definition VERW_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "101".
+  Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ ! "1001".
+  Definition WRMSR_p := "0000" $$ "1111" $$ "0011" $$ ! "0000".
+
+  Definition XADD_p : 
+    wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
+    refine("0000" $$ "1111" $$ "1100" $$ "000" $$ anybit $ modrm
+            @ (fun v => 
+                 match v with | (w,(op1,op2)) => (w, (op2, op1))
+                 end %% pair_t bool_t (pair_t operand_t operand_t))
+            & (fun u =>
+                 match u with | (w,(op2,op1)) => Some (w, (op1, op2))
+                 end)
+            & _); invertible_tac.
+    destruct w as [b [op2 op1]]; parsable_tac.
+  Defined.
+
+  Definition XCHG_p : 
+    wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
+    refine (("1000" $$ "011" $$ anybit $ modrm_ret_reg |+|
+             "1001" $$ "0" $$ reg)
+              @ (fun v => 
+                   match v with
+                     | inl (w,(r1,op2)) => (w, (op2, Reg_op r1))
+                     | inr r1 => (false, (Reg_op EAX, Reg_op r1))
+                   end %% pair_t bool_t (pair_t operand_t operand_t))
+              & (fun u:[|pair_t bool_t (pair_t operand_t operand_t)|] => 
+                   let (w,u1):=u in
+                   let (op2,op1):=u1 in
+                   match op2 with
+                     | Reg_op r2 =>
+                       match op1 with
+                         | Reg_op r1 =>
+                           if (register_eq_dec r2 EAX) then
+                             if w then Some (inl (w,(r1,op2)))
+                             else Some (inr r1)
+                           else Some (inl (w,(r1,op2)))
+                         | _ => None
+                       end
+                     | Address_op addr =>
+                       match op1 with
+                         | Reg_op r1 => Some (inl (w,(r1,op2)))
+                         | _ => None
+                       end
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union.  
+      + destruct v as [w [r1 op2]]; ins_pf_sim; bg_pf_sim;
+        destruct w; printable_tac; ibr_prover.
+      + local_printable_tac.
+    - destruct w as [w [op1 op2]]; destruct op1; try parsable_tac;
+      destruct op2; try parsable_tac; ins_pf_sim; destruct w; parsable_tac.
+  Defined.
+
+  Definition XLAT_p := "1101" $$ ! "0111".
 
 TBC:
 
-  Definition shiftdouble_p opcode inst :=
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte) @
-    (fun p => match p with | (r2,(r1,b)) => inst (Reg_op r1) r2 (Imm_ri b) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte) @
-    (fun p => match p with | ((r,op), b) => inst op r (Imm_ri b) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg) @
-    (fun p => match p with | (r2,r1) => inst (Reg_op r1) r2 (Reg_ri ECX) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg) @
-    (fun p => match p with | (r,op) => inst op r (Reg_ri ECX) end %% instruction_t).
- 
-  Definition SHLD_p := shiftdouble_p "01" SHLD.
-  Definition SHR_p := rotate_p "101" SHR.
-  Definition SHRD_p := shiftdouble_p "11" SHRD.
-  Definition SIDT_p := ("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr "001") @ 
-    (fun x => SIDT x %% instruction_t).
 
 Old grammars:
 
-  Definition shiftdouble_p opcode inst :=
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte) @
-    (fun p => match p with | (r2,(r1,b)) => inst (Reg_op r1) r2 (Imm_ri b) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte) @
-    (fun p => match p with | ((r,op), b) => inst op r (Imm_ri b) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg) @
-    (fun p => match p with | (r2,r1) => inst (Reg_op r1) r2 (Reg_ri ECX) end %% instruction_t)
-  |+|
-    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg) @
-    (fun p => match p with | (r,op) => inst op r (Reg_ri ECX) end %% instruction_t).
- 
-  Definition SHLD_p := shiftdouble_p "01" SHLD.
-  Definition SHR_p := rotate_p "101" SHR.
-  Definition SHRD_p := shiftdouble_p "11" SHRD.
-  Definition SIDT_p := ("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr "001") @ 
-    (fun x => SIDT x %% instruction_t).
-
-  Definition SLDT_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "000" @ 
-    (fun x => SLDT x %% instruction_t).
-
-  Definition SMSW_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "100" @ 
-    (fun x => SMSW x %% instruction_t).
-  Definition STC_p := "1111" $$ bits "1001" @ (fun _ => STC %% instruction_t).
-  Definition STD_p := "1111" $$ bits "1101" @ (fun _ => STD %% instruction_t).
-  Definition STI_p := "1111" $$ bits "1011" @ (fun _ => STI %% instruction_t).
-  Definition STOS_p := "1010" $$ "101" $$ anybit @ 
-    (fun x => STOS x %% instruction_t).
-  Definition STR_p := 
-    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001" @ 
-    (fun x => STR x %% instruction_t).
-
-  Definition TEST_p (opsize_override: bool) := 
-    "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_op opsize_override @ 
-    (fun p => TEST true (fst p) (snd p) %% instruction_t)
-  |+| 
-    "1111" $$ "0110" $$ ext_op_modrm "000" $ byte @ 
-    (fun p => TEST false (fst p) (Imm_op (zero_extend8_32 (snd p))) %% instruction_t)
-  |+|
-    "1000" $$ "010" $$ anybit $ modrm @
-    (fun p => match p with | (w,(op1,op2)) => TEST w op1 op2 end %% instruction_t)
-  |+|
-    "1010" $$ "1001" $$ imm_op opsize_override @ (fun w => TEST true w (Reg_op EAX) %% instruction_t)
-  |+|
-    "1010" $$ "1000" $$ byte @ 
-    (fun b => TEST true (Reg_op EAX) (Imm_op (zero_extend8_32 b)) %% instruction_t).
-  
-  Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ bits "1011" @ 
-    (fun _ => UD2 %% instruction_t).
-
-  Definition VERR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "100" @ 
-    (fun x => VERR x %% instruction_t).
-  Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "101" @ 
-    (fun x => VERW x %% instruction_t).
-  Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1001" @ 
-    (fun _ => WBINVD %% instruction_t).
-  Definition WRMSR_p := "0000" $$ "1111" $$ "0011" $$ bits "0000" @ 
-    (fun _ => WRMSR %% instruction_t).
-  Definition XADD_p := 
-    "0000" $$ "1111" $$ "1100" $$ "000" $$ anybit $ modrm @ 
-    (fun p => match p with | (w,(op1,op2)) => XADD w op2 op1 end %% instruction_t).
-  Definition XCHG_p := 
-    "1000" $$ "011" $$ anybit $ modrm @ 
-    (fun p => match p with | (w,(op1,op2)) => XCHG w op2 op1 end %% instruction_t)
-  |+|
-    "1001" $$ "0" $$ reg @ (fun r => XCHG false (Reg_op EAX) (Reg_op r) %% instruction_t).
-
-  Definition XLAT_p := "1101" $$ bits "0111" @ (fun _ => XLAT %% instruction_t).
 
 (*Floating-Point grammars, based on tables B.17 and B-39*)
   Definition F2XM1_p := "11011" $$ "001111" $$ bits "10000" @ (fun _ => F2XM1 %% instruction_t).
