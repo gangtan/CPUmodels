@@ -2198,6 +2198,16 @@ End X86_PARSER_ARG.
     split; ibr_prover; crush.
   Qed.
 
+  Lemma ext_op_modrm_rng1 bs r: 
+    in_bigrammar_rng (` (ext_op_modrm bs)) (Reg_op r).
+  Proof. unfold ext_op_modrm; intros; ibr_prover.
+    exists (inr [|address_t|] r); compute [fst]. 
+    split. 
+    + unfold ext_op_modrm_gen; ibr_prover.
+    + trivial.
+  Qed.
+  Hint Resolve ext_op_modrm_rng1: ibr_rng_db.
+
   Lemma ext_op_modrm_rng_inv (bs:string) op :
     in_bigrammar_rng (` (ext_op_modrm bs)) op ->
     (exists r, op = Reg_op r) \/ (exists addr, op = Address_op addr).
@@ -2246,7 +2256,7 @@ End X86_PARSER_ARG.
     - trivial.
   Qed.
   Hint Extern 1 (in_bigrammar_rng (` (modrm_ret_reg)) (_, Address_op _)) =>
-    apply modrm_ret_reg_rng2; assumption : ibr_rng_db.
+    eapply modrm_ret_reg_rng2; eassumption : ibr_rng_db.
 
   Lemma imm_p_false_rng w: in_bigrammar_rng (` (imm_p false)) w.
   Proof. unfold imm_p; intros. ibr_prover. Qed.
@@ -3179,8 +3189,6 @@ End X86_PARSER_ARG.
     - destruct w; parsable_tac.
   Defined.
 
-(* to be organized *)
-
   Definition POPSR_env : AST_Env segment_register_t :=
     {0, "000" $$ "00" $$ ! "111", (fun v => ES %% segment_register_t)} :::
     {1, "000" $$ "10" $$ ! "111", (fun v => SS %% segment_register_t)} :::
@@ -3361,11 +3369,6 @@ End X86_PARSER_ARG.
   Definition SAR_p := rotate_p "111".
   Definition SCAS_p := "1010" $$ "111" $$ anybit.
 
-  (* todo: move and replace the previous rule *)
-  Hint Extern 1 (in_bigrammar_rng (` (modrm_ret_reg)) (_, Address_op _)) =>
-    eapply modrm_ret_reg_rng2; eassumption : ibr_rng_db.
-
-
   (* Intel manual says the reg field in modrm_ret_reg must be 000; however, it
      seems that an x86 processor accepts any combination in the reg field *)
   Definition SETcc_p : wf_bigrammar (pair_t condition_t operand_t).
@@ -3382,8 +3385,6 @@ End X86_PARSER_ARG.
     - destruct v as [ct [r op]]; ins_pf_sim; printable_tac; ibr_prover.
     - destruct w as [cd op]; destruct op; parsable_tac.
   Defined.
-
-(* todo: record that SETcc parser loses info *)
 
   Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001"
                               $$ ext_op_modrm_noreg "000".
@@ -3454,36 +3455,6 @@ End X86_PARSER_ARG.
   Definition STR_p := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001".
 
-
-(* todo: move earlier *)
-  Lemma ext_op_modrm_rng1 bs r: 
-    in_bigrammar_rng (` (ext_op_modrm bs)) (Reg_op r).
-  Proof. unfold ext_op_modrm; intros; ibr_prover.
-    exists (inr [|address_t|] r); compute [fst]. 
-    split. 
-    + unfold ext_op_modrm_gen; ibr_prover.
-    + trivial.
-  Qed.
-  Hint Resolve ext_op_modrm_rng1: ibr_rng_db.
-
-
-(*   Lemma repr_in_signed_zextend n1 n2 n3 w: *)
-(*     n1 <= n3 -> n1 <= n2 -> *)
-(*     repr_in_signed n2 (@zero_extend n1 n3 w). *)
-(*   Proof. unfold repr_in_signed, zero_extend; intros. *)
-(* rewrite Word.signed_repr. *)
-
-(*     generalize (Word.signed_range n1 w); intros. *)
-(*     assert (Word.min_signed n3 <= Word.signed w <= Word.max_signed n3)%Z. *)
-(*       use_lemma (@max_signed_mono n1 n3) by eassumption. *)
-(*       use_lemma (@min_signed_mono n1 n3) by eassumption. *)
-(*       omega. *)
-(*     rewrite Word.signed_repr by assumption. *)
-(*     use_lemma (@max_signed_mono n1 n2) by eassumption. *)
-(*     use_lemma (@min_signed_mono n1 n2) by eassumption. *)
-(*     omega. *)
-(*   Qed. *)
-    
   Definition Test_env (opsize_override:bool) : 
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
     {0, "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_p opsize_override,
@@ -3504,9 +3475,6 @@ End X86_PARSER_ARG.
      (fun b => (false, (Reg_op EAX, Imm_op (zero_extend8_32 b)))
                  %% pair_t bool_t (pair_t operand_t operand_t))} :::
     ast_env_nil.
-
-(* todo: record error in the original test_p, the last case should be
-   about byte bit-wise and, so the width field should be false *)
 
   Definition Test_p (opsize_override: bool) : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
@@ -3614,7 +3582,21 @@ End X86_PARSER_ARG.
 
   Definition XLAT_p := "1101" $$ ! "0111".
 
+(*Floating-Point grammars, based on tables B.17 and B-39*)
+  Definition F2XM1_p := "11011" $$ "001111" $$ ! "10000".
+  Definition FABS_p :=  "11011" $$ "001111" $$ ! "00001".
+
+
 TBC:
+
+  Definition FADD_p := 
+    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "000" @ 
+      (fun x => FADD true x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "000" @
+      (fun x => FADD true x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "0011000" $$ fpu_reg @ (fun p => let (d,s) := p in FADD d (FPS_op s) %% instruction_t).
 
 
 Old grammars:
