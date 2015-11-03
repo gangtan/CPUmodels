@@ -58,8 +58,10 @@ Module X86_PARSER_ARG.
   | Condition_t : type
   | Address_t : type
   | Operand_t : type
+  | Reg_or_Immed_t : type
   | Fp_Debug_Register_t : type
   | Fp_Operand_t : type
+  | Fp_Condition_t : type
   | MMX_Granularity_t : type
   | MMX_Operand_t : type
   | SSE_Operand_t : type
@@ -98,8 +100,10 @@ Module X86_PARSER_ARG.
       | Condition_t => condition_type
       | Address_t => address
       | Operand_t => operand
+      | Reg_or_Immed_t => reg_or_immed
       | Fp_Debug_Register_t => fp_debug_register
       | Fp_Operand_t => fp_operand  
+      | Fp_Condition_t => fp_condition_type
       | MMX_Granularity_t => mmx_granularity
       | MMX_Operand_t => mmx_operand
       | SSE_Operand_t => sse_operand
