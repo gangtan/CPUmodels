@@ -3615,28 +3615,36 @@ End X86_PARSER_ARG.
   Definition F2XM1_p := "11011" $$ "001111" $$ ! "10000".
   Definition FABS_p :=  "11011" $$ "001111" $$ ! "00001".
 
-  Definition FADD_p : wf_bigrammar (pair_t bool_t fp_operand_t).
-    refine (("11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr "000" |+|
-             "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr "000" |+|
-             "11011" $$ anybit $ "0011000" $$ fpu_reg)
-              @ (fun v =>
-                   match v with
-                     | inl addr => (true, FPM32_op addr)
-                     | inr (inl addr) => (true, FPM64_op addr)
-                     | inr (inr (d,s)) => (d, FPS_op s)
-                   end %% pair_t bool_t fp_operand_t)
+  Definition fp_arith_env (bs0 bs1: string) :
+    AST_Env (pair_t bool_t fp_operand_t) :=
+    {0, "11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr bs0,
+     (fun addr => (true, FPM32_op addr) %% pair_t bool_t fp_operand_t)} :::
+    {1, "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr bs0,
+     (fun addr => (true, FPM64_op addr) %% pair_t bool_t fp_operand_t)} :::
+    {2, "11011" $$ "0" $$ "0011" $$ bs0 $$ fpu_reg,
+     (fun fr => (true, FPS_op fr) %% pair_t bool_t fp_operand_t)} :::
+    {3, "11011" $$ "1" $$ "0011" $$ bs1 $$ fpu_reg,
+     (fun fr => (false, FPS_op fr) %% pair_t bool_t fp_operand_t)} :::
+    ast_env_nil.
+
+  Definition fp_arith_p (bs0 bs1: string) : 
+    wf_bigrammar (pair_t bool_t fp_operand_t).
+    intros; gen_ast_defs (fp_arith_env bs0 bs1).
+    refine (gr @ (mp: _ -> [|pair_t bool_t fp_operand_t|])
               & (fun u =>
                    match u with
-                     | (true, FPM32_op addr) => Some (inl addr)
-                     | (true, FPM64_op addr) => Some (inr (inl addr))
-                     | (d, FPS_op s) => Some (inr (inr (d,s)))
+                     | (true, FPM32_op addr) => case0 addr
+                     | (true, FPM64_op addr) => case1 addr
+                     | (true, FPS_op fr) => case2 fr
+                     | (false, FPS_op fr) => case3 fr
                      | _ => None
                    end)
-              & _); invertible_tac.
+              & _); clear_ast_defs; invertible_tac.
     - destruct_union; try local_printable_tac.
-      + destruct v as [d fr]; destruct d; printable_tac.
     - destruct w as [d op]; destruct d; destruct op; parsable_tac.
   Defined.
+
+  Definition FADD_p := fp_arith_env "000" "000".
 
   (* Possible todos: FADDP allows a fpu reg as an operand; can change the
      syntax of FADDP to take a fpureg as the argument, instead of
@@ -3674,98 +3682,128 @@ End X86_PARSER_ARG.
     Z_to_fp_condition_type (fp_condition_type_to_Z ct) = ct.
   Proof. destruct ct; crush. Qed.
 
-  Definition FCMOVcc_p : wf_
+  Hint Rewrite bitsn_of_int_inv: inv_db.
 
-=
-    ("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg) @
-    (fun p =>
-      match p with 
-        (b2, (b1, (b0, s))) => 
-        let n := int_of_bits 3 (b2, (b1, (b0, tt))) in
-        FCMOVcc (Z_to_fp_condition_type n) (FPS_op s) %% instruction_t
-      end).
+  Hint Rewrite fp_condition_type_to_Z_inv
+       using (apply int_of_bitsn_range): inv_db.
+  Hint Rewrite Z_to_fp_condition_type_inv: inv_db.
 
+  Definition FCMOVcc_p : 
+    wf_bigrammar (pair_t fp_condition_t fp_operand_t).
+    refine (("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg_op_p)
+              @ (fun v => 
+                   match v with 
+                       (b2, (b1, (b0, op))) => 
+                       let n := int_of_bitsn 3 (b2, (b1, (b0, tt))) in
+                       (Z_to_fp_condition_type n, op)
+                   end %% pair_t fp_condition_t fp_operand_t)
+              & (fun u:[|pair_t fp_condition_t fp_operand_t|] =>
+                   let (ct,op) := u in
+                   let bs :=
+                       bitsn_of_int 3 (fp_condition_type_to_Z ct)
+                   in
+                   match bs with
+                     | Some (b2,(b1,(b0,()))) => Some (b2,(b1,(b0,op)))
+                     | None => None (* impossible case *)
+                   end)
+              & _); invertible_tac.
+    - destruct w as [ct op].
+      remember_rev (bitsn_of_int 3 (fp_condition_type_to_Z ct)) as u.
+      destruct u as [[b2 [b1 [b0 b]]] | ]; try parsable_tac.
+      destruct b. sim.
+      erewrite int_of_bitsn_inv by eassumption.
+      autorewrite with inv_db. trivial.
+  Defined.
 
+  Definition FCOM_p: wf_bigrammar fp_operand_t.
+    refine (("11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr "010" |+|
+             "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr "010" |+|
+             "11011" $$ "000" $$ "11010" $$ fpu_reg) 
+              @ (fun v => 
+                   match v with
+                     | inl addr => FPM32_op addr
+                     | inr (inl addr) => FPM64_op addr
+                     | inr (inr fr) => FPS_op fr
+                   end %% fp_operand_t)
+              & (fun u => 
+                   match u with
+                     | FPS_op fr => Some (inr (inr fr))
+                     | FPM32_op addr => Some (inl addr)
+                     | FPM64_op addr => Some (inr (inl addr))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; local_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+(* possible todo: combine the parsers for FCOM, FCOMP *)
+
+  Definition FCOMP_p : wf_bigrammar fp_operand_t.
+    refine (("11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr "011" |+|
+             "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr "011" |+|
+             "11011" $$ "000" $$ "11011" $$ fpu_reg)
+              @ (fun v => 
+                   match v with
+                     | inl addr => FPM32_op addr
+                     | inr (inl addr) => FPM64_op addr
+                     | inr (inr fr) => FPS_op fr
+                   end %% fp_operand_t)
+              & (fun u => 
+                   match u with
+                     | FPS_op fr => Some (inr (inr fr))
+                     | FPM32_op addr => Some (inl addr)
+                     | FPM64_op addr => Some (inr (inl addr))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; local_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition FCOMPP_p := "11011" $$ "110" $$ "11011" $$ ! "001".
+  Definition FCOMIP_p := "11011" $$ "111" $$ "11110" $$ fpu_reg_op_p. 
+  Definition FCOS_p := "11011" $$ "001" $$ "111" $$ ! "11111".
+  Definition FDECSTP_p := "11011" $$ "001" $$ "111" $$ ! "10110".
+
+  Definition FDIV_p := fp_arith_env "110" "111".
+  Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg_op_p.
+  Definition FDIVR_p := fp_arith_env "111" "110".
+  Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg_op_p.
+  Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg_op_p.
+
+  
 TBC:
 
+  Definition FIADD_p := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "000" @ (fun x => FIADD x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "000" @ (fun x => FIADD x %% instruction_t).
+  
+  Definition FICOM_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "010" @ (fun x => FICOM x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "010" @ (fun x => FICOM x %% instruction_t).
 
-  Definition FCMOVcc_p :=
-    ("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg) @
-    (fun p =>
-      match p with 
-        (b2, (b1, (b0, s))) => 
-        let n := int_of_bits 3 (b2, (b1, (b0, tt))) in
-        FCMOVcc (Z_to_fp_condition_type n) (FPS_op s) %% instruction_t
-      end).
+  Definition FICOMP_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "011" @ (fun x => FICOMP x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "011" @ (fun x => FICOMP x %% instruction_t).
+
+  Definition FIDIV_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "110" @ (fun x => FIDIV x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "110" @ (fun x => FIDIV x %% instruction_t).
+
+  Definition FIDIVR_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16_noreg "111" @ (fun x => FIDIVR x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32_noreg "111" @ (fun x => FIDIVR x %% instruction_t).
+
+
 
 Old grammars:
 
-  Definition FADDP_p := "11011" $$ "110" $$ "11000" $$ fpu_reg @ (fun x => FADDP (FPS_op x) %% instruction_t).
-  Definition FBLD_p := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "100" @
-                          (fun x => FBLD x %% instruction_t).
-  Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "110" @
-                          (fun x => FBSTP x %% instruction_t).
-  Definition FCHS_p := "11011" $$ "001111" $$ bits "00000" @ (fun _ => FCHS %% instruction_t).
-
-  Definition FCMOVcc_p :=
-    ("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg) @
-    (fun p =>
-      match p with 
-        (b2, (b1, (b0, s))) => 
-        let n := int_of_bits 3 (b2, (b1, (b0, tt))) in
-        FCMOVcc (Z_to_fp_condition_type n) (FPS_op s) %% instruction_t
-      end).
-
-  Definition FCOM_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "010" @
-        (fun x => FCOM x %% instruction_t)
-  |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "010" @
-        (fun x => FCOM x %% instruction_t) 
-  |+|  
-    "11011" $$ "000" $$ "11010" $$ fpu_reg @ (fun x => FCOM (FPS_op x) %% instruction_t).
-
-  Definition FCOMP_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "011" @
-       (fun x => FCOMP x %% instruction_t)
-  |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "011" @
-       (fun x => FCOMP x %% instruction_t) 
-  |+|  
-    "11011" $$ "000" $$ "11011" $$ fpu_reg @ (fun x => FCOMP (FPS_op x) %% instruction_t).
-
-  Definition FCOMPP_p := "11011" $$ "110" $$ "11011" $$ bits "001" @ (fun _ => FCOMPP %% instruction_t).
-  Definition FCOMIP_p := "11011" $$ "111" $$ "11110" $$ fpu_reg @ (fun x => FCOMIP (FPS_op x) %% instruction_t).
-  Definition FCOS_p := "11011" $$ "001" $$ "111" $$ bits "11111" @ (fun _ => FCOS %% instruction_t).  
-  Definition FDECSTP_p := "11011" $$ "001" $$ "111" $$ bits "10110" @ (fun _=> FDECSTP %% instruction_t).
-
-  Definition FDIV_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32_nroeg "110" @ 
-       (fun x => FDIV true x %% instruction_t)
-  |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "110" @
-       (fun x => FDIV true x %% instruction_t)
-  |+|  
-    "11011" $$ "0" $$ "00" $$ "1111" $$ "0" $$ fpu_reg @ 
-    (fun i => FDIV true (FPS_op i) %% instruction_t)
-  |+| 
-    "11011" $$ "1" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
-    (fun i => FDIV false (FPS_op i) %% instruction_t).
-
-  Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg @ (fun x => FDIVP (FPS_op x) %% instruction_t).
-
-  Definition FDIVR_p :=
-    "11011" $$ "000" $$ ext_op_modrm_FPM32_noreg "111" @
-       (fun x => FDIVR true x %% instruction_t)
-  |+|
-    "11011" $$ "100" $$ ext_op_modrm_FPM64_noreg "111" @
-       (fun x => FDIVR true x  %% instruction_t)
-  |+|  
-    "11011" $$ "0" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
-    (fun i => FDIVR true (FPS_op i) %% instruction_t)
-  |+|  
-    "11011" $$ "1" $$ "00" $$ "111" $$ "1" $$ "0" $$ fpu_reg @ 
-    (fun i => FDIVR false (FPS_op i) %% instruction_t).
 
   Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg @ (fun x => FDIVRP (FPS_op x) %% instruction_t).
   Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg @ (fun x => FFREE (FPS_op x) %% instruction_t).
