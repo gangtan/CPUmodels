@@ -402,6 +402,8 @@ End X86_PARSER_ARG.
       crush.
   Qed.
 
+  Hint Rewrite bitsn_of_int_inv: inv_db.
+
   Instance intn_of_sig_exten n:
     Proper (Word.sig_eq_below (S n) ==> eq) (@intn_of_sig n).
   Proof. unfold Proper, respectful. intros.
@@ -1007,7 +1009,6 @@ End X86_PARSER_ARG.
   Program Definition field (n:nat) : wf_bigrammar int_t := 
     (field' n) @ (int_of_bitsn n) & bitsn_of_int n & _.
   Next Obligation.
-    - rewrite bitsn_of_int_inv. printable_tac.
     - eapply int_of_bitsn_inv. trivial.
   Defined.
 
@@ -3610,6 +3611,43 @@ End X86_PARSER_ARG.
     - destruct w; parsable_tac.
   Defined.
   
+  Definition fp_condition_type_to_Z (ct: fp_condition_type) : Z :=
+    (match ct with
+      | B_fct => 0
+      | E_fct => 1
+      | BE_fct => 2
+      | U_fct => 3
+      | NB_fct => 4
+      | NE_fct => 5
+      | NBE_fct => 6
+      | NU_fct => 7
+     end)%Z.
+
+  Lemma fp_condition_type_to_Z_inv z:
+    (0 <= z < 8)%Z -> 
+    fp_condition_type_to_Z (Z_to_fp_condition_type z) = z.
+  Proof. intros.
+    remember (Z_to_fp_condition_type z) as ct;
+    destruct ct; unfold Z_to_fp_condition_type in *;
+    toztac;
+    simpl in *; pos_to_Z; omega.
+  Qed.
+
+  Lemma Z_to_fp_condition_type_inv ct :
+    Z_to_fp_condition_type (fp_condition_type_to_Z ct) = ct.
+  Proof. destruct ct; crush. Qed.
+
+  Hint Rewrite fp_condition_type_to_Z_inv
+       using (apply int_of_bitsn_range): inv_db.
+  Hint Rewrite Z_to_fp_condition_type_inv: inv_db.
+
+  Ltac fp_invertible_tac :=
+    unfold invertible; split; [unfold printable | unfold parsable];
+    compute [snd fst]; intros;
+    [destruct_union; local_printable_tac | 
+     match goal with
+       | [w:[|fp_operand_t|] |- _] => destruct w; parsable_tac
+     end].
 
   (** ** Grammars for floating-point instructions, based on tables B.17 and B-39*)
   Definition F2XM1_p := "11011" $$ "001111" $$ ! "10000".
@@ -3655,39 +3693,6 @@ End X86_PARSER_ARG.
   Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "110".
   Definition FCHS_p := "11011" $$ "001111" $$ ! "00000".
 
-  (* todo: move earlier *)
-  Definition fp_condition_type_to_Z (ct: fp_condition_type) : Z :=
-    (match ct with
-      | B_fct => 0
-      | E_fct => 1
-      | BE_fct => 2
-      | U_fct => 3
-      | NB_fct => 4
-      | NE_fct => 5
-      | NBE_fct => 6
-      | NU_fct => 7
-     end)%Z.
-
-  Lemma fp_condition_type_to_Z_inv z:
-    (0 <= z < 8)%Z -> 
-    fp_condition_type_to_Z (Z_to_fp_condition_type z) = z.
-  Proof. intros.
-    remember (Z_to_fp_condition_type z) as ct;
-    destruct ct; unfold Z_to_fp_condition_type in *;
-    toztac;
-    simpl in *; pos_to_Z; omega.
-  Qed.
-
-  Lemma Z_to_fp_condition_type_inv ct :
-    Z_to_fp_condition_type (fp_condition_type_to_Z ct) = ct.
-  Proof. destruct ct; crush. Qed.
-
-  Hint Rewrite bitsn_of_int_inv: inv_db.
-
-  Hint Rewrite fp_condition_type_to_Z_inv
-       using (apply int_of_bitsn_range): inv_db.
-  Hint Rewrite Z_to_fp_condition_type_inv: inv_db.
-
   Definition FCMOVcc_p : 
     wf_bigrammar (pair_t fp_condition_t fp_operand_t).
     refine (("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg_op_p)
@@ -3732,12 +3737,8 @@ End X86_PARSER_ARG.
                      | FPM64_op addr => Some (inr (inl addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+              & _); fp_invertible_tac.
   Defined.
-
-(* possible todo: combine the parsers for FCOM, FCOMP *)
 
   Definition FCOMP_p : wf_bigrammar fp_operand_t.
     refine (("11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr "011" |+|
@@ -3756,9 +3757,7 @@ End X86_PARSER_ARG.
                      | FPM64_op addr => Some (inr (inl addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+              & _); fp_invertible_tac.
   Defined.
 
   Definition FCOMPP_p := "11011" $$ "110" $$ "11011" $$ ! "001".
@@ -3788,9 +3787,7 @@ End X86_PARSER_ARG.
                      | FPM32_op addr => Some (inr addr)
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+              & _); fp_invertible_tac.
   Defined.
 
   Definition FIADD_p := fp_iarith_p "000".
@@ -3816,9 +3813,7 @@ End X86_PARSER_ARG.
                      | FPM64_op addr => Some (inr (inr addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+              & _); fp_invertible_tac.
   Defined.
 
   Definition FIMUL_p := fp_iarith_p "001".
@@ -3838,9 +3833,7 @@ End X86_PARSER_ARG.
                      | FPM32_op addr => Some (inr addr)
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+              & _); fp_invertible_tac.
   Defined.
 
   Definition FISTP_p : wf_bigrammar fp_operand_t.
@@ -3860,9 +3853,7 @@ End X86_PARSER_ARG.
                      | FPM64_op addr => Some (inr (inr addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+              & _); fp_invertible_tac.
   Defined.
 
   Definition FISUB_p := fp_iarith_p "100".
@@ -3890,9 +3881,7 @@ End X86_PARSER_ARG.
                       | FPS_op fr => case3 fr
                       | _ => None
                     end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+               & _); clear_ast_defs; fp_invertible_tac.
   Defined.
 
   Definition FLD1_p := "11011" $$ "001111" $$ ! "01000".
@@ -3963,9 +3952,7 @@ End X86_PARSER_ARG.
                      | FPM64_op addr => Some (inr (inl addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+              & _); fp_invertible_tac.
   Defined.
 
   (* FSTCW's encoding is the same as FWAIT followed by FNSTCW *)
@@ -3994,9 +3981,7 @@ End X86_PARSER_ARG.
                       | FPS_op fr => case3 fr
                       | _ => None
                     end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
+               & _); clear_ast_defs; fp_invertible_tac.
   Defined.
 
   Definition FSUB_p := fp_arith_p "100" "101".
