@@ -2262,6 +2262,14 @@ End X86_PARSER_ARG.
     - apply imm_p_false_rng.
   Qed.
 
+  Lemma field_intn_rng n i: 
+    in_bigrammar_rng (` (field_intn n)) i.
+  Proof. unfold field_intn; intros. ibr_prover.
+    exists (bitsn_of_intn i). split.
+    - apply field'_rng.
+    - simpl. autorewrite with inv_db. trivial.
+  Qed.
+    
   (** * An X86 bigrammar *)
   (* A better bigrammar for x86 instruction decoder/encoder. The encoder
      spec is more efficient:
@@ -4098,6 +4106,63 @@ End X86_PARSER_ARG.
     - destruct w; parsable_tac.
   Defined.
 
+  Lemma mmx_reg_rng: forall mr, in_bigrammar_rng (` mmx_reg) mr.
+  Proof. intros; unfold mmx_reg.  apply field_intn_rng. Qed.
+  Hint Resolve mmx_reg_rng: ibr_rng_db.
+
+  Lemma modrm_mmx_ret_reg_rng1 mr1 mr2: 
+    in_bigrammar_rng (` modrm_mmx_ret_reg) (mr1, MMX_Reg_op mr2).
+  Proof. intros. unfold modrm_mmx_ret_reg, modrm_gen. ibr_prover. compute [fst].
+    exists (inr [|pair_t mmx_register_t address_t|] (mr1, mr2)).
+    split; [ibr_prover | trivial].
+  Qed.
+  Hint Resolve modrm_mmx_ret_reg_rng1: ibr_rng_db.
+
+  Lemma modrm_mmx_ret_reg_rng_inv mr op:
+    in_bigrammar_rng (` modrm_mmx_ret_reg) (mr,op) -> 
+    (exists mr, op = MMX_Reg_op mr) \/ (exists addr, op = MMX_Addr_op addr).
+  Proof. unfold modrm_mmx_ret_reg; intros. ibr_prover.
+    destruct v as [[r1 addr] | [r1 r2]]; clear H0.
+    - right. crush. 
+    - left. crush. 
+  Qed.
+
+  Lemma modrm_mmx_rng1 mr1 mr2: 
+    in_bigrammar_rng (` modrm_mmx) (MMX_Reg_op mr1, MMX_Reg_op mr2).
+  Proof. unfold modrm_mmx; intros; ibr_prover. compute [fst].
+     exists (mr1, MMX_Reg_op mr2); split; [ibr_prover | trivial].
+  Qed.
+  Hint Resolve modrm_mmx_rng1: ibr_rng_db.
+
+  Lemma modrm_mmx_rng_inv1 op1 op2: 
+    in_bigrammar_rng (` modrm_mmx) (op1,op2) -> exists mr, op1 = MMX_Reg_op mr.
+  Proof. unfold modrm_mmx; intros; ibr_prover.
+    destruct v as [mr op]. exists mr; congruence.
+  Qed.
+
+  Lemma modrm_mmx_rng_inv2 op1 op2: 
+    in_bigrammar_rng (` modrm_mmx) (op1,op2) -> 
+    (exists mr, op2 = MMX_Reg_op mr) \/ (exists addr, op2 = MMX_Addr_op addr).
+  Proof. unfold modrm_mmx; intros; ibr_prover.
+    destruct v as [mr op]. eapply modrm_mmx_ret_reg_rng_inv.
+    sim; subst. eassumption.
+  Qed.
+
+  Local Ltac mmx_pf_sim :=
+    ibr_prover; bg_pf_sim;
+    repeat match goal with
+      | [H: in_bigrammar_rng (` modrm_mmx) (?op1 ?op2) |- _] => 
+        let H2 := fresh "H" in
+        let H3 := fresh "H" in
+        generalize (modrm_mmx_rng_inv1 H) (modrm_mmx_rng_inv2 H); intros H2 H3;
+        destruct H2; subst;
+        destruct H3 as [H3 | H3]; destruct H3; subst op2
+      | [H: in_bigrammar_rng (` modrm_mmx_ret_reg) (?r1 ?op2) |- _] =>
+        let H2 := fresh "H" in
+        generalize (modrm_mmx_ret_reg_rng_inv H); intro H2;
+        destruct H2 as [H2 | H2]; destruct H2; subst op2
+    end.
+
   (** ** Bigrammars for MMX instructions *)
 
   Definition EMMS_p := "0000" $$ "1111" $$ "0111" $$ ! "0111".
@@ -4133,69 +4198,6 @@ End X86_PARSER_ARG.
       destruct v as [d [mr r]]; destruct d; printable_tac; ibr_prover.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
-
-
-(* todo: move earlier *)
-  Lemma modrm_mmx_ret_reg_rng_inv mr op:
-    in_bigrammar_rng (` modrm_mmx_ret_reg) (mr,op) -> 
-    (exists mr, op = MMX_Reg_op mr) \/ (exists addr, op = MMX_Addr_op addr).
-  Proof. unfold modrm_mmx_ret_reg; intros. ibr_prover.
-    destruct v as [[r1 addr] | [r1 r2]]; clear H0.
-    - right. crush. 
-    - left. crush. 
-  Qed.
-
-  Lemma modrm_mmx_rng_inv1 op1 op2: 
-    in_bigrammar_rng (` modrm_mmx) (op1,op2) -> exists mr, op1 = MMX_Reg_op mr.
-  Proof. unfold modrm_mmx; intros; ibr_prover.
-    destruct v as [mr op]. exists mr; congruence.
-  Qed.
-
-  Lemma modrm_mmx_rng_inv2 op1 op2: 
-    in_bigrammar_rng (` modrm_mmx) (op1,op2) -> 
-    (exists mr, op2 = MMX_Reg_op mr) \/ (exists addr, op2 = MMX_Addr_op addr).
-  Proof. unfold modrm_mmx; intros; ibr_prover.
-    destruct v as [mr op]. eapply modrm_mmx_ret_reg_rng_inv.
-    sim; subst. eassumption.
-  Qed.
-
-  Lemma field_intn_rng n i: 
-    in_bigrammar_rng (` (field_intn n)) i.
-  Proof. unfold field_intn; intros. ibr_prover.
-    exists (bitsn_of_intn i). split.
-    - apply field'_rng.
-    - simpl. autorewrite with inv_db. trivial.
-  Qed.
-    
-  Lemma mmx_reg_rng: forall mr, in_bigrammar_rng (` mmx_reg) mr.
-  Proof. intros; unfold mmx_reg.  apply field_intn_rng. Qed.
-  Hint Resolve mmx_reg_rng: ibr_rng_db.
-
-  Lemma modrm_mmx_ret_reg_rng1 mr1 mr2: 
-    in_bigrammar_rng (` modrm_mmx_ret_reg) (mr1, MMX_Reg_op mr2).
-  Proof. intros. unfold modrm_mmx_ret_reg, modrm_gen. ibr_prover. compute [fst].
-    exists (inr [|pair_t mmx_register_t address_t|] (mr1, mr2)).
-    split; [ibr_prover | trivial].
-  Qed.
-  Hint Resolve modrm_mmx_ret_reg_rng1: ibr_rng_db.
-
-  Lemma modrm_mmx_rng1 mr1 mr2: 
-    in_bigrammar_rng (` modrm_mmx) (MMX_Reg_op mr1, MMX_Reg_op mr2).
-  Proof. unfold modrm_mmx; intros; ibr_prover. compute [fst].
-     exists (mr1, MMX_Reg_op mr2); split; [ibr_prover | trivial].
-  Qed.
-  Hint Resolve modrm_mmx_rng1: ibr_rng_db.
-
-  Local Ltac mmx_pf_sim :=
-    ibr_prover; bg_pf_sim;
-    repeat match goal with
-      | [H: in_bigrammar_rng (` modrm_mmx) (?op1 ?op2) |- _] => 
-        let H2 := fresh "H" in
-        let H3 := fresh "H" in
-        generalize (modrm_mmx_rng_inv1 H) (modrm_mmx_rng_inv2 H); intros H2 H3;
-        destruct H2; subst;
-        destruct H3 as [H3 | H3]; destruct H3; subst op2
-    end.
 
   Definition MOVQ_d : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
     refine (("0000" $$ "1111" $$ "011" $$ anybit $ "1111" $$ modrm_mmx)
@@ -4242,111 +4244,97 @@ End X86_PARSER_ARG.
   Definition PAND_p := 
     "0000" $$ "1111" $$ "1101" $$ "1011" $$ modrm_mmx. 
 
+  Definition PANDN_p := 
+    "0000" $$ "1111" $$ "1101" $$ "1111" $$ modrm_mmx. 
+
+  Definition PCMPEQ_p :=
+    "0000" $$ "1111" $$ "0111" $$ "01" $$ mmx_gg_p_8_16_32 $ modrm_mmx.
+
+  Definition PCMPGT_p := 
+    "0000" $$ "1111" $$ "0110" $$ "01" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+
+  Definition PMADDWD_p := 
+    "0000" $$ "1111" $$ "1111" $$ "0101" $$ modrm_mmx. 
+
+  Definition PMULHUW_p := 
+    "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mmx.
+
+  Definition PMULHW_p := 
+    "0000" $$ "1111" $$ "1110" $$ "0101" $$ modrm_mmx.
+
+  Definition PMULLW_p := 
+    "0000" $$ "1111" $$ "1101" $$ "0101" $$ modrm_mmx.
+
+  Definition POR_p := 
+    "0000" $$ "1111" $$ "1110" $$ "1011" $$ modrm_mmx.
+
+  Definition pshift_p (bs:string) (gg_p:wf_bigrammar mmx_granularity_t) :
+    wf_bigrammar (pair_t mmx_granularity_t
+                         (pair_t mmx_operand_t mmx_operand_t)).
+    intros.    
+    refine (("0000" $$ "1111" $$ "11" $$ bs $$ "00"
+                $$ gg_p $ modrm_mmx_ret_reg |+|
+             "0000" $$ "1111" $$ "0111" $$ "00"
+                $$ gg_p $ "11" $$ bs $$ "0" $$ mmx_reg $ byte)
+              @ (fun v =>
+                   match v with
+                     | inl (gg,(r1,op2)) => (gg,(MMX_Reg_op r1, op2))
+                     | inr (gg,(r1,imm)) => 
+                       (gg, (MMX_Reg_op r1, MMX_Imm_op (zero_extend8_32 imm)))
+                   end
+                   %% pair_t mmx_granularity_t (pair_t mmx_operand_t mmx_operand_t))
+              & (fun u: mmx_granularity * (mmx_operand * mmx_operand) => 
+                   let (gg,u1):=u in
+                   let (op1,op2):=u1 in
+                   match op1 with
+                     | MMX_Reg_op r1 =>
+                       match op2 with
+                         | MMX_Reg_op _ | MMX_Addr_op _ => Some (inl(gg,(r1,op2)))
+                         | MMX_Imm_op imm => 
+                           if (repr_in_unsigned_byte_dec imm) then
+                               Some (inr(gg,(r1, zero_shrink32_8 imm)))
+                           else None
+                         | _ => None
+                       end
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union. 
+      + destruct v as [gg [r1 op2]]. 
+        mmx_pf_sim; printable_tac; ibr_prover.
+      + destruct v as [gg [r1 imm]].
+        mmx_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [gg [op1 op2]]; destruct op1; destruct op2; 
+      bg_pf_sim; parsable_tac.
+  Defined.
+
+  Definition PSLL_p := pshift_p "11" mmx_gg_p_16_32_64.
+  Definition PSRA_p := pshift_p "10" mmx_gg_p_16_32.
+  Definition PSRL_p := pshift_p "01" mmx_gg_p_16_32_64.
+
+  Definition PSUB_p := 
+    "0000" $$ "1111" $$ "1111" $$ "10" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+
+  Definition PSUBS_p := 
+    "0000" $$ "1111" $$ "1110" $$ "10" $$ mmx_gg_p_8_16 $ modrm_mmx. 
+
+  Definition PSUBUS_p := 
+    "0000" $$ "1111" $$ "1101" $$ "10" $$ mmx_gg_p_8_16 $ modrm_mmx. 
+
+  Definition PUNPCKH_p := 
+    "0000" $$ "1111" $$ "0110" $$ "10" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+
+  Definition PUNPCKL_p := 
+    "0000" $$ "1111" $$ "0110" $$ "00" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+
+  Definition PXOR_p := 
+    "0000" $$ "1111" $$ "1110" $$ "1111" $$ modrm_mmx. 
+
+
 TBC:
-
-
 
 Old grammars:
 
-(*MMX Grammars*)
-
-  (* grammar for the mmx granularity bits; the byte granularity is allowed
-     iff when byte is true; same as twob, fourb and eightb *)
-  (* Definition mmx_gg_p (byte twob fourb eightb : bool) :=  *)
-  (*   let byte_p := if byte then  *)
-  (*     bits "00" @ (fun _ => MMX_8 %% mmx_granularity_t) *)
-  (*     else never mmx_granularity_t in *)
-  (*   let twobytes_p := if twob then  *)
-  (*     bits "01" @ (fun _ => MMX_16 %% mmx_granularity_t) *)
-  (*     else never mmx_granularity_t in *)
-  (*   let fourbytes_p := if fourb then  *)
-  (*     bits "10" @ (fun _ => MMX_32 %% mmx_granularity_t) *)
-  (*     else never mmx_granularity_t in *)
-  (*   let eightbytes_p := if eightb then  *)
-  (*     bits "11" @ (fun _ => MMX_64 %% mmx_granularity_t) *)
-  (*     else never mmx_granularity_t in *)
-  (*   byte_p |+| twobytes_p |+| fourbytes_p |+| eightbytes_p. *)
-
-  Definition PANDN_p := 
-  "0000" $$ "1111" $$ "1101" $$ "1111" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in PANDN op1 op2 %% instruction_t).
-
-  Definition PCMPEQ_p :=
-  "0000" $$ "1111" $$ "0111" $$ "01" $$ mmx_gg_p true true true false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PCMPEQ gg op1 op2 end %% instruction_t).
-
-  Definition PCMPGT_p := 
-  "0000" $$ "1111" $$ "0110" $$ "01" $$ mmx_gg_p true true true false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PCMPGT gg op1 op2 end %% instruction_t).
-
-  Definition PMADDWD_p := 
-  "0000" $$ "1111" $$ "1111" $$ "0101" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in PMADDWD op1 op2 %% instruction_t).
-
-  Definition PMULHUW_p := 
-  "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in PMULHUW op1 op2 %% instruction_t).
-
-  Definition PMULHW_p := 
-  "0000" $$ "1111" $$ "1110" $$ "0101" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in PMULHW op1 op2 %% instruction_t).
-
-  Definition PMULLW_p := 
-  "0000" $$ "1111" $$ "1101" $$ "0101" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in PMULLW op1 op2 %% instruction_t).
-
-  Definition POR_p := 
-  "0000" $$ "1111" $$ "1110" $$ "1011" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in POR op1 op2 %% instruction_t).
-
-  Definition PSLL_p := 
-  "0000" $$ "1111" $$ "1111" $$ "00" $$ mmx_gg_p false true true true $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PSLL gg op1 op2 end %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0111" $$ "00" $$ mmx_gg_p false true true true 
-    $ "11110" $$ mmx_reg $ byte @ 
-    (fun p => match p with (gg, (r, imm)) => PSLL gg (MMX_Reg_op r) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
-
-  Definition PSRA_p :=
-  "0000" $$ "1111" $$ "1110" $$ "00" $$ mmx_gg_p false true true false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PSRA gg op1 op2 end %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0111" $$ "00" $$ mmx_gg_p false true true false 
-    $ "11100" $$ mmx_reg $ byte @ 
-    (fun p => match p with (gg, (r, imm)) => PSRA gg (MMX_Reg_op r) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
-
-  Definition PSRL_p := 
-  "0000" $$ "1111" $$ "1101" $$ "00" $$ mmx_gg_p false true true true $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PSRL gg op1 op2 end %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0111" $$ "00" $$ mmx_gg_p false true true true
-    $ "11010" $$ mmx_reg $ byte @ 
-    (fun p => match p with (gg, (r, imm)) => PSRL gg (MMX_Reg_op r) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
-
-  Definition PSUB_p := 
-  "0000" $$ "1111" $$ "1111" $$ "10" $$ mmx_gg_p true true true false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PSUB gg op1 op2 end %% instruction_t).
-
-  Definition PSUBS_p := 
-  "0000" $$ "1111" $$ "1110" $$ "10" $$ mmx_gg_p true true false false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PSUBS gg op1 op2 end %% instruction_t).
-
-  Definition PSUBUS_p := 
-  "0000" $$ "1111" $$ "1101" $$ "10" $$ mmx_gg_p true true false false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PSUBUS gg op1 op2 end %% instruction_t).
-
-  Definition PUNPCKH_p := 
-  "0000" $$ "1111" $$ "0110" $$ "10" $$ mmx_gg_p true true true false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PUNPCKH gg op1 op2 end %% instruction_t).
-
-  Definition PUNPCKL_p := 
-  "0000" $$ "1111" $$ "0110" $$ "00" $$ mmx_gg_p true true true false $ modrm_mmx @
-    (fun p => match p with (gg, (op1, op2)) => PUNPCKL gg op1 op2 end %% instruction_t).
-
-  Definition PXOR_p := 
-  "0000" $$ "1111" $$ "1110" $$ "1111" $$ modrm_mmx @ 
-    (fun p => let (op1, op2) := p in PXOR op1 op2 %% instruction_t).
-(*End of MMX grammars *)
 
 (*SSE grammars*)
 Definition ADDPS_p := 
