@@ -1947,8 +1947,6 @@ End X86_PARSER_ARG.
                 subst addrDisp; trivial).
   Defined.
 
-
-
   (* Definition modrm_gen_noreg2 (reg_t res_t: type) *)
   (*   (reg_p: wf_bigrammar reg_t)  *)
   (*   (addr_op: funinv address_t res_t)  (* the constructor that converts an *) *)
@@ -2046,51 +2044,11 @@ End X86_PARSER_ARG.
     destruct v; destruct w as [op1 op2]; destruct op1; parsable_tac.
   Defined.
 
-  (* mod xmmreg r/m in manual*)
-  Definition modrm_xmm : wf_bigrammar (pair_t sse_register_t sse_operand_t).
-    refine ((modrm_gen sse_reg)
-            @ (fun v =>
-                 match v with
-                   | inl (r, addr) => (r, SSE_Addr_op addr)
-                   | inr (r1, r2) => (r1, SSE_XMM_Reg_op r2)
-                 end %% (pair_t sse_register_t sse_operand_t))
-            & (fun u => 
-                 match u with
-                   | (r, SSE_Addr_op addr) => Some (inl (r, addr))
-                   | (r1, SSE_XMM_Reg_op r2) => Some (inr (r1, r2))
-                   | _ => None
-                 end)
-            & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
-    - destruct w as [r op]; destruct op; parsable_tac.
-  Defined.
-
-  (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
-  Definition modrm_mm : wf_bigrammar (pair_t mmx_register_t sse_operand_t).
-    refine ((modrm_gen mmx_reg)
-            @ (fun v =>
-                 match v with
-                   | inl (r, addr) => (r, SSE_Addr_op addr)
-                   | inr (r1, r2) => (r1, SSE_MM_Reg_op r2)
-                 end %% (pair_t mmx_register_t sse_operand_t))
-            & (fun u => 
-                 match u with
-                   | (r, SSE_Addr_op addr) => Some (inl (r, addr))
-                   | (r1, SSE_MM_Reg_op r2) => Some (inr (r1, r2))
-                   | _ => None
-                 end)
-            & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
-    - destruct w as [r op]; destruct op; parsable_tac.
-  Defined.
-
   Definition modrm_noreg : wf_bigrammar (pair_t register_t address_t) :=
     modrm_gen_noreg reg.
 
   Definition modrm_bv2_noreg: wf_bigrammar (pair_t (bitvector_t 2) address_t) :=
     modrm_gen_noreg (field_intn 2).
-  Notation modrm_xmm_noreg := modrm_bv2_noreg.
-  Notation modrm_mm_noreg := modrm_bv2_noreg.
 
  (* note: can be replaced by modrm_noreg since it now produces register_t, address_t *)
   (* general-purpose regs used in SSE instructions *)
@@ -2113,7 +2071,6 @@ End X86_PARSER_ARG.
     - destruct v; printable_tac.
     - destruct v; destruct w; parsable_tac.
   Defined.
-
 
   Definition seg_modrm : wf_bigrammar (pair_t segment_register_t operand_t).
     refine((modrm_gen_noreg segment_reg_p |+| "11" $$ segment_reg_p $ reg)
@@ -4330,260 +4287,524 @@ End X86_PARSER_ARG.
   Definition PXOR_p := 
     "0000" $$ "1111" $$ "1110" $$ "1111" $$ modrm_mmx. 
 
+  (** ** Bigrammars for SSE instructions *)
 
-TBC:
+  (* mod xmmreg r/m in manual*)
+  Definition modrm_xmm_ret_reg : 
+    wf_bigrammar (pair_t sse_register_t sse_operand_t).
+    refine ((modrm_gen sse_reg)
+            @ (fun v =>
+                 match v with
+                   | inl (r, addr) => (r, SSE_Addr_op addr)
+                   | inr (r1, r2) => (r1, SSE_XMM_Reg_op r2)
+                 end %% (pair_t sse_register_t sse_operand_t))
+            & (fun u => 
+                 match u with
+                   | (r, SSE_Addr_op addr) => Some (inl (r, addr))
+                   | (r1, SSE_XMM_Reg_op r2) => Some (inr (r1, r2))
+                   | _ => None
+                 end)
+            & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
+  Defined.
 
-Old grammars:
+  Definition modrm_xmm : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine (modrm_xmm_ret_reg
+              @ (fun v => match v with
+                            | (sr1, op2) => (SSE_XMM_Reg_op sr1, op2)
+                          end %% (pair_t sse_operand_t sse_operand_t))
+              & (fun u => match u with
+                            | (SSE_XMM_Reg_op sr1, op2) => Some (sr1, op2)
+                            | _ => None
+                          end)
+              & _); invertible_tac.
+    destruct v; destruct w as [op1 op2]; destruct op1; parsable_tac.
+  Defined.
+
+  (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
+  Definition modrm_mm_ret_reg : wf_bigrammar (pair_t mmx_register_t sse_operand_t).
+    refine ((modrm_gen mmx_reg)
+            @ (fun v =>
+                 match v with
+                   | inl (r, addr) => (r, SSE_Addr_op addr)
+                   | inr (r1, r2) => (r1, SSE_MM_Reg_op r2)
+                 end %% (pair_t mmx_register_t sse_operand_t))
+            & (fun u => 
+                 match u with
+                   | (r, SSE_Addr_op addr) => Some (inl (r, addr))
+                   | (r1, SSE_MM_Reg_op r2) => Some (inr (r1, r2))
+                   | _ => None
+                 end)
+            & _); invertible_tac.
+    - destruct_union; destruct v; printable_tac.
+    - destruct w as [r op]; destruct op; parsable_tac.
+  Defined.
+
+  Definition modrm_mm : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine (modrm_mm_ret_reg
+              @ (fun v => match v with
+                            | (mr1, op2) => (SSE_MM_Reg_op mr1, op2)
+                          end %% (pair_t sse_operand_t sse_operand_t))
+              & (fun u => match u with
+                            | (SSE_MM_Reg_op mr1, op2) => Some (mr1, op2)
+                            | _ => None
+                          end)
+              & _); invertible_tac.
+    destruct v; destruct w as [op1 op2]; destruct op1; parsable_tac.
+  Defined.
+
+  Notation modrm_xmm_noreg := modrm_bv2_noreg.
+  Notation modrm_mm_noreg := modrm_bv2_noreg.
+
+  Lemma modrm_xmm_ret_reg_rng1 sr1 sr2: 
+    in_bigrammar_rng (` modrm_xmm_ret_reg) (sr1, SSE_XMM_Reg_op sr2).
+  Proof. intros. unfold modrm_xmm_ret_reg, modrm_gen. ibr_prover. compute [fst].
+    exists (inr [|pair_t sse_register_t address_t|] (sr1, sr2)).
+    split; [ibr_prover | trivial].
+  Qed.
+  Hint Resolve modrm_xmm_ret_reg_rng1: ibr_rng_db.
+
+  Lemma modrm_xmm_ret_reg_rng_inv sr op:
+    in_bigrammar_rng (` modrm_xmm_ret_reg) (sr,op) -> 
+    (exists sr, op = SSE_XMM_Reg_op sr) \/ (exists addr, op = SSE_Addr_op addr).
+  Proof. unfold modrm_xmm_ret_reg; intros. ibr_prover.
+    destruct v as [[r1 addr] | [r1 r2]]; clear H0.
+    - right. crush. 
+    - left. crush. 
+  Qed.
+
+  Lemma modrm_xmm_rng1 sr1 sr2: 
+    in_bigrammar_rng (` modrm_xmm) (SSE_XMM_Reg_op sr1, SSE_XMM_Reg_op sr2).
+  Proof. unfold modrm_xmm; intros; ibr_prover. compute [fst].
+     exists (sr1, SSE_XMM_Reg_op sr2); split; [ibr_prover | trivial].
+  Qed.
+  Hint Resolve modrm_xmm_rng1: ibr_rng_db.
+
+  Lemma modrm_xmm_rng_inv1 op1 op2: 
+    in_bigrammar_rng (` modrm_xmm) (op1,op2) -> 
+    exists sr, op1 = SSE_XMM_Reg_op sr.
+  Proof. unfold modrm_xmm; intros; ibr_prover.
+    destruct v as [sr op]. exists sr; congruence.
+  Qed.
+
+  Lemma modrm_xmm_rng_inv2 op1 op2: 
+    in_bigrammar_rng (` modrm_xmm) (op1,op2) -> 
+    (exists sr, op2 = SSE_XMM_Reg_op sr) \/ (exists addr, op2 = SSE_Addr_op addr).
+  Proof. unfold modrm_xmm; intros; ibr_prover.
+    destruct v as [sr op]. eapply modrm_xmm_ret_reg_rng_inv.
+    sim; subst. eassumption.
+  Qed.
+
+  Lemma modrm_mm_ret_reg_rng1 mr1 mr2: 
+    in_bigrammar_rng (` modrm_mm_ret_reg) (mr1, SSE_MM_Reg_op mr2).
+  Proof. intros. unfold modrm_mm_ret_reg, modrm_gen. ibr_prover. compute [fst].
+    exists (inr [|pair_t sse_register_t address_t|] (mr1, mr2)).
+    split; [ibr_prover | trivial].
+  Qed.
+  Hint Resolve modrm_mm_ret_reg_rng1: ibr_rng_db.
+
+  Lemma modrm_mm_ret_reg_rng_inv mr op:
+    in_bigrammar_rng (` modrm_mm_ret_reg) (mr,op) -> 
+    (exists mr, op = SSE_MM_Reg_op mr) \/ (exists addr, op = SSE_Addr_op addr).
+  Proof. unfold modrm_mm_ret_reg; intros. ibr_prover.
+    destruct v as [[r1 addr] | [r1 r2]]; clear H0.
+    - right. crush. 
+    - left. crush. 
+  Qed.
+
+  Lemma modrm_mm_rng1 mr1 mr2: 
+    in_bigrammar_rng (` modrm_mm) (SSE_MM_Reg_op mr1, SSE_MM_Reg_op mr2).
+  Proof. unfold modrm_mm; intros; ibr_prover. compute [fst].
+     exists (mr1, SSE_MM_Reg_op mr2); split; [ibr_prover | trivial].
+  Qed.
+  Hint Resolve modrm_mm_rng1: ibr_rng_db.
+
+  Lemma modrm_mm_rng_inv1 op1 op2: 
+    in_bigrammar_rng (` modrm_mm) (op1,op2) -> 
+    exists mr, op1 = SSE_MM_Reg_op mr.
+  Proof. unfold modrm_mm; intros; ibr_prover.
+    destruct v as [mr op]. exists mr; congruence.
+  Qed.
+
+  Lemma modrm_mm_rng_inv2 op1 op2: 
+    in_bigrammar_rng (` modrm_mm) (op1,op2) -> 
+    (exists mr, op2 = SSE_MM_Reg_op mr) \/ (exists addr, op2 = SSE_Addr_op addr).
+  Proof. unfold modrm_mm; intros; ibr_prover.
+    destruct v as [mr op]. eapply modrm_mm_ret_reg_rng_inv.
+    sim; subst. eassumption.
+  Qed.
+
+  Definition modrm_xmm_byte :
+    wf_bigrammar (pair_t sse_operand_t (pair_t sse_operand_t byte_t)). 
+    refine ((modrm_xmm $ byte)
+              @ (fun v => 
+                   match v with 
+                     | ((op1, op2), b) => (op1,(op2,b))
+                   end %% pair_t sse_operand_t (pair_t sse_operand_t byte_t))
+              & (fun u:sse_operand*(sse_operand*int8) => 
+                   let (op1,u1):=u in
+                   let (op2,b):=u1 in
+                   Some ((op1,op2),b))
+              & _); invertible_tac.
+    - destruct w as [op1 [op2 b]]; parsable_tac.
+  Defined.
+
+  Definition ext_op_modrm_sse_noreg (bs: string): wf_bigrammar sse_operand_t.
+    intros;
+    refine(ext_op_modrm_noreg_ret_addr bs
+             @ (SSE_Addr_op: [|address_t|] -> [|sse_operand_t|])
+             & SSE_Addr_op_inv & _); unfold SSE_Addr_op_inv; invertible_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Local Ltac sse_pf_sim :=
+    ibr_prover; bg_pf_sim;
+    repeat match goal with
+      | [H: in_bigrammar_rng (` modrm_xmm) (?op1 ?op2) |- _] => 
+        let H2 := fresh "H" in
+        let H3 := fresh "H" in
+        generalize (modrm_xmm_rng_inv1 H) (modrm_xmm_rng_inv2 H); intros H2 H3;
+        destruct H2; subst;
+        destruct H3 as [H3 | H3]; destruct H3; subst op2
+      | [H: in_bigrammar_rng (` modrm_xmm_ret_reg) (?r1 ?op2) |- _] =>
+        let H2 := fresh "H" in
+        generalize (modrm_xmm_ret_reg_rng_inv H); intro H2;
+        destruct H2 as [H2 | H2]; destruct H2; subst op2
+      | [H: in_bigrammar_rng (` modrm_mm) (?op1 ?op2) |- _] => 
+        let H2 := fresh "H" in
+        let H3 := fresh "H" in
+        generalize (modrm_mm_rng_inv1 H) (modrm_mm_rng_inv2 H); intros H2 H3;
+        destruct H2; subst;
+        destruct H3 as [H3 | H3]; destruct H3; subst op2
+      | [H: in_bigrammar_rng (` modrm_mm_ret_reg) (?r1 ?op2) |- _] =>
+        let H2 := fresh "H" in
+        generalize (modrm_mm_ret_reg_rng_inv H); intro H2;
+        destruct H2 as [H2 | H2]; destruct H2; subst op2
+    end.
 
 
-(*SSE grammars*)
-Definition ADDPS_p := 
-  "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in ADDPS op1 op2 %% instruction_t).
+  Definition ADDPS_p := 
+    "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm. 
 
-Definition ADDSS_p := 
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in ADDSS op1 op2 %% instruction_t).
+  Definition ADDSS_p := 
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm. 
 
-Definition ANDNPS_p := 
-  "0000" $$ "1111" $$ "0101" $$ "0101" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in ANDNPS op1 op2 %% instruction_t).
+  Definition ANDNPS_p := 
+    "0000" $$ "1111" $$ "0101" $$ "0101" $$ modrm_xmm. 
 
-Definition ANDPS_p := 
-  "0000" $$ "1111" $$ "0101" $$ "0100" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in ANDPS op1 op2 %% instruction_t).
+  Definition ANDPS_p := 
+    "0000" $$ "1111" $$ "0101" $$ "0100" $$ modrm_xmm. 
 
-Definition CMPPS_p := 
-  "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm $ byte @ 
-    (fun p => match p with ((op1, op2), imm)
-                => CMPPS op1 op2 (SSE_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+  Definition CMPPS_p := 
+    "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm_byte.
 
-Definition CMPSS_p := 
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm $ byte @ 
-    (fun p => match p with ((op1, op2), imm)
-                => CMPSS op1 op2 (SSE_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+  Definition CMPSS_p := 
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm_byte.
 
-Definition COMISS_p :=
-  "0000" $$ "1111" $$ "0010" $$ "1111" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in COMISS op1 op2 %% instruction_t).
+  Definition COMISS_p :=
+    "0000" $$ "1111" $$ "0010" $$ "1111" $$ modrm_xmm. 
 
-Definition CVTPI2PS_p :=
-  "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in CVTPI2PS op1 op2 %% instruction_t).
+  Definition CVTPI2PS_p :=
+    "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm.
 
-Definition CVTPS2PI_p := 
-  "0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ sse_reg $ mmx_reg @
-    (fun p => let (sr, mr) := p in CVTPS2PI (SSE_XMM_Reg_op sr) (SSE_MM_Reg_op mr) %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_noreg @ 
-    (fun p => let (xmm, mem) := p in CVTPS2PI xmm mem %% instruction_t).
+  Definition CVTPS2PI_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine (("0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ sse_reg $ mmx_reg |+|
+             "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_noreg)
+              @ (fun v => 
+                   match v with
+                     | inl (sr,mr) => (SSE_XMM_Reg_op sr, SSE_MM_Reg_op mr)
+                     | inr (sr,addr) => (SSE_XMM_Reg_op sr, SSE_Addr_op addr)
+                   end %% pair_t sse_operand_t sse_operand_t)
+              & (fun u:sse_operand*sse_operand=> 
+                   let (op1,op2):=u in
+                   match op1 with
+                     | SSE_XMM_Reg_op sr =>
+                       match op2 with
+                         | SSE_MM_Reg_op mr => Some (inl(sr,mr))
+                         | SSE_Addr_op addr => Some (inr(sr,addr))
+                         | _ => None
+                       end
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; local_printable_tac.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition CVTSI2SS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1010" $$ "11" $$ sse_reg $ reg @
-    (fun p => let (sr, r) := p in CVTSI2SS (SSE_XMM_Reg_op sr) (SSE_GP_Reg_op r) %% instruction_t)
-  |+|
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm_noreg @ 
-    (fun p => let (xmm, mem) := p in CVTSI2SS xmm mem %% instruction_t).
+  Definition CVTSI2SS_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine(("1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010"
+                   $$ "1010" $$ "11" $$ sse_reg $ reg |+|
+            "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010"
+                   $$ "1010" $$ modrm_xmm_noreg)
+             @ (fun v =>
+                  match v with
+                    | inl (sr,r) => (SSE_XMM_Reg_op sr, SSE_GP_Reg_op r)
+                    | inr (sr,addr) => (SSE_XMM_Reg_op sr, SSE_Addr_op addr)
+                  end %% pair_t sse_operand_t sse_operand_t)
+             & (fun u:sse_operand*sse_operand=> 
+                   let (op1,op2):=u in
+                   match op1 with
+                     | SSE_XMM_Reg_op sr =>
+                       match op2 with
+                         | SSE_GP_Reg_op r => Some (inl(sr,r))
+                         | SSE_Addr_op addr => Some (inr(sr,addr))
+                         | _ => None
+                       end
+                     | _ => None
+                   end)
+             & _); invertible_tac.
+    - destruct_union; local_printable_tac.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition CVTSS2SI_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ reg $ sse_reg @
-    (fun p => let (r, sr) := p in CVTSS2SI (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t)
-  |+|
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_gp_noreg @ 
-    (fun p => let (op1, mem) := p in CVTSS2SI op1 mem %% instruction_t).
+  Definition ss2si_p (bs:string) :
+    wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    intros.
+    refine (("1111" $$ "0011" $$ "0000" $$ "1111"
+                    $$ "0010" $$ bs $$ "11" $$ reg $ sse_reg |+|
+             "1111" $$ "0011" $$ "0000" $$ "1111"
+                    $$ "0010" $$ bs $$ modrm_noreg)
+              @ (fun v =>
+                  match v with
+                    | inl (r,sr) => (SSE_GP_Reg_op r, SSE_XMM_Reg_op sr)
+                    | inr (r,addr) => (SSE_GP_Reg_op r, SSE_Addr_op addr)
+                  end %% pair_t sse_operand_t sse_operand_t)
+             & (fun u:sse_operand*sse_operand=> 
+                   let (op1,op2):=u in
+                   match op1 with
+                     | SSE_GP_Reg_op r =>
+                       match op2 with
+                         | SSE_XMM_Reg_op sr => Some (inl(r,sr))
+                         | SSE_Addr_op addr => Some (inr(r,addr))
+                         | _ => None
+                       end
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; local_printable_tac.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition CVTTPS2PI_p :=
-  "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in CVTTPS2PI op1 op2 %% instruction_t).
+  Definition CVTSS2SI_p := ss2si_p "1101".
 
-Definition CVTTSS2SI_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ "11" $$ reg $ sse_reg @
-    (fun p => let (r, sr) := p in CVTTSS2SI (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t)
-  |+|
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm_gp_noreg @ 
-    (fun p => let (op1, mem) := p in CVTTSS2SI op1 mem %% instruction_t).
+  Definition CVTTPS2PI_p :=
+    "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm. 
 
-Definition DIVPS_p := 
-  "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in DIVPS op1 op2 %% instruction_t).
+  Definition CVTTSS2SI_p := ss2si_p "1100".
 
-Definition DIVSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in DIVSS op1 op2 %% instruction_t).
+  Definition DIVPS_p := 
+    "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm.
 
-Definition LDMXCSR_p := 
-  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "010" @ (fun x => LDMXCSR x %% instruction_t).
+  Definition DIVSS_p :=
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm. 
 
-Definition MAXPS_p := 
-  "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MAXPS op1 op2 %% instruction_t).
+  Definition LDMXCSR_p := 
+    "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "010". 
 
-Definition MAXSS_p := 
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MAXSS op1 op2 %% instruction_t).
+  Definition MAXPS_p := 
+    "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm. 
 
-Definition MINPS_p := 
-  "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MINPS op1 op2 %% instruction_t).
+  Definition MAXSS_p := 
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm. 
 
-Definition MINSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MINSS op1 op2 %% instruction_t).
+  Definition MINPS_p := 
+    "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm. 
 
-Definition MOVAPS_p :=
-  "0000" $$ "1111" $$ "0010" $$ "1000" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MOVAPS op1 op2 %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0010" $$ "1001" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MOVAPS op1 op2 %% instruction_t).
+  Definition MINSS_p :=
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm. 
 
-Definition MOVHLPS_p :=
-  "0000" $$ "1111" $$ "0001" $$ "0010" $$ "11" $$ sse_reg $ sse_reg @
-    (fun p => let (sr1, sr2) := p in MOVHLPS (SSE_XMM_Reg_op sr1) (SSE_XMM_Reg_op sr2) %% instruction_t).
+  Definition sse_mov_p (bs:string) : 
+    wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    intros.
+    refine(bs $$ anybit $ modrm_xmm
+             @ (fun v: bool*(sse_operand*sse_operand) =>
+                  match v with
+                    | (d,(op1,op2)) => 
+                      if d then (op2,op1) else (op1,op2)
+                  end %% pair_t sse_operand_t sse_operand_t)
+             & (fun u => 
+                  match u with
+                    | (SSE_XMM_Reg_op _, SSE_XMM_Reg_op _)
+                    | (SSE_XMM_Reg_op _, SSE_Addr_op _) =>
+                      (* alternate encoding when both are regs: 
+                         reverse the operands and made d true *)
+                      Some (false,u)
+                    | (SSE_Addr_op _, SSE_XMM_Reg_op _) =>
+                      Some (true, (snd u, fst u))
+                    | _ => None
+                  end)
+             & _); invertible_tac.
+    - destruct v as [d [op1 op2]]; 
+      destruct d; sse_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition MOVHPS_p := 
-  "0000" $$ "1111" $$ "0001" $$ "0110" $$ modrm_xmm_noreg @ 
-    (fun p => let (op1, mem) := p in MOVHPS op1 mem %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0001" $$ "0111" $$ modrm_xmm_noreg @ 
-    (fun p => let (op1, mem) := p in MOVHPS mem op1 %% instruction_t).
+  Definition MOVAPS_p := sse_mov_p "000011110010100".
 
-Definition MOVLHPS_p :=
-  "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11" $$ sse_reg $ sse_reg @
-    (fun p => let (sr1, sr2) := p in MOVLHPS (SSE_XMM_Reg_op sr1) (SSE_XMM_Reg_op sr2) %% instruction_t).
+  Definition MOVHLPS_p :=
+    "0000" $$ "1111" $$ "0001" $$ "0010" $$ "11"
+           $$ SSE_XMM_Reg_op_p $ SSE_XMM_Reg_op_p.
 
-Definition MOVLPS_p :=
-  "0000" $$ "1111" $$ "0001" $$ "0010" $$ modrm_xmm_noreg @ 
-    (fun p => let (op1, mem) := p in MOVLPS op1 mem %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0001" $$ "0011" $$ modrm_xmm_noreg @ 
-    (fun p => let (op1, mem) := p in MOVLPS mem op1 %% instruction_t).
+  Definition sse_mov_ps_p (bs:string) : 
+    wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    intros.
+    refine ("0000" $$ "1111" $$ "0001" $$ bs $$ anybit $ modrm_xmm_noreg
+              @ (fun v:bool*_ =>
+                   match v with
+                     | (d,(sr,addr)) =>
+                       if d then (SSE_Addr_op addr, SSE_XMM_Reg_op sr)
+                       else (SSE_XMM_Reg_op sr, SSE_Addr_op addr)
+                   end %% pair_t sse_operand_t sse_operand_t)
+              & (fun u => 
+                   match u with
+                     | (SSE_XMM_Reg_op sr, SSE_Addr_op addr) =>
+                       Some (false,(sr,addr))
+                     | (SSE_Addr_op addr, SSE_XMM_Reg_op sr) =>
+                       Some (true,(sr,addr))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct v as [d [op1 op2]]; 
+      destruct d; sse_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition MOVMSKPS_p := 
-  "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11" $$ reg $ sse_reg @
-    (fun p => let (r, sr) := p in MOVMSKPS (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t).
+  Definition MOVHPS_p := sse_mov_ps_p "011".
 
-Definition MOVSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$ "0000" $$  modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MOVSS op1 op2 %% instruction_t)
-  |+|
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$ "0001" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MOVSS op2 op1 %% instruction_t).
+  Definition MOVLHPS_p :=
+    "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11"
+           $$ SSE_XMM_Reg_op_p $ SSE_XMM_Reg_op_p.
 
-Definition MOVUPS_p := 
-  "0000" $$ "1111" $$ "0001" $$ "0000" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MOVUPS op1 op2 %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "0001" $$ "0001" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MOVUPS op2 op1 %% instruction_t).
+  Definition MOVLPS_p := sse_mov_ps_p "001".
 
-Definition MULPS_p :=
-  "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MULPS op1 op2 %% instruction_t).
+  Definition MOVMSKPS_p :=
+    "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11"
+           $$ SSE_GP_Reg_op_p $ SSE_XMM_Reg_op_p.
+  
+  Definition MOVSS_p := sse_mov_p "11110011000011110001000".
+  Definition MOVUPS_p := sse_mov_p "000011110001000".
 
-Definition MULSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in MULSS op1 op2 %% instruction_t).
+  Definition MULPS_p :=
+    "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm. 
 
-Definition ORPS_p :=
-  "0000" $$ "1111" $$ "0101" $$ "0110" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in ORPS op1 op2 %% instruction_t).
+  Definition MULSS_p :=
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm.
 
-Definition RCPPS_p :=
-  "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in RCPPS op1 op2 %% instruction_t).
+  Definition ORPS_p :=
+    "0000" $$ "1111" $$ "0101" $$ "0110" $$ modrm_xmm.
 
-Definition RCPSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in RCPSS op1 op2 %% instruction_t).
+  Definition RCPPS_p :=
+    "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm. 
 
-Definition RSQRTPS_p :=
-  "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in RSQRTPS op1 op2 %% instruction_t).
+  Definition RCPSS_p :=
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm.
 
-Definition RSQRTSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in RSQRTSS op1 op2 %% instruction_t).
+  Definition RSQRTPS_p :=
+    "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm.
 
-Definition SHUFPS_p :=
-  "0000" $$ "1111" $$ "1100" $$ "0110" $$ modrm_xmm $ byte @ 
-    (fun p => match p with ((op1, op2), imm)
-                => SHUFPS op1 op2 (SSE_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+  Definition RSQRTSS_p :=
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm.
 
-Definition SQRTPS_p :=
-  "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in SQRTPS op1 op2 %% instruction_t).
+  Definition SHUFPS_p :=
+    "0000" $$ "1111" $$ "1100" $$ "0110" $$ modrm_xmm_byte.
 
-Definition SQRTSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in SQRTSS op1 op2 %% instruction_t).
+  Definition SQRTPS_p :=
+    "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm.
 
-Definition STMXCSR_p := 
-  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "011" @ (fun x => STMXCSR x %% instruction_t).
+  Definition SQRTSS_p :=
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm.
 
-Definition SUBPS_p :=
-  "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in SUBPS op1 op2 %% instruction_t).
+  Definition STMXCSR_p := 
+    "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "011".
 
-Definition SUBSS_p :=
-  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in SUBSS op1 op2 %% instruction_t).
+  Definition SUBPS_p :=
+    "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm.
 
-Definition UCOMISS_p :=
-  "0000" $$ "1111" $$ "0010" $$ "1110" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in UCOMISS op1 op2 %% instruction_t).
+  Definition SUBSS_p :=
+    "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm.
 
-Definition UNPCKHPS_p :=
-  "0000" $$ "1111" $$ "0001" $$ "0101" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in UNPCKHPS op1 op2 %% instruction_t).
+  Definition UCOMISS_p :=
+    "0000" $$ "1111" $$ "0010" $$ "1110" $$ modrm_xmm.
 
-Definition UNPCKLPS_p :=
-  "0000" $$ "1111" $$ "0001" $$ "0100" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in UNPCKLPS op1 op2 %% instruction_t).
+  Definition UNPCKHPS_p :=
+    "0000" $$ "1111" $$ "0001" $$ "0101" $$ modrm_xmm.
 
-Definition XORPS_p :=
-  "0000" $$ "1111" $$ "0101" $$ "0111" $$ modrm_xmm @ 
-    (fun p => let (op1, op2) := p in XORPS op1 op2 %% instruction_t).
+  Definition UNPCKLPS_p :=
+    "0000" $$ "1111" $$ "0001" $$ "0100" $$ modrm_xmm.
 
-(* todo: this needs to take operand-override prefix into account *)
-Definition PAVGB_p :=
-  "0000" $$ "1111" $$ "1110" $$ "0000" $$ modrm_mm @ 
-    (fun p => let (op1, op2) := p in PAVGB op1 op2 %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "1110" $$ "0011" $$ modrm_mm @ 
-    (fun p => let (op1, op2) := p in PAVGB op2 op1 %% instruction_t).
+  Definition XORPS_p :=
+    "0000" $$ "1111" $$ "0101" $$ "0111" $$ modrm_xmm.
 
-Definition PEXTRW_p :=
-  "0000" $$ "1111" $$ "1100" $$ "0101" $$ "11" $$ reg $ mmx_reg $ byte @
-    (fun p => match p with (r32, (mmx, imm))
-                => PEXTRW (SSE_GP_Reg_op r32) (SSE_MM_Reg_op mmx) (SSE_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+  (* possible todo: this needs to take operand-override prefix into account *)
+  Definition PAVGB_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine (("0000" $$ "1111" $$ "1110" $$ "0000" $$ modrm_mm_ret_reg |+|
+             "0000" $$ "1111" $$ "1110" $$ "0011" $$ modrm_mm_ret_reg)
+              @ (fun v =>
+                   match v with
+                     | inl (mr1,op2) => (SSE_MM_Reg_op mr1,op2)
+                     | inr (mr1,op2) => (op2,SSE_MM_Reg_op mr1)
+                   end %% pair_t sse_operand_t sse_operand_t)
+              & (fun u => 
+                   match u with
+                     | (SSE_MM_Reg_op mr1, SSE_MM_Reg_op _)
+                     | (SSE_MM_Reg_op mr1, SSE_Addr_op _) =>
+                       (* alternate encoding when two regs: swap the operands *)
+                       Some (inl (mr1, snd u))
+                     | (SSE_Addr_op addr, SSE_MM_Reg_op mr1) =>
+                       Some (inr (mr1, fst u))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; destruct v as [mr1 op2];
+      sse_pf_sim; printable_tac; ibr_prover.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition PINSRW_p :=
-  "0000" $$ "1111" $$ "1100" $$ "0100" $$ "11" $$ mmx_reg $ reg $ byte @
-    (fun p => match p with (mmx, (r32, imm)) => PINSRW (SSE_MM_Reg_op mmx) (SSE_GP_Reg_op r32) (SSE_Imm_op (zero_extend8_32 imm)) end %% instruction_t)
-  |+|
-  "0000" $$ "1111" $$ "1100" $$ "0100" $$ modrm_mm_noreg $ byte @ 
-    (fun p => match p with ((op1, mem), imm) => PINSRW op1 mem (SSE_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+  Definition PEXTRW_p :=
+    "0000" $$ "1111" $$ "1100" $$ "0101" $$ "11"
+           $$ SSE_GP_Reg_op_p $ SSE_MM_Reg_op_p $ byte.
 
-Definition PMAXSW_p :=
-  "0000" $$ "1111" $$ "1110" $$ "1110" $$ modrm_mm @ 
-    (fun p => let (op1, op2) := p in PMAXSW op1 op2 %% instruction_t).
+  Definition PINSRW_p : 
+    wf_bigrammar (pair_t sse_operand_t (pair_t sse_operand_t byte_t)).
+    refine (("0000" $$ "1111" $$ "1100" $$ "0100" $$ "11"
+                    $$ mmx_reg $ reg $ byte |+|
+             "0000" $$ "1111" $$ "1100" $$ "0100" $$ modrm_mm_noreg $ byte)
+              @ (fun v =>
+                   match v with
+                     | inl (mr,(r,imm)) =>
+                       (SSE_MM_Reg_op mr, (SSE_GP_Reg_op r, imm))
+                     | inr ((mr,addr),imm) =>
+                       (SSE_MM_Reg_op mr, (SSE_Addr_op addr, imm))
+                   end %% pair_t sse_operand_t (pair_t sse_operand_t byte_t))
+              & (fun u => 
+                   match u with
+                     | (SSE_MM_Reg_op mr, (SSE_GP_Reg_op r, imm)) =>
+                       Some (inl (mr,(r,imm)))
+                     | (SSE_MM_Reg_op mr, (SSE_Addr_op addr, imm)) =>
+                       Some (inr ((mr,addr),imm))
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; local_printable_tac.
+    - destruct w as [op1 [op2 b]]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition PMAXUB_p :=
-  "0000" $$ "1111" $$ "1101" $$ "1110" $$ modrm_mm @ 
-    (fun p => let (op1, op2) := p in PMAXUB op1 op2 %% instruction_t).
+  Definition PMAXSW_p :=
+    "0000" $$ "1111" $$ "1110" $$ "1110" $$ modrm_mm.
 
-Definition PMINSW_p :=
-  "0000" $$ "1111" $$ "1110" $$ "1010" $$ modrm_mm @ 
-    (fun p => let (op1, op2) := p in PMINSW op1 op2 %% instruction_t).
+  Definition PMAXUB_p :=
+    "0000" $$ "1111" $$ "1101" $$ "1110" $$ modrm_mm. 
 
-Definition PMINUB_p :=
-  "0000" $$ "1111" $$ "1101" $$ "1010" $$ modrm_mm @ 
-    (fun p => let (op1, op2) := p in PMINUB op1 op2 %% instruction_t).
+  Definition PMINSW_p :=
+    "0000" $$ "1111" $$ "1110" $$ "1010" $$ modrm_mm. 
 
-Definition PMOVMSKB_p :=
-  "0000" $$ "1111" $$ "1101" $$ "0111" $$ "11" $$ reg $ mmx_reg @
-    (fun p => let (r, mr) := p in PMOVMSKB (SSE_GP_Reg_op r) (SSE_MM_Reg_op mr) %% instruction_t).
+  Definition PMINUB_p :=
+    "0000" $$ "1111" $$ "1101" $$ "1010" $$ modrm_mm. 
+
+  Definition PMOVMSKB_p :=
+    "0000" $$ "1111" $$ "1101" $$ "0111" $$ "11"
+           $$ SSE_GP_Reg_op_p $ SSE_MM_Reg_op_p.
 
 (*
   Already done in MMX grammar section
@@ -4595,41 +4816,84 @@ Definition PMOVMSKB_p :=
   "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mm @ 
     (fun p => let (mem, mmx) := p in PMULHUW mem mmx %% instruction_t).
 *)
-Definition PSADBW_p :=
-  "0000" $$ "1111" $$ "1111" $$ "0110" $$ modrm_mm @ 
-    (fun p => let (op1, op2) := p in PSADBW op1 op2 %% instruction_t).
 
-Definition PSHUFW_p :=
-  "0000" $$ "1111" $$ "0111" $$ "0000" $$ modrm_mm $ byte @ 
-    (fun p => match p with ((op1, op2), imm)
-                => PSHUFW op1 op2 (SSE_Imm_op(zero_extend8_32 imm)) end %% instruction_t).
+  Definition PSADBW_p :=
+    "0000" $$ "1111" $$ "1111" $$ "0110" $$ modrm_mm.
 
-Definition MASKMOVQ_p :=
-  "0000" $$ "1111" $$ "1111" $$ "0111" $$ "11" $$ mmx_reg $ mmx_reg @
-    (fun p => let (mr1, mr2) := p in MASKMOVQ (SSE_MM_Reg_op mr1) (SSE_MM_Reg_op mr2) %% instruction_t).
+  Definition PSHUFW_p : 
+    wf_bigrammar (pair_t sse_operand_t (pair_t sse_operand_t byte_t)).
+    refine ("0000" $$ "1111" $$ "0111" $$ "0000" $$ modrm_mm $ byte 
+              @ (fun v => 
+                   match v with
+                     | ((op1, op2), imm) => (op1, (op2, imm))
+                   end %% pair_t sse_operand_t (pair_t sse_operand_t byte_t))
+              & (fun u => 
+                   match u with
+                     | (op1,(op2,imm)) => Some ((op1,op2),imm)
+                   end)
+              & _); invertible_tac.
+    - destruct w as [op1 [op2 b]]; parsable_tac.
+  Defined.
 
-Definition MOVNTPS_p :=
-  "0000" $$ "1111" $$ "0010" $$ "1011" $$ modrm_xmm_noreg @ 
-    (fun p => let (op1, mem) := p in MOVNTPS mem op1 %% instruction_t).
+  Definition MASKMOVQ_p :=
+    "0000" $$ "1111" $$ "1111" $$ "0111" $$ "11"
+           $$ SSE_MM_Reg_op_p $ SSE_MM_Reg_op_p.
 
-Definition MOVNTQ_p :=
-  "0000" $$ "1111" $$ "1110" $$ "0111" $$ modrm_mm_noreg @ 
-    (fun p => let (op1, mem) := p in MOVNTQ mem op1 %% instruction_t).
+  Definition MOVNTPS_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine ("0000" $$ "1111" $$ "0010" $$ "1011" $$ modrm_xmm_noreg
+              @ (fun v =>
+                   match v with
+                     | (mr, addr) => (SSE_Addr_op addr, SSE_XMM_Reg_op mr)
+                   end %% pair_t sse_operand_t sse_operand_t)
+              & (fun u => 
+                   match u with
+                     | (SSE_Addr_op addr, SSE_XMM_Reg_op mr) =>
+                       Some (mr,addr)
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition PREFETCHT0_p :=
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "001" @ (fun x => PREFETCHT0 x %% instruction_t).
+  Definition MOVNTQ_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+    refine ("0000" $$ "1111" $$ "1110" $$ "0111" $$ modrm_mm_noreg
+              @ (fun v =>
+                   match v with
+                     | (mr, addr) => (SSE_Addr_op addr, SSE_MM_Reg_op mr)
+                   end %% pair_t sse_operand_t sse_operand_t)
+              & (fun u => 
+                   match u with
+                     | (SSE_Addr_op addr, SSE_MM_Reg_op mr) =>
+                       Some (mr,addr)
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
+  Defined.
 
-Definition PREFETCHT1_p :=
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "010" @ (fun x => PREFETCHT1 x %% instruction_t).
+  Definition PREFETCHT0_p :=
+    "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "001".
 
-Definition PREFETCHT2_p := 
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "011" @ (fun x => PREFETCHT2 x %% instruction_t).
+  Definition PREFETCHT1_p :=
+    "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "010". 
 
-Definition PREFETCHNTA_p :=
-  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "000" @ (fun x => PREFETCHNTA x %% instruction_t).
+  Definition PREFETCHT2_p := 
+    "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "011". 
 
-Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$ 
-                                   bits "1000" @ (fun _ => SFENCE %% instruction_t).
+  Definition PREFETCHNTA_p :=
+    "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "000". 
+
+  Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111"
+                                $$ ! "1000".
+
+
+TBC:
+
+
+
+
+Old grammars:
+
 
   (* Now glue all of the individual instruction grammars together into 
      one big grammar.  *)

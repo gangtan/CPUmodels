@@ -247,7 +247,6 @@ Inductive sse_operand : Set :=
 | SSE_Imm_op : int32 -> sse_operand.
 
 
-
 (* The list of all instructions *)
 
 Inductive instr : Set :=
@@ -434,8 +433,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | ADDSS : forall (op1 op2: sse_operand), instr
 | ANDNPS : forall (op1 op2: sse_operand), instr
 | ANDPS : forall (op1 op2: sse_operand), instr
-| CMPPS : forall (op1 op2 imm: sse_operand), instr
-| CMPSS : forall (op1 op2 imm: sse_operand), instr
+| CMPPS : forall (op1 op2:sse_operand) (imm:int8), instr
+| CMPSS : forall (op1 op2: sse_operand) (imm:int8), instr
 | COMISS : forall (op1 op2: sse_operand), instr
 | CVTPI2PS : forall (op1 op2: sse_operand), instr
 | CVTPS2PI : forall (op1 op2: sse_operand), instr
@@ -465,7 +464,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | RCPSS : forall (op1 op2: sse_operand), instr
 | RSQRTPS : forall (op1 op2: sse_operand), instr
 | RSQRTSS : forall (op1 op2: sse_operand), instr
-| SHUFPS : forall (op1 op2 imm: sse_operand), instr
+| SHUFPS : forall (op1 op2: sse_operand) (imm:int8), instr
 | SQRTPS : forall (op1 op2: sse_operand), instr
 | SQRTSS : forall (op1 op2: sse_operand), instr
 | STMXCSR : forall (op1 : sse_operand), instr
@@ -476,8 +475,8 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | UNPCKLPS : forall (op1 op2: sse_operand), instr
 | XORPS : forall (op1 op2: sse_operand), instr
 | PAVGB : forall (op1 op2: sse_operand), instr
-| PEXTRW : forall (op1 op2 imm: sse_operand), instr
-| PINSRW : forall (op1 op2 imm: sse_operand), instr
+| PEXTRW : forall (op1 op2: sse_operand) (imm:int8), instr
+| PINSRW : forall (op1 op2: sse_operand) (imm:int8), instr
 | PMAXSW : forall (op1 op2: sse_operand), instr
 | PMAXUB : forall (op1 op2: sse_operand), instr
 | PMINSW : forall (op1 op2: sse_operand), instr
@@ -485,7 +484,7 @@ http://download.intel.com/products/processor/manual/325383.pdf*)
 | PMOVMSKB : forall (op1 op2: sse_operand), instr
 (*| PMULHUW : forall (op1 op2: sse_operand), instr *)
 | PSADBW : forall (op1 op2: sse_operand), instr
-| PSHUFW : forall (op1 op2 imm: sse_operand), instr
+| PSHUFW : forall (op1 op2: sse_operand) (imm:int8), instr
 | MASKMOVQ : forall (op1 op2: sse_operand), instr
 | MOVNTPS : forall (op1 op2: sse_operand), instr
 | MOVNTQ : forall (op1 op2: sse_operand), instr
