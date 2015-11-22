@@ -4886,83 +4886,247 @@ End X86_PARSER_ARG.
   Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111"
                                 $$ ! "1000".
 
-
-TBC:
-
-
+  (** ** Glue all of the individual instruction grammars together into 
+         one big grammar.  *)
 
 
-Old grammars:
-
-
-  (* Now glue all of the individual instruction grammars together into 
-     one big grammar.  *)
-  
-  Fixpoint list2pair_t (l: list type) :=
-    match l with
-      | nil => Unit_t
-      | r::r'::nil => Pair_t r r'
-      | r::l' => Pair_t r (list2pair_t l')
+(* todo: make the following tactic printable_tac; remove local_printable_tac *)
+  Local Ltac destruct_ibr_vars :=
+    repeat match goal with
+        | [v:[|sum_t _ _|] |- _] => destruct v
+        | [v:[|unit_t|] |- _] => destruct v
+        | [v:[|pair_t _ _|] |- _] => destruct v
+        | [v:[|option_t _|] |- _] => destruct v
     end.
- 
-  Definition lock_p : grammar lock_or_rep_t :=
-    "1111" $$ bits "0000" @ (fun _ => lock %% lock_or_rep_t).
 
-  Definition rep_or_repn_p : grammar lock_or_rep_t :=
-    "1111" $$ bits "0010" @ (fun _ => repn %% lock_or_rep_t)
-  |+|
-    "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
+  Local Ltac new_printable_tac := 
+    destruct_ibr_vars; printable_tac; ibr_prover.
 
-  Definition rep_p : grammar lock_or_rep_t :=
-    "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
+  Definition lock_p : wf_bigrammar lock_or_rep_t. 
+    refine("1111" $$ ! "0000"
+             @ (fun v => lock %% lock_or_rep_t)
+             & (fun lr => 
+                  match lr with
+                    | lock => Some ()
+                    | _ => None
+                  end)
+             & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
-  Definition lock_or_rep_p : grammar lock_or_rep_t :=
-    ("1111" $$ ( bits "0000" @ (fun _ => lock %% lock_or_rep_t)
-                 |+| bits "0010" @ (fun _ => repn %% lock_or_rep_t)
-                 |+| bits "0011" @ (fun _ => rep  %% lock_or_rep_t))).
+  Definition rep_or_repn_p : wf_bigrammar lock_or_rep_t. 
+    refine ((("1111" $$ ! "0010") |+| ("1111" $$ ! "0011"))
+              @ (fun v => 
+                   match v with
+                     | inl () => repn
+                     | inr () => rep
+                   end %% lock_or_rep_t)
+              & (fun u => 
+                   match u with
+                     | repn => Some (inl ())
+                     | rep => Some (inr ())
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
-  Definition segment_override_p : grammar segment_register_t :=
-  ("0010" $$ bits "1110" @ (fun _ => CS %% segment_register_t)
-    |+| "0011" $$ bits "0110" @ (fun _ => SS %% segment_register_t)
-    |+| "0011" $$ bits "1110" @ (fun _ => DS %% segment_register_t)
-    |+| "0010" $$ bits "0110" @ (fun _ => ES %% segment_register_t)
-    |+| "0110" $$ bits "0100" @ (fun _ => FS %% segment_register_t)
-    |+| "0110" $$ bits "0101" @ (fun _ => GS %% segment_register_t)).
+  Definition rep_p : wf_bigrammar lock_or_rep_t. 
+    refine ("1111" $$ ! "0011"
+              @ (fun v => rep  %% lock_or_rep_t)
+              & (fun u => 
+                   match u with
+                     | rep => Some ()
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
-  Definition op_override_p : grammar bool_t :=
-    "0110" $$ bits "0110" @ (fun _ => true %% bool_t).
-  Definition addr_override_p : grammar bool_t :=
-    "0110" $$ bits "0111" @ (fun _ => true %% bool_t).
+  Definition lock_or_rep_p : wf_bigrammar lock_or_rep_t.
+    refine (("1111" $$ ( ! "0000" |+| ! "0010" |+| ! "0011"))
+              @ (fun v => 
+                   match v with
+                     | inl () => lock
+                     | inr (inl ()) => repn
+                     | inr (inr ()) => rep
+                   end %% lock_or_rep_t)
+              & (fun lr => 
+                   match lr with
+                     | lock => Some (inl ())
+                     | repn => Some (inr (inl ()))
+                     | rep => Some (inr (inr ()))
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition segment_override_env : AST_Env segment_register_t :=
+    {0, "0010" $$ ! "1110", (fun v => CS %% segment_register_t)} :::
+    {1, "0011" $$ ! "0110", (fun v => SS %% segment_register_t)} :::
+    {2, "0011" $$ ! "1110", (fun v => DS %% segment_register_t)} :::
+    {3, "0010" $$ ! "0110", (fun v => ES %% segment_register_t)} :::
+    {4, "0110" $$ ! "0100", (fun v => FS %% segment_register_t)} :::
+    {5, "0110" $$ ! "0101", (fun v => GS %% segment_register_t)} :::
+    ast_env_nil.
+
+  Definition segment_override_p : wf_bigrammar segment_register_t.
+    gen_ast_defs segment_override_env.
+    refine (gr @ (mp: _ -> [|segment_register_t|])
+               & (fun u => 
+                    match u with 
+                      | CS => case0 ()
+                      | SS => case1 ()
+                      | DS => case2 ()
+                      | ES => case3 ()
+                      | FS => case4 ()
+                      | GS => case5 ()
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition op_override_p : wf_bigrammar bool_t.
+    refine ("0110" $$ ! "0110"
+              @ (fun v => true %% bool_t)
+              & (fun u =>
+                   match u with
+                     | true => Some ()
+                     | false => None
+                   end)
+              & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition addr_override_p : wf_bigrammar bool_t.
+    refine ("0110" $$ ! "0111"
+              @ (fun v => true %% bool_t)
+              & (fun u =>
+                   match u with
+                     | true => Some ()
+                     | false => None
+                   end)
+              & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
   (* Ok, now I want all permutations of the above four grammars. 
      I make a little perm2 combinator that takes two grammars and gives you
      p1 $ p2 |+| p2 $ p1, making sure to swap the results in the second case *)
   
-  Definition perm2 t1 t2 (p1: grammar t1) (p2: grammar t2) : grammar (Pair_t t1 t2) :=
-      p1 $ p2 |+|
-      p2 $ p1 @ (fun p => match p with (a, b) => (b, a) %% Pair_t t1 t2 end).
+  Definition perm2 t1 t2 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) : 
+    wf_bigrammar (pair_t t1 t2). 
+    intros;
+    refine((p1 $ p2 |+| p2 $ p1)
+             @ (fun v => match v with
+                           | inl (a,b) => (a,b)
+                           | inr (b,a) => (a,b)
+                         end %% pair_t t1 t2)
+             & (fun u:[|pair_t t1 t2|] => 
+                  let (a,b):=u in Some (inl (a,b)))
+             & _); invertible_tac.
+    - destruct_union.
+      + destruct v as [v1 v2]; printable_tac.
+      + destruct v as [v2 v1]; printable_tac; ibr_prover.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Lemma perm2_rng t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) v1 v2:
+    in_bigrammar_rng (` (perm2 p1 p2)) (v1,v2) <->
+    in_bigrammar_rng (` p1) v1 /\ in_bigrammar_rng (` p2) v2.
+  Proof. split; unfold perm2; intros; ibr_prover.
+    - destruct v as [[a b] | [b a]]; ibr_prover; crush.
+    - compute [fst]; sim.
+      exists (inl [|pair_t t2 t1|] (v1,v2)).
+      split; [ibr_prover | trivial].
+  Qed.
+
+  Hint Extern 1 (in_bigrammar_rng (` (perm2 _ _)) (_,_)) =>
+    apply perm2_rng; split : ibr_rng_db.
+
+  Hint Extern 0 =>
+    match goal with
+      | [H:in_bigrammar_rng (` (perm2 ?p1 ?p2)) (_,_) |- _] =>
+        apply perm2_rng in H; destruct H
+    end : ibr_rng_db.
+
+(* todo: convert some tactics in ibr_prover to use Hint Extern *)
 
   (* Then I build that up into a perm3 and perm4. One could make a recursive
      function to do this, but I didn't want to bother with the necessary
      proofs and type-system juggling.*) 
 
-  Definition perm3 t1 t2 t3 (p1: grammar t1) (p2: grammar t2) (p3: grammar t3)
-    : grammar (Pair_t t1 (Pair_t t2 t3)) :=
-    let r_t := Pair_t t1 (Pair_t t2 t3) in
-       p1 $ (perm2 p2 p3)
-   |+| p2 $ (perm2 p1 p3) @ (fun p => match p with (b, (a, c)) => (a, (b, c)) %% r_t end)
-   |+| p3 $ (perm2 p1 p2) @ (fun p => match p with (c, (a, b)) => (a, (b, c)) %% r_t end).
+  Definition perm3 t1 t2 t3 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2)
+             (p3: wf_bigrammar t3)
+    : wf_bigrammar (pair_t t1 (pair_t t2 t3)). 
+    intros;
+    refine ((p1 $ perm2 p2 p3 |+| p2 $ perm2 p1 p3 |+| p3 $ perm2 p1 p2)
+              @ (fun v => 
+                   match v with
+                     | inl (a,(b,c)) => (a,(b,c))
+                     | inr (inl (b,(a,c))) => (a,(b,c))
+                     | inr (inr (c,(a,b))) => (a,(b,c))
+                   end %% pair_t t1 (pair_t t2 t3))
+              & (fun u => Some (inl u))
+              & _); invertible_tac.
+    - destruct_union; destruct v as [v1 v2];
+      new_printable_tac.
+    - destruct w as [w1 [w2 w3]]; parsable_tac.
+  Defined.
 
-  Definition perm4 t1 t2 t3 t4 (p1: grammar t1) (p2: grammar t2) (p3: grammar t3)
-    (p4: grammar t4) : grammar (Pair_t t1 (Pair_t t2 (Pair_t t3 t4))) :=
-    let r_t := Pair_t t1 (Pair_t t2 (Pair_t t3 t4)) in
-       p1 $ (perm3 p2 p3 p4)
-   |+| p2 $ (perm3 p1 p3 p4) @ 
-         (fun p => match p with (b, (a, (c, d))) => (a, (b, (c, d))) %% r_t end)
-   |+| p3 $ (perm3 p1 p2 p4) @ 
-         (fun p => match p with (c, (a, (b, d))) => (a, (b, (c, d))) %% r_t end)
-   |+| p4 $ (perm3 p1 p2 p3) @ 
-         (fun p => match p with (d, (a, (b, c))) => (a, (b, (c, d))) %% r_t end). 
+  Lemma perm3_rng t1 t2 t3 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2)
+        (p3:wf_bigrammar t3) v1 v2 v3:
+    in_bigrammar_rng (` (perm3 p1 p2 p3)) (v1,(v2,v3)) <->
+    in_bigrammar_rng (` p1) v1 /\ in_bigrammar_rng (` p2) v2 /\
+    in_bigrammar_rng (` p3) v3.
+  Proof. split; unfold perm3; intros; ibr_prover.
+    - destruct v as [[a [b c]] | [[b [a c]]| [c [a b]]]];
+      sim; ibr_prover. 
+    - sim. compute [fst]. 
+      exists 
+        (inl [|sum_t (pair_t t2 (pair_t t1 t3)) (pair_t t3 (pair_t t1 t2))|]
+             (v1,(v2,v3))).
+      split; [ibr_prover | trivial].
+  Qed.
+                  
+  Hint Extern 1 (in_bigrammar_rng (` (perm3 _ _ _)) (_,(_,_))) =>
+    apply perm3_rng; repeat split : ibr_rng_db.
+
+  Hint Extern 0 =>
+    match goal with
+      | [H:in_bigrammar_rng (` (perm3 _ _ _)) (_,(_,_)) |- _] =>
+        apply perm3_rng in H; sim
+    end : ibr_rng_db.
+
+  Definition perm4 t1 t2 t3 t4 
+    (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) (p3: wf_bigrammar t3)
+    (p4: wf_bigrammar t4) : wf_bigrammar (pair_t t1 (pair_t t2 (pair_t t3 t4))). 
+    intros.
+    refine (((p1 $ (perm3 p2 p3 p4) |+|
+              p2 $ (perm3 p1 p3 p4))
+              |+|
+             (p3 $ (perm3 p1 p2 p4) |+|
+              p4 $ (perm3 p1 p2 p3)))
+              @ (fun v => 
+                   match v with
+                     | inl (inl (a,(b,(c,d))))
+                     | inl (inr (b,(a,(c,d))))
+                     | inr (inl (c,(a,(b,d))))
+                     | inr (inr (d,(a,(b,c)))) =>
+                       (a,(b,(c,d)))
+                   end %% pair_t t1 (pair_t t2 (pair_t t3 t4)))
+              & (fun u => Some (inl (inl u)))
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w as [w1 [w2 [w3 w4]]]; parsable_tac.
+  Defined.
 
   (* In this case, prefixes are optional. Before, each of the above
      parsing rules for the prefixes accepted Eps, and this was how we
@@ -4972,95 +5136,372 @@ Old grammars:
      Instead we have a different combinator, called option_perm, that 
      handles this without introducing extra ambiguity *)
 
-  Definition option_perm t1 (p1: grammar (User_t t1)) 
-     : grammar (option_t t1) :=
-     let r_t := option_t t1 in 
-         Eps @ (fun p => None %% r_t)  
-     |+| p1 @ (fun p => (Some p) %% r_t ).
-
-
   (* This signature is slightly awkward - because there's no result
      type corresponding to option (and I'm hesitant to add it to
      Grammar at the moment) we can't just have a signature like grammar
      t1 -> grammar t2 -> grammar (option_t t1) (option_t t2)) *)
-    
-  Definition option_perm2 t1 t2 (p1: grammar (User_t t1)) (p2: grammar (User_t t2)) 
-     : grammar (Pair_t (option_t t1) (option_t t2)) :=
-     let r_t := Pair_t (option_t t1) (option_t t2) in 
-         Eps @ (fun p => (None, None) %% r_t)  
-     |+| p1 @ (fun p => (Some p, None) %% r_t ) 
-     |+| p2 @ (fun p => (None, Some p) %% r_t) 
-     |+| perm2 p1 p2 @ (fun p => match p with (a, b) => (Some a, Some b) %%r_t end). 
 
-  Definition option_perm3 t1 t2 t3 (p1:grammar(User_t t1)) (p2:grammar(User_t t2))
-    (p3:grammar(User_t t3)): grammar(Pair_t(option_t t1)(Pair_t(option_t t2) (option_t t3)))
-    :=
-    let r_t := Pair_t(option_t t1)(Pair_t(option_t t2) (option_t t3))  in
-        Eps @ (fun p => (None, (None, None)) %% r_t)
-    |+| p1 @ (fun p => (Some p, (None, None)) %% r_t)
-    |+| p2 @ (fun p => (None, (Some p, None)) %% r_t)
-    |+| p3 @ (fun p => (None, (None, Some p)) %% r_t)
-    |+| perm2 p1 p2 @(fun p => match p with (a, b) => (Some a, (Some b, None)) %%r_t end)
-    |+| perm2 p1 p3 @(fun p => match p with (a, c) => (Some a, (None, Some c)) %%r_t end)
-    |+| perm2 p2 p3 @(fun p => match p with (b, c) => (None, (Some b, Some c)) %%r_t end)
-    |+| perm3 p1 p2 p3 @ (fun p => match p with (a, (b, c))
-                                    => (Some a, (Some b, Some c)) %%r_t end).
+  (* todo: rename EPS_p to be eps_p; move earlier *)
+  Program Definition eps_p : wf_bigrammar unit_t := Eps.
+
+  Lemma eps_rng : in_bigrammar_rng (` eps_p) ().
+  Proof. unfold eps_p. simpl. ibr_prover. Qed.
+  Hint Resolve eps_rng: ibr_rng_db.
+
+  Definition option_perm t1 (p1: wf_bigrammar (User_t t1))
+     : wf_bigrammar (option_t t1). 
+    intros.
+    refine ((eps_p |+| p1)
+              @ (fun v =>
+                   match v with
+                     | inl () => None
+                     | inr v1 => Some v1
+                   end %% option_t t1)
+              & (fun u => 
+                   match u with
+                     | Some v1 => Some (inr v1)
+                     | None => Some (inl ())
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Lemma option_perm_rng1 t1 (p:wf_bigrammar (User_t t1)) v:
+    in_bigrammar_rng (` (option_perm p)) (Some v) <->
+    in_bigrammar_rng (` p) v.
+  Proof. unfold option_perm; split; intros; ibr_prover.
+    - destruct_ibr_vars; ibr_prover; crush.
+    - compute [fst].
+      exists (inr [|unit_t|] v).
+      split; [ibr_prover | trivial].
+  Qed.
+
+  Hint Extern 1 (in_bigrammar_rng (` (option_perm _)) (Some _)) =>
+    apply option_perm_rng1 : ibr_rng_db.
+
+  Hint Extern 0 =>
+    match goal with
+      | [H:in_bigrammar_rng (` (option_perm _)) (Some _) |- _] =>
+        rewrite option_perm_rng1 in H
+    end : ibr_rng_db.
+
+  Lemma option_perm_rng2 t1 (p:wf_bigrammar (User_t t1)):
+    in_bigrammar_rng (` (option_perm p)) None.
+  Proof. unfold option_perm; intros; ibr_prover.
+    compute [fst].
+    exists (inl [|User_t t1|] ()).
+    split; [ibr_prover | trivial].
+  Qed.
+  Hint Resolve option_perm_rng2.
+
+  Definition option_perm2 t1 t2 
+             (p1: wf_bigrammar (User_t t1)) (p2: wf_bigrammar (User_t t2)) :
+    wf_bigrammar (pair_t (option_t t1) (option_t t2)).
+    intros.
+    refine ((eps_p |+|
+             p1 $ option_perm p2 |+|
+             p2 $ option_perm p1)
+              @ (fun v =>
+                   match v with
+                     | inl () => (None, None)
+                     | inr (inl (a,ob)) => (Some a, ob)
+                     | inr (inr (b,oa)) => (oa, Some b)
+                   end %% pair_t (option_t t1) (option_t t2))
+              & (fun u => 
+                   match u with
+                     | (Some a, _) => Some (inr (inl (a, snd u)))
+                     | (None, Some b) => Some (inr (inr (b, None)))
+                     | (None, None) => Some (inl ())
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w as [oa ob]; destruct oa; destruct ob; parsable_tac.
+  Defined.
+
+  Lemma option_perm2_rng_inv t1 t2 (p1:wf_bigrammar (User_t t1))
+         (p2:wf_bigrammar (User_t t2)) ov1 ov2:
+    in_bigrammar_rng (` (option_perm2 p1 p2)) (ov1, ov2) ->
+    in_bigrammar_rng (` (option_perm p1)) ov1 /\
+    in_bigrammar_rng (` (option_perm p2)) ov2.
+  Proof. unfold option_perm2; intros; ibr_prover.
+    destruct_ibr_vars;
+    match goal with
+      | [H: (_, _) = (_,_) |- _] => inversion H
+    end; split; ibr_prover.
+  Qed.
+
+  Hint Extern 0 =>
+    match goal with
+      | [H:in_bigrammar_rng (` (option_perm2 _ _)) (_, _) |- _] =>
+        apply option_perm2_rng_inv in H; destruct H
+    end : ibr_rng_db.
+
+  Lemma option_perm2_rng t1 t2 (p1:wf_bigrammar (User_t t1))
+         (p2:wf_bigrammar (User_t t2)) ov1 ov2:
+    in_bigrammar_rng (` (option_perm p1)) ov1 ->
+    in_bigrammar_rng (` (option_perm p2)) ov2 ->
+    in_bigrammar_rng (` (option_perm2 p1 p2)) (ov1, ov2).
+  Proof. unfold option_perm2; intros; ibr_prover.
+    compute [fst].
+    set (t:= [|sum_t unit_t
+                     (sum_t (pair_t (User_t t1) (option_t t2))
+                            (pair_t (User_t t2) (option_t t1)))|]).
+    destruct ov1 as [v1 | ].
+    - exists ((inr (inl (v1,ov2))):t).
+      split; [ibr_prover | trivial].
+    - destruct ov2 as [v2 | ].
+      + exists ((inr (inr (v2,None))):t).
+        split; [ibr_prover | trivial].
+      + exists ((inl ()):t).
+        split; [ibr_prover | trivial].
+  Qed.
+  Hint Extern 1 (in_bigrammar_rng (` (option_perm2 _ _)) (_, _)) =>
+    apply option_perm2_rng : ibr_rng_db.
+
+  (* Hint Resolve 1 option_perm2_rng : ibr_rng_db. *)
+
+(* todo: recording lost infomation in prefix ordering *)
+
+  Definition option_perm3 t1 t2 t3
+    (p1:wf_bigrammar(User_t t1)) (p2:wf_bigrammar(User_t t2))
+    (p3:wf_bigrammar(User_t t3)) : 
+    wf_bigrammar(pair_t(option_t t1)(pair_t(option_t t2) (option_t t3))).
+    intros.
+    refine (((eps_p |+|
+              p1 $ option_perm2 p2 p3)
+             |+|
+             (p2 $ option_perm2 p1 p3 |+|
+              p3 $ option_perm2 p1 p2))
+              @ (fun v =>
+                   match v with
+                     | inl (inl ()) => (None, (None, None))
+                     | inl (inr (a, (ob, oc))) => (Some a, (ob, oc))
+                     | inr (inl (b, (oa, oc))) => (oa, (Some b, oc))
+                     | inr (inr (c, (oa, ob))) => (oa, (ob, Some c))
+                   end %% pair_t(option_t t1)(pair_t(option_t t2) (option_t t3)))
+              & (fun u:[|pair_t(option_t t1)(pair_t(option_t t2) (option_t t3))|] =>
+                   let (oa,u1):=u in
+                   let (ob,oc):=u1 in
+                   match oa with
+                     | Some a => Some (inl (inr (a, snd u)))
+                     | None =>
+                       match ob with
+                         | Some b => Some (inr (inl (b, (oa, oc))))
+                         | None =>
+                           match oc with
+                             | Some c => Some (inr (inr (c, (oa, ob))))
+                             | None => Some (inl (inl ()))
+                           end
+                       end
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w as [ow1 [ow2 ow3]]; destruct ow1; try parsable_tac;
+      destruct ow2; try parsable_tac; destruct ow3; parsable_tac.
+  Defined.
+
+  Lemma option_perm3_rng_inv t1 t2 t3 
+        (p1:wf_bigrammar (User_t t1)) (p2:wf_bigrammar (User_t t2))
+        (p3:wf_bigrammar (User_t t3)) ov1 ov2 ov3:
+    in_bigrammar_rng (` (option_perm3 p1 p2 p3)) (ov1, (ov2, ov3)) ->
+    in_bigrammar_rng (` (option_perm p1)) ov1 /\
+    in_bigrammar_rng (` (option_perm p2)) ov2 /\
+    in_bigrammar_rng (` (option_perm p3)) ov3.
+  Proof. unfold option_perm3; intros; ibr_prover.
+    destruct_ibr_vars;
+    match goal with
+      | [H: (_,(_,_)) = (_,(_,_)) |- _] => inversion H
+    end; split; ibr_prover.
+  Qed.
+
+  Hint Extern 0 =>
+    match goal with
+      | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
+        apply option_perm3_rng_inv in H; 
+        let H1:=fresh "H" in let H2:=fresh "H" in let H3:=fresh "H" in
+        destruct H as [H1 [H2 H3]]
+    end : ibr_rng_db.
+
+  Lemma option_perm3_rng t1 t2 t3 (p1:wf_bigrammar (User_t t1))
+         (p2:wf_bigrammar (User_t t2)) (p3:wf_bigrammar (User_t t3))
+         ov1 ov2 ov3:
+    in_bigrammar_rng (` (option_perm p1)) ov1 ->
+    in_bigrammar_rng (` (option_perm p2)) ov2 ->
+    in_bigrammar_rng (` (option_perm p3)) ov3 ->
+    in_bigrammar_rng (` (option_perm3 p1 p2 p3)) (ov1, (ov2, ov3)).
+  Proof. unfold option_perm3; intros; ibr_prover.
+    compute [fst].
+    set (t:= [|sum_t
+              (sum_t unit_t
+                 (pair_t (User_t t1) (pair_t (option_t t2) (option_t t3))))
+              (sum_t
+                 (pair_t (User_t t2) (pair_t (option_t t1) (option_t t3)))
+                 (pair_t (User_t t3) (pair_t (option_t t1) (option_t t2))))|]).
+    destruct ov1 as [v1 | ].
+    - exists ((inl (inr (v1, (ov2,ov3)))):t).
+      split; [ibr_prover | trivial].
+    - destruct ov2 as [v2 | ].
+      + exists ((inr (inl (v2,(None,ov3)))):t).
+        split; [ibr_prover | trivial].
+      + destruct ov3 as [v3 | ].
+        * exists ((inr (inr (v3, (None,None)))):t).
+          split; [ibr_prover | trivial].
+        * exists ((inl (inl ())):t).
+          split; [ibr_prover | trivial].
+  Qed.
+  Hint Extern 1 (in_bigrammar_rng (` (option_perm3 _ _ _)) (_, (_, _))) =>
+    apply option_perm3_rng : ibr_rng_db.
 
   (* t1 is optional, but t2 is a must *)
-  Definition option_perm2_variation t1 t2 (p1: grammar (User_t t1))
-    (p2: grammar (User_t t2)) 
-     : grammar (Pair_t (option_t t1) (User_t t2)) :=
-     let r_t := Pair_t (option_t t1) (User_t t2) in 
-         p2 @ (fun p => (None, p) %% r_t) 
-     |+| perm2 p1 p2 @ (fun p => match p with (a, b) => (Some a, b) %%r_t end). 
+  Definition option_perm2_variation t1 t2
+    (p1: wf_bigrammar (User_t t1)) (p2: wf_bigrammar (User_t t2)) 
+     : wf_bigrammar (pair_t (option_t t1) (User_t t2)). 
+    intros.
+    refine ((p2 |+| perm2 p1 p2)
+              @ (fun v =>
+                   match v with
+                     | inl b => (None, b)
+                     | inr (a,b) => (Some a, b)
+                   end %% pair_t (option_t t1) (User_t t2))
+              & (fun u => 
+                   match u with
+                     | (Some a, b) => Some (inr (a,b))
+                     | (None, b) => Some (inl b)
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w as [oa b]; destruct oa; parsable_tac.
+  Defined.
+
+  Lemma option_perm2_variation_rng t1 t2 (p1:wf_bigrammar (User_t t1))
+         (p2:wf_bigrammar (User_t t2)) oa b:
+    in_bigrammar_rng (` (option_perm p1)) oa /\ 
+    in_bigrammar_rng (` p2) b <->
+    in_bigrammar_rng (` (option_perm2_variation p1 p2)) (oa, b).
+  Proof. unfold option_perm2_variation; split; intros; ibr_prover.
+    - compute [fst]; sim. 
+      set (t:=[|sum_t (User_t t2) (pair_t (User_t t1) (User_t t2))|]).
+      destruct oa as [a | ].
+      + exists ((inr (a,b)):t). 
+        split; [ibr_prover | trivial].
+      + exists ((inl b):t).
+        split; [ibr_prover | trivial].
+    - destruct_union; [ | destruct v];
+      match goal with
+        | [H: (_,_) = (_,_) |- _] => inversion H
+      end; split; ibr_prover.
+  Qed.
+
+  Hint Extern 0 =>
+    match goal with
+      | [H:in_bigrammar_rng (` (option_perm2_variation _ _)) (_,_) |- _] =>
+        rewrite <- option_perm2_variation_rng in H; destruct H
+    end : ibr_rng_db.
+
+  Hint Extern 1 (in_bigrammar_rng (` (option_perm2_variation _ _)) (_, _)) =>
+    apply option_perm2_variation_rng : ibr_rng_db.
 
   (* in this def, t1 and t2 are optional, but t3 is a must *)
-  Definition option_perm3_variation t1 t2 t3 (p1:grammar(User_t t1)) (p2:grammar(User_t t2))
-    (p3:grammar(User_t t3)): grammar(Pair_t(option_t t1)(Pair_t(option_t t2) (User_t t3)))
-    :=
-    let r_t := Pair_t(option_t t1)(Pair_t(option_t t2) (User_t t3))  in
-        p3 @ (fun p => (None, (None, p)) %% r_t)
-    |+| perm2 p1 p3 @(fun p => match p with (a, c) => (Some a, (None, c)) %%r_t end)
-    |+| perm2 p2 p3 @(fun p => match p with (b, c) => (None, (Some b, c)) %%r_t end)
-    |+| perm3 p1 p2 p3 @ (fun p => match p with (a, (b, c))
-                                    => (Some a, (Some b, c)) %%r_t end).
+  Definition option_perm3_variation t1 t2 t3
+    (p1:wf_bigrammar(User_t t1)) (p2:wf_bigrammar(User_t t2))
+    (p3:wf_bigrammar(User_t t3)): 
+    wf_bigrammar (pair_t(option_t t1)(pair_t(option_t t2) (User_t t3))).
+    intros.
+    refine ((p1 $ option_perm2_variation p2 p3 |+|
+             p2 $ option_perm2_variation p1 p3 |+|
+             p3 $ option_perm2 p1 p2)
+              @ (fun v =>
+                   match v with
+                     | inl (a, (ob, c)) => (Some a, (ob, c))
+                     | inr (inl (b, (oa, c))) => (oa, (Some b, c))
+                     | inr (inr (c, (oa, ob))) => (oa, (ob, c))
+                   end %% pair_t(option_t t1)(pair_t(option_t t2) (User_t t3)))
+              & (fun u:[|pair_t(option_t t1)(pair_t(option_t t2) (User_t t3))|] => 
+                   let (oa,u1):=u in
+                   let (ob,c):=u1 in
+                   match oa with
+                     | Some a => Some (inl (a, (ob,c)))
+                     | None => 
+                       match ob with
+                         | Some b => Some (inr (inl (b, (None,c))))
+                         | None => 
+                           Some (inr (inr (c, (None, None))))
+                       end
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w as [oa [ob c]]; destruct oa; destruct ob; parsable_tac.
+  Defined.
 
   (* This is beginning to get quite nasty. Someone should write a form for arbitrary
      n and prove it's correct :) *)
-  Definition option_perm4 t1 t2 t3 t4 (p1:grammar(User_t t1)) (p2: grammar(User_t t2))
-    (p3: grammar(User_t t3)) (p4: grammar(User_t t4)) :
-      grammar(Pair_t(option_t t1) (Pair_t(option_t t2) (Pair_t(option_t t3) (option_t t4))))
-      := 
-    let r_t := Pair_t(option_t t1) (Pair_t(option_t t2)
-      (Pair_t(option_t t3)(option_t t4))) in
-        Eps @ (fun p => (None, (None, (None, None))) %% r_t)
-    |+| p1 @ (fun p => (Some p, (None, (None, None))) %% r_t)
-    |+| p2 @ (fun p => (None, (Some p, (None, None))) %% r_t)
-    |+| p3 @ (fun p => (None, (None, (Some p, None))) %% r_t)
-    |+| p4 @ (fun p => (None, (None, (None, Some p))) %% r_t)
-    |+| perm2 p1 p2 @ (fun p => match p with (a, b)
-                                  => (Some a, (Some b, (None, None))) %% r_t end)
-    |+| perm2 p1 p3 @ (fun p => match p with (a, c)
-                                  => (Some a, (None, (Some c, None))) %% r_t end)
-    |+| perm2 p1 p4 @ (fun p => match p with (a, d)
-                                  => (Some a, (None, (None, Some d))) %% r_t end)
-    |+| perm2 p2 p3 @ (fun p => match p with (b, c)
-                                  => (None, (Some b, (Some c, None))) %% r_t end)
-    |+| perm2 p2 p4 @ (fun p => match p with (b, d)
-                                  => (None, (Some b, (None, Some d))) %% r_t end)
-    |+| perm2 p3 p4 @ (fun p => match p with (c, d)
-                                  => (None, (None, (Some c, Some d))) %% r_t end)
-    |+| perm3 p1 p2 p3 @ (fun p => match p with (a, (b, c))
-                                    => (Some a, (Some b, (Some c, None))) %%r_t end)
-    |+| perm3 p1 p3 p4 @ (fun p => match p with (a, (c, d))
-                                    => (Some a, (None, (Some c, Some d))) %%r_t end)
-    |+| perm3 p1 p2 p4 @ (fun p => match p with (a, (b, d))
-                                    => (Some a, (Some b, (None, Some d))) %%r_t end)
-    |+| perm3 p2 p3 p4 @ (fun p => match p with (b, (c, d))
-                                    => (None, (Some b, (Some c, Some d))) %%r_t end)
-    |+| perm4 p1 p2 p3 p4 @ (fun p => match p with (a, (b, (c, d)))
-                                        => (Some a, (Some b, (Some c, Some d))) %% r_t end).
-                                      
+  Definition option_perm4 t1 t2 t3 t4
+    (p1:wf_bigrammar(User_t t1)) (p2:wf_bigrammar(User_t t2))
+    (p3:wf_bigrammar(User_t t3)) (p4:wf_bigrammar(User_t t4)) :
+    wf_bigrammar(pair_t(option_t t1) (pair_t(option_t t2) (pair_t(option_t t3) (option_t t4)))).
+    intros.
+    set (t:=pair_t(option_t t1)
+                  (pair_t(option_t t2)
+                         (pair_t(option_t t3) (option_t t4)))).
+    refine (((eps_p |+|
+              p1 $ option_perm3 p2 p3 p4)
+             |+|
+             (p2 $ option_perm3 p1 p3 p4 |+|
+              p3 $ option_perm3 p1 p2 p4 |+|
+              p4 $ option_perm3 p1 p2 p3))
+              @ (fun v =>
+                   match v with
+                     | inl (inl ()) => (None, (None, (None, None)))
+                     | inl (inr (a,(ob,(oc,od)))) => (Some a, (ob,(oc,od)))
+                     | inr (inl (b,(oa,(oc,od)))) => (oa, (Some b, (oc,od)))
+                     | inr (inr (inl (c, (oa,(ob,od))))) =>
+                       (oa, (ob, (Some c, od)))
+                     | inr (inr (inr (d, (oa,(ob,oc))))) =>
+                       (oa, (ob, (oc, Some d)))
+                   end %% t)
+              & (fun u:[|t|] => 
+                   let (oa,u1):=u in
+                   let (ob,u2):=u1 in
+                   let (oc,od):=u2 in
+                   match oa with
+                     | Some a => Some (inl (inr (a,(ob,(oc,od)))))
+                     | None =>
+                       match ob with
+                         | Some b => Some (inr (inl (b, (None, (oc,od)))))
+                         | None =>
+                           match oc with
+                             | Some c => 
+                               Some (inr (inr (inl (c, (None, (None,od))))))
+                             | None => 
+                               match od with
+                                 | Some d =>
+                                   Some (inr (inr (inr (d,(None,(None,None))))))
+                                 | None => 
+                                   Some (inl (inl ()))
+                               end
+                           end
+                       end
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w as [oa [ob [oc od]]]; destruct oa; try parsable_tac;
+      destruct ob; try parsable_tac; destruct oc; try parsable_tac;
+      destruct od; parsable_tac.
+  Defined.
+      
+TBC:
+
+
+Old grammars:
+
+  Fixpoint list2pair_t (l: list type) :=
+    match l with
+      | nil => Unit_t
+      | r::r'::nil => Pair_t r r'
+      | r::l' => Pair_t r (list2pair_t l')
+    end.
+ 
   Definition opt2b (a: option bool) (default: bool) :=
     match a with
       | Some b => b
