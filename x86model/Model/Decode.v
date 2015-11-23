@@ -166,8 +166,6 @@ End X86_PARSER_ARG.
   Notation pair_t := Pair_t.
   Notation sum_t := Sum_t.
   Definition Any_p := Any.
-  Definition Eps_p := Eps.
-
 
   Local Ltac localcrush :=
     repeat match goal with
@@ -876,6 +874,12 @@ End X86_PARSER_ARG.
     end.
 
   (** * Additional bigrammar constructors (assuming chars are bits) *)
+
+  Program Definition eps_p : wf_bigrammar unit_t := Eps.
+
+  Lemma eps_rng : in_bigrammar_rng (` eps_p) ().
+  Proof. unfold eps_p. simpl. ibr_simpl. Qed.
+  Hint Resolve eps_rng: ibr_rng_db.
 
   Program Definition bit (b:bool) : wf_bigrammar Char_t := Char b.
   Program Definition anybit : wf_bigrammar Char_t := Any.
@@ -5057,8 +5061,6 @@ End X86_PARSER_ARG.
         apply perm2_rng in H; destruct H
     end : ibr_rng_db.
 
-(* todo: convert some tactics in ibr_prover to use Hint Extern *)
-
   (* Then I build that up into a perm3 and perm4. One could make a recursive
      function to do this, but I didn't want to bother with the necessary
      proofs and type-system juggling.*) 
@@ -5141,13 +5143,6 @@ End X86_PARSER_ARG.
      Grammar at the moment) we can't just have a signature like grammar
      t1 -> grammar t2 -> grammar (option_t t1) (option_t t2)) *)
 
-  (* todo: rename EPS_p to be eps_p; move earlier *)
-  Program Definition eps_p : wf_bigrammar unit_t := Eps.
-
-  Lemma eps_rng : in_bigrammar_rng (` eps_p) ().
-  Proof. unfold eps_p. simpl. ibr_prover. Qed.
-  Hint Resolve eps_rng: ibr_rng_db.
-
   Definition option_perm t1 (p1: wf_bigrammar (User_t t1))
      : wf_bigrammar (option_t t1). 
     intros.
@@ -5219,49 +5214,38 @@ End X86_PARSER_ARG.
     - destruct w as [oa ob]; destruct oa; destruct ob; parsable_tac.
   Defined.
 
-  Lemma option_perm2_rng_inv t1 t2 (p1:wf_bigrammar (User_t t1))
+  Lemma option_perm2_rng t1 t2 (p1:wf_bigrammar (User_t t1))
          (p2:wf_bigrammar (User_t t2)) ov1 ov2:
-    in_bigrammar_rng (` (option_perm2 p1 p2)) (ov1, ov2) ->
     in_bigrammar_rng (` (option_perm p1)) ov1 /\
-    in_bigrammar_rng (` (option_perm p2)) ov2.
-  Proof. unfold option_perm2; intros; ibr_prover.
-    destruct_ibr_vars;
-    match goal with
-      | [H: (_, _) = (_,_) |- _] => inversion H
-    end; split; ibr_prover.
+    in_bigrammar_rng (` (option_perm p2)) ov2 <->
+    in_bigrammar_rng (` (option_perm2 p1 p2)) (ov1, ov2).
+  Proof. split; unfold option_perm2; intros; ibr_prover.
+    - compute [fst]; sim.
+      set (t:= [|sum_t unit_t
+                   (sum_t (pair_t (User_t t1) (option_t t2))
+                          (pair_t (User_t t2) (option_t t1)))|]).
+      destruct ov1 as [v1 | ].
+      +  exists ((inr (inl (v1,ov2))):t).
+        split; [ibr_prover | trivial].
+      + destruct ov2 as [v2 | ].
+        * exists ((inr (inr (v2,None))):t).
+          split; [ibr_prover | trivial].
+        * exists ((inl ()):t).
+          split; [ibr_prover | trivial].
+    - destruct_ibr_vars;
+      match goal with
+        | [H: (_, _) = (_,_) |- _] => inversion H
+      end; split; ibr_prover.
   Qed.
 
   Hint Extern 0 =>
     match goal with
       | [H:in_bigrammar_rng (` (option_perm2 _ _)) (_, _) |- _] =>
-        apply option_perm2_rng_inv in H; destruct H
+        rewrite <- option_perm2_rng in H; destruct H
     end : ibr_rng_db.
 
-  Lemma option_perm2_rng t1 t2 (p1:wf_bigrammar (User_t t1))
-         (p2:wf_bigrammar (User_t t2)) ov1 ov2:
-    in_bigrammar_rng (` (option_perm p1)) ov1 ->
-    in_bigrammar_rng (` (option_perm p2)) ov2 ->
-    in_bigrammar_rng (` (option_perm2 p1 p2)) (ov1, ov2).
-  Proof. unfold option_perm2; intros; ibr_prover.
-    compute [fst].
-    set (t:= [|sum_t unit_t
-                     (sum_t (pair_t (User_t t1) (option_t t2))
-                            (pair_t (User_t t2) (option_t t1)))|]).
-    destruct ov1 as [v1 | ].
-    - exists ((inr (inl (v1,ov2))):t).
-      split; [ibr_prover | trivial].
-    - destruct ov2 as [v2 | ].
-      + exists ((inr (inr (v2,None))):t).
-        split; [ibr_prover | trivial].
-      + exists ((inl ()):t).
-        split; [ibr_prover | trivial].
-  Qed.
   Hint Extern 1 (in_bigrammar_rng (` (option_perm2 _ _)) (_, _)) =>
     apply option_perm2_rng : ibr_rng_db.
-
-  (* Hint Resolve 1 option_perm2_rng : ibr_rng_db. *)
-
-(* todo: recording lost infomation in prefix ordering *)
 
   Definition option_perm3 t1 t2 t3
     (p1:wf_bigrammar(User_t t1)) (p2:wf_bigrammar(User_t t2))
@@ -5301,55 +5285,46 @@ End X86_PARSER_ARG.
       destruct ow2; try parsable_tac; destruct ow3; parsable_tac.
   Defined.
 
-  Lemma option_perm3_rng_inv t1 t2 t3 
-        (p1:wf_bigrammar (User_t t1)) (p2:wf_bigrammar (User_t t2))
-        (p3:wf_bigrammar (User_t t3)) ov1 ov2 ov3:
-    in_bigrammar_rng (` (option_perm3 p1 p2 p3)) (ov1, (ov2, ov3)) ->
+  Lemma option_perm3_rng t1 t2 t3 (p1:wf_bigrammar (User_t t1))
+         (p2:wf_bigrammar (User_t t2)) (p3:wf_bigrammar (User_t t3))
+         ov1 ov2 ov3:
     in_bigrammar_rng (` (option_perm p1)) ov1 /\
     in_bigrammar_rng (` (option_perm p2)) ov2 /\
-    in_bigrammar_rng (` (option_perm p3)) ov3.
-  Proof. unfold option_perm3; intros; ibr_prover.
-    destruct_ibr_vars;
-    match goal with
-      | [H: (_,(_,_)) = (_,(_,_)) |- _] => inversion H
-    end; split; ibr_prover.
+    in_bigrammar_rng (` (option_perm p3)) ov3 <->
+    in_bigrammar_rng (` (option_perm3 p1 p2 p3)) (ov1, (ov2, ov3)).
+  Proof. split; unfold option_perm3; intros; ibr_prover.
+    - compute [fst]; sim.
+      set (t:= [|sum_t
+               (sum_t unit_t
+                 (pair_t (User_t t1) (pair_t (option_t t2) (option_t t3))))
+               (sum_t
+                 (pair_t (User_t t2) (pair_t (option_t t1) (option_t t3)))
+                 (pair_t (User_t t3) (pair_t (option_t t1) (option_t t2))))|]).
+      destruct ov1 as [v1 | ].
+      + exists ((inl (inr (v1, (ov2,ov3)))):t).
+        split; [ibr_prover | trivial].
+      + destruct ov2 as [v2 | ].
+        * exists ((inr (inl (v2,(None,ov3)))):t).
+          split; [ibr_prover | trivial].
+        * destruct ov3 as [v3 | ].
+          { exists ((inr (inr (v3, (None,None)))):t).
+            split; [ibr_prover | trivial]. }
+          { exists ((inl (inl ())):t).
+            split; [ibr_prover | trivial]. }
+    - destruct_ibr_vars;
+      match goal with
+        | [H: (_,(_,_)) = (_,(_,_)) |- _] => inversion H
+      end; split; ibr_prover.
   Qed.
 
   Hint Extern 0 =>
     match goal with
       | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
-        apply option_perm3_rng_inv in H; 
+        rewrite <- option_perm3_rng in H; 
         let H1:=fresh "H" in let H2:=fresh "H" in let H3:=fresh "H" in
         destruct H as [H1 [H2 H3]]
     end : ibr_rng_db.
 
-  Lemma option_perm3_rng t1 t2 t3 (p1:wf_bigrammar (User_t t1))
-         (p2:wf_bigrammar (User_t t2)) (p3:wf_bigrammar (User_t t3))
-         ov1 ov2 ov3:
-    in_bigrammar_rng (` (option_perm p1)) ov1 ->
-    in_bigrammar_rng (` (option_perm p2)) ov2 ->
-    in_bigrammar_rng (` (option_perm p3)) ov3 ->
-    in_bigrammar_rng (` (option_perm3 p1 p2 p3)) (ov1, (ov2, ov3)).
-  Proof. unfold option_perm3; intros; ibr_prover.
-    compute [fst].
-    set (t:= [|sum_t
-              (sum_t unit_t
-                 (pair_t (User_t t1) (pair_t (option_t t2) (option_t t3))))
-              (sum_t
-                 (pair_t (User_t t2) (pair_t (option_t t1) (option_t t3)))
-                 (pair_t (User_t t3) (pair_t (option_t t1) (option_t t2))))|]).
-    destruct ov1 as [v1 | ].
-    - exists ((inl (inr (v1, (ov2,ov3)))):t).
-      split; [ibr_prover | trivial].
-    - destruct ov2 as [v2 | ].
-      + exists ((inr (inl (v2,(None,ov3)))):t).
-        split; [ibr_prover | trivial].
-      + destruct ov3 as [v3 | ].
-        * exists ((inr (inr (v3, (None,None)))):t).
-          split; [ibr_prover | trivial].
-        * exists ((inl (inl ())):t).
-          split; [ibr_prover | trivial].
-  Qed.
   Hint Extern 1 (in_bigrammar_rng (` (option_perm3 _ _ _)) (_, (_, _))) =>
     apply option_perm3_rng : ibr_rng_db.
 
@@ -5489,9 +5464,31 @@ End X86_PARSER_ARG.
       destruct ob; try parsable_tac; destruct oc; try parsable_tac;
       destruct od; parsable_tac.
   Defined.
-      
+
+(* todo: convert some tactics in ibr_prover to use Hint Extern *)
+(* todo: recording lost infomation in prefix ordering *)
+
 TBC:
 
+  Definition opt2b (a: option bool) (default: bool) :=
+    match a with
+      | Some b => b
+      | None => default
+    end.
+
+
+  Definition prefix_grammar_rep :=
+    option_perm3 rep_p segment_override_p op_override_p @
+     (fun p => match p with (l, (s, op)) =>
+                 mkPrefix l s (opt2b op false) false %% prefix_t end).
+
+  (** this set of instructions can take prefixes in prefix_grammar_rep;
+      that is, in lock_or_rep, only rep can be used; we put RET in this
+      category because it turns out many binaries use "rep ret" to avoid the
+      branch prediction panelty in AMD processors; intel processor seems to
+      just ignore the rep prefix in "rep ret". *)
+  Definition instr_grammars_rep :=
+    INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: RET_p :: nil.
 
 Old grammars:
 
