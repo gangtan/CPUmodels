@@ -4906,124 +4906,11 @@ End X86_PARSER_ARG.
   Local Ltac new_printable_tac := 
     destruct_ibr_vars; printable_tac; ibr_prover.
 
-  Definition lock_p : wf_bigrammar lock_or_rep_t. 
-    refine("1111" $$ ! "0000"
-             @ (fun v => lock %% lock_or_rep_t)
-             & (fun lr => 
-                  match lr with
-                    | lock => Some ()
-                    | _ => None
-                  end)
-             & _); invertible_tac.
-    - new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
+  (* todo: move earlier *)
 
-  Definition rep_or_repn_p : wf_bigrammar lock_or_rep_t. 
-    refine ((("1111" $$ ! "0010") |+| ("1111" $$ ! "0011"))
-              @ (fun v => 
-                   match v with
-                     | inl () => repn
-                     | inr () => rep
-                   end %% lock_or_rep_t)
-              & (fun u => 
-                   match u with
-                     | repn => Some (inl ())
-                     | rep => Some (inr ())
-                     | _ => None
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
-  Definition rep_p : wf_bigrammar lock_or_rep_t. 
-    refine ("1111" $$ ! "0011"
-              @ (fun v => rep  %% lock_or_rep_t)
-              & (fun u => 
-                   match u with
-                     | rep => Some ()
-                     | _ => None
-                   end)
-              & _); invertible_tac.
-    - new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
-  Definition lock_or_rep_p : wf_bigrammar lock_or_rep_t.
-    refine (("1111" $$ ( ! "0000" |+| ! "0010" |+| ! "0011"))
-              @ (fun v => 
-                   match v with
-                     | inl () => lock
-                     | inr (inl ()) => repn
-                     | inr (inr ()) => rep
-                   end %% lock_or_rep_t)
-              & (fun lr => 
-                   match lr with
-                     | lock => Some (inl ())
-                     | repn => Some (inr (inl ()))
-                     | rep => Some (inr (inr ()))
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
-  Definition segment_override_env : AST_Env segment_register_t :=
-    {0, "0010" $$ ! "1110", (fun v => CS %% segment_register_t)} :::
-    {1, "0011" $$ ! "0110", (fun v => SS %% segment_register_t)} :::
-    {2, "0011" $$ ! "1110", (fun v => DS %% segment_register_t)} :::
-    {3, "0010" $$ ! "0110", (fun v => ES %% segment_register_t)} :::
-    {4, "0110" $$ ! "0100", (fun v => FS %% segment_register_t)} :::
-    {5, "0110" $$ ! "0101", (fun v => GS %% segment_register_t)} :::
-    ast_env_nil.
-
-  Definition segment_override_p : wf_bigrammar segment_register_t.
-    gen_ast_defs segment_override_env.
-    refine (gr @ (mp: _ -> [|segment_register_t|])
-               & (fun u => 
-                    match u with 
-                      | CS => case0 ()
-                      | SS => case1 ()
-                      | DS => case2 ()
-                      | ES => case3 ()
-                      | FS => case4 ()
-                      | GS => case5 ()
-                    end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
-  Definition op_override_p : wf_bigrammar bool_t.
-    refine ("0110" $$ ! "0110"
-              @ (fun v => true %% bool_t)
-              & (fun u =>
-                   match u with
-                     | true => Some ()
-                     | false => None
-                   end)
-              & _); invertible_tac.
-    - new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
-  Definition addr_override_p : wf_bigrammar bool_t.
-    refine ("0110" $$ ! "0111"
-              @ (fun v => true %% bool_t)
-              & (fun u =>
-                   match u with
-                     | true => Some ()
-                     | false => None
-                   end)
-              & _); invertible_tac.
-    - new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
-  (* Ok, now I want all permutations of the above four grammars. 
-     I make a little perm2 combinator that takes two grammars and gives you
-     p1 $ p2 |+| p2 $ p1, making sure to swap the results in the second case *)
+  (* constructors for building permutations of grammrs.  I make a little
+     perm2 combinator that takes two grammars and gives you p1 $ p2 |+| p2
+     $ p1, making sure to swap the results in the second case *)
   
   Definition perm2 t1 t2 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) : 
     wf_bigrammar (pair_t t1 t2). 
@@ -5061,10 +4948,8 @@ End X86_PARSER_ARG.
         apply perm2_rng in H; destruct H
     end : ibr_rng_db.
 
-  (* Then I build that up into a perm3 and perm4. One could make a recursive
-     function to do this, but I didn't want to bother with the necessary
-     proofs and type-system juggling.*) 
-
+  (* One could make a recursive function to do perm3 and perm4, but I didn't want to
+     bother with the necessary proofs and type-system juggling.*)
   Definition perm3 t1 t2 t3 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2)
              (p3: wf_bigrammar t3)
     : wf_bigrammar (pair_t t1 (pair_t t2 t3)). 
@@ -5465,10 +5350,124 @@ End X86_PARSER_ARG.
       destruct od; parsable_tac.
   Defined.
 
-(* todo: convert some tactics in ibr_prover to use Hint Extern *)
-(* todo: recording lost infomation in prefix ordering *)
+  Definition lock_p : wf_bigrammar lock_or_rep_t. 
+    refine("1111" $$ ! "0000"
+             @ (fun v => lock %% lock_or_rep_t)
+             & (fun lr => 
+                  match lr with
+                    | lock => Some ()
+                    | _ => None
+                  end)
+             & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
 
-TBC:
+  Definition rep_or_repn_p : wf_bigrammar lock_or_rep_t. 
+    refine ((("1111" $$ ! "0010") |+| ("1111" $$ ! "0011"))
+              @ (fun v => 
+                   match v with
+                     | inl () => repn
+                     | inr () => rep
+                   end %% lock_or_rep_t)
+              & (fun u => 
+                   match u with
+                     | repn => Some (inl ())
+                     | rep => Some (inr ())
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition rep_p : wf_bigrammar lock_or_rep_t. 
+    refine ("1111" $$ ! "0011"
+              @ (fun v => rep  %% lock_or_rep_t)
+              & (fun u => 
+                   match u with
+                     | rep => Some ()
+                     | _ => None
+                   end)
+              & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition lock_or_rep_p : wf_bigrammar lock_or_rep_t.
+    refine (("1111" $$ ( ! "0000" |+| ! "0010" |+| ! "0011"))
+              @ (fun v => 
+                   match v with
+                     | inl () => lock
+                     | inr (inl ()) => repn
+                     | inr (inr ()) => rep
+                   end %% lock_or_rep_t)
+              & (fun lr => 
+                   match lr with
+                     | lock => Some (inl ())
+                     | repn => Some (inr (inl ()))
+                     | rep => Some (inr (inr ()))
+                   end)
+              & _); invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition segment_override_env : AST_Env segment_register_t :=
+    {0, "0010" $$ ! "1110", (fun v => CS %% segment_register_t)} :::
+    {1, "0011" $$ ! "0110", (fun v => SS %% segment_register_t)} :::
+    {2, "0011" $$ ! "1110", (fun v => DS %% segment_register_t)} :::
+    {3, "0010" $$ ! "0110", (fun v => ES %% segment_register_t)} :::
+    {4, "0110" $$ ! "0100", (fun v => FS %% segment_register_t)} :::
+    {5, "0110" $$ ! "0101", (fun v => GS %% segment_register_t)} :::
+    ast_env_nil.
+
+  Definition segment_override_p : wf_bigrammar segment_register_t.
+    gen_ast_defs segment_override_env.
+    refine (gr @ (mp: _ -> [|segment_register_t|])
+               & (fun u => 
+                    match u with 
+                      | CS => case0 ()
+                      | SS => case1 ()
+                      | DS => case2 ()
+                      | ES => case3 ()
+                      | FS => case4 ()
+                      | GS => case5 ()
+                    end)
+               & _); clear_ast_defs; invertible_tac.
+    - destruct_union; new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  (* Definition op_override_p : wf_bigrammar unit_t := "0110" $$ ! "0110". *)
+
+  Definition op_override_p : wf_bigrammar bool_t.
+    refine ("0110" $$ ! "0110"
+              @ (fun v => true %% bool_t)
+              & (fun u =>
+                   match u with
+                     | true => Some ()
+                     | false => None
+                   end)
+              & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+  Definition addr_override_p : wf_bigrammar bool_t.
+    refine ("0110" $$ ! "0111"
+              @ (fun v => true %% bool_t)
+              & (fun u =>
+                   match u with
+                     | true => Some ()
+                     | false => None
+                   end)
+              & _); invertible_tac.
+    - new_printable_tac.
+    - destruct w; parsable_tac.
+  Defined.
+
+(* todo: convert some tactics in ibr_prover to use Hint Extern *)
 
   Definition opt2b (a: option bool) (default: bool) :=
     match a with
@@ -5476,19 +5475,230 @@ TBC:
       | None => default
     end.
 
+  (* todo: move earlier *)
+  Lemma op_override_p_rng_inv op :
+    in_bigrammar_rng (` op_override_p) op -> op = true.
+  Proof. unfold op_override_p; intros; ibr_prover. Qed.
 
-  Definition prefix_grammar_rep :=
-    option_perm3 rep_p segment_override_p op_override_p @
-     (fun p => match p with (l, (s, op)) =>
-                 mkPrefix l s (opt2b op false) false %% prefix_t end).
+  (* Hint Extern 0 => *)
+  (*   match goal with *)
+  (*     | [H:in_bigrammar_rng (` op_override_p) ?op |- _] => *)
+  (*       apply op_override_p_rng_inv in H *)
+  (*   end : ibr_rng_db. *)
+
+  (* Local Ltac prefix_pf_sim :=  *)
+  (*   ibr_prover; bg_pf_sim; *)
+  (*   repeat match goal with *)
+  (*     | [H:in_bigrammar_rng (` op_override_p) ?op |- _] => *)
+  (*       apply op_override_p_rng_inv in H *)
+  (*   end. *)
+
+  (* todo: organize some of the ibr_simpl and ibr_prover cases as
+     Hint Rewrite stuff *)
+
+  (* todo: clena up proofs for prefix grammars *)
+
+  Definition prefix_grammar_rep : wf_bigrammar prefix_t.
+    refine ((option_perm3 rep_p segment_override_p op_override_p)
+              @ (fun v => match v with (l, (s, op)) =>
+                   mkPrefix l s (opt2b op false) false %% prefix_t end)
+              & (fun u => 
+                   match op_override u, addr_override u with
+                     | true,false => Some (lock_rep u, (seg_override u, Some true))
+                     | false,false => Some (lock_rep u, (seg_override u, None))
+                     | _,_ => None
+                   end)
+              & _); invertible_tac.
+    - destruct v as [l [s op]]. 
+      compute [op_override addr_override lock_rep seg_override].
+      destruct op as [op | ]; [destruct op | ]; compute [opt2b].
+      + new_printable_tac.
+      + match goal with
+          | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
+            rewrite <- option_perm3_rng in H; 
+            let H1:=fresh "H" in let H2:=fresh "H" in let H3:=fresh "H" in
+            destruct H as [H1 [H2 H3]];
+            rewrite option_perm_rng1 in H3;
+            apply op_override_p_rng_inv in H3; inversion H3
+        end.
+      + new_printable_tac.
+    - destruct w as [l s op addr];
+      compute [op_override addr_override lock_rep seg_override] in *.
+      destruct op; destruct addr; parsable_tac.
+  Defined.
 
   (** this set of instructions can take prefixes in prefix_grammar_rep;
       that is, in lock_or_rep, only rep can be used; we put RET in this
       category because it turns out many binaries use "rep ret" to avoid the
       branch prediction panelty in AMD processors; intel processor seems to
       just ignore the rep prefix in "rep ret". *)
-  Definition instr_grammars_rep :=
-    INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: RET_p :: nil.
+  Definition instr_grammars_rep_env : AST_Env instruction_t :=
+    {0, INS_p, (fun v => INS v %% instruction_t)} :::
+    {1, OUTS_p, (fun v => OUTS v %% instruction_t)} :::
+    {2, MOVS_p, (fun v => MOVS v %% instruction_t)} :::
+    {3, LODS_p, (fun v => LODS v %% instruction_t)} :::
+    {4, STOS_p, (fun v => STOS v %% instruction_t)} :::
+    {5, RET_p, (fun v => RET (fst v) (snd v) %% instruction_t)} :::
+    ast_env_nil.
+
+  Definition prefix_grammar_rep_or_repn : wf_bigrammar prefix_t.
+    refine ((option_perm3 rep_or_repn_p segment_override_p op_override_p)
+              @ (fun v => match v with (l, (s, op)) =>
+                   mkPrefix l s (opt2b op false) false %% prefix_t end)
+              & (fun u => 
+                   match op_override u, addr_override u with
+                     | true,false => Some (lock_rep u, (seg_override u, Some true))
+                     | false,false => Some (lock_rep u, (seg_override u, None))
+                     | _,_ => None
+                   end)
+              & _); invertible_tac.
+    - destruct v as [l [s op]]. 
+      compute [op_override addr_override lock_rep seg_override].
+      destruct op as [op | ]; [destruct op | ]; compute [opt2b].
+      + new_printable_tac.
+      + match goal with
+          | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
+            rewrite <- option_perm3_rng in H; 
+            let H1:=fresh "H" in let H2:=fresh "H" in let H3:=fresh "H" in
+            destruct H as [H1 [H2 H3]];
+            rewrite option_perm_rng1 in H3;
+            apply op_override_p_rng_inv in H3; inversion H3
+        end.
+      + new_printable_tac.
+    - destruct w as [l s op addr];
+      compute [op_override addr_override lock_rep seg_override] in *.
+      destruct op; destruct addr; parsable_tac.
+  Defined.
+
+  (** this set of instructions can take prefixes in prefix_grammar_repn;
+      that is, in lock_or_rep, either rep or repn can be used, but not lock *)
+  Definition instr_grammars_rep_or_repn_env : AST_Env instruction_t :=
+    {10, CMPS_p, (fun v => CMPS v %% instruction_t)} :::
+    {11, SCAS_p, (fun v => SCAS v %% instruction_t)} :::
+    ast_env_nil.                                  
+
+  (* todo: move earlier *)
+  (** Cat p1 with every grammar inside the ast env *)
+  Fixpoint ast_env_cat t1 t2 (p1:wf_bigrammar t1) (ae: AST_Env t2) :
+    AST_Env (pair_t t1 t2) := 
+    match ae with
+      | ast_env_nil => ast_env_nil
+      | ast_env_cons n pt p2 f ae' => 
+        ast_env_cons n (p1 $ p2) (fun v => (fst v, f (snd v)) %% pair_t t1 t2)
+                     (ast_env_cat p1 ae')
+    end.
+
+  Fixpoint ast_env_append t (ae1 ae2: AST_Env t) : AST_Env t := 
+    match ae1 with
+      | ast_env_nil => ae2
+      | ast_env_cons n pt p f ae1' =>
+        ast_env_cons n p f (ast_env_append ae1' ae2)
+    end.
+
+  Notation "ael +++ aer" := 
+    (ast_env_append ael aer) (right associativity, at level 80).
+
+  Definition instr_grammar_env := 
+    ast_env_cat prefix_grammar_rep instr_grammars_rep_env +++
+    ast_env_cat prefix_grammar_rep_or_repn
+      instr_grammars_rep_or_repn_env.
+
+  Definition instr_grammar_type : type.
+    let t:=gen_ast_type instr_grammar_env in exact(t).
+  Defined.
+
+  (* todo: move the following earlier and add comments *)
+
+  Ltac gen_rev_case_by_lbl ast_env l := 
+    let t := gen_ast_type ast_env in
+    match ast_env with
+      | ast_env_cons ?l1 _ _ ast_env_nil => 
+        let eq_l_l1 := (eval compute in (beq_nat l l1)) in
+        match eq_l_l1 with
+          | true => constr:(fun v: interp t => v)
+        end
+      | _ =>
+      let aepair := eval simpl in (env_split ast_env) in
+      match aepair with
+        | (?ael, ?aer) => 
+          match aer with
+            | ast_env_cons ?l2 _ _ ?aer1 =>
+              let b := (eval compute in (NPeano.ltb l l2)) in
+              match b with
+                | true => 
+                  let f := gen_rev_case_by_lbl ael l in 
+                  constr:(fun v => (inl  (f v)):(interp t))
+                | false => 
+                  let f := gen_rev_case_by_lbl aer l in
+                  constr:(fun v => (inr (f v)):(interp t))
+              end
+          end
+      end
+    end.
+
+
+  Definition from_instr (u:prefix * instr) : option [|instr_grammar_type|].
+    intro.
+    refine (match snd u with
+              | CMPS a => _
+              | INS a => _
+              | LODS a => _
+              | MOVS a => _
+              | OUTS a => _
+              | RET a1 a2 => _
+              | SCAS a => _
+              | STOS a => _
+              | _ => None
+            end).
+    Local Ltac gen lbl u arg :=
+      let f:=gen_rev_case_by_lbl instr_grammar_env lbl in 
+      let f1 := eval simpl in f in
+      exact (Some (f1 (fst u, arg))).
+    * (* CMPS *) gen 10 u a.
+    * (* INS *) gen 0 u a.
+    * (* LODS *) gen 3 u a.
+    * (* MOVS *) gen 2 u a.
+    * (* OUTS *) gen 1 u a.
+    * (* RET *) gen 5 u (a1,a2).
+    * (* SCAS *) gen 11 u a.
+    * (* STOS *) gen 4 u a.
+  Defined.
+
+  Definition instruction_grammar : wf_bigrammar (pair_t prefix_t instruction_t).
+    let g := gen_ast_grammar instr_grammar_env in pose (gr:=g);
+    let m := gen_ast_map instr_grammar_env in pose (mp:=m).
+    refine (gr @ (mp: _ -> [|pair_t prefix_t instruction_t|])
+               & from_instr
+               & _); clear_ast_defs; unfold from_instr; invertible_tac.
+    - Time new_printable_tac.
+    - destruct w as [p ins]; destruct ins; parsable_tac.
+  Defined.
+
+
+TBC:
+
+  Definition instruction_grammar_list := 
+    (List.map (fun (p:grammar instruction_t) => prefix_grammar_rep $ p)
+      instr_grammars_rep) ++
+    (List.map (fun (p:grammar instruction_t) => prefix_grammar_rep_or_repn $ p)
+      instr_grammars_rep_or_repn) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_lock_with_op_override $ p)
+      instr_grammars_lock_with_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_lock_no_op_override $ p)
+      instr_grammars_lock_no_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_seg_with_op_override $ p)
+      instr_grammars_seg_with_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_seg_op_override $ p)
+      instr_grammars_seg_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_seg_override $ p)
+      instr_grammars_seg_override).
+
+
 
 Old grammars:
 
