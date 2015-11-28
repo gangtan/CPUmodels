@@ -72,7 +72,8 @@ Module X86_PARSER_ARG.
   | Lock_or_Rep_t : type
   | Bool_t : type
   | Prefix_t : type
-  | Option_t (t: type) : type
+  (* G.T.: added option_t as a stardard decoder type *)
+  (* | Option_t (t: type) : type *)
   (* Need pairs at this level if I want to have options of pairs*)
   | UPair_t (t1 t2: type) : type. 
 
@@ -114,7 +115,7 @@ Module X86_PARSER_ARG.
       | Lock_or_Rep_t => lock_or_rep
       | Bool_t => bool
       | Prefix_t => prefix
-      | Option_t t => option (tipe_m t)
+      (* | Option_t t => option (tipe_m t) *)
       | UPair_t t1 t2 => ((tipe_m t1) * (tipe_m t2))%type
     end.
 

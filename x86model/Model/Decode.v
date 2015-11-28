@@ -122,8 +122,6 @@ End X86_PARSER_ARG.
   Import ParserArg.X86_PARSER_ARG.
   Require Import BiGrammar.
 
-
-  Definition option_t x := User_t (Option_t x).
   Definition int_t := User_t Int_t.
   Definition register_t := User_t Register_t.
   Definition byte_t := User_t Byte_t.
@@ -165,6 +163,7 @@ End X86_PARSER_ARG.
   Notation unit_t := Unit_t.
   Notation pair_t := Pair_t.
   Notation sum_t := Sum_t.
+  Notation option_t := Option_t.
   Definition Any_p := Any.
 
   Local Ltac localcrush :=
@@ -181,19 +180,19 @@ End X86_PARSER_ARG.
       | _ => unfold in_bigrammar_rng in *; in_bigrammar_inv; localcrush
     end.
 
-  Local Ltac destruct_union := 
-    repeat match goal with 
-             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
-             | [v: [| Unit_t |] |- _] => destruct v
-           end.
+  (* todo: remove *)
+  (* Local Ltac destruct_union :=  *)
+  (*   repeat match goal with  *)
+  (*            | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v] *)
+  (*            | [v: [| Unit_t |] |- _] => destruct v *)
+  (*          end. *)
 
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
   Obligation Tactic := localcrush.
 
-  (** * Basic operartions for converting values between domains:
-        bits_n, (Z->bool), int n, Z *)
+  (** * Basic operators for converting values between types including bits_n, (Z->bool), int n, Z, etc. *)
 
   (** ** Definitions *)
 
@@ -208,9 +207,9 @@ End X86_PARSER_ARG.
     forall z, (z >= Z_of_nat n)%Z -> f z = false.
 
   (** convert a sequence of bits to a signature function that maps position
-      indexes to bits so that we are not restricted by the
-      right-associateness of the bits when processing them; position
-      indexes in the signature function start at 0 *)
+     indexes to bits so that we are not restricted by the
+     right-associateness of the bits when processing them; position indexes
+     in the signature function start at 0 *)
   Fixpoint sig_of_bitsn (n:nat) : interp (bits_n n) -> (Z -> bool) := 
     match n with
       | O => fun _ _ => false
@@ -656,20 +655,19 @@ End X86_PARSER_ARG.
   Hint Rewrite zero_shrink32_8_inv: inv_db.
   Hint Rewrite zero_extend8_32_inv using assumption: inv_db.
 
-  (** * Definitions and tactics for combining a list of grammars using
-        balanced ASTs *)
+  (** * Definitions and tactics for combining a list of grammars using balanced ASTs *)
 
-  (* Assume we have a list of grammars of type "wf_bigrammar pt_i". We want
-     to combine them into a single grammar that produces semantic values of
-     type t. One easy way of combining them is to do "(g_1 @ f_1) |\/|
-     ... (g_n @ f_n)", where f_i is of type [|pt_i|] -> [|t|]. However,
-     this leads to a reverse function which tries all cases and
-     inefficient.
+  (** Assume we have a list of grammars of type "wf_bigrammar pt_i". We want
+      to combine them into a single grammar that produces semantic values of
+      type t. One easy way of combining them is to do "(g_1 @ f_1) |\/|
+      ... (g_n @ f_n)", where f_i is of type [|pt_i|] -> [|t|]. However,
+      this leads to a reverse function which tries all cases and
+      inefficient.
 
-     Oftentimes, t is an inductive type and each g_i injects into one (or a
-     few) case of the inductive type of t. The following definitions and
-     tactics take advantage of this for more efficient reverse
-     functions. Here are the general steps:
+      Oftentimes, t is an inductive type and each g_i injects into one (or a
+      few) case of the inductive type of t. The following definitions and
+      tactics take advantage of this for more efficient reverse
+      functions. Here are the general steps:
 
       - combine g_i using |+| to get "g_1 |+| ... |+| g_n". This doesn't
         lose any info as it generates values in an AST tree type.
@@ -683,24 +681,29 @@ End X86_PARSER_ARG.
         gen_rev_cases is used to facilitate the process by generating
         a list of functions mapping from a value to an ast tree value
        
-    See the def of control_reg_p for a typical definition.
- *)
+     See the def of control_reg_p for a typical definition.
+  *)
    
   (** The type for environments that include a list of grammars and
       semantic functions going from AST values to semantic values of type
       t.  An AST env is used in tactics that generate the map and the
-      reverse function. *)
+      reverse function. Each entry in an AST env also includes a natural
+      number label that is used in gen_rev_case_by_lbl to generate a
+      reverse mapping function for the case idenfieid by the label.  In an
+      AST_Env, the requirement for labels is that they be in the asending
+      order; however, they don't need to be consecutive (although they
+      could). *)
   Inductive AST_Env (t:type):= 
   | ast_env_nil : AST_Env t
   | ast_env_cons : 
       (* each grammar in an AST_Env including an index nat, the type of a
        grammar, the grammar, and a map function for constructing a semantic
        value given values produced by the grammar *)
-      forall (n:nat) (pt:type), 
+      forall (l:nat) (pt:type), 
         wf_bigrammar pt -> (interp pt -> interp t) -> AST_Env t -> AST_Env t.
   Arguments ast_env_nil [t].
-  Notation "{ n , g , f } ::: al" := 
-    (ast_env_cons n g f al) (right associativity, at level 70).
+  Notation "{ l , g , f } ::: al" := 
+    (ast_env_cons l g f al) (right associativity, at level 70).
 
   Fixpoint env_length t (ae:AST_Env t) :=
     match ae with
@@ -734,9 +737,31 @@ End X86_PARSER_ARG.
         end
     in splitHelper O ae (fun u => u).
 
+  (** Cat p1 with every grammar inside the ast env *)
+  Fixpoint ast_env_cat t1 t2 (p1:wf_bigrammar t1) (ae: AST_Env t2) :
+    AST_Env (pair_t t1 t2) := 
+    match ae with
+      | ast_env_nil => ast_env_nil
+      | ast_env_cons l pt p2 f ae' => 
+        ast_env_cons l (p1 $ p2) (fun v => (fst v, f (snd v)) %% pair_t t1 t2)
+                     (ast_env_cat p1 ae')
+    end.
+  Notation "p $$$ ae" := 
+    (ast_env_cat p ae) (right associativity, at level 80).
+
+  Fixpoint ast_env_app t (ae1 ae2: AST_Env t) : AST_Env t := 
+    match ae1 with
+      | ast_env_nil => ae2
+      | ast_env_cons l pt p f ae1' =>
+        ast_env_cons l p f (ast_env_app ae1' ae2)
+    end.
+
+  Notation "ael +++ aer" := 
+    (ast_env_app ael aer) (right associativity, at level 85).
+
   Ltac gen_ast_grammar ast_env :=
   match ast_env with
-    | ast_env_cons ?n ?g ?f ast_env_nil => constr:(g)
+    | ast_env_cons ?l ?g ?f ast_env_nil => constr:(g)
     | ast_env_nil => never (* should not happen *)
     | _ =>
       let aepair := eval simpl in (env_split ast_env) in
@@ -750,7 +775,7 @@ End X86_PARSER_ARG.
 
   Ltac gen_ast_type ast_env :=
     match ast_env with
-      | ast_env_cons ?n ?g ?f ast_env_nil =>
+      | ast_env_cons ?l ?g ?f ast_env_nil =>
         let gt := type of g in
         match gt with
           | wf_bigrammar ?pt => pt
@@ -770,7 +795,7 @@ End X86_PARSER_ARG.
       to an ast_env; should not call it with ast_env_nil *)
   Ltac gen_ast_map_aux ast_env :=
   match ast_env with
-    | ast_env_cons ?n ?g ?f ast_env_nil => 
+    | ast_env_cons ?l ?g ?f ast_env_nil => 
       constr: (fun v => f v)
     | _ => 
       let aepair := eval simpl in (env_split ast_env) in
@@ -790,6 +815,9 @@ End X86_PARSER_ARG.
     let m := gen_ast_map_aux ast_env in
     eval simpl in m.
 
+  (** generate a reverse mapping function for an AST env entry based on the
+      index of the entry (not the label of the entry); the index starts
+      from 0 *)
   Ltac gen_rev_case ast_env i := 
     let len := (eval compute in (env_length ast_env)) in
     let t := gen_ast_type ast_env in
@@ -833,10 +861,39 @@ End X86_PARSER_ARG.
        pose (case:=dummyf);
        gen_rev_cases_aux 0.
 
-  (** * given an ast env, generate a balanced grammar using |+|, a
-        map function from ast values to values of the target type, 
-        and a list of case functions for mapping from case values
-        to ast values *)
+  (** generate a reverse mapping function for an AST env entry based on the
+      label of the entry (not the index of the entry) *)
+  Ltac gen_rev_case_by_lbl ast_env l := 
+    let t := gen_ast_type ast_env in
+    match ast_env with
+      | ast_env_cons ?l1 _ _ ast_env_nil => 
+        let eq_l_l1 := (eval compute in (beq_nat l l1)) in
+        match eq_l_l1 with
+          | true => constr:(fun v: interp t => v)
+        end
+      | _ =>
+      let aepair := eval simpl in (env_split ast_env) in
+      match aepair with
+        | (?ael, ?aer) => 
+          match aer with
+            | ast_env_cons ?l2 _ _ ?aer1 =>
+              let b := (eval compute in (NPeano.ltb l l2)) in
+              match b with
+                | true => 
+                  let f := gen_rev_case_by_lbl ael l in 
+                  constr:(fun v => (inl  (f v)):(interp t))
+                | false => 
+                  let f := gen_rev_case_by_lbl aer l in
+                  constr:(fun v => (inr (f v)):(interp t))
+              end
+          end
+      end
+    end.
+
+  (** given an ast env, generate a balanced grammar using |+|, a
+      map function from ast values to values of the target type, 
+      and a list of case functions for mapping from case values
+      to ast values *)
   Ltac gen_ast_defs ast_env := 
     let g := gen_ast_grammar ast_env in pose (gr:=g);
     let m := gen_ast_map ast_env in pose (mp:=m);
@@ -874,12 +931,6 @@ End X86_PARSER_ARG.
     end.
 
   (** * Additional bigrammar constructors (assuming chars are bits) *)
-
-  Program Definition eps_p : wf_bigrammar unit_t := Eps.
-
-  Lemma eps_rng : in_bigrammar_rng (` eps_p) ().
-  Proof. unfold eps_p. simpl. ibr_simpl. Qed.
-  Hint Resolve eps_rng: ibr_rng_db.
 
   Program Definition bit (b:bool) : wf_bigrammar Char_t := Char b.
   Program Definition anybit : wf_bigrammar Char_t := Any.
@@ -4890,465 +4941,23 @@ End X86_PARSER_ARG.
   Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111"
                                 $$ ! "1000".
 
-  (** ** Glue all of the individual instruction grammars together into 
-         one big grammar.  *)
+  (** ** Glue all individual instruction grammars together into one big
+         grammar.  *)
 
 
 (* todo: make the following tactic printable_tac; remove local_printable_tac *)
-  Local Ltac destruct_ibr_vars :=
-    repeat match goal with
-        | [v:[|sum_t _ _|] |- _] => destruct v
-        | [v:[|unit_t|] |- _] => destruct v
-        | [v:[|pair_t _ _|] |- _] => destruct v
-        | [v:[|option_t _|] |- _] => destruct v
-    end.
 
-  Local Ltac new_printable_tac := 
-    destruct_ibr_vars; printable_tac; ibr_prover.
+  (* todo: remove *)
+  (* Local Ltac destruct_ibr_vars := *)
+  (*   repeat match goal with *)
+  (*       | [v:[|sum_t _ _|] |- _] => destruct v *)
+  (*       | [v:[|unit_t|] |- _] => destruct v *)
+  (*       | [v:[|pair_t _ _|] |- _] => destruct v *)
+  (*       | [v:[|option_t _|] |- _] => destruct v *)
+  (*   end. *)
 
-  (* todo: move earlier *)
-
-  (* constructors for building permutations of grammrs.  I make a little
-     perm2 combinator that takes two grammars and gives you p1 $ p2 |+| p2
-     $ p1, making sure to swap the results in the second case *)
-  
-  Definition perm2 t1 t2 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) : 
-    wf_bigrammar (pair_t t1 t2). 
-    intros;
-    refine((p1 $ p2 |+| p2 $ p1)
-             @ (fun v => match v with
-                           | inl (a,b) => (a,b)
-                           | inr (b,a) => (a,b)
-                         end %% pair_t t1 t2)
-             & (fun u:[|pair_t t1 t2|] => 
-                  let (a,b):=u in Some (inl (a,b)))
-             & _); invertible_tac.
-    - destruct_union.
-      + destruct v as [v1 v2]; printable_tac.
-      + destruct v as [v2 v1]; printable_tac; ibr_prover.
-    - destruct w; parsable_tac.
-  Defined.
-
-  Lemma perm2_rng t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) v1 v2:
-    in_bigrammar_rng (` (perm2 p1 p2)) (v1,v2) <->
-    in_bigrammar_rng (` p1) v1 /\ in_bigrammar_rng (` p2) v2.
-  Proof. split; unfold perm2; intros; ibr_prover.
-    - destruct v as [[a b] | [b a]]; ibr_prover; crush.
-    - compute [fst]; sim.
-      exists (inl [|pair_t t2 t1|] (v1,v2)).
-      split; [ibr_prover | trivial].
-  Qed.
-
-  Hint Extern 1 (in_bigrammar_rng (` (perm2 _ _)) (_,_)) =>
-    apply perm2_rng; split : ibr_rng_db.
-
-  Hint Extern 0 =>
-    match goal with
-      | [H:in_bigrammar_rng (` (perm2 ?p1 ?p2)) (_,_) |- _] =>
-        apply perm2_rng in H; destruct H
-    end : ibr_rng_db.
-
-  (* One could make a recursive function to do perm3 and perm4, but I didn't want to
-     bother with the necessary proofs and type-system juggling.*)
-  Definition perm3 t1 t2 t3 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2)
-             (p3: wf_bigrammar t3)
-    : wf_bigrammar (pair_t t1 (pair_t t2 t3)). 
-    intros;
-    refine ((p1 $ perm2 p2 p3 |+| p2 $ perm2 p1 p3 |+| p3 $ perm2 p1 p2)
-              @ (fun v => 
-                   match v with
-                     | inl (a,(b,c)) => (a,(b,c))
-                     | inr (inl (b,(a,c))) => (a,(b,c))
-                     | inr (inr (c,(a,b))) => (a,(b,c))
-                   end %% pair_t t1 (pair_t t2 t3))
-              & (fun u => Some (inl u))
-              & _); invertible_tac.
-    - destruct_union; destruct v as [v1 v2];
-      new_printable_tac.
-    - destruct w as [w1 [w2 w3]]; parsable_tac.
-  Defined.
-
-  Lemma perm3_rng t1 t2 t3 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2)
-        (p3:wf_bigrammar t3) v1 v2 v3:
-    in_bigrammar_rng (` (perm3 p1 p2 p3)) (v1,(v2,v3)) <->
-    in_bigrammar_rng (` p1) v1 /\ in_bigrammar_rng (` p2) v2 /\
-    in_bigrammar_rng (` p3) v3.
-  Proof. split; unfold perm3; intros; ibr_prover.
-    - destruct v as [[a [b c]] | [[b [a c]]| [c [a b]]]];
-      sim; ibr_prover. 
-    - sim. compute [fst]. 
-      exists 
-        (inl [|sum_t (pair_t t2 (pair_t t1 t3)) (pair_t t3 (pair_t t1 t2))|]
-             (v1,(v2,v3))).
-      split; [ibr_prover | trivial].
-  Qed.
-                  
-  Hint Extern 1 (in_bigrammar_rng (` (perm3 _ _ _)) (_,(_,_))) =>
-    apply perm3_rng; repeat split : ibr_rng_db.
-
-  Hint Extern 0 =>
-    match goal with
-      | [H:in_bigrammar_rng (` (perm3 _ _ _)) (_,(_,_)) |- _] =>
-        apply perm3_rng in H; sim
-    end : ibr_rng_db.
-
-  Definition perm4 t1 t2 t3 t4 
-    (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) (p3: wf_bigrammar t3)
-    (p4: wf_bigrammar t4) : wf_bigrammar (pair_t t1 (pair_t t2 (pair_t t3 t4))). 
-    intros.
-    refine (((p1 $ (perm3 p2 p3 p4) |+|
-              p2 $ (perm3 p1 p3 p4))
-              |+|
-             (p3 $ (perm3 p1 p2 p4) |+|
-              p4 $ (perm3 p1 p2 p3)))
-              @ (fun v => 
-                   match v with
-                     | inl (inl (a,(b,(c,d))))
-                     | inl (inr (b,(a,(c,d))))
-                     | inr (inl (c,(a,(b,d))))
-                     | inr (inr (d,(a,(b,c)))) =>
-                       (a,(b,(c,d)))
-                   end %% pair_t t1 (pair_t t2 (pair_t t3 t4)))
-              & (fun u => Some (inl (inl u)))
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w as [w1 [w2 [w3 w4]]]; parsable_tac.
-  Defined.
-
-  (* In this case, prefixes are optional. Before, each of the above
-     parsing rules for the prefixes accepted Eps, and this was how we
-     handled this.  However, if the grammars you join with perm can
-     each accept Eps, then the result is a _highly_ ambiguous grammar.
-
-     Instead we have a different combinator, called option_perm, that 
-     handles this without introducing extra ambiguity *)
-
-  (* This signature is slightly awkward - because there's no result
-     type corresponding to option (and I'm hesitant to add it to
-     Grammar at the moment) we can't just have a signature like grammar
-     t1 -> grammar t2 -> grammar (option_t t1) (option_t t2)) *)
-
-  Definition option_perm t1 (p1: wf_bigrammar (User_t t1))
-     : wf_bigrammar (option_t t1). 
-    intros.
-    refine ((eps_p |+| p1)
-              @ (fun v =>
-                   match v with
-                     | inl () => None
-                     | inr v1 => Some v1
-                   end %% option_t t1)
-              & (fun u => 
-                   match u with
-                     | Some v1 => Some (inr v1)
-                     | None => Some (inl ())
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w; parsable_tac.
-  Defined.
-
-  Lemma option_perm_rng1 t1 (p:wf_bigrammar (User_t t1)) v:
-    in_bigrammar_rng (` (option_perm p)) (Some v) <->
-    in_bigrammar_rng (` p) v.
-  Proof. unfold option_perm; split; intros; ibr_prover.
-    - destruct_ibr_vars; ibr_prover; crush.
-    - compute [fst].
-      exists (inr [|unit_t|] v).
-      split; [ibr_prover | trivial].
-  Qed.
-
-  Hint Extern 1 (in_bigrammar_rng (` (option_perm _)) (Some _)) =>
-    apply option_perm_rng1 : ibr_rng_db.
-
-  Hint Extern 0 =>
-    match goal with
-      | [H:in_bigrammar_rng (` (option_perm _)) (Some _) |- _] =>
-        rewrite option_perm_rng1 in H
-    end : ibr_rng_db.
-
-  Lemma option_perm_rng2 t1 (p:wf_bigrammar (User_t t1)):
-    in_bigrammar_rng (` (option_perm p)) None.
-  Proof. unfold option_perm; intros; ibr_prover.
-    compute [fst].
-    exists (inl [|User_t t1|] ()).
-    split; [ibr_prover | trivial].
-  Qed.
-  Hint Resolve option_perm_rng2.
-
-  Definition option_perm2 t1 t2 
-             (p1: wf_bigrammar (User_t t1)) (p2: wf_bigrammar (User_t t2)) :
-    wf_bigrammar (pair_t (option_t t1) (option_t t2)).
-    intros.
-    refine ((eps_p |+|
-             p1 $ option_perm p2 |+|
-             p2 $ option_perm p1)
-              @ (fun v =>
-                   match v with
-                     | inl () => (None, None)
-                     | inr (inl (a,ob)) => (Some a, ob)
-                     | inr (inr (b,oa)) => (oa, Some b)
-                   end %% pair_t (option_t t1) (option_t t2))
-              & (fun u => 
-                   match u with
-                     | (Some a, _) => Some (inr (inl (a, snd u)))
-                     | (None, Some b) => Some (inr (inr (b, None)))
-                     | (None, None) => Some (inl ())
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w as [oa ob]; destruct oa; destruct ob; parsable_tac.
-  Defined.
-
-  Lemma option_perm2_rng t1 t2 (p1:wf_bigrammar (User_t t1))
-         (p2:wf_bigrammar (User_t t2)) ov1 ov2:
-    in_bigrammar_rng (` (option_perm p1)) ov1 /\
-    in_bigrammar_rng (` (option_perm p2)) ov2 <->
-    in_bigrammar_rng (` (option_perm2 p1 p2)) (ov1, ov2).
-  Proof. split; unfold option_perm2; intros; ibr_prover.
-    - compute [fst]; sim.
-      set (t:= [|sum_t unit_t
-                   (sum_t (pair_t (User_t t1) (option_t t2))
-                          (pair_t (User_t t2) (option_t t1)))|]).
-      destruct ov1 as [v1 | ].
-      +  exists ((inr (inl (v1,ov2))):t).
-        split; [ibr_prover | trivial].
-      + destruct ov2 as [v2 | ].
-        * exists ((inr (inr (v2,None))):t).
-          split; [ibr_prover | trivial].
-        * exists ((inl ()):t).
-          split; [ibr_prover | trivial].
-    - destruct_ibr_vars;
-      match goal with
-        | [H: (_, _) = (_,_) |- _] => inversion H
-      end; split; ibr_prover.
-  Qed.
-
-  Hint Extern 0 =>
-    match goal with
-      | [H:in_bigrammar_rng (` (option_perm2 _ _)) (_, _) |- _] =>
-        rewrite <- option_perm2_rng in H; destruct H
-    end : ibr_rng_db.
-
-  Hint Extern 1 (in_bigrammar_rng (` (option_perm2 _ _)) (_, _)) =>
-    apply option_perm2_rng : ibr_rng_db.
-
-  Definition option_perm3 t1 t2 t3
-    (p1:wf_bigrammar(User_t t1)) (p2:wf_bigrammar(User_t t2))
-    (p3:wf_bigrammar(User_t t3)) : 
-    wf_bigrammar(pair_t(option_t t1)(pair_t(option_t t2) (option_t t3))).
-    intros.
-    refine (((eps_p |+|
-              p1 $ option_perm2 p2 p3)
-             |+|
-             (p2 $ option_perm2 p1 p3 |+|
-              p3 $ option_perm2 p1 p2))
-              @ (fun v =>
-                   match v with
-                     | inl (inl ()) => (None, (None, None))
-                     | inl (inr (a, (ob, oc))) => (Some a, (ob, oc))
-                     | inr (inl (b, (oa, oc))) => (oa, (Some b, oc))
-                     | inr (inr (c, (oa, ob))) => (oa, (ob, Some c))
-                   end %% pair_t(option_t t1)(pair_t(option_t t2) (option_t t3)))
-              & (fun u:[|pair_t(option_t t1)(pair_t(option_t t2) (option_t t3))|] =>
-                   let (oa,u1):=u in
-                   let (ob,oc):=u1 in
-                   match oa with
-                     | Some a => Some (inl (inr (a, snd u)))
-                     | None =>
-                       match ob with
-                         | Some b => Some (inr (inl (b, (oa, oc))))
-                         | None =>
-                           match oc with
-                             | Some c => Some (inr (inr (c, (oa, ob))))
-                             | None => Some (inl (inl ()))
-                           end
-                       end
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w as [ow1 [ow2 ow3]]; destruct ow1; try parsable_tac;
-      destruct ow2; try parsable_tac; destruct ow3; parsable_tac.
-  Defined.
-
-  Lemma option_perm3_rng t1 t2 t3 (p1:wf_bigrammar (User_t t1))
-         (p2:wf_bigrammar (User_t t2)) (p3:wf_bigrammar (User_t t3))
-         ov1 ov2 ov3:
-    in_bigrammar_rng (` (option_perm p1)) ov1 /\
-    in_bigrammar_rng (` (option_perm p2)) ov2 /\
-    in_bigrammar_rng (` (option_perm p3)) ov3 <->
-    in_bigrammar_rng (` (option_perm3 p1 p2 p3)) (ov1, (ov2, ov3)).
-  Proof. split; unfold option_perm3; intros; ibr_prover.
-    - compute [fst]; sim.
-      set (t:= [|sum_t
-               (sum_t unit_t
-                 (pair_t (User_t t1) (pair_t (option_t t2) (option_t t3))))
-               (sum_t
-                 (pair_t (User_t t2) (pair_t (option_t t1) (option_t t3)))
-                 (pair_t (User_t t3) (pair_t (option_t t1) (option_t t2))))|]).
-      destruct ov1 as [v1 | ].
-      + exists ((inl (inr (v1, (ov2,ov3)))):t).
-        split; [ibr_prover | trivial].
-      + destruct ov2 as [v2 | ].
-        * exists ((inr (inl (v2,(None,ov3)))):t).
-          split; [ibr_prover | trivial].
-        * destruct ov3 as [v3 | ].
-          { exists ((inr (inr (v3, (None,None)))):t).
-            split; [ibr_prover | trivial]. }
-          { exists ((inl (inl ())):t).
-            split; [ibr_prover | trivial]. }
-    - destruct_ibr_vars;
-      match goal with
-        | [H: (_,(_,_)) = (_,(_,_)) |- _] => inversion H
-      end; split; ibr_prover.
-  Qed.
-
-  Hint Extern 0 =>
-    match goal with
-      | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
-        rewrite <- option_perm3_rng in H; 
-        let H1:=fresh "H" in let H2:=fresh "H" in let H3:=fresh "H" in
-        destruct H as [H1 [H2 H3]]
-    end : ibr_rng_db.
-
-  Hint Extern 1 (in_bigrammar_rng (` (option_perm3 _ _ _)) (_, (_, _))) =>
-    apply option_perm3_rng : ibr_rng_db.
-
-  (* t1 is optional, but t2 is a must *)
-  Definition option_perm2_variation t1 t2
-    (p1: wf_bigrammar (User_t t1)) (p2: wf_bigrammar (User_t t2)) 
-     : wf_bigrammar (pair_t (option_t t1) (User_t t2)). 
-    intros.
-    refine ((p2 |+| perm2 p1 p2)
-              @ (fun v =>
-                   match v with
-                     | inl b => (None, b)
-                     | inr (a,b) => (Some a, b)
-                   end %% pair_t (option_t t1) (User_t t2))
-              & (fun u => 
-                   match u with
-                     | (Some a, b) => Some (inr (a,b))
-                     | (None, b) => Some (inl b)
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w as [oa b]; destruct oa; parsable_tac.
-  Defined.
-
-  Lemma option_perm2_variation_rng t1 t2 (p1:wf_bigrammar (User_t t1))
-         (p2:wf_bigrammar (User_t t2)) oa b:
-    in_bigrammar_rng (` (option_perm p1)) oa /\ 
-    in_bigrammar_rng (` p2) b <->
-    in_bigrammar_rng (` (option_perm2_variation p1 p2)) (oa, b).
-  Proof. unfold option_perm2_variation; split; intros; ibr_prover.
-    - compute [fst]; sim. 
-      set (t:=[|sum_t (User_t t2) (pair_t (User_t t1) (User_t t2))|]).
-      destruct oa as [a | ].
-      + exists ((inr (a,b)):t). 
-        split; [ibr_prover | trivial].
-      + exists ((inl b):t).
-        split; [ibr_prover | trivial].
-    - destruct_union; [ | destruct v];
-      match goal with
-        | [H: (_,_) = (_,_) |- _] => inversion H
-      end; split; ibr_prover.
-  Qed.
-
-  Hint Extern 0 =>
-    match goal with
-      | [H:in_bigrammar_rng (` (option_perm2_variation _ _)) (_,_) |- _] =>
-        rewrite <- option_perm2_variation_rng in H; destruct H
-    end : ibr_rng_db.
-
-  Hint Extern 1 (in_bigrammar_rng (` (option_perm2_variation _ _)) (_, _)) =>
-    apply option_perm2_variation_rng : ibr_rng_db.
-
-  (* in this def, t1 and t2 are optional, but t3 is a must *)
-  Definition option_perm3_variation t1 t2 t3
-    (p1:wf_bigrammar(User_t t1)) (p2:wf_bigrammar(User_t t2))
-    (p3:wf_bigrammar(User_t t3)): 
-    wf_bigrammar (pair_t(option_t t1)(pair_t(option_t t2) (User_t t3))).
-    intros.
-    refine ((p1 $ option_perm2_variation p2 p3 |+|
-             p2 $ option_perm2_variation p1 p3 |+|
-             p3 $ option_perm2 p1 p2)
-              @ (fun v =>
-                   match v with
-                     | inl (a, (ob, c)) => (Some a, (ob, c))
-                     | inr (inl (b, (oa, c))) => (oa, (Some b, c))
-                     | inr (inr (c, (oa, ob))) => (oa, (ob, c))
-                   end %% pair_t(option_t t1)(pair_t(option_t t2) (User_t t3)))
-              & (fun u:[|pair_t(option_t t1)(pair_t(option_t t2) (User_t t3))|] => 
-                   let (oa,u1):=u in
-                   let (ob,c):=u1 in
-                   match oa with
-                     | Some a => Some (inl (a, (ob,c)))
-                     | None => 
-                       match ob with
-                         | Some b => Some (inr (inl (b, (None,c))))
-                         | None => 
-                           Some (inr (inr (c, (None, None))))
-                       end
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w as [oa [ob c]]; destruct oa; destruct ob; parsable_tac.
-  Defined.
-
-  (* This is beginning to get quite nasty. Someone should write a form for arbitrary
-     n and prove it's correct :) *)
-  Definition option_perm4 t1 t2 t3 t4
-    (p1:wf_bigrammar(User_t t1)) (p2:wf_bigrammar(User_t t2))
-    (p3:wf_bigrammar(User_t t3)) (p4:wf_bigrammar(User_t t4)) :
-    wf_bigrammar(pair_t(option_t t1) (pair_t(option_t t2) (pair_t(option_t t3) (option_t t4)))).
-    intros.
-    set (t:=pair_t(option_t t1)
-                  (pair_t(option_t t2)
-                         (pair_t(option_t t3) (option_t t4)))).
-    refine (((eps_p |+|
-              p1 $ option_perm3 p2 p3 p4)
-             |+|
-             (p2 $ option_perm3 p1 p3 p4 |+|
-              p3 $ option_perm3 p1 p2 p4 |+|
-              p4 $ option_perm3 p1 p2 p3))
-              @ (fun v =>
-                   match v with
-                     | inl (inl ()) => (None, (None, (None, None)))
-                     | inl (inr (a,(ob,(oc,od)))) => (Some a, (ob,(oc,od)))
-                     | inr (inl (b,(oa,(oc,od)))) => (oa, (Some b, (oc,od)))
-                     | inr (inr (inl (c, (oa,(ob,od))))) =>
-                       (oa, (ob, (Some c, od)))
-                     | inr (inr (inr (d, (oa,(ob,oc))))) =>
-                       (oa, (ob, (oc, Some d)))
-                   end %% t)
-              & (fun u:[|t|] => 
-                   let (oa,u1):=u in
-                   let (ob,u2):=u1 in
-                   let (oc,od):=u2 in
-                   match oa with
-                     | Some a => Some (inl (inr (a,(ob,(oc,od)))))
-                     | None =>
-                       match ob with
-                         | Some b => Some (inr (inl (b, (None, (oc,od)))))
-                         | None =>
-                           match oc with
-                             | Some c => 
-                               Some (inr (inr (inl (c, (None, (None,od))))))
-                             | None => 
-                               match od with
-                                 | Some d =>
-                                   Some (inr (inr (inr (d,(None,(None,None))))))
-                                 | None => 
-                                   Some (inl (inl ()))
-                               end
-                           end
-                       end
-                   end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
-    - destruct w as [oa [ob [oc od]]]; destruct oa; try parsable_tac;
-      destruct ob; try parsable_tac; destruct oc; try parsable_tac;
-      destruct od; parsable_tac.
-  Defined.
+  (* Local Ltac new_printable_tac :=  *)
+  (*   destruct_ibr_vars; printable_tac; ibr_prover. *)
 
   Definition lock_p : wf_bigrammar lock_or_rep_t. 
     refine("1111" $$ ! "0000"
@@ -5577,27 +5186,6 @@ End X86_PARSER_ARG.
     {11, SCAS_p, (fun v => SCAS v %% instruction_t)} :::
     ast_env_nil.                                  
 
-  (* todo: move earlier *)
-  (** Cat p1 with every grammar inside the ast env *)
-  Fixpoint ast_env_cat t1 t2 (p1:wf_bigrammar t1) (ae: AST_Env t2) :
-    AST_Env (pair_t t1 t2) := 
-    match ae with
-      | ast_env_nil => ast_env_nil
-      | ast_env_cons n pt p2 f ae' => 
-        ast_env_cons n (p1 $ p2) (fun v => (fst v, f (snd v)) %% pair_t t1 t2)
-                     (ast_env_cat p1 ae')
-    end.
-
-  Fixpoint ast_env_append t (ae1 ae2: AST_Env t) : AST_Env t := 
-    match ae1 with
-      | ast_env_nil => ae2
-      | ast_env_cons n pt p f ae1' =>
-        ast_env_cons n p f (ast_env_append ae1' ae2)
-    end.
-
-  Notation "ael +++ aer" := 
-    (ast_env_append ael aer) (right associativity, at level 80).
-
   Definition instr_grammar_env := 
     ast_env_cat prefix_grammar_rep instr_grammars_rep_env +++
     ast_env_cat prefix_grammar_rep_or_repn
@@ -5606,36 +5194,6 @@ End X86_PARSER_ARG.
   Definition instr_grammar_type : type.
     let t:=gen_ast_type instr_grammar_env in exact(t).
   Defined.
-
-  (* todo: move the following earlier and add comments *)
-
-  Ltac gen_rev_case_by_lbl ast_env l := 
-    let t := gen_ast_type ast_env in
-    match ast_env with
-      | ast_env_cons ?l1 _ _ ast_env_nil => 
-        let eq_l_l1 := (eval compute in (beq_nat l l1)) in
-        match eq_l_l1 with
-          | true => constr:(fun v: interp t => v)
-        end
-      | _ =>
-      let aepair := eval simpl in (env_split ast_env) in
-      match aepair with
-        | (?ael, ?aer) => 
-          match aer with
-            | ast_env_cons ?l2 _ _ ?aer1 =>
-              let b := (eval compute in (NPeano.ltb l l2)) in
-              match b with
-                | true => 
-                  let f := gen_rev_case_by_lbl ael l in 
-                  constr:(fun v => (inl  (f v)):(interp t))
-                | false => 
-                  let f := gen_rev_case_by_lbl aer l in
-                  constr:(fun v => (inr (f v)):(interp t))
-              end
-          end
-      end
-    end.
-
 
   Definition from_instr (u:prefix * instr) : option [|instr_grammar_type|].
     intro.
