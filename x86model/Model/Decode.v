@@ -151,7 +151,7 @@ End X86_PARSER_ARG.
   Definition bool_t := User_t Bool_t.
   Definition prefix_t := User_t Prefix_t.
   Definition bitvector_t n := User_t (BitVector_t n).
-  Definition selector_t := BitVector_t 15.
+  Definition selector_t := User_t (BitVector_t 15).
 
   (* Mapping old definitions to new . *)
   (* Definition parser r := wf_bigrammar r. *)
@@ -167,16 +167,16 @@ End X86_PARSER_ARG.
   Definition Any_p := Any.
 
   Local Ltac localcrush :=
+    intros;
     repeat match goal with
-             | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
-             | [ |- invertible _ _ ] => invertible_tac
-             | _ => crush
-           end.
-
+      | [ |- invertible _ _ ] => invertible_tac
+      | _ => crush
+    end.
+  
   Local Ltac localsimpl :=
     repeat match goal with
       | [v: unit |- _ ] => destruct v
-      | [H: wf_bigrammar _ |- _] => destruct H
+      | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
       | _ => unfold in_bigrammar_rng in *; in_bigrammar_inv; localcrush
     end.
 
@@ -513,7 +513,6 @@ End X86_PARSER_ARG.
     rewrite Word.signed_repr by trivial.
     rewrite Word.repr_signed; trivial.
   Qed.
-
 
   Lemma sign_extend_inv2 n1 n2 (w:Word.int n2):
     n2 <= n1 -> @sign_extend n1 n2 (@sign_extend n2 n1 w) = w.
@@ -958,7 +957,7 @@ End X86_PARSER_ARG.
   Lemma in_bits_elim: 
     forall str s v, in_bigrammar (` (bits str)) s v ->
                     s = string_to_bool_list str /\ v = tuples_of_string str.
-  Proof. induction str; localsimpl; destruct (ascii_dec a "0"); crush_hyp.
+  Proof. induction str; localsimpl; intros; destruct (ascii_dec a "0"); crush_hyp.
   Qed.
 
   Lemma bits_rng: forall str,
@@ -1020,7 +1019,8 @@ End X86_PARSER_ARG.
       eapply in_bitsleft_intro; eassumption.
   Qed.
 
-  Ltac ibr_prover :=
+  (** the instruction decoder specific version of ibr_simpl *)
+  Ltac ins_ibr_simpl :=
     repeat match goal with 
       | [H: in_bigrammar_rng (` (_ $$ _)) _ |- _] =>
         apply in_bigrammar_rng_bitsleft in H
@@ -1205,7 +1205,6 @@ End X86_PARSER_ARG.
                     | CR4 => case3 ()
                   end)
              & _); clear_ast_defs; invertible_tac.
-     - destruct_union; printable_tac.
      - destruct w; crush.
   Defined.
 
@@ -1236,7 +1235,6 @@ End X86_PARSER_ARG.
                      | DR7 => case5 ()
                 end)
               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; printable_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -1262,7 +1260,6 @@ End X86_PARSER_ARG.
                       | GS => case5 ()
                     end)
                & _); clear_ast_defs; invertible_tac.
-     - destruct_union; printable_tac.
      - destruct w; crush.
   Defined.
     
@@ -1294,7 +1291,7 @@ End X86_PARSER_ARG.
     destruct s; apply in_bigrammar_rng_map;
     [exists 0%Z | exists 1%Z | exists 2%Z | exists 3%Z];
     (split; [apply field_rng; lineararith | trivial]).
-  Qed.    
+  Qed.
   Hint Resolve scale_rng: ibr_rng_db.
 
   Definition reg_no_esp_env: AST_Env register_t := 
@@ -1330,7 +1327,6 @@ End X86_PARSER_ARG.
                           | EDI => case6 ()
                         end)
                & _); clear_ast_defs; invertible_tac.
-     - destruct_union; printable_tac.
      - destruct w; crush.
   Defined. 
 
@@ -1358,17 +1354,21 @@ End X86_PARSER_ARG.
         replace EDI with (fst fi (inr (inr ())))
           by trivial
       | _ => idtac
-    end; ibr_prover; apply bitsmatch_rng.
+    end; ins_ibr_simpl; apply bitsmatch_rng.
   Qed.
   Hint Extern 1 (in_bigrammar_rng (` reg_no_esp) _) => 
     apply reg_no_esp_rng; congruence: ibr_rng_db.
+
+(* todo: move to BiGrammar.t *)
+Ltac repeat_destruct_var u :=
+  simpl_grammar_ty; repeat (destruct_var u).
 
   Lemma reg_no_esp_neq r: in_bigrammar_rng (` reg_no_esp) r -> r <> ESP.
   Proof. intros.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    destruct_union; crush.
+    repeat_destruct_var u; crush.
   Qed.
 
   Definition reg_no_ebp : wf_bigrammar register_t.
@@ -1395,7 +1395,6 @@ End X86_PARSER_ARG.
                           | EDI => Some (inr (inr (inr ())))
                         end)
             & _); invertible_tac.
-     - destruct_union; printable_tac.
      - destruct w; crush.
   Defined. 
 
@@ -1423,7 +1422,7 @@ End X86_PARSER_ARG.
         replace EDI with (fst fi (inr (inr (inr ()))))
           by trivial
       | _ => idtac
-    end; ibr_prover; apply bitsmatch_rng.
+    end; ins_ibr_simpl; apply bitsmatch_rng.
   Qed.
   Hint Extern 1 (in_bigrammar_rng (` reg_no_ebp) _) => 
     apply reg_no_ebp_rng; congruence: ibr_rng_db.
@@ -1433,7 +1432,7 @@ End X86_PARSER_ARG.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    destruct_union; crush.
+    repeat_destruct_var u; crush.
   Qed.
 
   Definition reg_no_esp_ebp : wf_bigrammar register_t.
@@ -1460,7 +1459,6 @@ End X86_PARSER_ARG.
                           | EDI => Some (inr (inr (inr ())))
                         end)
             & _); invertible_tac.
-     - destruct_union; printable_tac.
      - destruct w; crush.
   Defined. 
 
@@ -1486,7 +1484,7 @@ End X86_PARSER_ARG.
           replace EDI with (fst fi (inr (inr (inr tt))))
             by trivial
         | _ => idtac
-      end; ibr_prover; apply bitsmatch_rng.
+      end; ins_ibr_simpl; apply bitsmatch_rng.
   Qed.
   Hint Extern 1 (in_bigrammar_rng (` reg_no_esp_ebp) _) => 
     apply reg_no_esp_ebp_rng; split; congruence: ibr_rng_db.
@@ -1498,23 +1496,23 @@ End X86_PARSER_ARG.
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv.
     destruct H as [v [_ H]]. simpl in H.
-    destruct_union; crush.
+    repeat_destruct_var v; crush.
   Qed.
 
-  Definition si_p: wf_bigrammar (option_t (UPair_t Scale_t Register_t)). 
+  Definition si_p: wf_bigrammar (option_t (pair_t scale_t register_t)). 
     refine ((scale_p $ reg)
             @ (fun p => match snd p with 
                           | ESP => None
                           | _ => Some p
-                        end %% option_t (UPair_t Scale_t Register_t))
+                        end %% option_t (pair_t scale_t register_t))
             & (fun v => match v with
                           | None => Some (Scale1, ESP)
                           | Some (_, ESP) => None
                           | Some (s,p) => Some (s,p)
                         end)
             & _); invertible_tac.
-    - destruct v as [s r]; destruct r; printable_tac; ibr_prover.
-    - destruct w. 
+    - destruct v as [s r]; destruct r; printable_tac.
+    - destruct w as [u | ].
       + destruct u as [sc r]; destruct r; crush.
       + crush.
   Defined.
@@ -1535,14 +1533,14 @@ End X86_PARSER_ARG.
       | [ |- in_bigrammar_rng (Map ?fi ?g) None] => 
         assert (H:None = (fst fi (Scale1, ESP))) by trivial;
         rewrite H; clear H; apply in_bigrammar_rng_map2
-    end; ibr_prover.
+    end; ins_ibr_simpl.
   Qed.
   Hint Resolve si_p_rng_none: ibr_rng_db.
 
   Definition sib_p := si_p $ reg.
 
   Lemma sib_p_rng_none r: in_bigrammar_rng (` sib_p) (None, r).
-  Proof. intros; unfold sib_p. ibr_prover. Qed.
+  Proof. intros; unfold sib_p. ins_ibr_simpl. Qed.
   Hint Resolve sib_p_rng_none: ibr_rng_db.
 
   Definition Address_op_inv op := 
@@ -1601,7 +1599,6 @@ End X86_PARSER_ARG.
                             end)
                & _); operand_p_tac.
   Defined.
-
 
   Definition SSE_XMM_Reg_op_p: wf_bigrammar sse_operand_t.
     refine (sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t)
@@ -1742,46 +1739,46 @@ End X86_PARSER_ARG.
   (*       destruct v as [r bs]. *)
   (*       rewrite Word.int_eq_refl. *)
   (*       assert (bs<>ESP /\ bs<>EBP). *)
-  (*         ibr_prover. apply reg_no_esp_ebp_neq. trivial. *)
-  (*       abstract (sim; bg_pf_sim; printable_tac; ibr_prover). *)
+  (*         ins_ibr_simpl. apply reg_no_esp_ebp_neq. trivial. *)
+  (*       abstract (sim; bg_pf_sim; printable_tac; ins_ibr_simpl). *)
   (*     + (* case 1 *) *)
   (*       destruct v as [r [si bs]]. *)
   (*       rewrite Word.int_eq_refl. *)
   (*       assert (bs <> EBP). *)
-  (*         ibr_prover. apply reg_no_ebp_neq. trivial. *)
+  (*         ins_ibr_simpl. apply reg_no_ebp_neq. trivial. *)
   (*       destruct si as [[sc idx] | ]. *)
   (*       * assert (idx <> ESP). *)
-  (*           ibr_prover. eapply si_p_rng_some. eassumption. *)
+  (*           ins_ibr_simpl. eapply si_p_rng_some. eassumption. *)
   (*         abstract (bg_pf_sim; printable_tac). *)
-  (*       * abstract (bg_pf_sim; printable_tac; ibr_prover). *)
+  (*       * abstract (bg_pf_sim; printable_tac; ins_ibr_simpl). *)
   (*     + (* case 2 *) *)
   (*       destruct v as [r [si disp]]. *)
-  (*       abstract (destruct si as [[sc idx] | ]; printable_tac; ibr_prover). *)
+  (*       abstract (destruct si as [[sc idx] | ]; printable_tac; ins_ibr_simpl). *)
   (*     + (* case 3 *) *)
   (*       abstract printable_tac. *)
   (*     + (* case 4 *) *)
   (*       destruct v as [r [bs disp]]. *)
-  (*       abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*       abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_simpl). *)
   (*     + (* case 5 *) *)
   (*       destruct v as [r [[si bs] disp]]. *)
   (*       rewrite sign_shrink32_8_inv. *)
   (*       destruct si as [[sc idx] | ]. *)
   (*       * unfold sib_p in *; *)
   (*         assert (idx <> ESP). *)
-  (*           ibr_prover. eapply si_p_rng_some. eassumption. *)
-  (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
-  (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*           ins_ibr_simpl. eapply si_p_rng_some. eassumption. *)
+  (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_simpl). *)
+  (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_simpl). *)
   (*     + (* case 6 *) *)
   (*       destruct v as [r [bs disp]]. *)
-  (*       abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*       abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_simpl). *)
   (*     + (* case 7 *) *)
   (*       destruct v as [r [[si bs] disp]]. *)
   (*       destruct si as [[sc idx] | ]. *)
   (*       * unfold sib_p in *; *)
   (*         assert (idx <> ESP). *)
-  (*           ibr_prover. eapply si_p_rng_some. eassumption. *)
-  (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
-  (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover). *)
+  (*           ins_ibr_simpl. eapply si_p_rng_some. eassumption. *)
+  (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_simpl). *)
+  (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_simpl). *)
   (*   - destruct w as [r addr]. *)
   (*     destruct addr. *)
   (*     abstract (destruct addrBase as [bs | ]; *)
@@ -1815,6 +1812,13 @@ End X86_PARSER_ARG.
     reg_no_esp $ word |+|
     (* case 1 *)
     "100" $$ sib_p $ word.
+
+  (* todo: move earlier *)
+  Local Ltac destruct_union :=
+    repeat match goal with
+             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
+             | [v: [| Unit_t |] |- _] => destruct v
+           end.
 
   (** Same as modrm_gen but no mod "11" case; that is, the second must
       produce an address in a mem operand *)
@@ -1940,59 +1944,62 @@ End X86_PARSER_ARG.
          rewrite Word.int_eq_refl.
          rename v into bs.
          assert (bs<>ESP /\ bs<>EBP).
-           ibr_prover. apply reg_no_esp_ebp_neq. trivial.
-         abstract (sim; bg_pf_sim; printable_tac; ibr_prover).
+           ins_ibr_simpl. apply reg_no_esp_ebp_neq. trivial.
+         abstract (sim; bg_pf_sim; printable_tac; ins_ibr_simpl).
         * (* case 1 *)
           destruct v as [si bs].
           rewrite Word.int_eq_refl.
           assert (bs <> EBP).
-            ibr_prover. apply reg_no_ebp_neq. trivial.
+            ins_ibr_simpl; apply reg_no_ebp_neq; trivial.
           destruct si as [[sc idx] | ].
           { assert (idx <> ESP).
-              ibr_prover. eapply si_p_rng_some. eassumption.
+              ins_ibr_simpl. eapply si_p_rng_some. eassumption.
             abstract (bg_pf_sim; printable_tac).
           }
-          { abstract (bg_pf_sim; printable_tac; ibr_prover). }
+          { abstract (bg_pf_sim; printable_tac; ins_ibr_simpl). }
         * (* case 2 *)
           destruct v as [si disp].
           abstract (destruct si as [[sc idx] | ];
-                    printable_tac; ibr_prover).
+                    printable_tac; ins_ibr_simpl).
         * (* case 3 *) abstract printable_tac.
       + (* mode 01 *)
         destruct v as [r v].
-        unfold rm01 in *; destruct_union; ibr_prover.
+        unfold rm01 in *; destruct_union; ins_ibr_simpl.
         * (* case 0 *)
           destruct v as [bs disp].
-          abstract (unfold rm00; bg_pf_sim;
-                    try destruct_head; printable_tac; ibr_prover).
+         abstract (unfold rm00; bg_pf_sim;
+                   try destruct_head; printable_tac; ins_ibr_simpl).
         * (* case 1 *)
           destruct v as [[si bs] disp].
           rewrite sign_shrink32_8_inv.
           destruct si as [[sc idx] | ].
           { unfold sib_p in *; 
             assert (idx <> ESP).
-              ibr_prover. eapply si_p_rng_some. eassumption.
+              ins_ibr_simpl. eapply si_p_rng_some. eassumption.
             abstract (unfold rm00; bg_pf_sim;
-                      try destruct_head; printable_tac; ibr_prover). }
+                      try destruct_head; printable_tac; ins_ibr_simpl). }
           { abstract (unfold rm00; bg_pf_sim;
-                      try destruct_head; printable_tac; ibr_prover). }
-      + (* mode 10 *)
+                      try destruct_head; printable_tac; ins_ibr_simpl). }
+
+
+
+       + (* mode 10 *)
         destruct v as [r v].
-        unfold rm10 in *; destruct_union; ibr_prover.
+        unfold rm10 in *; destruct_union; ins_ibr_simpl.
         * (* case 0 *)
           destruct v as [bs disp].
-          abstract (unfold rm00, rm01; bg_pf_sim; 
-                    try destruct_head; printable_tac; ibr_prover).
-        * (* case 7 *)
+         abstract (unfold rm00, rm01; bg_pf_sim; 
+                   try destruct_head; printable_tac; ins_ibr_simpl).
+        * (* case 1 *)
           destruct v as [[si bs] disp].
           destruct si as [[sc idx] | ].
           { unfold rm00, rm01, sib_p in *; 
             assert (idx <> ESP).
-              ibr_prover. eapply si_p_rng_some. eassumption.
-            abstract (bg_pf_sim; try destruct_head; printable_tac; ibr_prover).
+              ins_ibr_simpl. eapply si_p_rng_some. eassumption.
+            abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_simpl).
           }
           { abstract (unfold rm00, rm01; bg_pf_sim; 
-                      try destruct_head; printable_tac; ibr_prover). }
+                      try destruct_head; printable_tac; ins_ibr_simpl). }
     - destruct w as [r addr].
       destruct addr.
       abstract (destruct addrBase as [bs | ];
@@ -2123,8 +2130,7 @@ End X86_PARSER_ARG.
                             | _ => None
                           end)
               & _); invertible_tac.
-    - destruct v; printable_tac.
-    - destruct v; destruct w; parsable_tac.
+    - destruct w; parsable_tac.
   Defined.
 
   Definition seg_modrm : wf_bigrammar (pair_t segment_register_t operand_t).
@@ -2141,7 +2147,6 @@ End X86_PARSER_ARG.
                   | _ => None
                 end)
            & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
     - destruct w as [r op]; destruct op; parsable_tac.
   Defined.
 
@@ -2171,9 +2176,8 @@ End X86_PARSER_ARG.
         (r:[|reg_t|]) (addr:[|address_t|]):
     in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r,addr) ->
     in_bigrammar_rng (` reg_p) r.
-  Proof. intros; unfold modrm_gen_noreg in *. ibr_prover.
-    destruct_union; destruct v; ibr_prover; crush.
-  Qed.
+  Proof. intros; unfold modrm_gen_noreg in *. 
+         repeat (ins_ibr_simpl || destruct_ibr_var); crush. Qed.
 
   (* can prove a more precise range lemma if necessary *)
   Lemma modrm_gen_noreg_rng reg_t (reg_p: wf_bigrammar reg_t)
@@ -2181,25 +2185,25 @@ End X86_PARSER_ARG.
     in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r1, addr) ->
     in_bigrammar_rng (` reg_p) r2 -> 
     in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r2, addr).
-  Proof. intros; unfold modrm_gen_noreg in *. ibr_prover.
+  Proof. intros; unfold modrm_gen_noreg in *. ins_ibr_simpl.
     compute [fst].
     match goal with
       | [v: [|sum_t ?t1 (sum_t ?t2 ?t3)|] |- _] => 
-        destruct_union; ibr_prover;
+        destruct_union; ins_ibr_simpl;
         destruct v as [r1' v];
         [exists (inl [|sum_t t2 t3|] (r2, v)) | 
          exists (inr [|t1|] (inl [|t3|] (r2,v))) |
          eexists (inr [|t1|] (inr [|t2|] (r2,v))) ]
     end;
-    split; ibr_prover; crush.
+    split; ins_ibr_simpl; crush.
   Qed.
 
   Lemma ext_op_modrm_rng1 bs r: 
     in_bigrammar_rng (` (ext_op_modrm bs)) (Reg_op r).
-  Proof. unfold ext_op_modrm; intros; ibr_prover.
+  Proof. unfold ext_op_modrm; intros; ins_ibr_simpl.
     exists (inr [|address_t|] r); compute [fst]. 
     split. 
-    + unfold ext_op_modrm_gen; ibr_prover.
+    + unfold ext_op_modrm_gen; ins_ibr_simpl.
     + trivial.
   Qed.
   Hint Resolve ext_op_modrm_rng1: ibr_rng_db.
@@ -2207,13 +2211,13 @@ End X86_PARSER_ARG.
   Lemma ext_op_modrm_rng_inv (bs:string) op :
     in_bigrammar_rng (` (ext_op_modrm bs)) op ->
     (exists r, op = Reg_op r) \/ (exists addr, op = Address_op addr).
-  Proof. unfold ext_op_modrm; intros; ibr_prover.
+  Proof. unfold ext_op_modrm; intros; ins_ibr_simpl.
     destruct v; subst op; [right | left]; eexists; trivial.
   Qed.
 
   Lemma Reg_op_p_rng op : 
     (exists r, op = Reg_op r) <-> in_bigrammar_rng (`Reg_op_p) op.
-  Proof. intros. unfold Reg_op_p; split; intro; ibr_prover.
+  Proof. intros. unfold Reg_op_p; split; intro; ins_ibr_simpl.
     - compute [fst]. generalize reg_rng. crush.
     - crush.
   Qed.
@@ -2225,16 +2229,16 @@ End X86_PARSER_ARG.
   Lemma modrm_ret_reg_rng_inv r op:
     in_bigrammar_rng (` modrm_ret_reg) (r,op) -> 
     (exists r, op = Reg_op r) \/ (exists addr, op = Address_op addr).
-  Proof. unfold modrm_ret_reg; intros. ibr_prover.
+  Proof. unfold modrm_ret_reg; intros. ins_ibr_simpl.
     destruct v as [[r1 addr] | [r1 r2]]; clear H0.
     - right. crush. 
     - left. crush. 
   Qed.
 
   Lemma modrm_ret_reg_rng1 r1 r2: in_bigrammar_rng (` modrm_ret_reg) (r1, Reg_op r2).
-  Proof. intros. unfold modrm_ret_reg, modrm_gen. ibr_prover. compute [fst].
+  Proof. intros. unfold modrm_ret_reg, modrm_gen. ins_ibr_simpl. compute [fst].
     exists (inr [|pair_t register_t address_t|] (r1, r2)).
-    split; [ibr_prover | trivial].
+    split; [ins_ibr_simpl | trivial].
   Qed.
   Hint Resolve modrm_ret_reg_rng1: ibr_rng_db.
 
@@ -2242,27 +2246,27 @@ End X86_PARSER_ARG.
   Lemma modrm_ret_reg_rng2 r1 r2 addr: 
     in_bigrammar_rng (` modrm_ret_reg) (r1, Address_op addr) ->
     in_bigrammar_rng (` modrm_ret_reg) (r2, Address_op addr).
-  Proof. unfold modrm_ret_reg; intros; ibr_prover; compute [fst].
+  Proof. unfold modrm_ret_reg; intros; ins_ibr_simpl; compute [fst].
     destruct v as [[r1' addr'] | [r1' r2']]; try congruence.
     sim; subst r1' addr'.
-    unfold modrm_gen in *; ibr_prover.
+    unfold modrm_gen in *; ins_ibr_simpl.
     exists (inl [|pair_t register_t register_t|] (r2,addr)).
     split.
-    - ibr_prover. eapply modrm_gen_noreg_rng. eassumption. ibr_prover.
+    - ins_ibr_simpl. eapply modrm_gen_noreg_rng. eassumption. ins_ibr_simpl.
     - trivial.
   Qed.
   Hint Extern 1 (in_bigrammar_rng (` (modrm_ret_reg)) (_, Address_op _)) =>
     eapply modrm_ret_reg_rng2; eassumption : ibr_rng_db.
 
   Lemma imm_p_false_rng w: in_bigrammar_rng (` (imm_p false)) w.
-  Proof. unfold imm_p; intros. ibr_prover. Qed.
+  Proof. unfold imm_p; intros. ins_ibr_simpl. Qed.
 
   Lemma imm_p_true_rng w:
     repr_in_signed_halfword w -> 
     in_bigrammar_rng (` (imm_p true)) w.
-  Proof. unfold imm_p; intros. ibr_prover. compute [fst].
+  Proof. unfold imm_p; intros. ins_ibr_simpl. compute [fst].
     exists (sign_shrink32_16 w); split.
-      - ibr_prover.
+      - ins_ibr_simpl.
       - autorewrite with inv_db. trivial.
   Qed.
 
@@ -2276,7 +2280,7 @@ End X86_PARSER_ARG.
 
   Lemma field_intn_rng n i: 
     in_bigrammar_rng (` (field_intn n)) i.
-  Proof. unfold field_intn; intros. ibr_prover.
+  Proof. unfold field_intn; intros. ins_ibr_simpl.
     exists (bitsn_of_intn i). split.
     - apply field'_rng.
     - simpl. autorewrite with inv_db. trivial.
@@ -2300,7 +2304,7 @@ End X86_PARSER_ARG.
 
   (* a tactic used to simplify proofs when proving bidirectional grammars about instrs *)
   Local Ltac ins_pf_sim :=
-    ibr_prover; bg_pf_sim;
+    ins_ibr_simpl; bg_pf_sim;
     repeat match goal with
       | [H: in_bigrammar_rng (` (modrm_ret_reg)) (?r1 ?op2) |- _] => 
         let H2 := fresh "H" in
@@ -2312,10 +2316,16 @@ End X86_PARSER_ARG.
         destruct H2 as [H2 | H2]; destruct H2; subst op
     end.
 
-  Local Ltac local_printable_tac := 
-    repeat match goal with
-             | [v: [|pair_t _ _|] |- _] => destruct v
-           end; ins_pf_sim; printable_tac; ibr_prover.
+(* todo: try to parameterize invertible_tac with what vars to destruct *)
+
+  Local Ltac ins_printable_tac := printable_tac_gen ins_pf_sim.
+  Local Ltac ins_invertible_tac := invertible_tac_gen ins_pf_sim.
+
+  (* todo: remove *)
+  (* Local Ltac local_printable_tac := *)
+  (*   repeat match goal with *)
+  (*            | [v: [|pair_t _ _|] |- _] => destruct v *)
+  (*          end; ins_pf_sim; printable_tac; ins_ibr_simpl. *)
 
   Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
   Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
@@ -2436,31 +2446,27 @@ End X86_PARSER_ARG.
             & _)); clear_ast_defs; invertible_tac.
   - destruct_union.
     + (* case 0 *)
-      destruct v as [d [w [r1 op2]]]. 
-      destruct d; ins_pf_sim; printable_tac; ibr_prover.
+      destruct v as [d [w [r1 op2]]].  destruct d; ins_printable_tac.
     + (* case 1 *)
       destruct v as [r b]. 
-      destruct r; ins_pf_sim; printable_tac; ibr_prover.
+      destruct r; ins_printable_tac.
       (* EAX case *)
       apply imm_p_rng; apply repr_in_signed_extend; omega.
     + (* case 2 *)
-      destruct v as [r b]; 
-      destruct r; ins_pf_sim; printable_tac; ibr_prover.
+      destruct v as [r b]; destruct r; ins_printable_tac.
     + (* case 3 *)
-      destruct v as [r op2]; ins_pf_sim;
-      destruct r; printable_tac; ibr_prover.
+      destruct v as [r op2]; 
+      destruct r; ins_printable_tac.
     + (* case 4 *)
-      ins_pf_sim; printable_tac; ibr_prover.
+      ins_printable_tac.
     + (* case 5 *)
-      ibr_prover; printable_tac; ibr_prover.
+      ins_printable_tac.
     + (* case 6 *)
-      destruct v as [op b]; ins_pf_sim; printable_tac; ibr_prover.
+      destruct v as [op b]; ins_printable_tac.
     + (* case 7 *)
-      destruct v as [op b]; ins_pf_sim;
-      printable_tac; ibr_prover.
+      destruct v as [op b]; ins_printable_tac.
     + (* case 8 *)
-      destruct v as [op1 op2]; ins_pf_sim;
-      printable_tac; ibr_prover.
+      destruct v as [op1 op2]; ins_printable_tac.
   - destruct w as [wd [op1 op2]].
     destruct op1; try parsable_tac.
     + (* op1 = Reg_op _ *)
@@ -2532,11 +2538,10 @@ End X86_PARSER_ARG.
                        end
                      | _ => None
                    end)
-              & _); clear_ast_defs; invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); clear_ast_defs; ins_invertible_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2;
       ins_pf_sim; parsable_tac.
-  Time Defined.
+  Defined.
 
   Definition BT_p := bit_test_p "100" "00".
   Definition BTC_p := bit_test_p "111" "11".
@@ -2544,7 +2549,10 @@ End X86_PARSER_ARG.
   Definition BTS_p := bit_test_p "101" "01".
 
   Definition CALL_p : 
-    wf_bigrammar (pair_t bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t)))).
+    wf_bigrammar (pair_t bool_t (pair_t bool_t (pair_t operand_t
+                                                  (option_t selector_t)))).
+    set (t:= (pair_t bool_t (pair_t bool_t (pair_t operand_t
+                                              (option_t selector_t))))).
     refine((((* case 0 *)
              "1110" $$ "1000" $$ word |+|
              (* case 1 *)
@@ -2560,8 +2568,8 @@ End X86_PARSER_ARG.
                     | inl (inr op) => (true, (true, (op, None)))
                     | inr (inl (w,hw)) => (false, (true, (Imm_op w, Some hw)))
                     | inr (inr op) => (false, (true, (op, None)))
-                  end %% pair_t bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t))))
-             & (fun u: [|pair_t bool_t (pair_t bool_t (pair_t operand_t (option_t selector_t)))|] => 
+                  end %% t)
+             & (fun u: [|t|] => 
                   let (near, u1) := u in
                   let (absolute,opsel) := u1 in
                   match near, absolute with
@@ -2585,8 +2593,7 @@ End X86_PARSER_ARG.
                       end
                     | _, _ => None
                   end)
-             & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+             & _); unfold t; ins_invertible_tac.
     - destruct w as [near [absolute opsel]].
       destruct near; destruct absolute; destruct opsel as [op sel];
       destruct op; destruct sel; parsable_tac.
@@ -2601,7 +2608,7 @@ End X86_PARSER_ARG.
   Definition CMPS_p : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
 
   Definition CMPXCHG_p := 
-   "0000" $$ "1111" $$ "1011" $$ "000" $$ anybit $ modrm.
+    "0000" $$ "1111" $$ "1011" $$ "000" $$ anybit $ modrm.
 
   Definition CPUID_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ ! "0010".
   Definition CWDE_p : wf_bigrammar unit_t := "1001" $$ ! "1000".
@@ -2630,8 +2637,7 @@ End X86_PARSER_ARG.
                     | Address_op addr => Some (inr (inr (fst u, addr)))
                     | _ => None
                   end)
-             & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+             & _); ins_invertible_tac.
     - destruct w as [bl op]; destruct op; parsable_tac.
   Defined.
 
@@ -2649,8 +2655,7 @@ End X86_PARSER_ARG.
                      | Address_op addr => Some (inr (fst u, addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; printable_tac.
+              & _); ins_invertible_tac.
     - destruct w as [bl op]; destruct op; parsable_tac.
   Defined.
 
@@ -2670,13 +2675,13 @@ End X86_PARSER_ARG.
                      | Address_op addr => Some (inr (fst u, addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; printable_tac.
+              & _); ins_invertible_tac.
     - destruct w as [bl op]; destruct op; parsable_tac.
   Defined.
 
   Definition IMUL_p (opsize_override:bool): 
-    wf_bigrammar (pair_t bool_t (pair_t operand_t (pair_t (option_t Operand_t) (option_t Word_t)))).
+    wf_bigrammar (pair_t bool_t (pair_t operand_t (pair_t (option_t operand_t)
+                                                     (option_t word_t)))).
     intros.
     refine((((* case 0 *)
              "1111" $$ "011" $$ anybit $ ext_op_modrm "101" |+|
@@ -2696,9 +2701,9 @@ End X86_PARSER_ARG.
                     | inr (inr ((r1,op2),imm)) =>
                       (negb opsize_override, (Reg_op r1, (Some op2, Some imm)))
                   end %%
-                  pair_t bool_t (pair_t operand_t (pair_t (option_t Operand_t) (option_t Word_t))))
+                  pair_t bool_t (pair_t operand_t (pair_t (option_t operand_t) (option_t word_t))))
              & (fun u:[|pair_t bool_t
-                          (pair_t operand_t (pair_t (option_t Operand_t) (option_t Word_t)))|] => 
+                          (pair_t operand_t (pair_t (option_t operand_t) (option_t word_t)))|] => 
                   let (w,u1):= u in
                   let (op1,u2):= u1 in
                   match u2 with
@@ -2728,12 +2733,12 @@ End X86_PARSER_ARG.
                       end
                     | _ => None
                   end)
-             & _); invertible_tac.
-    - destruct_union; try local_printable_tac.
+             & _); ins_invertible_tac.
+    - destruct_union; try ins_printable_tac.
       + (* case 3 *)
         destruct v as [[r1 op2] imm].
         destruct opsize_override; compute [negb];
-        ins_pf_sim; printable_tac; ibr_prover.
+        ins_printable_tac.
     - abstract
         (destruct w as [bl [op1 [w1 w2]]];
          destruct op1; destruct bl;
@@ -2743,22 +2748,20 @@ End X86_PARSER_ARG.
          ins_pf_sim; parsable_tac).
   Defined.
 
-  Definition IN_p: wf_bigrammar (pair_t char_t (User_t (Option_t Byte_t))).
+  Definition IN_p: wf_bigrammar (pair_t char_t (option_t byte_t)).
     refine (("1110" $$ "010" $$ anybit $ byte |+| 
              "1110" $$ "110" $$ anybit)
               @ (fun v => 
                    match v with
                      | inl (w,b) => (w, Some b)
                      | inr w => (w, None)
-                   end %% (Pair_t Char_t (User_t (Option_t Byte_t))))
+                   end %% (pair_t char_t (option_t byte_t)))
               & (fun u => 
                    match u with
                      | (w, Some b) => Some (inl (w,b))
                      | (w, None) => Some (inr w)
                    end)
-              & _); invertible_tac.
-    - destruct_union; destruct v; crush.
-    - destruct w as [c [b | ]]; try discriminate; crush.
+              & _); ins_invertible_tac.
   Defined.
 
   Definition INC_p: wf_bigrammar (pair_t bool_t operand_t).
@@ -2780,11 +2783,11 @@ End X86_PARSER_ARG.
                      | Address_op addr => Some (inr (inr (w,addr)))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; try local_printable_tac.
+              & _); ins_invertible_tac.
+    - destruct_union; try ins_printable_tac.
       + (* case 0 *)
         destruct v as [w r].
-        destruct w; printable_tac; ibr_prover.
+        destruct w; ins_printable_tac.
     - destruct w as [w op]; destruct op; destruct w; parsable_tac.
   Defined.
 
@@ -2815,8 +2818,7 @@ End X86_PARSER_ARG.
                      (* alternate encoding possible: case 1 *)
                      Some (inl (ct, sign_shrink32_8 imm))
                    else Some (inr (ct, imm)))
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; ins_pf_sim; parsable_tac.
   Defined.
 
@@ -2892,8 +2894,7 @@ End X86_PARSER_ARG.
                        end
                      | _,_ => None
                    end)
-              & _); clear_ast_defs; invertible_tac.
-    - abstract (destruct_union; local_printable_tac).
+              & _); clear_ast_defs; ins_invertible_tac.
     - abstract
         (destruct w as [near [absolute [op w1]]]; destruct w1;
          destruct near; destruct absolute; destruct op;
@@ -2913,7 +2914,7 @@ End X86_PARSER_ARG.
                     | (Reg_op r, Address_op addr) => Some (r,addr)
                     | _ => None
                   end)
-             & _); invertible_tac.
+             & _); ins_invertible_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
   Definition LEAVE_p := "1100" $$ !"1001".
@@ -2941,8 +2942,7 @@ End X86_PARSER_ARG.
                     | Address_op addr => Some (inr addr)
                     | _ => None
                   end)
-             & _); invertible_tac.
-    - destruct_union; printable_tac.
+             & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -2962,8 +2962,7 @@ End X86_PARSER_ARG.
                     | Address_op addr => Some (inr addr)
                     | _ => None
                   end)
-             & _); invertible_tac.
-    - destruct_union; printable_tac.
+             & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -3097,7 +3096,7 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); clear_ast_defs; invertible_tac.
-    - abstract (destruct_union; local_printable_tac).
+    - abstract (destruct_union; ins_printable_tac).
     - abstract 
         (destruct w as [wd [op1 op2]]; destruct op1; try parsable_tac;
          destruct op2; ins_pf_sim; try parsable_tac;
@@ -3133,9 +3132,9 @@ End X86_PARSER_ARG.
                       Some (true, (r1, fst u))
                     | _ => None
                   end)
-             & _); invertible_tac.
+             & _); ins_invertible_tac.
     - destruct v as [w [r1 op2]]. 
-      destruct w; ins_pf_sim; printable_tac; ibr_prover.
+      destruct w; ins_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
                                              
@@ -3154,22 +3153,20 @@ End X86_PARSER_ARG.
 
   Definition NOT_p := "1111" $$ "011" $$ anybit $ ext_op_modrm "010".
 
-  Definition OUT_p :wf_bigrammar (pair_t bool_t (option_t Byte_t)).
+  Definition OUT_p :wf_bigrammar (pair_t bool_t (option_t byte_t)).
     refine ((("1110" $$ "011" $$ anybit $ byte) |+|
              ("1110" $$ "111" $$ anybit))
               @ (fun v =>
                    match v with
                      | inl (w, b) => (w, Some b)
                      | inr w => (w, None)
-                   end %% pair_t bool_t (option_t Byte_t))
-              & (fun u:[|pair_t bool_t (option_t Byte_t)|] => 
+                   end %% pair_t bool_t (option_t byte_t))
+              & (fun u:[|pair_t bool_t (option_t byte_t)|] => 
                    match u with
                      | (w, Some b) => Some (inl (w,b))
                      | (w, None) => Some (inr w)
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w as [wd [b | ]]; parsable_tac.
+              & _); ins_invertible_tac.
   Defined.
 
   Definition OUTS_p := "0110" $$ "111" $$ anybit.
@@ -3188,8 +3185,7 @@ End X86_PARSER_ARG.
                      | Address_op addr => Some (inl u)
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -3214,8 +3210,7 @@ End X86_PARSER_ARG.
                              | GS => case4 ()
                              | _ => None
                            end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; printable_tac.
+               & _); clear_ast_defs; ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -3246,8 +3241,7 @@ End X86_PARSER_ARG.
                         else None
                       | _ => None
                     end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; local_printable_tac.
+               & _); clear_ast_defs; ins_invertible_tac.
     - destruct w as [b op]; destruct b; destruct op; ins_pf_sim; parsable_tac.
   Defined.
 
@@ -3274,8 +3268,7 @@ End X86_PARSER_ARG.
                       | FS => case4 ()
                       | GS => case5 ()
                     end)
-               & _); clear_ast_defs; invertible_tac.
-     - destruct_union; printable_tac.
+               & _); clear_ast_defs; ins_invertible_tac.
      - destruct w; crush.
   Defined.
 
@@ -3303,8 +3296,7 @@ End X86_PARSER_ARG.
                      | (Address_op _, Reg_ri ECX) => Some (inr (inl (w, fst u1)))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w as [w [op ri]]; destruct op; try parsable_tac;
       destruct ri as [rg | ]; try parsable_tac;
       destruct rg; parsable_tac.
@@ -3340,20 +3332,20 @@ End X86_PARSER_ARG.
     (fun x => REPNESCAS x %% instruction_t).
   *)
 
-  Definition RET_env : AST_Env (pair_t bool_t (option_t Half_t)) := 
+  Definition RET_env : AST_Env (pair_t bool_t (option_t half_t)) := 
     {0, "1100" $$ ! "0011", 
-     (fun v => (true, None) %% pair_t bool_t (option_t Half_t))} :::
+     (fun v => (true, None) %% pair_t bool_t (option_t half_t))} :::
     {1, "1100" $$ "0010" $$ halfword,
-     (fun h => (true, Some h) %% pair_t bool_t (option_t Half_t))} :::
+     (fun h => (true, Some h) %% pair_t bool_t (option_t half_t))} :::
     {2, "1100" $$ ! "1011",
-     (fun h => (false, None) %% pair_t bool_t (option_t Half_t))} :::
+     (fun h => (false, None) %% pair_t bool_t (option_t half_t))} :::
     {3, "1100" $$ "1010" $$ halfword,
-     (fun h => (false, Some h) %% pair_t bool_t (option_t Half_t))} :::
+     (fun h => (false, Some h) %% pair_t bool_t (option_t half_t))} :::
     ast_env_nil.
 
-  Definition RET_p : wf_bigrammar (pair_t bool_t (option_t Half_t)).
+  Definition RET_p : wf_bigrammar (pair_t bool_t (option_t half_t)).
     gen_ast_defs RET_env.
-    refine (gr @ (mp: _ -> [|pair_t bool_t (option_t Half_t)|])
+    refine (gr @ (mp: _ -> [|pair_t bool_t (option_t half_t)|])
                & (fun u => 
                     match u with
                       | (true, None) => case0 ()
@@ -3361,8 +3353,7 @@ End X86_PARSER_ARG.
                       | (false, None) => case2 ()
                       | (false, Some h) => case3 h
                     end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; local_printable_tac.
+               & _); clear_ast_defs; ins_invertible_tac.
     - destruct w as [b [h | ]]; destruct b; parsable_tac.
   Defined.
 
@@ -3385,8 +3376,7 @@ End X86_PARSER_ARG.
                       Some (fst u, (EAX, snd u))
                     | _ => None
                   end)
-             & _); invertible_tac.
-    - destruct v as [ct [r op]]; ins_pf_sim; printable_tac; ibr_prover.
+             & _); ins_invertible_tac.
     - destruct w as [cd op]; destruct op; parsable_tac.
   Defined.
 
@@ -3435,8 +3425,7 @@ End X86_PARSER_ARG.
                         end
                       | _ => None
                     end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; local_printable_tac.
+               & _); clear_ast_defs; ins_invertible_tac.
     - destruct w as [op [r2 ri]]. 
       destruct op; destruct ri as [r3 | addr]; try parsable_tac;
       destruct r3; parsable_tac.
@@ -3519,7 +3508,7 @@ End X86_PARSER_ARG.
                       | _ => None
                     end)
                & _); clear_ast_defs; invertible_tac.
-    - abstract (destruct_union; local_printable_tac).
+    - abstract (destruct_union; ins_printable_tac).
     - abstract 
         (destruct w as [b [op1 op2]]; destruct op2; destruct op1; destruct b;
          ins_pf_sim; parsable_tac).
@@ -3543,7 +3532,6 @@ End X86_PARSER_ARG.
                  match u with | (w,(op2,op1)) => Some (w, (op1, op2))
                  end)
             & _); invertible_tac.
-    destruct w as [b [op2 op1]]; parsable_tac.
   Defined.
 
   Definition XCHG_p : 
@@ -3575,11 +3563,11 @@ End X86_PARSER_ARG.
                        end
                      | _ => None
                    end)
-              & _); invertible_tac.
+              & _); ins_invertible_tac.
     - destruct_union.  
       + destruct v as [w [r1 op2]]; ins_pf_sim; bg_pf_sim;
-        destruct w; printable_tac; ibr_prover.
-      + local_printable_tac.
+        destruct w; printable_tac; ins_ibr_simpl.
+      + ins_printable_tac.
     - destruct w as [w [op1 op2]]; destruct op1; try parsable_tac;
       destruct op2; try parsable_tac; ins_pf_sim; destruct w; parsable_tac.
   Defined.
@@ -3646,7 +3634,7 @@ End X86_PARSER_ARG.
   Ltac fp_invertible_tac :=
     unfold invertible; split; [unfold printable | unfold parsable];
     compute [snd fst]; intros;
-    [destruct_union; local_printable_tac | 
+    [destruct_union; ins_printable_tac | 
      match goal with
        | [w:[|fp_operand_t|] |- _] => destruct w; parsable_tac
      end].
@@ -3906,15 +3894,15 @@ End X86_PARSER_ARG.
   Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64_noreg "110".
   Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "111".
 
-  Definition FNSTSW_p : wf_bigrammar (option_t Fp_Operand_t).
+  Definition FNSTSW_p : wf_bigrammar (option_t fp_Operand_t).
     refine (("11011" $$ "111" $$ "111" $$ ! "00000" |+|
              "11011" $$ "101" $$ ext_op_modrm_FPM32_noreg "111")
               @ (fun v =>
                    match v with
                      | inl () => None
                      | inr op => Some op
-                   end %% option_t Fp_Operand_t)
-              & (fun u:[|option_t Fp_Operand_t|] =>
+                   end %% option_t fp_Operand_t)
+              & (fun u:[|option_t fp_Operand_t|] =>
                    match u with
                      | Some op => Some (inr op)
                      | None => Some (inl ())
@@ -4124,16 +4112,16 @@ End X86_PARSER_ARG.
 
   Lemma modrm_mmx_ret_reg_rng1 mr1 mr2: 
     in_bigrammar_rng (` modrm_mmx_ret_reg) (mr1, MMX_Reg_op mr2).
-  Proof. intros. unfold modrm_mmx_ret_reg, modrm_gen. ibr_prover. compute [fst].
+  Proof. intros. unfold modrm_mmx_ret_reg, modrm_gen. ins_ibr_simpl. compute [fst].
     exists (inr [|pair_t mmx_register_t address_t|] (mr1, mr2)).
-    split; [ibr_prover | trivial].
+    split; [ins_ibr_simpl | trivial].
   Qed.
   Hint Resolve modrm_mmx_ret_reg_rng1: ibr_rng_db.
 
   Lemma modrm_mmx_ret_reg_rng_inv mr op:
     in_bigrammar_rng (` modrm_mmx_ret_reg) (mr,op) -> 
     (exists mr, op = MMX_Reg_op mr) \/ (exists addr, op = MMX_Addr_op addr).
-  Proof. unfold modrm_mmx_ret_reg; intros. ibr_prover.
+  Proof. unfold modrm_mmx_ret_reg; intros. ins_ibr_simpl.
     destruct v as [[r1 addr] | [r1 r2]]; clear H0.
     - right. crush. 
     - left. crush. 
@@ -4141,27 +4129,27 @@ End X86_PARSER_ARG.
 
   Lemma modrm_mmx_rng1 mr1 mr2: 
     in_bigrammar_rng (` modrm_mmx) (MMX_Reg_op mr1, MMX_Reg_op mr2).
-  Proof. unfold modrm_mmx; intros; ibr_prover. compute [fst].
-     exists (mr1, MMX_Reg_op mr2); split; [ibr_prover | trivial].
+  Proof. unfold modrm_mmx; intros; ins_ibr_simpl. compute [fst].
+     exists (mr1, MMX_Reg_op mr2); split; [ins_ibr_simpl | trivial].
   Qed.
   Hint Resolve modrm_mmx_rng1: ibr_rng_db.
 
   Lemma modrm_mmx_rng_inv1 op1 op2: 
     in_bigrammar_rng (` modrm_mmx) (op1,op2) -> exists mr, op1 = MMX_Reg_op mr.
-  Proof. unfold modrm_mmx; intros; ibr_prover.
+  Proof. unfold modrm_mmx; intros; ins_ibr_simpl.
     destruct v as [mr op]. exists mr; congruence.
   Qed.
 
   Lemma modrm_mmx_rng_inv2 op1 op2: 
     in_bigrammar_rng (` modrm_mmx) (op1,op2) -> 
     (exists mr, op2 = MMX_Reg_op mr) \/ (exists addr, op2 = MMX_Addr_op addr).
-  Proof. unfold modrm_mmx; intros; ibr_prover.
+  Proof. unfold modrm_mmx; intros; ins_ibr_simpl.
     destruct v as [mr op]. eapply modrm_mmx_ret_reg_rng_inv.
     sim; subst. eassumption.
   Qed.
 
   Local Ltac mmx_pf_sim :=
-    ibr_prover; bg_pf_sim;
+    ins_ibr_simpl; bg_pf_sim;
     repeat match goal with
       | [H: in_bigrammar_rng (` modrm_mmx) (?op1 ?op2) |- _] => 
         let H2 := fresh "H" in
@@ -4207,7 +4195,7 @@ End X86_PARSER_ARG.
                     end)
                & _); clear_ast_defs; invertible_tac.
     - destruct_union;
-      destruct v as [d [mr r]]; destruct d; printable_tac; ibr_prover.
+      destruct v as [d [mr r]]; destruct d; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4231,7 +4219,7 @@ End X86_PARSER_ARG.
                   end)
              & _); invertible_tac.
     - destruct v as [d [op1 op2]]; destruct d;
-      mmx_pf_sim; printable_tac; ibr_prover. 
+      mmx_pf_sim; printable_tac; ins_ibr_simpl. 
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4313,9 +4301,9 @@ End X86_PARSER_ARG.
               & _); invertible_tac.
     - destruct_union. 
       + destruct v as [gg [r1 op2]]. 
-        mmx_pf_sim; printable_tac; ibr_prover.
+        mmx_pf_sim; printable_tac; ins_ibr_simpl.
       + destruct v as [gg [r1 imm]].
-        mmx_pf_sim; printable_tac; ibr_prover.
+        mmx_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [gg [op1 op2]]; destruct op1; destruct op2; 
       bg_pf_sim; parsable_tac.
   Defined.
@@ -4414,16 +4402,16 @@ End X86_PARSER_ARG.
 
   Lemma modrm_xmm_ret_reg_rng1 sr1 sr2: 
     in_bigrammar_rng (` modrm_xmm_ret_reg) (sr1, SSE_XMM_Reg_op sr2).
-  Proof. intros. unfold modrm_xmm_ret_reg, modrm_gen. ibr_prover. compute [fst].
+  Proof. intros. unfold modrm_xmm_ret_reg, modrm_gen. ins_ibr_simpl. compute [fst].
     exists (inr [|pair_t sse_register_t address_t|] (sr1, sr2)).
-    split; [ibr_prover | trivial].
+    split; [ins_ibr_simpl | trivial].
   Qed.
   Hint Resolve modrm_xmm_ret_reg_rng1: ibr_rng_db.
 
   Lemma modrm_xmm_ret_reg_rng_inv sr op:
     in_bigrammar_rng (` modrm_xmm_ret_reg) (sr,op) -> 
     (exists sr, op = SSE_XMM_Reg_op sr) \/ (exists addr, op = SSE_Addr_op addr).
-  Proof. unfold modrm_xmm_ret_reg; intros. ibr_prover.
+  Proof. unfold modrm_xmm_ret_reg; intros. ins_ibr_simpl.
     destruct v as [[r1 addr] | [r1 r2]]; clear H0.
     - right. crush. 
     - left. crush. 
@@ -4431,38 +4419,38 @@ End X86_PARSER_ARG.
 
   Lemma modrm_xmm_rng1 sr1 sr2: 
     in_bigrammar_rng (` modrm_xmm) (SSE_XMM_Reg_op sr1, SSE_XMM_Reg_op sr2).
-  Proof. unfold modrm_xmm; intros; ibr_prover. compute [fst].
-     exists (sr1, SSE_XMM_Reg_op sr2); split; [ibr_prover | trivial].
+  Proof. unfold modrm_xmm; intros; ins_ibr_simpl. compute [fst].
+     exists (sr1, SSE_XMM_Reg_op sr2); split; [ins_ibr_simpl | trivial].
   Qed.
   Hint Resolve modrm_xmm_rng1: ibr_rng_db.
 
   Lemma modrm_xmm_rng_inv1 op1 op2: 
     in_bigrammar_rng (` modrm_xmm) (op1,op2) -> 
     exists sr, op1 = SSE_XMM_Reg_op sr.
-  Proof. unfold modrm_xmm; intros; ibr_prover.
+  Proof. unfold modrm_xmm; intros; ins_ibr_simpl.
     destruct v as [sr op]. exists sr; congruence.
   Qed.
 
   Lemma modrm_xmm_rng_inv2 op1 op2: 
     in_bigrammar_rng (` modrm_xmm) (op1,op2) -> 
     (exists sr, op2 = SSE_XMM_Reg_op sr) \/ (exists addr, op2 = SSE_Addr_op addr).
-  Proof. unfold modrm_xmm; intros; ibr_prover.
+  Proof. unfold modrm_xmm; intros; ins_ibr_simpl.
     destruct v as [sr op]. eapply modrm_xmm_ret_reg_rng_inv.
     sim; subst. eassumption.
   Qed.
 
   Lemma modrm_mm_ret_reg_rng1 mr1 mr2: 
     in_bigrammar_rng (` modrm_mm_ret_reg) (mr1, SSE_MM_Reg_op mr2).
-  Proof. intros. unfold modrm_mm_ret_reg, modrm_gen. ibr_prover. compute [fst].
+  Proof. intros. unfold modrm_mm_ret_reg, modrm_gen. ins_ibr_simpl. compute [fst].
     exists (inr [|pair_t sse_register_t address_t|] (mr1, mr2)).
-    split; [ibr_prover | trivial].
+    split; [ins_ibr_simpl | trivial].
   Qed.
   Hint Resolve modrm_mm_ret_reg_rng1: ibr_rng_db.
 
   Lemma modrm_mm_ret_reg_rng_inv mr op:
     in_bigrammar_rng (` modrm_mm_ret_reg) (mr,op) -> 
     (exists mr, op = SSE_MM_Reg_op mr) \/ (exists addr, op = SSE_Addr_op addr).
-  Proof. unfold modrm_mm_ret_reg; intros. ibr_prover.
+  Proof. unfold modrm_mm_ret_reg; intros. ins_ibr_simpl.
     destruct v as [[r1 addr] | [r1 r2]]; clear H0.
     - right. crush. 
     - left. crush. 
@@ -4470,22 +4458,22 @@ End X86_PARSER_ARG.
 
   Lemma modrm_mm_rng1 mr1 mr2: 
     in_bigrammar_rng (` modrm_mm) (SSE_MM_Reg_op mr1, SSE_MM_Reg_op mr2).
-  Proof. unfold modrm_mm; intros; ibr_prover. compute [fst].
-     exists (mr1, SSE_MM_Reg_op mr2); split; [ibr_prover | trivial].
+  Proof. unfold modrm_mm; intros; ins_ibr_simpl. compute [fst].
+     exists (mr1, SSE_MM_Reg_op mr2); split; [ins_ibr_simpl | trivial].
   Qed.
   Hint Resolve modrm_mm_rng1: ibr_rng_db.
 
   Lemma modrm_mm_rng_inv1 op1 op2: 
     in_bigrammar_rng (` modrm_mm) (op1,op2) -> 
     exists mr, op1 = SSE_MM_Reg_op mr.
-  Proof. unfold modrm_mm; intros; ibr_prover.
+  Proof. unfold modrm_mm; intros; ins_ibr_simpl.
     destruct v as [mr op]. exists mr; congruence.
   Qed.
 
   Lemma modrm_mm_rng_inv2 op1 op2: 
     in_bigrammar_rng (` modrm_mm) (op1,op2) -> 
     (exists mr, op2 = SSE_MM_Reg_op mr) \/ (exists addr, op2 = SSE_Addr_op addr).
-  Proof. unfold modrm_mm; intros; ibr_prover.
+  Proof. unfold modrm_mm; intros; ins_ibr_simpl.
     destruct v as [mr op]. eapply modrm_mm_ret_reg_rng_inv.
     sim; subst. eassumption.
   Qed.
@@ -4514,7 +4502,7 @@ End X86_PARSER_ARG.
   Defined.
 
   Local Ltac sse_pf_sim :=
-    ibr_prover; bg_pf_sim;
+    ins_ibr_simpl; bg_pf_sim;
     repeat match goal with
       | [H: in_bigrammar_rng (` modrm_xmm) (?op1 ?op2) |- _] => 
         let H2 := fresh "H" in
@@ -4691,7 +4679,7 @@ End X86_PARSER_ARG.
                   end)
              & _); invertible_tac.
     - destruct v as [d [op1 op2]]; 
-      destruct d; sse_pf_sim; printable_tac; ibr_prover.
+      destruct d; sse_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4721,7 +4709,7 @@ End X86_PARSER_ARG.
                    end)
               & _); invertible_tac.
     - destruct v as [d [op1 op2]]; 
-      destruct d; sse_pf_sim; printable_tac; ibr_prover.
+      destruct d; sse_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4812,7 +4800,7 @@ End X86_PARSER_ARG.
                    end)
               & _); invertible_tac.
     - destruct_union; destruct v as [mr1 op2];
-      sse_pf_sim; printable_tac; ibr_prover.
+      sse_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4957,7 +4945,7 @@ End X86_PARSER_ARG.
   (*   end. *)
 
   (* Local Ltac new_printable_tac :=  *)
-  (*   destruct_ibr_vars; printable_tac; ibr_prover. *)
+  (*   destruct_ibr_vars; printable_tac; ins_ibr_simpl. *)
 
   Definition lock_p : wf_bigrammar lock_or_rep_t. 
     refine("1111" $$ ! "0000"
@@ -5076,7 +5064,7 @@ End X86_PARSER_ARG.
     - destruct w; parsable_tac.
   Defined.
 
-(* todo: convert some tactics in ibr_prover to use Hint Extern *)
+(* todo: convert some tactics in ins_ibr_simpl to use Hint Extern *)
 
   Definition opt2b (a: option bool) (default: bool) :=
     match a with
@@ -5087,7 +5075,7 @@ End X86_PARSER_ARG.
   (* todo: move earlier *)
   Lemma op_override_p_rng_inv op :
     in_bigrammar_rng (` op_override_p) op -> op = true.
-  Proof. unfold op_override_p; intros; ibr_prover. Qed.
+  Proof. unfold op_override_p; intros; ins_ibr_simpl. Qed.
 
   (* Hint Extern 0 => *)
   (*   match goal with *)
@@ -5096,13 +5084,13 @@ End X86_PARSER_ARG.
   (*   end : ibr_rng_db. *)
 
   (* Local Ltac prefix_pf_sim :=  *)
-  (*   ibr_prover; bg_pf_sim; *)
+  (*   ins_ibr_simpl; bg_pf_sim; *)
   (*   repeat match goal with *)
   (*     | [H:in_bigrammar_rng (` op_override_p) ?op |- _] => *)
   (*       apply op_override_p_rng_inv in H *)
   (*   end. *)
 
-  (* todo: organize some of the ibr_simpl and ibr_prover cases as
+  (* todo: organize some of the ibr_simpl and ins_ibr_simpl cases as
      Hint Rewrite stuff *)
 
   (* todo: clena up proofs for prefix grammars *)
