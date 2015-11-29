@@ -377,7 +377,6 @@ Require Import Bits.
 Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z : inv_db.
 
 (** convert variables of grammar types to their interpreted types *)
-
 Ltac simpl_grammar_ty :=
   repeat match goal with
           | [v: [|Pair_t _ _|] |- _ ] => simpl in v
@@ -434,15 +433,14 @@ Ltac destruct_ibr_var :=
 (*   end. *)
 
 (** Proving parsable in the special situation when the existential value is
-   the same as the original one; taking a custom in_bigrammar_range
-   simplicaticion tactic as an input *)
-Ltac printable_tac_gen ibrsimpl :=
-  (* repeat (ibrsimpl; destruct_ibr_var); *)
-  ibrsimpl;
+   the same as the original one; taking a custom simplicaticion tactic as
+   an input *)
+Ltac printable_tac_gen simplification :=
+  repeat (simplification || destruct_ibr_var);
   autorewrite with inv_db;
   match goal with
     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
-      exists v; split; ibrsimpl
+      exists v; split; simplification
   end.
 
 Ltac destruct_parsable_var := 
@@ -491,10 +489,12 @@ Ltac parsable_tac :=
 (*     | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial *)
 (*   end. *)
 
-Ltac invertible_tac_gen ibrsimpl := 
+(* todo: add abstract tactic to the following *)
+
+Ltac invertible_tac_gen simplification := 
   unfold invertible; split; [unfold printable | unfold parsable]; 
   compute [snd fst]; intros;
-  [try (printable_tac_gen ibrsimpl; fail) | try (parsable_tac; fail)].
+  [try (printable_tac_gen simplification; fail) | try (parsable_tac; fail)].
 
 Ltac strong_invertible_tac :=
   unfold strong_invertible; split; 
@@ -805,6 +805,8 @@ Ltac ibr_simpl :=
                destruct H as [v [h1 h2]]; simpl in h2
            | [H: in_bigrammar_rng (Cat _ _) (_,_) |- _] => 
              apply in_bigrammar_rng_cat in H; destruct H
+           | [ |- in_bigrammar_rng (Map ?fi _) (fst _ _) ] =>
+             apply in_bigrammar_rng_map2
            | [ |- in_bigrammar_rng (Map ?fi _) _ ] =>
              apply in_bigrammar_rng_map
            | [ |- in_bigrammar_rng (` (_ |+| _)) _] =>
@@ -819,26 +821,35 @@ Ltac ibr_simpl :=
              apply in_bigrammar_rng_alt_inr
            | [ |- in_bigrammar_rng (Cat _ _) (_,_) ] =>
              apply in_bigrammar_rng_cat; split
-           | [ |- in_bigrammar_rng (Map ?fi _) (fst _ _) ] =>
-             apply in_bigrammar_rng_map2
-           | _ => auto with ibr_rng_db;
-                 (* when the above fails, try destruct_ibr_var *)
-                 destruct_ibr_var
+           | _ => auto with ibr_rng_db
          end.
+
+Ltac ibr_prover := repeat (ibr_simpl || destruct_ibr_var).
 
 Hint Resolve in_bigrammar_rng_eps in_bigrammar_rng_any: ibr_rng_db.
 
 Lemma empty_rng : in_bigrammar_rng (` empty) ().
-Proof. unfold empty. simpl. ibr_simpl. Qed.
+Proof. unfold empty. simpl. ibr_prover. Qed.
 Hint Resolve empty_rng: ibr_rng_db.
+
+Lemma in_bigrammar_rng_union t (g1 g2:wf_bigrammar t) v:
+  in_bigrammar_rng (` (g1 |\/| g2)) v <->
+  in_bigrammar_rng (` g1) v \/ in_bigrammar_rng (` g2) v.
+Proof. intros; unfold union; split; intros.
+  - ibr_prover; crush. 
+  - ibr_prover. simpl.
+    destruct H.
+    + exists (inl [|t|] v). split; ibr_prover.
+    + exists (inr [|t|] v). split; ibr_prover.
+Qed.
 
 Definition pred_options t (g1 g2: wf_bigrammar t) := 
   forall x: [|t|], ({in_bigrammar_rng (` g1) x} + {in_bigrammar_rng (` g2) x}) +
                    {not (in_bigrammar_rng (` g1) x) /\ 
                     not (in_bigrammar_rng (` g2) x)}.
 
-Ltac invertible_tac := invertible_tac_gen ibr_simpl.
-Ltac printable_tac := printable_tac_gen ibr_simpl.
+Ltac invertible_tac := invertible_tac_gen ibr_prover.
+Ltac printable_tac := printable_tac_gen ibr_prover.
 
 (** Three-way predicated union: the pretty printer for "g1 + g2" uses the
     left one if x is in the range of g1, uses the right one if x is in
@@ -856,7 +867,7 @@ Definition predicated_union_three_way t (g1 g2: wf_bigrammar t)
                   | inright _ => None
                 end)
            & _); invertible_tac.
-  - destruct_ibr_var; ibr_simpl.
+  - destruct_ibr_var; ibr_prover.
     + destruct (pred v) as [[H2|H2]|H2];
       try (eexists; localsimpl; fail).
       crush.
@@ -879,7 +890,7 @@ Definition predicated_union t (g1 g2: wf_bigrammar t)
                  match v with inl x => x | inr y => y end)
             & (fun w : [|t|] => if (pred w) then Some (inl w) else Some (inr w))
             & _); invertible_tac.
-  - destruct_ibr_var; ibr_simpl;
+  - destruct_ibr_var; ibr_prover;
     destruct (pred v); printable_tac.
   - destruct v; destruct (pred w); crush. 
 Defined.
@@ -903,7 +914,7 @@ Program Definition biased_union t (g1 g2: wf_bigrammar t)
 Next Obligation.
   destruct v; try crush.
   eexists; crush.
-  ibr_simpl.
+  ibr_prover.
 Defined.
 
 (* The following def works for g1 and g2 that have different types; we
@@ -933,17 +944,6 @@ Defined.
 (*     * crush. *)
 (* Defined. *)
 
-Lemma in_bigrammar_rng_union t (g1 g2:wf_bigrammar t) v:
-  in_bigrammar_rng (` (g1 |\/| g2)) v <->
-  in_bigrammar_rng (` g1) v \/ in_bigrammar_rng (` g2) v.
-Proof. intros; unfold union; split; intros.
-  - ibr_simpl; crush.
-  - ibr_simpl. simpl.
-    destruct H.
-    + exists (inl [|t|] v). split; ibr_simpl.
-    + exists (inr [|t|] v). split; ibr_simpl.
-Qed.
-
 (** * constructors for building permutations of grammrs. *)
 
 Definition perm2 t1 t2 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) : 
@@ -963,10 +963,10 @@ Lemma perm2_rng t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) v1 v2:
   in_bigrammar_rng (` (perm2 p1 p2)) (v1,v2) <->
   in_bigrammar_rng (` p1) v1 /\ in_bigrammar_rng (` p2) v2.
 Proof. split; unfold perm2; intros. 
-  - ibr_simpl; crush.
-  - ibr_simpl. compute [fst]; sim.
+  - ibr_prover; crush.
+  - ibr_prover. compute [fst]; sim.
     exists (inl [|Pair_t t2 t1|] (v1,v2)).
-    split; ibr_simpl.
+    split; ibr_prover.
 Qed.
 
 Hint Extern 1 (in_bigrammar_rng (` (perm2 _ _)) (_,_)) =>
@@ -1001,12 +1001,12 @@ Lemma perm3_rng t1 t2 t3 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2)
   in_bigrammar_rng (` p1) v1 /\ in_bigrammar_rng (` p2) v2 /\
   in_bigrammar_rng (` p3) v3.
 Proof. split; unfold perm3; intros.
-  - ibr_simpl; sim; subst; ibr_simpl.
-  - ibr_simpl. sim. compute [fst]. 
+  - ibr_prover; sim; subst; ibr_prover.
+  - ibr_prover. sim. compute [fst]. 
     exists 
       (inl [|Sum_t (Pair_t t2 (Pair_t t1 t3)) (Pair_t t3 (Pair_t t1 t2))|]
            (v1,(v2,v3))).
-    split; [ibr_simpl | trivial].
+    split; [ibr_prover | trivial].
 Qed.
                   
 Hint Extern 1 (in_bigrammar_rng (` (perm3 _ _ _)) (_,(_,_))) =>
@@ -1039,18 +1039,11 @@ Definition perm4 t1 t2 t3 t4
             & _); invertible_tac.
 Defined.
 
-
-(* In this case, prefixes are optional. Before, each of the above
-   parsing rules for the prefixes accepted Eps, and this was how we
-   handled this.  However, if the grammars you join with perm can
-   each accept Eps, then the result is a _highly_ ambiguous grammar.
-   Instead we have a different combinator, called option_perm, that 
-   handles this without introducing extra ambiguity *)
-
-(* This signature is slightly awkward - because there's no result
-   type corresponding to option (and I'm hesitant to add it to
-   Grammar at the moment) we can't just have a signature like grammar
-   t1 -> grammar t2 -> grammar (option_t t1) (option_t t2)) *)
+(* Sometimes we want (perm2 p1 p2) and make both p1 and p2 accept Eps;
+   however, doing this would result a _highly_ ambiguous grammar because
+   the empty string can be parsed in two ways (p1 followed by p2 or p2
+   followed by p1). Instead we have a different combinator, called
+   option_perm2, that handles this without introducing extra ambiguity *)
 
 Definition option_perm t1 (p1: wf_bigrammar t1) :
   wf_bigrammar (Option_t t1). 
@@ -1073,10 +1066,10 @@ Lemma option_perm_rng1 t1 (p:wf_bigrammar t1) v:
   in_bigrammar_rng (` (option_perm p)) (Some v) <->
   in_bigrammar_rng (` p) v.
 Proof. unfold option_perm; split; intros. 
-  - ibr_simpl; crush.
-  - ibr_simpl; compute [fst].
+  - ibr_prover; crush.
+  - ibr_prover; compute [fst].
     exists (inr [|Unit_t|] v).
-    split; ibr_simpl.
+    split; ibr_prover.
 Qed.
 
 Hint Extern 1 (in_bigrammar_rng (` (option_perm _)) (Some _)) =>
@@ -1090,10 +1083,10 @@ Hint Extern 0 =>
 
 Lemma option_perm_rng2 t1 (p:wf_bigrammar t1):
   in_bigrammar_rng (` (option_perm p)) None.
-Proof. unfold option_perm; intros; ibr_simpl.
+Proof. unfold option_perm; intros; ibr_prover.
   compute [fst].
   exists (inl [|t1|] ()).
-  split; ibr_simpl.
+  split; ibr_prover.
 Qed.
 Hint Resolve option_perm_rng2.
 
@@ -1125,18 +1118,18 @@ Lemma option_perm2_rng t1 t2 (p1:wf_bigrammar t1)
   in_bigrammar_rng (` (option_perm p2)) ov2 <->
   in_bigrammar_rng (` (option_perm2 p1 p2)) (ov1, ov2).
 Proof. split; unfold option_perm2; intros. 
-  - ibr_simpl; compute [fst]; sim.
+  - ibr_prover; compute [fst]; sim.
     set (t:= [|Sum_t Unit_t (Sum_t (Pair_t t1 (Option_t t2))
                                    (Pair_t t2 (Option_t t1)))|]).
     destruct ov1 as [v1 | ].
     + exists ((inr (inl (v1,ov2))):t).
-      split; ibr_simpl.
+      split; ibr_prover.
     + destruct ov2 as [v2 | ].
       * exists ((inr (inr (v2,None))):t).
-        split; ibr_simpl.
+        split; ibr_prover.
       * exists ((inl ()):t).
-        split; ibr_simpl.
-  - ibr_simpl; sim; ibr_simpl.
+        split; ibr_prover.
+  - ibr_prover; sim; ibr_prover.
 Qed.
 
 Hint Extern 0 =>
@@ -1190,7 +1183,7 @@ Lemma option_perm3_rng t1 t2 t3 (p1:wf_bigrammar t1)
   in_bigrammar_rng (` (option_perm p3)) ov3 <->
   in_bigrammar_rng (` (option_perm3 p1 p2 p3)) (ov1, (ov2, ov3)).
 Proof. split; unfold option_perm3; intros.
-  - ibr_simpl; compute [fst]; sim.
+  - ibr_prover; compute [fst]; sim.
     set (t:= [|Sum_t
                  (Sum_t Unit_t
                         (Pair_t t1 (Pair_t (Option_t t2) (Option_t t3))))
@@ -1199,16 +1192,16 @@ Proof. split; unfold option_perm3; intros.
                     (Pair_t t3 (Pair_t (Option_t t1) (Option_t t2))))|]).
     destruct ov1 as [v1 | ].
     + exists ((inl (inr (v1, (ov2,ov3)))):t).
-      split; ibr_simpl.
+      split; ibr_prover.
     + destruct ov2 as [v2 | ].
       * exists ((inr (inl (v2,(None,ov3)))):t).
-        split; ibr_simpl.
+        split; ibr_prover.
       * destruct ov3 as [v3 | ].
         { exists ((inr (inr (v3, (None,None)))):t).
-          split; ibr_simpl. }
+          split; ibr_prover. }
         { exists ((inl (inl ())):t).
-          split; ibr_simpl. }
-  - ibr_simpl; sim; ibr_simpl.
+          split; ibr_prover. }
+  - ibr_prover; sim; ibr_prover.
 Qed.
 
 Hint Extern 0 =>
@@ -1247,14 +1240,14 @@ Lemma option_perm2_variation_rng t1 t2 (p1:wf_bigrammar t1)
   in_bigrammar_rng (` p2) b <->
   in_bigrammar_rng (` (option_perm2_variation p1 p2)) (oa, b).
 Proof. unfold option_perm2_variation; split; intros.
-  - ibr_simpl; compute [fst]; sim. 
+  - ibr_prover; compute [fst]; sim. 
     set (t:=[|Sum_t t2 (Pair_t t1 t2)|]).
     destruct oa as [a | ].
     + exists ((inr (a,b)):t). 
-      split; ibr_simpl.
+      split; ibr_prover.
     + exists ((inl b):t).
-      split; ibr_simpl.
-  - ibr_simpl; sim; ibr_simpl.
+      split; ibr_prover.
+  - ibr_prover; sim; ibr_prover.
 Qed.
 
 Hint Extern 0 =>

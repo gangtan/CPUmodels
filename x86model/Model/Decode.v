@@ -3634,7 +3634,7 @@ Ltac repeat_destruct_var u :=
   Ltac fp_invertible_tac :=
     unfold invertible; split; [unfold printable | unfold parsable];
     compute [snd fst]; intros;
-    [destruct_union; ins_printable_tac | 
+    [ins_printable_tac | 
      match goal with
        | [w:[|fp_operand_t|] |- _] => destruct w; parsable_tac
      end].
@@ -3668,7 +3668,6 @@ Ltac repeat_destruct_var u :=
                      | _ => None
                    end)
               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; try local_printable_tac.
     - destruct w as [d op]; destruct d; destruct op; parsable_tac.
   Defined.
 
@@ -3894,22 +3893,20 @@ Ltac repeat_destruct_var u :=
   Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64_noreg "110".
   Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "111".
 
-  Definition FNSTSW_p : wf_bigrammar (option_t fp_Operand_t).
+  Definition FNSTSW_p : wf_bigrammar (option_t fp_operand_t).
     refine (("11011" $$ "111" $$ "111" $$ ! "00000" |+|
              "11011" $$ "101" $$ ext_op_modrm_FPM32_noreg "111")
               @ (fun v =>
                    match v with
                      | inl () => None
                      | inr op => Some op
-                   end %% option_t fp_Operand_t)
-              & (fun u:[|option_t fp_Operand_t|] =>
+                   end %% option_t fp_operand_t)
+              & (fun u:[|option_t fp_operand_t|] =>
                    match u with
                      | Some op => Some (inr op)
                      | None => Some (inl ())
                    end)
               & _); invertible_tac.
-    - destruct_union; local_printable_tac.
-    - destruct w; parsable_tac.
   Defined.
 
   Definition FPATAN_p := "11011" $$ "001111" $$ ! "10011".
@@ -4045,8 +4042,7 @@ Ltac repeat_destruct_var u :=
                      | MMX_32 => Some (inr (inr ()))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -4063,8 +4059,7 @@ Ltac repeat_destruct_var u :=
                      | MMX_16 => Some (inr ())
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -4083,8 +4078,7 @@ Ltac repeat_destruct_var u :=
                      | MMX_64 => Some (inr (inr ()))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -4101,8 +4095,7 @@ Ltac repeat_destruct_var u :=
                      | MMX_32 => Some (inr ())
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -4193,7 +4186,7 @@ Ltac repeat_destruct_var u :=
                       | (MMX_Reg_op mr, MMX_Addr_op addr) => case1 (false,(mr,addr))
                       | _ => None
                     end)
-               & _); clear_ast_defs; invertible_tac.
+               & _); clear_ast_defs; ins_invertible_tac.
     - destruct_union;
       destruct v as [d [mr r]]; destruct d; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
@@ -4217,7 +4210,7 @@ Ltac repeat_destruct_var u :=
                         | _ => None
                       end
                   end)
-             & _); invertible_tac.
+             & _); ins_invertible_tac.
     - destruct v as [d [op1 op2]]; destruct d;
       mmx_pf_sim; printable_tac; ins_ibr_simpl. 
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
@@ -4490,7 +4483,6 @@ Ltac repeat_destruct_var u :=
                    let (op2,b):=u1 in
                    Some ((op1,op2),b))
               & _); invertible_tac.
-    - destruct w as [op1 [op2 b]]; parsable_tac.
   Defined.
 
   Definition ext_op_modrm_sse_noreg (bs: string): wf_bigrammar sse_operand_t.
@@ -4570,8 +4562,7 @@ Ltac repeat_destruct_var u :=
                        end
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4596,8 +4587,7 @@ Ltac repeat_destruct_var u :=
                        end
                      | _ => None
                    end)
-             & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+             & _); ins_invertible_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4624,8 +4614,7 @@ Ltac repeat_destruct_var u :=
                        end
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4677,7 +4666,7 @@ Ltac repeat_destruct_var u :=
                       Some (true, (snd u, fst u))
                     | _ => None
                   end)
-             & _); invertible_tac.
+             & _); ins_invertible_tac.
     - destruct v as [d [op1 op2]]; 
       destruct d; sse_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
@@ -4707,7 +4696,7 @@ Ltac repeat_destruct_var u :=
                        Some (true,(sr,addr))
                      | _ => None
                    end)
-              & _); invertible_tac.
+              & _); ins_invertible_tac.
     - destruct v as [d [op1 op2]]; 
       destruct d; sse_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
@@ -4798,7 +4787,7 @@ Ltac repeat_destruct_var u :=
                        Some (inr (mr1, fst u))
                      | _ => None
                    end)
-              & _); invertible_tac.
+              & _); ins_invertible_tac.
     - destruct_union; destruct v as [mr1 op2];
       sse_pf_sim; printable_tac; ins_ibr_simpl.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
@@ -4828,8 +4817,7 @@ Ltac repeat_destruct_var u :=
                        Some (inr ((mr,addr),imm))
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; local_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w as [op1 [op2 b]]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4874,8 +4862,7 @@ Ltac repeat_destruct_var u :=
                    match u with
                      | (op1,(op2,imm)) => Some ((op1,op2),imm)
                    end)
-              & _); invertible_tac.
-    - destruct w as [op1 [op2 b]]; parsable_tac.
+              & _); ins_invertible_tac.
   Defined.
 
   Definition MASKMOVQ_p :=
@@ -4894,7 +4881,7 @@ Ltac repeat_destruct_var u :=
                        Some (mr,addr)
                      | _ => None
                    end)
-              & _); invertible_tac.
+              & _); ins_invertible_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4910,7 +4897,7 @@ Ltac repeat_destruct_var u :=
                        Some (mr,addr)
                      | _ => None
                    end)
-              & _); invertible_tac.
+              & _); ins_invertible_tac.
     - destruct w as [op1 op2]; destruct op1; destruct op2; parsable_tac.
   Defined.
 
@@ -4955,8 +4942,7 @@ Ltac repeat_destruct_var u :=
                     | lock => Some ()
                     | _ => None
                   end)
-             & _); invertible_tac.
-    - new_printable_tac.
+             & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -4973,8 +4959,7 @@ Ltac repeat_destruct_var u :=
                      | rep => Some (inr ())
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -4986,8 +4971,7 @@ Ltac repeat_destruct_var u :=
                      | rep => Some ()
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - new_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -5005,8 +4989,7 @@ Ltac repeat_destruct_var u :=
                      | repn => Some (inr (inl ()))
                      | rep => Some (inr (inr ()))
                    end)
-              & _); invertible_tac.
-    - destruct_union; new_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -5031,8 +5014,7 @@ Ltac repeat_destruct_var u :=
                       | FS => case4 ()
                       | GS => case5 ()
                     end)
-               & _); clear_ast_defs; invertible_tac.
-    - destruct_union; new_printable_tac.
+               & _); clear_ast_defs; ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -5046,8 +5028,7 @@ Ltac repeat_destruct_var u :=
                      | true => Some ()
                      | false => None
                    end)
-              & _); invertible_tac.
-    - new_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -5059,8 +5040,7 @@ Ltac repeat_destruct_var u :=
                      | true => Some ()
                      | false => None
                    end)
-              & _); invertible_tac.
-    - new_printable_tac.
+              & _); ins_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -5105,11 +5085,11 @@ Ltac repeat_destruct_var u :=
                      | false,false => Some (lock_rep u, (seg_override u, None))
                      | _,_ => None
                    end)
-              & _); invertible_tac.
+              & _); ins_invertible_tac.
     - destruct v as [l [s op]]. 
       compute [op_override addr_override lock_rep seg_override].
       destruct op as [op | ]; [destruct op | ]; compute [opt2b].
-      + new_printable_tac.
+      + ins_printable_tac.
       + match goal with
           | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
             rewrite <- option_perm3_rng in H; 
@@ -5118,7 +5098,7 @@ Ltac repeat_destruct_var u :=
             rewrite option_perm_rng1 in H3;
             apply op_override_p_rng_inv in H3; inversion H3
         end.
-      + new_printable_tac.
+      + ins_printable_tac.
     - destruct w as [l s op addr];
       compute [op_override addr_override lock_rep seg_override] in *.
       destruct op; destruct addr; parsable_tac.
@@ -5148,11 +5128,11 @@ Ltac repeat_destruct_var u :=
                      | false,false => Some (lock_rep u, (seg_override u, None))
                      | _,_ => None
                    end)
-              & _); invertible_tac.
+              & _); ins_invertible_tac.
     - destruct v as [l [s op]]. 
       compute [op_override addr_override lock_rep seg_override].
       destruct op as [op | ]; [destruct op | ]; compute [opt2b].
-      + new_printable_tac.
+      + ins_printable_tac.
       + match goal with
           | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
             rewrite <- option_perm3_rng in H; 
@@ -5161,7 +5141,7 @@ Ltac repeat_destruct_var u :=
             rewrite option_perm_rng1 in H3;
             apply op_override_p_rng_inv in H3; inversion H3
         end.
-      + new_printable_tac.
+      + ins_printable_tac.
     - destruct w as [l s op addr];
       compute [op_override addr_override lock_rep seg_override] in *.
       destruct op; destruct addr; parsable_tac.
@@ -5216,7 +5196,6 @@ Ltac repeat_destruct_var u :=
     refine (gr @ (mp: _ -> [|pair_t prefix_t instruction_t|])
                & from_instr
                & _); clear_ast_defs; unfold from_instr; invertible_tac.
-    - Time new_printable_tac.
     - destruct w as [p ins]; destruct ins; parsable_tac.
   Defined.
 
