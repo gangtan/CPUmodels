@@ -180,12 +180,11 @@ End X86_PARSER_ARG.
       | _ => unfold in_bigrammar_rng in *; in_bigrammar_inv; localcrush
     end.
 
-  (* todo: remove *)
-  (* Local Ltac destruct_union :=  *)
-  (*   repeat match goal with  *)
-  (*            | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v] *)
-  (*            | [v: [| Unit_t |] |- _] => destruct v *)
-  (*          end. *)
+  Local Ltac destruct_union :=
+    repeat match goal with
+             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
+             | [v: [| Unit_t |] |- _] => destruct v
+           end.
 
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
@@ -1359,10 +1358,6 @@ End X86_PARSER_ARG.
   Hint Extern 1 (in_bigrammar_rng (` reg_no_esp) _) => 
     apply reg_no_esp_rng; congruence: ibr_rng_db.
 
-(* todo: move to BiGrammar.t *)
-Ltac repeat_destruct_var u :=
-  simpl_grammar_ty; repeat (destruct_var u).
-
   Lemma reg_no_esp_neq r: in_bigrammar_rng (` reg_no_esp) r -> r <> ESP.
   Proof. intros.
     unfold in_bigrammar_rng. 
@@ -1812,13 +1807,6 @@ Ltac repeat_destruct_var u :=
     reg_no_esp $ word |+|
     (* case 1 *)
     "100" $$ sib_p $ word.
-
-  (* todo: move earlier *)
-  Local Ltac destruct_union :=
-    repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
-             | [v: [| Unit_t |] |- _] => destruct v
-           end.
 
   (** Same as modrm_gen but no mod "11" case; that is, the second must
       produce an address in a mem operand *)
@@ -2320,12 +2308,6 @@ Ltac repeat_destruct_var u :=
 
   Local Ltac ins_printable_tac := printable_tac_gen ins_pf_sim.
   Local Ltac ins_invertible_tac := invertible_tac_gen ins_pf_sim.
-
-  (* todo: remove *)
-  (* Local Ltac local_printable_tac := *)
-  (*   repeat match goal with *)
-  (*            | [v: [|pair_t _ _|] |- _] => destruct v *)
-  (*          end; ins_pf_sim; printable_tac; ins_ibr_simpl. *)
 
   Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
   Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
@@ -4920,20 +4902,6 @@ Ltac repeat_destruct_var u :=
          grammar.  *)
 
 
-(* todo: make the following tactic printable_tac; remove local_printable_tac *)
-
-  (* todo: remove *)
-  (* Local Ltac destruct_ibr_vars := *)
-  (*   repeat match goal with *)
-  (*       | [v:[|sum_t _ _|] |- _] => destruct v *)
-  (*       | [v:[|unit_t|] |- _] => destruct v *)
-  (*       | [v:[|pair_t _ _|] |- _] => destruct v *)
-  (*       | [v:[|option_t _|] |- _] => destruct v *)
-  (*   end. *)
-
-  (* Local Ltac new_printable_tac :=  *)
-  (*   destruct_ibr_vars; printable_tac; ins_ibr_simpl. *)
-
   Definition lock_p : wf_bigrammar lock_or_rep_t. 
     refine("1111" $$ ! "0000"
              @ (fun v => lock %% lock_or_rep_t)
@@ -5018,8 +4986,6 @@ Ltac repeat_destruct_var u :=
     - destruct w; parsable_tac.
   Defined.
 
-  (* Definition op_override_p : wf_bigrammar unit_t := "0110" $$ ! "0110". *)
-
   Definition op_override_p : wf_bigrammar bool_t.
     refine ("0110" $$ ! "0110"
               @ (fun v => true %% bool_t)
@@ -5044,37 +5010,18 @@ Ltac repeat_destruct_var u :=
     - destruct w; parsable_tac.
   Defined.
 
-(* todo: convert some tactics in ins_ibr_simpl to use Hint Extern *)
-
   Definition opt2b (a: option bool) (default: bool) :=
     match a with
       | Some b => b
       | None => default
     end.
 
-  (* todo: move earlier *)
   Lemma op_override_p_rng_inv op :
     in_bigrammar_rng (` op_override_p) op -> op = true.
   Proof. unfold op_override_p; intros; ins_ibr_simpl. Qed.
 
-  (* Hint Extern 0 => *)
-  (*   match goal with *)
-  (*     | [H:in_bigrammar_rng (` op_override_p) ?op |- _] => *)
-  (*       apply op_override_p_rng_inv in H *)
-  (*   end : ibr_rng_db. *)
 
-  (* Local Ltac prefix_pf_sim :=  *)
-  (*   ins_ibr_simpl; bg_pf_sim; *)
-  (*   repeat match goal with *)
-  (*     | [H:in_bigrammar_rng (` op_override_p) ?op |- _] => *)
-  (*       apply op_override_p_rng_inv in H *)
-  (*   end. *)
-
-  (* todo: organize some of the ibr_simpl and ins_ibr_simpl cases as
-     Hint Rewrite stuff *)
-
-  (* todo: clena up proofs for prefix grammars *)
-
+  (* todo: clean up proofs for prefix grammars *)
   Definition prefix_grammar_rep : wf_bigrammar prefix_t.
     refine ((option_perm3 rep_p segment_override_p op_override_p)
               @ (fun v => match v with (l, (s, op)) =>
@@ -5222,6 +5169,7 @@ TBC:
     (List.map (fun (p:grammar instruction_t)
                 => prefix_grammar_seg_override $ p)
       instr_grammars_seg_override).
+
 
 
 

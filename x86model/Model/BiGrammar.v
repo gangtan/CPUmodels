@@ -151,6 +151,7 @@ Definition token_id := X86_PARSER_ARG.token_id.
 Definition num_tokens := X86_PARSER_ARG.num_tokens.
 Definition token_id_to_chars := X86_PARSER_ARG.token_id_to_chars.
 
+(** * Key defs for bigrammars, types, their interpretation, etc. *)
 
 (** The [type]s for our grammars. *)
 Inductive type : Type := 
@@ -398,39 +399,15 @@ Ltac destruct_var v :=
       end
   end.
 
+Ltac repeat_destruct_var u :=
+  simpl_grammar_ty; repeat (destruct_var u).
+
 Ltac destruct_ibr_var :=
   simpl_grammar_ty;
   match goal with
     | [ H:in_bigrammar_rng _ ?v |- _] =>
       destruct_var v
   end.
-
-
-(* Ltac destruct_ibr_var := *)
-(*   simpl_grammar_ty; *)
-(*   match goal with *)
-(*     | [ H:in_bigrammar_rng _ ?v |- _] => *)
-(*       match type of v with *)
-(*         | sum _ _ => destruct v as [v | v] *)
-(*         | unit => destruct v *)
-(*         | prod _ _ =>  *)
-(*           match v with *)
-(*               (* if v has already been destructed, then quit *) *)
-(*             | (_,_) => fail 3  *)
-(*             | _ => destruct v *)
-(*           end *)
-(*         | option _ => destruct v as [v | ] *)
-(*       end *)
-(*   end. *)
-
-(* todo: remove *)
-(* Ltac printable_tac :=  *)
-(*   break_hyp; simpl_grammar_ty; destruct_vars; *)
-(*   autorewrite with inv_db;  *)
-(*   match goal with  *)
-(*     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>  *)
-(*       exists v; split; auto with ibr_rng_db *)
-(*   end. *)
 
 (** Proving parsable in the special situation when the existential value is
    the same as the original one; taking a custom simplicaticion tactic as
@@ -449,23 +426,6 @@ Ltac destruct_parsable_var :=
     | [ |- _ = ?w] => destruct_var w
   end.
 
-(* Ltac destruct_parsable_var := *)
-(*   simpl_grammar_ty; *)
-(*   match goal with *)
-(*     | [ |- _ = ?w] =>  *)
-(*       match type of w with *)
-(*         | prod _ _ => *)
-(*           match w with *)
-(*               (* if w has already been destructed, then quit *) *)
-(*             | (_,_) => fail 2 *)
-(*             | _ => destruct w *)
-(*           end *)
-(*         | option _ => destruct w *)
-(*       end *)
-(*     (* | [ |- context[match ?w with (_,_) => _ end] ] =>  *) *)
-(*     (*   destruct w *) *)
-(*   end. *)
-
 Ltac parsable_tac := 
   repeat 
     match goal with
@@ -475,26 +435,11 @@ Ltac parsable_tac :=
       | _ => autorewrite with inv_db; trivial; destruct_parsable_var
     end.
 
-(* Ltac parsable_tac :=  *)
-(*   repeat  *)
-(*     match goal with *)
-(*       | [H:None = Some _ |- _] => discriminate *)
-(*       | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial *)
-(*       | _ => destruct_parsable_value *)
-(*     end. *)
-
-(* Ltac parsable_tac :=  *)
-(*   match goal with *)
-(*     | [H:None = Some _ |- _] => discriminate *)
-(*     | [H:Some _ = Some _ |- _] => inversion H; autorewrite with inv_db; trivial *)
-(*   end. *)
-
-(* todo: add abstract tactic to the following *)
-
 Ltac invertible_tac_gen simplification := 
   unfold invertible; split; [unfold printable | unfold parsable]; 
   compute [snd fst]; intros;
-  [try (printable_tac_gen simplification; fail) | try (parsable_tac; fail)].
+  [try (abstract(printable_tac_gen simplification); fail) |
+   try (abstract parsable_tac; fail)].
 
 Ltac strong_invertible_tac :=
   unfold strong_invertible; split; 
@@ -944,7 +889,7 @@ Defined.
 (*     * crush. *)
 (* Defined. *)
 
-(** * constructors for building permutations of grammrs. *)
+(** * Constructors for building permutations of bigrammars. *)
 
 Definition perm2 t1 t2 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) : 
   wf_bigrammar (Pair_t t1 t2). 
