@@ -390,7 +390,12 @@ Ltac destruct_var v :=
   match type of v with
     | sum _ _ => destruct v as [v | v]
     | unit => destruct v
-    | option _ => destruct v as [v | ]
+    | option _ => 
+      match v with
+        (* if v has already been destructed, then try v1 *)
+        | (Some ?v1) => destruct_var v1 || fail 2
+        | _ => destruct v as [v | ]
+      end
     | prod _ _ => 
       match v with
         (* if v has already been destructed, then try v1 and v2 *)
@@ -412,34 +417,37 @@ Ltac destruct_ibr_var :=
 (** Proving parsable in the special situation when the existential value is
    the same as the original one; taking a custom simplicaticion tactic as
    an input *)
-Ltac printable_tac_gen simplification :=
-  repeat (simplification || destruct_ibr_var);
+Ltac printable_tac_gen simp :=
+  repeat (simp || destruct_ibr_var);
   autorewrite with inv_db;
   match goal with
     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
-      exists v; split; simplification
+      exists v; split; simp
   end.
 
-Ltac destruct_parsable_var := 
+Ltac destruct_parsable_var dv_tac := 
   simpl_grammar_ty;
   match goal with
-    | [ |- _ = ?w] => destruct_var w
+    | [ |- _ = ?w] => dv_tac w
   end.
 
-Ltac parsable_tac := 
+(* parametrized by a tactic for simplification and 
+   a tactic for for destructing variables *)
+Ltac parsable_tac_gen dv_tac := 
   repeat 
     match goal with
       | [H:None = Some _ |- _] => discriminate
       | [H:Some _ = Some _ |- _] => 
         inversion H; clear H; subst
-      | _ => autorewrite with inv_db; trivial; destruct_parsable_var
+      | _ => autorewrite with inv_db; trivial;
+             destruct_parsable_var dv_tac
     end.
 
-Ltac invertible_tac_gen simplification := 
+Ltac invertible_tac_gen simp dv_tac := 
   unfold invertible; split; [unfold printable | unfold parsable]; 
   compute [snd fst]; intros;
-  [try (abstract(printable_tac_gen simplification); fail) |
-   try (abstract parsable_tac; fail)].
+  [try (abstract(printable_tac_gen simp); fail) |
+   try (abstract (parsable_tac_gen dv_tac); fail)].
 
 Ltac strong_invertible_tac :=
   unfold strong_invertible; split; 
@@ -621,7 +629,7 @@ Qed.
 Local Ltac localcrush :=
   repeat match goal with
            | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
-           | [ |- invertible _ _ ] => invertible_tac_gen idtac
+           | [ |- invertible _ _ ] => invertible_tac_gen idtac destruct_var
            | _ => crush
          end.
 
@@ -665,7 +673,6 @@ Program Definition alt t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) :
 (*   List.fold_right (fun p1 p2 => map (seq p1 p2) (@cons t))  *)
 (*     (@always (List_t t) (@nil (interp t))) ps. *)
 
-
 (** A union operator for two grammars; it uses the pretty printer to try
       the left branch; only if it fails, it tries the right branch.  This
       operator should be avoided if possible for the following reasons.
@@ -684,7 +691,7 @@ Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
                                | None => None
                              end
                  end)
-            & _); invertible_tac_gen idtac.
+            & _); invertible_tac_gen idtac destruct_var.
   - destruct_ibr_var.
     + remember_destruct_head as v1; eauto.
       remember_destruct_head as v2.
@@ -731,7 +738,7 @@ Infix "|\/|" := union (right associativity, at level 80).
 Infix "$" := seq (right associativity, at level 70).
 Notation "e %% t" := (e : interp t) (at level 80).
 
-Ltac ibr_simpl :=
+Ltac ibr_sim :=
   repeat match goal with 
            | [H: in_bigrammar_rng (` (_ |+| _)) _ |- _] =>
              unfold proj1_sig at 1, alt at 1 in H
@@ -769,7 +776,10 @@ Ltac ibr_simpl :=
            | _ => auto with ibr_rng_db
          end.
 
-Ltac ibr_prover := repeat (ibr_simpl || destruct_ibr_var).
+Ltac ibr_prover := repeat (ibr_sim || destruct_ibr_var).
+Ltac invertible_tac := invertible_tac_gen ibr_prover destruct_var.
+Ltac printable_tac := printable_tac_gen ibr_prover.
+Ltac parsable_tac := parsable_tac_gen destruct_var.
 
 Hint Resolve in_bigrammar_rng_eps in_bigrammar_rng_any: ibr_rng_db.
 
@@ -792,9 +802,6 @@ Definition pred_options t (g1 g2: wf_bigrammar t) :=
   forall x: [|t|], ({in_bigrammar_rng (` g1) x} + {in_bigrammar_rng (` g2) x}) +
                    {not (in_bigrammar_rng (` g1) x) /\ 
                     not (in_bigrammar_rng (` g2) x)}.
-
-Ltac invertible_tac := invertible_tac_gen ibr_prover.
-Ltac printable_tac := printable_tac_gen ibr_prover.
 
 (** Three-way predicated union: the pretty printer for "g1 + g2" uses the
     left one if x is in the range of g1, uses the right one if x is in
