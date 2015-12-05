@@ -386,68 +386,90 @@ Ltac simpl_grammar_ty :=
           | [v: [|Unit_t|] |- _ ] => simpl in v
         end.
 
-Ltac destruct_var v := 
-  match type of v with
-    | sum _ _ => destruct v as [v | v]
-    | unit => destruct v
-    | option _ => 
-      match v with
-        (* if v has already been destructed, then try v1 *)
-        | (Some ?v1) => destruct_var v1 || fail 2
-        | _ => destruct v as [v | ]
+(** destruct a variable in the parser domain *)
+Ltac destruct_pr_var :=
+  let dpv_helper v :=
+      match type of v with
+        | unit => destruct v
+        | _ =>
+          match goal with
+            | [ |- context[match v with | inl _ => _ | inr _ => _ end]] =>
+              destruct v as [v | v]
+            | [ |- context[match v with (_,_) => _ end]] => destruct v
+            | [ |- context[match v with Some _  => _ | None => _ end]] =>
+              destruct v
+            | [H:context[match v with | inl _ => _ | inr _ => _ end] |- _] =>
+              destruct v as [v | v]
+            | [H:context[match v with (_,_) => _ end] |- _] => destruct v
+            | [H:context[match v with Some _  => _ | None => _ end] |- _] =>
+              destruct v
+          end
       end
-    | prod _ _ => 
+  in
+  let rec focus_on v :=
       match v with
-        (* if v has already been destructed, then try v1 and v2 *)
-        | (?v1,?v2) => destruct_var v1 || destruct_var v2 || fail 2
-        | _ => destruct v
-      end
-  end.
-
-Ltac repeat_destruct_var u :=
-  simpl_grammar_ty; repeat (destruct_var u).
-
-Ltac destruct_ibr_var :=
+        | Some ?v1 => focus_on v1 || fail 1
+        | (?v1,?v2) => focus_on v1 || focus_on v2 || fail 1
+        | _ => dpv_helper v
+      end in
   simpl_grammar_ty;
   match goal with
-    | [ H:in_bigrammar_rng _ ?v |- _] =>
-      destruct_var v
+    | [ H:in_bigrammar_rng _ ?v |- _] => focus_on v
   end.
 
 (** Proving parsable in the special situation when the existential value is
    the same as the original one; taking a custom simplicaticion tactic as
    an input *)
 Ltac printable_tac_gen simp :=
-  repeat (simp || destruct_ibr_var);
+  repeat (simp || destruct_pr_var);
   autorewrite with inv_db;
   match goal with
     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
       exists v; split; simp
   end.
 
-Ltac destruct_parsable_var dv_tac := 
+(** destruct a variable in the pretty-printer domain *)
+Ltac destruct_pp_var dv_tac := 
+  let rec focus_on v :=
+      match v with
+        | Some ?v1 => focus_on v1 || fail 1
+        | (?v1,?v2) => focus_on v1 || focus_on v2 || fail 1
+        | _ => dv_tac v
+      end in
   simpl_grammar_ty;
   match goal with
-    | [ |- _ = ?w] => dv_tac w
+    | [ |- _ = ?v] => focus_on v
+  end.
+
+Ltac destruct_var v :=
+  match goal with
+    | [H: match v with Some _ => _ | None => _ end = _ |- _ ] =>
+      destruct v as [v | ]
+    | [H: match v with (_,_) => _ end = _ |- _ ] =>
+      destruct v
+    | [H: match v with true => _ | false => _ end = _ |- _] =>
+      destruct v
+    | [ |- context[match v with (_,_) => _ end]] =>
+      destruct v
   end.
 
 (* parametrized by a tactic for simplification and 
    a tactic for for destructing variables *)
-Ltac parsable_tac_gen dv_tac := 
+Ltac parsable_tac_gen simp dv_tac := 
   repeat 
     match goal with
       | [H:None = Some _ |- _] => discriminate
       | [H:Some _ = Some _ |- _] => 
         inversion H; clear H; subst
-      | _ => autorewrite with inv_db; trivial;
-             destruct_parsable_var dv_tac
+      | _ => (autorewrite with inv_db; trivial) || simp ||
+             destruct_pp_var dv_tac
     end.
 
 Ltac invertible_tac_gen simp dv_tac := 
   unfold invertible; split; [unfold printable | unfold parsable]; 
   compute [snd fst]; intros;
   [try (abstract(printable_tac_gen simp); fail) |
-   try (abstract (parsable_tac_gen dv_tac); fail)].
+   try (abstract (parsable_tac_gen simp dv_tac); fail)].
 
 Ltac strong_invertible_tac :=
   unfold strong_invertible; split; 
@@ -651,7 +673,7 @@ Program Definition always t (teq: forall (a b:interp t), {a=b}+{a<>b})
       & _.
 Next Obligation. 
   - destruct (teq x x).
-    + destruct_ibr_var; printable_tac_gen idtac; trivial. 
+    + destruct v; printable_tac_gen idtac; trivial. 
     + crush.
   - destruct (teq x w); crush.
 Defined.
@@ -692,7 +714,7 @@ Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
                              end
                  end)
             & _); invertible_tac_gen idtac destruct_var.
-  - destruct_ibr_var.
+  - destruct_pr_var.
     + remember_destruct_head as v1; eauto.
       remember_destruct_head as v2.
       * localsimpl. eexists. eauto using pretty_print_corr1, pretty_print_corr2.
@@ -776,10 +798,10 @@ Ltac ibr_sim :=
            | _ => auto with ibr_rng_db
          end.
 
-Ltac ibr_prover := repeat (ibr_sim || destruct_ibr_var).
-Ltac invertible_tac := invertible_tac_gen ibr_prover destruct_var.
-Ltac printable_tac := printable_tac_gen ibr_prover.
-Ltac parsable_tac := parsable_tac_gen destruct_var.
+Ltac invertible_tac := invertible_tac_gen ibr_sim destruct_var.
+Ltac printable_tac := printable_tac_gen ibr_sim.
+Ltac parsable_tac := parsable_tac_gen ibr_sim destruct_var.
+Ltac ibr_prover := repeat (ibr_sim || destruct_pr_var).
 
 Hint Resolve in_bigrammar_rng_eps in_bigrammar_rng_any: ibr_rng_db.
 
@@ -791,7 +813,7 @@ Lemma in_bigrammar_rng_union t (g1 g2:wf_bigrammar t) v:
   in_bigrammar_rng (` (g1 |\/| g2)) v <->
   in_bigrammar_rng (` g1) v \/ in_bigrammar_rng (` g2) v.
 Proof. intros; unfold union; split; intros.
-  - ibr_prover; crush. 
+  - ibr_sim; crush; ibr_prover.
   - ibr_prover. simpl.
     destruct H.
     + exists (inl [|t|] v). split; ibr_prover.
@@ -819,7 +841,7 @@ Definition predicated_union_three_way t (g1 g2: wf_bigrammar t)
                   | inright _ => None
                 end)
            & _); invertible_tac.
-  - destruct_ibr_var; ibr_prover.
+  - destruct_pr_var; ibr_prover.
     + destruct (pred v) as [[H2|H2]|H2];
       try (eexists; localsimpl; fail).
       crush.
@@ -842,7 +864,7 @@ Definition predicated_union t (g1 g2: wf_bigrammar t)
                  match v with inl x => x | inr y => y end)
             & (fun w : [|t|] => if (pred w) then Some (inl w) else Some (inr w))
             & _); invertible_tac.
-  - destruct_ibr_var; ibr_prover;
+  - destruct_pr_var; ibr_prover;
     destruct (pred v); printable_tac.
   - destruct v; destruct (pred w); crush. 
 Defined.
@@ -1040,7 +1062,7 @@ Proof. unfold option_perm; intros; ibr_prover.
   exists (inl [|t1|] ()).
   split; ibr_prover.
 Qed.
-Hint Resolve option_perm_rng2.
+Hint Resolve option_perm_rng2 : ibr_rng_db.
 
 Definition option_perm2 t1 t2 
            (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) :
@@ -1062,7 +1084,7 @@ Definition option_perm2 t1 t2
                    | (None, None) => Some (inl ())
                  end)
             & _); invertible_tac.
-  Defined.
+Defined.
 
 Lemma option_perm2_rng t1 t2 (p1:wf_bigrammar t1)
        (p2:wf_bigrammar t2) ov1 ov2:
@@ -1125,7 +1147,7 @@ Definition option_perm3 t1 t2 t3
                      end
                  end)
               & _); invertible_tac.
-  Defined.
+Defined.
 
 Lemma option_perm3_rng t1 t2 t3 (p1:wf_bigrammar t1)
        (p2:wf_bigrammar t2) (p3:wf_bigrammar t3)

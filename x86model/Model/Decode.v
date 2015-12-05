@@ -190,30 +190,27 @@ End X86_PARSER_ARG.
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
   Local Ltac ins_destruct_var v := 
-    match v with
-      | Some ?v1 => ins_destruct_var v1 || fail 1
-      | (?v1,?v2) => 
-        ins_destruct_var v1 || ins_destruct_var v2 || fail 1
-      | _ =>
-        match goal with
-          | [ H: match v with Some _ => _ | None => _ end = _ |- _ ] =>
-            destruct v as [v | ]
-          | [ H: match v with (_,_) => _ end = _ |- _ ] =>
-            destruct v
-          | [H: match v with true => _ | false => _ end = _ |- _] => 
-            destruct v
-          | [ H: match v with | EAX => _ | ECX => _ | EDX => _ | EBX => _ 
-                           | ESP => _ | EBP => _ | ESI => _ | EDI => _ end 
-                 = _ |- _ ] =>
-            destruct v
-          | [ H: match v with | Imm_op _ => _ | Reg_op _ => _ 
-                           | Address_op _ => _ | Offset_op _ => _ end
-                 = _ |- _ ] =>
-            destruct v
-        end
+    match goal with
+      | [ H: match v with | EAX => _ | ECX => _ | EDX => _ | EBX => _ 
+                       | ESP => _ | EBP => _ | ESI => _ | EDI => _ end 
+             = _ |- _ ] =>
+        destruct v
+      | [ H: match v with | Imm_op _ => _ | Reg_op _ => _ 
+                       | Address_op _ => _ | Offset_op _ => _ end
+             = _ |- _ ] =>
+        destruct v
+      | [ H: match v with | Reg_ri _ => _ | Imm_ri _ => _ end
+             = _ |- _ ] =>
+        destruct v
+      | [ H: match v with | ES => _ | CS => _ | SS => _ | DS => _ 
+                       | FS => _ | GS => _ end 
+             = _ |- _ ] =>
+        destruct v
+      | _ => destruct_var v
     end.
 
-  Local Ltac ins_parsable_tac := parsable_tac_gen ins_destruct_var.
+  Local Ltac ins_parsable_tac := 
+    parsable_tac_gen ibr_sim ins_destruct_var.
 
   Obligation Tactic := localcrush.
 
@@ -1389,7 +1386,7 @@ End X86_PARSER_ARG.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    repeat_destruct_var u; crush.
+    destruct_union; crush.
   Qed.
 
   Definition reg_no_ebp : wf_bigrammar register_t.
@@ -1453,7 +1450,7 @@ End X86_PARSER_ARG.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    repeat_destruct_var u; crush.
+    destruct_union; crush.
   Qed.
 
   Definition reg_no_esp_ebp : wf_bigrammar register_t.
@@ -1517,7 +1514,7 @@ End X86_PARSER_ARG.
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv.
     destruct H as [v [_ H]]. simpl in H.
-    repeat_destruct_var v; crush.
+    destruct_union; crush.
   Qed.
 
   Definition si_p: wf_bigrammar (option_t (pair_t scale_t register_t)). 
@@ -2141,7 +2138,7 @@ End X86_PARSER_ARG.
     in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r,addr) ->
     in_bigrammar_rng (` reg_p) r.
   Proof. intros; unfold modrm_gen_noreg in *. 
-         repeat (ins_ibr_sim || destruct_ibr_var); crush. Qed.
+         repeat (ins_ibr_sim || destruct_pr_var); crush. Qed.
 
   (* can prove a more precise range lemma if necessary *)
   Lemma modrm_gen_noreg_rng reg_t (reg_p: wf_bigrammar reg_t)
@@ -2429,8 +2426,7 @@ End X86_PARSER_ARG.
       destruct op2; try parsable_tac.
       destruct r; destruct wd; ins_pf_sim; parsable_tac.
     + (* op1 = Address_op _ *)
-      destruct op2; try parsable_tac.
-      destruct wd; ins_pf_sim; parsable_tac.
+      destruct op2; try parsable_tac; ins_pf_sim; parsable_tac.
   Defined.
 
   Definition ADC_p s := logic_or_arith_p s "00010" "010".
@@ -2495,8 +2491,6 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); clear_ast_defs; ins_invertible_tac.
-    - destruct w as [op1 op2]; destruct op1; destruct op2;
-      ins_pf_sim; parsable_tac.
   Defined.
 
   Definition BT_p := bit_test_p "100" "00".
@@ -2771,7 +2765,6 @@ End X86_PARSER_ARG.
                      Some (inl (ct, sign_shrink32_8 imm))
                    else Some (inr (ct, imm)))
               & _); ins_invertible_tac.
-    - destruct w; ins_pf_sim; parsable_tac.
   Defined.
 
   Definition JCXZ_p := "1110" $$ "0011" $$ byte.
@@ -2847,10 +2840,6 @@ End X86_PARSER_ARG.
                      | _,_ => None
                    end)
               & _); clear_ast_defs; ins_invertible_tac.
-    - abstract
-        (destruct w as [near [absolute [op w1]]]; destruct w1;
-         destruct near; destruct absolute; destruct op;
-         ins_pf_sim; parsable_tac).
   Defined.
 
   Definition LAHF_p := "1001" $$ ! "1111".
@@ -3045,8 +3034,7 @@ End X86_PARSER_ARG.
                        end
                      | _ => None
                    end)
-              & _); clear_ast_defs; invertible_tac.
-    - abstract (destruct_union; ins_printable_tac).
+              & _); clear_ast_defs; ins_invertible_tac.
     - abstract 
         (destruct w as [wd [op1 op2]]; destruct op1; try parsable_tac;
          destruct op2; ins_pf_sim; try parsable_tac;
@@ -3159,7 +3147,6 @@ End X86_PARSER_ARG.
                              | _ => None
                            end)
                & _); clear_ast_defs; ins_invertible_tac.
-    destruct w; parsable_tac.
   Defined.
 
   Definition POPA_p := "0110" $$ ! "0001".
@@ -3190,7 +3177,6 @@ End X86_PARSER_ARG.
                       | _ => None
                     end)
                & _); clear_ast_defs; ins_invertible_tac.
-    - destruct w as [b op]; destruct b; destruct op; ins_pf_sim; parsable_tac.
   Defined.
 
   Definition PUSHSR_env : AST_Env segment_register_t :=
@@ -3217,7 +3203,6 @@ End X86_PARSER_ARG.
                       | GS => case5 ()
                     end)
                & _); clear_ast_defs; ins_invertible_tac.
-    destruct w; parsable_tac.
   Defined.
 
   Definition PUSHA_p := "0110" $$ ! "0000".
@@ -3245,9 +3230,7 @@ End X86_PARSER_ARG.
                      | _ => None
                    end)
               & _); ins_invertible_tac.
-    - destruct w as [w [op ri]]; destruct op; try parsable_tac;
-      destruct ri as [rg | ]; try parsable_tac;
-      destruct rg; parsable_tac.
+    - ins_parsable_tac; destruct r; ins_parsable_tac.
   Defined.
 
   Definition RCL_p := rotate_p "010".
@@ -3515,8 +3498,6 @@ End X86_PARSER_ARG.
       + destruct v as [w [r1 op2]]; ins_pf_sim; bg_pf_sim;
         destruct w; printable_tac; ins_ibr_sim.
       + ins_printable_tac.
-    - destruct w as [w [op1 op2]]; destruct op1; try parsable_tac;
-      destruct op2; try parsable_tac; ins_pf_sim; destruct w; parsable_tac.
   Defined.
 
   Definition XLAT_p := "1101" $$ ! "0111".
@@ -3524,21 +3505,15 @@ End X86_PARSER_ARG.
   (** ** Defs used in grammars for floating-point instructions *)
 
   Local Ltac fp_destruct_var v := 
-    match v with
-      | Some ?v1 => fp_destruct_var v1 || fail 1
-      | (?v1,?v2) => 
-        fp_destruct_var v1 || fp_destruct_var v2 || fail 1
-      | _ =>
-        match goal with
-          | [ H: match v with | FPS_op _ => _ | FPM16_op _ => _ | FPM32_op _ => _
-                           | FPM64_op _ => _ | FPM80_op _ => _ end
-                 = _ |- _ ] =>
-            destruct v
-          | _ => ins_destruct_var v
-        end
+    match goal with
+      | [ H: match v with | FPS_op _ => _ | FPM16_op _ => _ | FPM32_op _ => _
+                       | FPM64_op _ => _ | FPM80_op _ => _ end
+             = _ |- _ ] =>
+        destruct v
+      | _ => ins_destruct_var v
     end.
 
-  Local Ltac fp_parsable_tac := parsable_tac_gen fp_destruct_var.
+  Local Ltac fp_parsable_tac := parsable_tac_gen ins_pf_sim fp_destruct_var.
   Local Ltac fp_invertible_tac := invertible_tac_gen ins_pf_sim fp_destruct_var.
 
   Definition fpu_reg_op_p : wf_bigrammar fp_operand_t.
@@ -3946,25 +3921,20 @@ End X86_PARSER_ARG.
   (** ** Definitions used in bigrammars for MMX instructions *)
 
   Local Ltac mmx_destruct_var v := 
-    match v with
-      | Some ?v1 => mmx_destruct_var v1 || fail 1
-      | (?v1,?v2) => 
-        mmx_destruct_var v1 || mmx_destruct_var v2 || fail 1
-      | _ =>
-        match goal with
-          | [ H: match v with | GP_Reg_op _ => _ | MMX_Addr_op _ => _
-                           | MMX_Reg_op _ => _ | MMX_Imm_op _ => _ end
-                 = _ |- _ ] =>
-            destruct v
-          | [ H: match v with | MMX_8 => _ | MMX_16 => _
-                           | MMX_32 => _ | MMX_64 => _ end
-                 = _ |- _ ] =>
-            destruct v
-          | _ => ins_destruct_var v
-        end
+    match goal with
+      | [ H: match v with | GP_Reg_op _ => _ | MMX_Addr_op _ => _
+                       | MMX_Reg_op _ => _ | MMX_Imm_op _ => _ end
+             = _ |- _ ] =>
+        destruct v
+      | [ H: match v with | MMX_8 => _ | MMX_16 => _
+                       | MMX_32 => _ | MMX_64 => _ end
+             = _ |- _ ] =>
+        destruct v
+      | _ => ins_destruct_var v
     end.
 
-  Local Ltac mmx_parsable_tac := parsable_tac_gen mmx_destruct_var.
+  Local Ltac mmx_parsable_tac := 
+    parsable_tac_gen ins_pf_sim mmx_destruct_var.
 
   Definition MMX_Reg_op_p: wf_bigrammar mmx_operand_t.
     refine (mmx_reg @ (fun r => MMX_Reg_op r : interp mmx_operand_t)
@@ -4134,7 +4104,8 @@ End X86_PARSER_ARG.
         destruct H2 as [H2 | H2]; destruct H2; subst op2
     end.
 
-  Local Ltac mmx_invertible_tac := invertible_tac_gen mmx_pf_sim mmx_destruct_var.
+  Local Ltac mmx_invertible_tac := 
+    invertible_tac_gen mmx_pf_sim mmx_destruct_var.
 
   (** ** Bigrammars for MMX instructions *)
 
@@ -4269,14 +4240,7 @@ End X86_PARSER_ARG.
                        end
                      | _ => None
                    end)
-              & _); invertible_tac.
-    - destruct_union. 
-      + destruct v as [gg [r1 op2]]. 
-        mmx_pf_sim; printable_tac; ins_ibr_sim.
-      + destruct v as [gg [r1 imm]].
-        mmx_pf_sim; printable_tac; ins_ibr_sim.
-    - destruct w as [gg [op1 op2]]; destruct op1; destruct op2; 
-      bg_pf_sim; parsable_tac.
+              & _); mmx_invertible_tac.
   Defined.
 
   Definition PSLL_p := pshift_p "11" mmx_gg_p_16_32_64.
@@ -4304,22 +4268,16 @@ End X86_PARSER_ARG.
   (** ** Bigrammars for SSE instructions *)
 
   Local Ltac sse_destruct_var v := 
-    match v with
-      | Some ?v1 => sse_destruct_var v1 || fail 1
-      | (?v1,?v2) => 
-        sse_destruct_var v1 || sse_destruct_var v2 || fail 1
-      | _ =>
-        match goal with
-          | [ H: match v with | SSE_XMM_Reg_op _ => _ | SSE_MM_Reg_op _ => _
-                           | SSE_Addr_op _ => _ | SSE_GP_Reg_op _ => _
-                           | SSE_Imm_op _ => _ end
-                 = _ |- _ ] =>
-            destruct v
-          | _ => ins_destruct_var v
-        end
+    match goal with
+      | [ H: match v with | SSE_XMM_Reg_op _ => _ | SSE_MM_Reg_op _ => _
+                       | SSE_Addr_op _ => _ | SSE_GP_Reg_op _ => _
+                       | SSE_Imm_op _ => _ end
+             = _ |- _ ] =>
+        destruct v
+      | _ => ins_destruct_var v
     end.
 
-  Local Ltac sse_parsable_tac := parsable_tac_gen sse_destruct_var.
+  Local Ltac sse_parsable_tac := parsable_tac_gen ins_pf_sim sse_destruct_var.
 
   Definition SSE_XMM_Reg_op_p: wf_bigrammar sse_operand_t.
     refine (sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t)
@@ -4930,7 +4888,6 @@ End X86_PARSER_ARG.
   (** ** Glue all individual instruction grammars together into one big
          grammar.  *)
 
-
   Definition lock_p : wf_bigrammar lock_or_rep_t. 
     refine("1111" $$ ! "0000"
              @ (fun v => lock %% lock_or_rep_t)
@@ -5012,7 +4969,6 @@ End X86_PARSER_ARG.
                       | GS => case5 ()
                     end)
                & _); clear_ast_defs; ins_invertible_tac.
-    - destruct w; parsable_tac.
   Defined.
 
   Definition op_override_p : wf_bigrammar bool_t.
@@ -5058,22 +5014,18 @@ End X86_PARSER_ARG.
                      | false,false => Some (lock_rep u, (seg_override u, None))
                      | _,_ => None
                    end)
-              & _); ins_invertible_tac.
+              & _); compute [op_override addr_override lock_rep seg_override];
+    ins_invertible_tac.
     - destruct v as [l [s op]]. 
-      compute [op_override addr_override lock_rep seg_override].
       destruct op as [op | ]; [destruct op | ]; compute [opt2b].
       + ins_printable_tac.
-      + match goal with
-          | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
-            rewrite <- option_perm3_rng in H; 
-            let H1:=fresh "H" in let H2:=fresh "H" in let H3:=fresh "H" in
-            destruct H as [H1 [H2 H3]];
-            rewrite option_perm_rng1 in H3;
-            apply op_override_p_rng_inv in H3; inversion H3
-        end.
+      + printable_tac.
+        apply option_perm3_rng; sim; auto with ibr_rng_db.
+         (* don't understand why auto doesn't work even though
+            option_perm_rng2 is in the database *)
+        apply option_perm_rng2.
       + ins_printable_tac.
     - destruct w as [l s op addr];
-      compute [op_override addr_override lock_rep seg_override] in *.
       destruct op; destruct addr; parsable_tac.
   Defined.
 
@@ -5101,22 +5053,18 @@ End X86_PARSER_ARG.
                      | false,false => Some (lock_rep u, (seg_override u, None))
                      | _,_ => None
                    end)
-              & _); ins_invertible_tac.
+              & _); compute [op_override addr_override lock_rep seg_override];
+    ins_invertible_tac.
     - destruct v as [l [s op]]. 
-      compute [op_override addr_override lock_rep seg_override].
       destruct op as [op | ]; [destruct op | ]; compute [opt2b].
       + ins_printable_tac.
-      + match goal with
-          | [H:in_bigrammar_rng (` (option_perm3 _ _ _)) (_,(_,_)) |- _] =>
-            rewrite <- option_perm3_rng in H; 
-            let H1:=fresh "H" in let H2:=fresh "H" in let H3:=fresh "H" in
-            destruct H as [H1 [H2 H3]];
-            rewrite option_perm_rng1 in H3;
-            apply op_override_p_rng_inv in H3; inversion H3
-        end.
+      + printable_tac.
+        apply option_perm3_rng; sim; auto with ibr_rng_db.
+         (* don't understand why auto doesn't work even though
+            option_perm_rng2 is in the database *)
+        apply option_perm_rng2.
       + ins_printable_tac.
     - destruct w as [l s op addr];
-      compute [op_override addr_override lock_rep seg_override] in *.
       destruct op; destruct addr; parsable_tac.
   Defined.
 
@@ -5174,15 +5122,6 @@ End X86_PARSER_ARG.
 
 
 TBC:
-
-todo: finish the rest;
-   - add cases reg_or_imm_t and segment_register_t to ins_destruct_var
-   - consider whether to call a simp tactic in parsable_tac
-   - consider whether to change the destruct_var in printable_tac in a way similar to ins_destruct_var
-(* todo: try to parameterize invertible_tac with what vars to destruct *)
-
-
-
 
 
   Definition instruction_grammar_list := 
