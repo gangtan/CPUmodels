@@ -687,11 +687,11 @@ End X86_PARSER_ARG.
 
       Oftentimes, t is an inductive type and each g_i injects into one (or a
       few) case of the inductive type of t. The following definitions and
-      tactics take advantage of this for more efficient reverse
+      tactics take advantage of this to get more efficient reverse
       functions. Here are the general steps:
 
-      - combine g_i using |+| to get "g_1 |+| ... |+| g_n". This doesn't
-        lose any info as it generates values in an AST tree type.
+      - combine g_i using balanced alts to get "g_1 |+| ... |+| g_n". This
+        doesn't lose any info as it generates values in an AST tree type.
 
       - then we need a map function that converts AST tree values to type
         t; tactic gen_ast_map is used to aotumate this process given an
@@ -710,10 +710,9 @@ End X86_PARSER_ARG.
       t.  An AST env is used in tactics that generate the map and the
       reverse function. Each entry in an AST env also includes a natural
       number label that is used in gen_rev_case_by_lbl to generate a
-      reverse mapping function for the case idenfieid by the label.  In an
-      AST_Env, the requirement for labels is that they be in the asending
-      order; however, they don't need to be consecutive (although they
-      could). *)
+      reverse mapping function for the case identified by the label.  In an
+      AST_Env, labels must be in the asending order; however, they don't
+      need to be consecutive (although they could). *)
   Inductive AST_Env (t:type):= 
   | ast_env_nil : AST_Env t
   | ast_env_cons : 
@@ -732,33 +731,7 @@ End X86_PARSER_ARG.
       | ast_env_cons _ _ _ _ ae' => S (env_length ae')
     end.
 
-  (* compute ceiling(n/2) *)
-  Fixpoint divide_by_two n :=
-    match n with
-      | O => O
-      | S O => 1
-      | S (S n') => S (divide_by_two n')
-    end.
-
-  (** Split the env list into two halves at the middle *)
-  Fixpoint env_split t (ae:AST_Env t) := 
-    let len:= env_length ae in
-    let mid := divide_by_two len in
-    (* using CPS to build the two lists in one pass *)
-    let fix splitHelper i l k :=
-        match beq_nat i mid with
-          | true => k (ast_env_nil, l)
-          | false => 
-            match l with
-              | ast_env_cons n _ g f ae' =>
-                splitHelper (S i) ae'
-                  (fun v => k (ast_env_cons n g (f: _ -> [|t|]) (fst v), snd v))
-              | _ => (ast_env_nil, ast_env_nil) (* this case should never happen *)
-            end
-        end
-    in splitHelper O ae (fun u => u).
-
-  (** Cat p1 with every grammar inside the ast env *)
+  (** Cat p1 to every grammar inside the ast env *)
   Fixpoint ast_env_cat t1 t2 (p1:wf_bigrammar t1) (ae: AST_Env t2) :
     AST_Env (pair_t t1 t2) := 
     match ae with
@@ -770,6 +743,7 @@ End X86_PARSER_ARG.
   Notation "p $$$ ae" := 
     (ast_env_cat p ae) (right associativity, at level 80).
 
+  (** Append two ast envs *)
   Fixpoint ast_env_app t (ae1 ae2: AST_Env t) : AST_Env t := 
     match ae1 with
       | ast_env_nil => ae2
@@ -780,12 +754,73 @@ End X86_PARSER_ARG.
   Notation "ael +++ aer" := 
     (ast_env_app ael aer) (right associativity, at level 85).
 
+  (* compute ceiling(n/2) *)
+  Fixpoint divide_by_two n :=
+    match n with
+      | O => O
+      | S O => 1
+      | S (S n') => S (divide_by_two n')
+    end.
+
+  (** Split the env list into two halves at the middle *)
+  Fixpoint env_split t (ae:AST_Env t) :=
+    let len:= env_length ae in
+    let mid := divide_by_two len in
+    (* using CPS to build the two lists in one pass *)
+    let fix splitHelper i l k :=
+        match beq_nat i mid with
+          | true => k (ast_env_nil, l)
+          | false =>
+            match l with
+              | ast_env_cons n _ g f ae' =>
+                splitHelper (S i) ae'
+                  (fun v => k (ast_env_cons n g (f: _ -> [|t|]) (fst v), snd v))
+              | _ => (ast_env_nil, ast_env_nil) (* this case should never happen *)
+            end
+        end
+    in splitHelper O ae (fun u => u).
+
+  Ltac env_length ast_env := 
+    match ast_env with
+      | ast_env_nil => O
+      | ast_env_cons _ _ _ ?ae' => 
+        let l := env_length ae' in
+        constr: (S l)
+    end.
+
+  (* The ltac version of env_split; using the Gallina version of env_split
+     can be problematic in "eval simpl in (env_split ...)" because the
+     simpl tactic would unfold the environment in unexpected ways *)
+  Ltac env_split ae :=
+    let len := env_length ae in
+    let mid := eval compute in (divide_by_two len) in
+    let aet := type of ae in
+    let t := match aet with
+               | AST_Env ?t => t
+             end in
+    (* using CPS to build the two lists in one pass *)
+    let rec splitHelper i l k :=
+        let eq := eval compute in (beq_nat i mid) in
+        match eq with
+          | true => constr:(k (ast_env_nil, l))
+          | false =>
+            match l with
+              | ast_env_cons ?n ?g ?f ?ae' =>
+                let res := splitHelper (S i) ae'
+                             (fun v => k (ast_env_cons n g
+                                         (f: _ -> [|t|]) (fst v), snd v)) in
+                constr:(res)
+            end
+        end
+    in let aepair := splitHelper O ae (fun u:aet*aet => u) in
+       eval cbv beta delta [fst snd] iota in aepair.
+
   Ltac gen_ast_grammar ast_env :=
   match ast_env with
     | ast_env_cons ?l ?g ?f ast_env_nil => constr:(g)
     | ast_env_nil => never (* should not happen *)
     | _ =>
-      let aepair := eval simpl in (env_split ast_env) in
+      let aepair := env_split ast_env in
       match aepair with
         | (?ael, ?aer) => 
           let g1 := gen_ast_grammar ael in
@@ -803,7 +838,7 @@ End X86_PARSER_ARG.
         end
       | ast_env_nil => unit_t (* should not happen *)
       | _ =>
-        let aepair := eval simpl in (env_split ast_env) in
+        let aepair := env_split ast_env in
         match aepair with
           | (?ael, ?aer) => 
             let t1 := gen_ast_type ael in
@@ -819,7 +854,7 @@ End X86_PARSER_ARG.
     | ast_env_cons ?l ?g ?f ast_env_nil => 
       constr: (fun v => f v)
     | _ => 
-      let aepair := eval simpl in (env_split ast_env) in
+      let aepair := env_split ast_env in
       match aepair with
         | (?ael, ?aer) => 
           let m1 := gen_ast_map_aux ael in
@@ -840,7 +875,7 @@ End X86_PARSER_ARG.
       index of the entry (not the label of the entry); the index starts
       from 0 *)
   Ltac gen_rev_case ast_env i := 
-    let len := (eval compute in (env_length ast_env)) in
+    let len := env_length ast_env in
     let t := gen_ast_type ast_env in
     let rec gen_rev_case_aux i n t:= 
         let eq_1 := (eval compute in (beq_nat n 1)) in
@@ -866,7 +901,7 @@ End X86_PARSER_ARG.
     in gen_rev_case_aux i len t.
 
   Ltac gen_rev_cases ast_env := 
-    let len := (eval compute in (env_length ast_env)) in
+    let len := env_length ast_env in
     let rec gen_rev_cases_aux i := 
         let eq_len := (eval compute in (beq_nat i len)) in
         match eq_len with
@@ -883,9 +918,9 @@ End X86_PARSER_ARG.
        gen_rev_cases_aux 0.
 
   (** generate a reverse mapping function for an AST env entry based on the
-      label of the entry (not the index of the entry) *)
-  Ltac gen_rev_case_by_lbl ast_env l := 
-    let t := gen_ast_type ast_env in
+      label of the entry (not the index of the entry); parameter t could be
+      calculated from ast_env, but passing it for efficiency. *)
+  Ltac gen_rev_case_lbl l ast_env t := 
     match ast_env with
       | ast_env_cons ?l1 _ _ ast_env_nil => 
         let eq_l_l1 := (eval compute in (beq_nat l l1)) in
@@ -893,19 +928,22 @@ End X86_PARSER_ARG.
           | true => constr:(fun v: interp t => v)
         end
       | _ =>
-      let aepair := eval simpl in (env_split ast_env) in
+      let aepair := env_split ast_env in
       match aepair with
-        | (?ael, ?aer) => 
+        | (?ael, ?aer) =>
           match aer with
             | ast_env_cons ?l2 _ _ ?aer1 =>
-              let b := (eval compute in (NPeano.ltb l l2)) in
-              match b with
-                | true => 
-                  let f := gen_rev_case_by_lbl ael l in 
-                  constr:(fun v => (inl  (f v)):(interp t))
-                | false => 
-                  let f := gen_rev_case_by_lbl aer l in
-                  constr:(fun v => (inr (f v)):(interp t))
+              match t with
+                | sum_t ?t1 ?t2 =>
+                  let b := (eval compute in (NPeano.ltb l l2)) in
+                  match b with
+                    | true => 
+                      let f := gen_rev_case_lbl l ael t1 in 
+                      constr:(fun v => (inl  (f v)):(interp t))
+                    | false => 
+                      let f := gen_rev_case_lbl l aer t2 in
+                      constr:(fun v => (inr (f v)):(interp t))
+                  end
               end
           end
       end
@@ -916,9 +954,40 @@ End X86_PARSER_ARG.
       and a list of case functions for mapping from case values
       to ast values *)
   Ltac gen_ast_defs ast_env := 
-    let g := gen_ast_grammar ast_env in pose (gr:=g);
-    let m := gen_ast_map ast_env in pose (mp:=m);
-    gen_rev_cases ast_env.
+    pose (ae:=ast_env);
+    autounfold with env_unfold_db in ae;
+    let ae1 := eval cbv delta [ae] in ae in
+      let g := gen_ast_grammar ae1 in pose (gr:=g);
+      let m := gen_ast_map ae1 in pose (mp:=m);
+      gen_rev_cases ae1;
+      clear ae.
+
+  (* testing the above tactics *)
+  (* Definition test_env: AST_Env register_t := *)
+  (*   {0, empty, (fun v => EAX %% register_t)} ::: *)
+  (*   {1, empty, (fun v => ECX %% register_t)} ::: *)
+  (*   {2, empty, (fun v => EDX %% register_t)} ::: *)
+  (*   {3, empty, (fun v => EBX %% register_t)} ::: *)
+  (*   {4, empty, (fun v => EBP %% register_t)} ::: *)
+  (*   {5, empty, (fun v => ESI %% register_t)} ::: *)
+  (*   {6, empty, (fun v => EDI %% register_t)} ::: *)
+  (*   ast_env_nil. *)
+  (* Hint Unfold test_env : env_unfold_db. *)
+
+  (* Goal False. *)
+  (*   gen_ast_defs test_env. *)
+
+  (* let ae:= eval unfold test_env in test_env in *)
+  (*   gen_ast_defs ae. *)
+  (* let cs := gen_rev_case_by_lbl ae 3 in *)
+  (* let cs' := eval cbv beta delta [interp] iota in cs in *)
+  (* pose cs'. *)
+
+  (* let m := gen_ast_map ae in *)
+  (* pose m. *)
+
+  (* let l := env_split ae in *)
+  (* pose l. *)
 
   Ltac clear_ast_defs :=
     repeat match goal with
@@ -1215,6 +1284,7 @@ End X86_PARSER_ARG.
     {2, ! "011", (fun v => CR3 %% control_register_t)} :::
     {3, ! "100", (fun v => CR4 %% control_register_t)} :::
     ast_env_nil.
+  Hint Unfold control_reg_env: env_unfold_db.
 
   Definition control_reg_p : wf_bigrammar control_register_t.
     gen_ast_defs control_reg_env.
@@ -1238,6 +1308,7 @@ End X86_PARSER_ARG.
     {4, ! "110", (fun _ => DR6 %% debug_register_t)} :::
     {5, ! "111", (fun _ => DR7 %% debug_register_t)} :::
     ast_env_nil.
+  Hint Unfold debug_reg_env: env_unfold_db.
      
   (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
    * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
@@ -1268,6 +1339,7 @@ End X86_PARSER_ARG.
     {4, ! "100", (fun _ => FS %% segment_register_t)} :::
     {5, ! "101", (fun _ => GS %% segment_register_t)} :::
     ast_env_nil.
+  Hint Unfold segment_reg_env: env_unfold_db.
 
   Definition segment_reg_p : wf_bigrammar segment_register_t.
     gen_ast_defs segment_reg_env.
@@ -1327,6 +1399,7 @@ End X86_PARSER_ARG.
     {5, ! "110", (fun v => ESI %% register_t)} :::
     {6, ! "111", (fun v => EDI %% register_t)} :::
     ast_env_nil.
+  Hint Unfold reg_no_esp_env : env_unfold_db.
 
   (* This is used in a strange edge-case for modrm parsing. See the
      footnotes on p37 of the manual in the repo This is a case where I
@@ -2333,6 +2406,7 @@ End X86_PARSER_ARG.
               (true, (Address_op addr, Imm_op imm))
               %% pair_t bool_t (pair_t operand_t operand_t)} :::
     ast_env_nil.
+  Hint Unfold logic_or_arith_env : env_unfold_db.
 
   (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
   Definition logic_or_arith_p (opsize_override: bool)
@@ -2461,6 +2535,7 @@ End X86_PARSER_ARG.
      fun v => let (r2,op1):=v in (op1, Reg_op r2)
                 %% pair_t operand_t operand_t} :::
     ast_env_nil.
+  Hint Unfold bit_test_env : env_unfold_db.
 
   Definition bit_test_p (opcode1:string) (opcode2:string) : 
     wf_bigrammar (pair_t operand_t operand_t).
@@ -2799,6 +2874,7 @@ End X86_PARSER_ARG.
         %% pair_t bool_t
              (pair_t bool_t (pair_t operand_t (option_t selector_t)))} :::
     ast_env_nil.
+  Hint Unfold JMP_env : env_unfold_db.
 
   Definition JMP_p: 
     wf_bigrammar (pair_t bool_t
@@ -2982,6 +3058,7 @@ End X86_PARSER_ARG.
      fun imm => (false, (Offset_op imm, Reg_op EAX))
         %% pair_t bool_t (pair_t operand_t operand_t)} :::
     ast_env_nil.
+  Hint Unfold MOV_env : env_unfold_db.
 
   Definition MOV_p (opsize_override:bool): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
@@ -3134,6 +3211,7 @@ End X86_PARSER_ARG.
     {4, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "001",
      (fun _ => GS %% segment_register_t)} :::
     ast_env_nil.
+  Hint Unfold POPSR_env : env_unfold_db.
 
   Definition POPSR_p : wf_bigrammar segment_register_t.
     gen_ast_defs POPSR_env.
@@ -3162,6 +3240,7 @@ End X86_PARSER_ARG.
     {3, "0110" $$ "1000" $$ word,
      (fun w => (true, Imm_op w) %% pair_t bool_t operand_t)} :::
     ast_env_nil.
+  Hint Unfold PUSH_env : env_unfold_db.
 
   Definition PUSH_p : wf_bigrammar (pair_t bool_t operand_t).
     gen_ast_defs PUSH_env.
@@ -3189,6 +3268,7 @@ End X86_PARSER_ARG.
     {5, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "000",
      (fun v => GS %% segment_register_t)} :::
     ast_env_nil.
+  Hint Unfold PUSHSR_env : env_unfold_db.
 
   Definition PUSHSR_p : wf_bigrammar segment_register_t.
     gen_ast_defs PUSHSR_env.
@@ -3273,6 +3353,7 @@ End X86_PARSER_ARG.
     {3, "1100" $$ "1010" $$ halfword,
      (fun h => (false, Some h) %% pair_t bool_t (option_t half_t))} :::
     ast_env_nil.
+  Hint Unfold RET_env : env_unfold_db.
 
   Definition RET_p : wf_bigrammar (pair_t bool_t (option_t half_t)).
     gen_ast_defs RET_env.
@@ -3331,6 +3412,7 @@ End X86_PARSER_ARG.
                 | (r,addr) => (Address_op addr, (r, Reg_ri ECX)) end
                  %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
     ast_env_nil.
+  Hint Unfold shiftdouble_env : env_unfold_db.
 
   Definition shiftdouble_p (opcode:string) :
     wf_bigrammar (pair_t operand_t (pair_t register_t reg_or_immed_t)).
@@ -3398,6 +3480,7 @@ End X86_PARSER_ARG.
      (fun b => (false, (Reg_op EAX, Imm_op (zero_extend8_32 b)))
                  %% pair_t bool_t (pair_t operand_t operand_t))} :::
     ast_env_nil.
+  Hint Unfold Test_env : env_unfold_db.
 
   Definition Test_p (opsize_override: bool) : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
@@ -3583,6 +3666,7 @@ End X86_PARSER_ARG.
     {3, "11011" $$ "1" $$ "0011" $$ bs1 $$ fpu_reg,
      (fun fr => (false, FPS_op fr) %% pair_t bool_t fp_operand_t)} :::
     ast_env_nil.
+  Hint Unfold fp_arith_env : env_unfold_db.
 
   Definition fp_arith_p (bs0 bs1: string) : 
     wf_bigrammar (pair_t bool_t fp_operand_t).
@@ -3786,6 +3870,7 @@ End X86_PARSER_ARG.
     {3, "11011" $$ "001" $$ "11000" $$ fpu_reg,
      (fun fr => FPS_op fr %% fp_operand_t)} :::
     ast_env_nil.
+  Hint Unfold FLD_env : env_unfold_db.
 
   Definition FLD_p: wf_bigrammar fp_operand_t.
     gen_ast_defs FLD_env.
@@ -3884,6 +3969,7 @@ End X86_PARSER_ARG.
     {3, "11011" $$ "101" $$ "11011" $$ fpu_reg,
      (fun fr => FPS_op fr %% fp_operand_t)} :::
     ast_env_nil.
+  Hint Unfold FSTP_env : env_unfold_db.
 
   Definition FSTP_p: wf_bigrammar fp_operand_t.
     gen_ast_defs FSTP_env.
@@ -4125,6 +4211,7 @@ End X86_PARSER_ARG.
                 else (MMX_Reg_op mr, MMX_Addr_op addr))
                %% pair_t mmx_operand_t mmx_operand_t) } :::
     ast_env_nil.
+  Hint Unfold MOVD_env : env_unfold_db.
 
   Definition MOVD_d : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
     gen_ast_defs MOVD_env.
@@ -4955,6 +5042,7 @@ End X86_PARSER_ARG.
     {4, "0110" $$ ! "0100", (fun v => FS %% segment_register_t)} :::
     {5, "0110" $$ ! "0101", (fun v => GS %% segment_register_t)} :::
     ast_env_nil.
+  Hint Unfold segment_override_env : env_unfold_db.
 
   Definition segment_override_p : wf_bigrammar segment_register_t.
     gen_ast_defs segment_override_env.
@@ -5003,7 +5091,6 @@ End X86_PARSER_ARG.
     in_bigrammar_rng (` op_override_p) op -> op = true.
   Proof. unfold op_override_p; intros; ins_ibr_sim. Qed.
 
-  (* todo: clean up proofs for prefix grammars *)
   Definition prefix_grammar_rep : wf_bigrammar prefix_t.
     refine ((option_perm3 rep_p segment_override_p op_override_p)
               @ (fun v => match v with (l, (s, op)) =>
@@ -5021,6 +5108,7 @@ End X86_PARSER_ARG.
       + ins_printable_tac.
       + printable_tac.
         apply option_perm3_rng; sim; auto with ibr_rng_db.
+        clear H.
          (* don't understand why auto doesn't work even though
             option_perm_rng2 is in the database *)
         apply option_perm_rng2.
@@ -5060,8 +5148,6 @@ End X86_PARSER_ARG.
       + ins_printable_tac.
       + printable_tac.
         apply option_perm3_rng; sim; auto with ibr_rng_db.
-         (* don't understand why auto doesn't work even though
-            option_perm_rng2 is in the database *)
         apply option_perm_rng2.
       + ins_printable_tac.
     - destruct w as [l s op addr];
@@ -5073,55 +5159,240 @@ End X86_PARSER_ARG.
   Definition instr_grammars_rep_or_repn_env : AST_Env instruction_t :=
     {10, CMPS_p, (fun v => CMPS v %% instruction_t)} :::
     {11, SCAS_p, (fun v => SCAS v %% instruction_t)} :::
-    ast_env_nil.                                  
+    ast_env_nil.
 
-  Definition instr_grammar_env := 
-    ast_env_cat prefix_grammar_rep instr_grammars_rep_env +++
-    ast_env_cat prefix_grammar_rep_or_repn
-      instr_grammars_rep_or_repn_env.
+  Definition prefix_grammar_lock_with_op_override : wf_bigrammar prefix_t.
+    refine ((option_perm3_variation lock_p segment_override_p op_override_p)
+              @ (fun v => match v with (l, (s, op)) =>
+                   mkPrefix l s op false %% prefix_t end)
+              & (fun u => 
+                   match addr_override u with
+                     | false => Some (lock_rep u,
+                                      (seg_override u, op_override u))
+                     | _ => None
+                   end)
+              & _); compute [op_override addr_override lock_rep seg_override];
+    ins_invertible_tac.
+    - destruct w as [l s op addr]; destruct addr; parsable_tac.
+  Defined.
+
+  (** Instructions that can take prefixes in
+     prefix_grammar_lock_with_op_override: in lock_or_rep, only lock can be
+     used; segment override is optional; op_override prefix *must* be used;
+     NEG, NOT, and XCHG appear in both instr_grammars_lock_with_op_override_env
+     and instr_grammars_lock_no_op_override_env since they allow op_override
+     prefix to be optional. *)
+  Definition instr_grammars_lock_with_op_override_env : AST_Env instruction_t :=
+    {20, ADC_p true, (fun v => match v with (b,(op1,op2)) => ADC b op1 op2 end
+                          %% instruction_t)} :::
+    {21, ADD_p true, (fun v => match v with (b,(op1,op2)) => ADD b op1 op2 end
+                          %% instruction_t)} :::
+    {22, AND_p true, (fun v => match v with (b,(op1,op2)) => AND b op1 op2 end
+                          %% instruction_t)} :::
+    {23, NEG_p, (fun v => match v with (b,op) => NEG b op end
+                          %% instruction_t)} :::
+    {24, NOT_p, (fun v => match v with (b,op) => NOT b op end
+                          %% instruction_t)} :::
+    {25, OR_p true, (fun v => match v with (b,(op1,op2)) => OR b op1 op2 end
+                          %% instruction_t)} :::
+    {26, SBB_p true, (fun v => match v with (b,(op1,op2)) => SBB b op1 op2 end
+                          %% instruction_t)} :::
+    {27, SUB_p true, (fun v => match v with (b,(op1,op2)) => SUB b op1 op2 end
+                          %% instruction_t)} :::
+    {28, XCHG_p, (fun v => match v with (b,(op1,op2)) => XCHG b op1 op2 end
+                          %% instruction_t)} :::
+    {29, XOR_p true, (fun v => match v with (b,(op1,op2)) => XOR b op1 op2 end
+                          %% instruction_t)} :::
+    ast_env_nil.
+
+  Definition prefix_grammar_lock_no_op_override : wf_bigrammar prefix_t.
+    refine ((option_perm2 lock_p segment_override_p)
+              @ (fun v => match v with (l, s) =>
+                   mkPrefix l s false false %% prefix_t end)
+              & (fun u => 
+                   match op_override u, addr_override u with
+                     | false,false => Some (lock_rep u, seg_override u)
+                     | _,_ => None
+                   end)
+              & _); compute [op_override addr_override lock_rep seg_override];
+    ins_invertible_tac.
+    - destruct w as [l s op addr]; destruct op; destruct addr; parsable_tac.
+  Defined.
+
+
+  (** Instructions that can take prefixes in
+     prefix_grammar_lock_no_op_override; that is, in lock_or_rep, only lock
+     can be used; segment override is optional; and op_override prefix
+     *must not* be used *)
+  Definition instr_grammars_lock_no_op_override_env : AST_Env instruction_t :=
+    {30, ADC_p false, (fun v => match v with (b,(op1,op2)) => ADC b op1 op2 end
+                          %% instruction_t)} :::
+    {31, ADD_p false, (fun v => match v with (b,(op1,op2)) => ADD b op1 op2 end
+                          %% instruction_t)} :::
+    {32, AND_p false, (fun v => match v with (b,(op1,op2)) => AND b op1 op2 end
+                          %% instruction_t)} :::
+    {33, BTC_p, (fun v => match v with (op1,op2) => BTC op1 op2 end
+                          %% instruction_t)} :::
+    {34, BTR_p, (fun v => match v with (op1,op2) => BTR op1 op2 end
+                          %% instruction_t)} :::
+    {35, BTS_p, (fun v => match v with (op1,op2) => BTS op1 op2 end
+                          %% instruction_t)} :::
+    {36, CMPXCHG_p, (fun v => match v with (b,(op1,op2)) => CMPXCHG b op1 op2 end
+                          %% instruction_t)} :::
+    {37, DEC_p, (fun v => match v with (b,op) => DEC b op end
+                          %% instruction_t)} :::
+    {38, INC_p, (fun v => match v with (b,op) => INC b op end
+                          %% instruction_t)} :::
+    {39, NEG_p, (fun v => match v with (b,op) => NEG b op end
+                          %% instruction_t)} :::
+    {40, NOT_p, (fun v => match v with (b,op) => NOT b op end
+                          %% instruction_t)} :::
+    {41, OR_p false, (fun v => match v with (b,(op1,op2)) => OR b op1 op2 end
+                          %% instruction_t)} :::
+    {42, SBB_p false, (fun v => match v with (b,(op1,op2)) => SBB b op1 op2 end
+                          %% instruction_t)} :::
+    {43, SUB_p false, (fun v => match v with (b,(op1,op2)) => SUB b op1 op2 end
+                          %% instruction_t)} :::
+    {44, XADD_p, (fun v => match v with (b,(op1,op2)) => XADD b op1 op2 end
+                          %% instruction_t)} :::
+    {45, XCHG_p, (fun v => match v with (b,(op1,op2)) => XCHG b op1 op2 end
+                          %% instruction_t)} :::
+    {46, XOR_p false, (fun v => match v with (b,(op1,op2)) => XOR b op1 op2 end
+                          %% instruction_t)} :::
+    ast_env_nil.
+
+  Definition instr_grammar_env' := 
+    (ast_env_cat prefix_grammar_rep instr_grammars_rep_env)
+      +++
+    (ast_env_cat prefix_grammar_rep_or_repn
+       instr_grammars_rep_or_repn_env)
+      +++
+    (ast_env_cat prefix_grammar_lock_with_op_override
+       instr_grammars_lock_with_op_override_env)
+      +++
+    (ast_env_cat prefix_grammar_lock_no_op_override
+       instr_grammars_lock_no_op_override_env).
+
+  Definition instr_grammar_env : AST_Env (pair_t prefix_t instruction_t).
+    let ige := eval cbv beta
+                    delta [instr_grammar_env' instr_grammars_rep_env
+                           instr_grammars_rep_or_repn_env
+                           instr_grammars_lock_with_op_override_env
+                           instr_grammars_lock_no_op_override_env
+                           ast_env_app ast_env_cat]
+                    iota zeta
+               in instr_grammar_env' in
+    exact(ige).
+  Defined.
 
   Definition instr_grammar_type : type.
-    let t:=gen_ast_type instr_grammar_env in exact(t).
+    let ige := eval unfold instr_grammar_env in instr_grammar_env in
+    let t:=gen_ast_type ige in exact(t).
   Defined.
 
   Definition from_instr (u:prefix * instr) : option [|instr_grammar_type|].
     intro.
     refine (match snd u with
+              | ADC a1 a2 a3 => _
+              | ADD a1 a2 a3 => _
+              | AND a1 a2 a3 => _
               | CMPS a => _
               | INS a => _
               | LODS a => _
               | MOVS a => _
+              | NEG a1 a2 => _
+              | NOT a1 a2 => _
+              | OR a1 a2 a3 => _
               | OUTS a => _
               | RET a1 a2 => _
+              | SBB a1 a2 a3 => _
               | SCAS a => _
               | STOS a => _
+              | SUB a1 a2 a3 => _
+              | XCHG a1 a2 a3 => _
+              | XOR a1 a2 a3 => _
               | _ => None
             end).
     Local Ltac gen lbl u arg :=
-      let f:=gen_rev_case_by_lbl instr_grammar_env lbl in 
+      let ige := eval unfold instr_grammar_env
+                 in instr_grammar_env in
+      let t := eval unfold instr_grammar_type
+                 in instr_grammar_type in
+      let f:=gen_rev_case_lbl lbl ige t in 
       let f1 := eval simpl in f in
       exact (Some (f1 (fst u, arg))).
+    * (* ADC *) gen 20 u (a1,(a2,a3)).
+    * (* ADD *) gen 21 u (a1,(a2,a3)).
+    * (* AND *) gen 22 u (a1,(a2,a3)).
     * (* CMPS *) gen 10 u a.
     * (* INS *) gen 0 u a.
     * (* LODS *) gen 3 u a.
     * (* MOVS *) gen 2 u a.
+    * (* NEG *) gen 23 u (a1,a2).
+    * (* NOT *) gen 24 u (a1,a2).
+    * (* OR *) gen 25 u (a1,(a2,a3)).
     * (* OUTS *) gen 1 u a.
     * (* RET *) gen 5 u (a1,a2).
+    * (* SBB *) gen 26 u (a1,(a2,a3)).
     * (* SCAS *) gen 11 u a.
     * (* STOS *) gen 4 u a.
+    * (* SUB *) gen 27 u (a1,(a2,a3)).
+    * (* XCHG *) gen 28 u (a1,(a2,a3)).
+    * (* XOR *) gen 29 u (a1,(a2,a3)).
   Defined.
 
+(* notes: the reverse function for add, when op_override=true, use the true case, otherwise false *)
+
   Definition instruction_grammar : wf_bigrammar (pair_t prefix_t instruction_t).
-    let g := gen_ast_grammar instr_grammar_env in pose (gr:=g);
-    let m := gen_ast_map instr_grammar_env in pose (mp:=m).
-    refine (gr @ (mp: _ -> [|pair_t prefix_t instruction_t|])
+    let ige := eval unfold instr_grammar_env
+               in instr_grammar_env in
+    let g := gen_ast_grammar ige in pose (gr:=g);
+    let m := gen_ast_map ige in pose (mp:=m).
+    Time refine (gr @ (mp: _ -> [|pair_t prefix_t instruction_t|])
                & from_instr
-               & _); clear_ast_defs; unfold from_instr; invertible_tac.
-    - destruct w as [p ins]; destruct ins; parsable_tac.
-  Defined.
+               & _); clear_ast_defs; unfold from_instr;
+    unfold invertible; split; [unfold printable | unfold parsable]; 
+    compute [snd fst]; intros.
+    - Time 
+        (abstract
+           (destruct_union;
+            repeat match goal with
+                     | [v:[|pair_t _ _|] |- _] => destruct v
+                   end;
+            match goal with
+              | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
+                exists v; split; trivial
+            end)).
+    (* - Time abstract (destruct_union; printable_tac). *)
+    - Time 
+        ( (* adding abstract here adds a lot of time for some reason *)
+           (destruct w as [p ins]; destruct ins;
+            match goal with
+              | [H:None = Some _ |- _] => discriminate H
+              | [H:Some _ = Some _ |- _] => 
+                inversion H; clear H; subst; trivial
+            end)).
+      (* Time abstract (destruct w as [p ins]; destruct ins; parsable_tac). *)
+  Time Defined.
+
+idea for speeding up: env_split splitting into a tree in one short
 
 
 TBC:
+
+  Definition prefix_grammar_lock_no_op_override :=
+    option_perm2 lock_p segment_override_p @
+     (fun p => match p with (l, s) =>
+                 mkPrefix l s false false %% prefix_t end).
+
+  (** Instructions that can take prefixes in
+     prefix_grammar_lock_no_op_override; that is, in lock_or_rep, only lock
+     can be used; segment override is optional; and op_override prefix
+     *must not* be used *)
+  Definition instr_grammars_lock_no_op_override := 
+    ADD_p false :: ADC_p false :: AND_p false :: BTC_p :: BTR_p :: 
+    BTS_p :: CMPXCHG_p :: DEC_p :: INC_p :: NEG_p :: NOT_p :: OR_p false
+    :: SBB_p false :: SUB_p false :: XOR_p false :: XADD_p :: XCHG_p :: nil.
 
 
   Definition instruction_grammar_list := 
