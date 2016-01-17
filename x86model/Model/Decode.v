@@ -5296,7 +5296,13 @@ End X86_PARSER_ARG.
               | ADC a1 a2 a3 => _
               | ADD a1 a2 a3 => _
               | AND a1 a2 a3 => _
+              | BTC a1 a2 => _
+              | BTR a1 a2 => _
+              | BTS a1 a2 => _
               | CMPS a => _
+              | CMPXCHG a1 a2 a3 => _
+              | DEC a1 a2 => _
+              | INC a1 a2 => _
               | INS a => _
               | LODS a => _
               | MOVS a => _
@@ -5309,6 +5315,7 @@ End X86_PARSER_ARG.
               | SCAS a => _
               | STOS a => _
               | SUB a1 a2 a3 => _
+              | XADD a1 a2 a3 => _
               | XCHG a1 a2 a3 => _
               | XOR a1 a2 a3 => _
               | _ => None
@@ -5321,27 +5328,91 @@ End X86_PARSER_ARG.
       let f:=gen_rev_case_lbl lbl ige t in 
       let f1 := eval simpl in f in
       exact (Some (f1 (fst u, arg))).
-    * (* ADC *) gen 20 u (a1,(a2,a3)).
-    * (* ADD *) gen 21 u (a1,(a2,a3)).
-    * (* AND *) gen 22 u (a1,(a2,a3)).
+    (* A special generator for those instructions that have different
+       parsing methods with the op_override option on or off *)
+    Local Ltac gen_op_override lbl1 lbl2 u arg := 
+      refine (if (op_override (fst u)) then _ else _);
+      [gen lbl1 u arg | gen lbl2 u arg].
+    * (* ADC *) gen_op_override 20 30 u (a1,(a2,a3)).
+    * (* ADD *) gen_op_override 21 31 u (a1,(a2,a3)).
+    * (* AND *) gen_op_override 22 32 u (a1,(a2,a3)).
+    * (* BTC *) gen 33 u (a1,a2).
+    * (* BTR *) gen 34 u (a1,a2).
+    * (* BTS *) gen 35 u (a1,a2).
     * (* CMPS *) gen 10 u a.
+    * (* CMPXCHG *) gen 36 u (a1,(a2,a3)).
+    * (* DEC *) gen 37 u (a1,a2).
+    * (* INC *) gen 38 u (a1,a2).
     * (* INS *) gen 0 u a.
     * (* LODS *) gen 3 u a.
     * (* MOVS *) gen 2 u a.
-    * (* NEG *) gen 23 u (a1,a2).
-    * (* NOT *) gen 24 u (a1,a2).
-    * (* OR *) gen 25 u (a1,(a2,a3)).
+    * (* NEG *) gen_op_override 23 39 u (a1,a2).
+    * (* NOT *) gen_op_override 24 40 u (a1,a2).
+    * (* OR *) gen_op_override 25 41 u (a1,(a2,a3)).
     * (* OUTS *) gen 1 u a.
     * (* RET *) gen 5 u (a1,a2).
-    * (* SBB *) gen 26 u (a1,(a2,a3)).
+    * (* SBB *) gen_op_override 26 42 u (a1,(a2,a3)).
     * (* SCAS *) gen 11 u a.
     * (* STOS *) gen 4 u a.
-    * (* SUB *) gen 27 u (a1,(a2,a3)).
-    * (* XCHG *) gen 28 u (a1,(a2,a3)).
-    * (* XOR *) gen 29 u (a1,(a2,a3)).
+    * (* SUB *) gen_op_override 27 43 u (a1,(a2,a3)).
+    * (* XADD *) gen 44 u (a1,(a2,a3)).
+    * (* XCHG *) gen_op_override 28 45 u (a1,(a2,a3)).
+    * (* XOR *) gen_op_override 29 46 u (a1,(a2,a3)).
   Defined.
 
-(* notes: the reverse function for add, when op_override=true, use the true case, otherwise false *)
+
+  (* Print from_instr. *)
+
+(* todo: move to Bigrammar.v *)
+Lemma option_perm3_variation_rng t1 t2 t3 (p1:wf_bigrammar t1)
+       (p2:wf_bigrammar t2) (p3:wf_bigrammar t3) oa ob c:
+  in_bigrammar_rng (` (option_perm p1)) oa /\ 
+  in_bigrammar_rng (` (option_perm p2)) ob /\ 
+  in_bigrammar_rng (` p3) c <->
+  in_bigrammar_rng (` (option_perm3_variation p1 p2 p3)) (oa, (ob, c)).
+Proof. unfold option_perm3_variation; split; intros.
+  - ibr_prover; compute [fst]; sim. 
+    set (t:=[|sum_t (pair_t t1 (pair_t (option_t t2) t3))
+              (sum_t (pair_t t2 (pair_t (option_t t1) t3))
+                 (pair_t t3 (pair_t (option_t t1) (option_t t2))))|]).
+    destruct oa as [a | ]; destruct ob as [b | ].
+    + exists ((inl (a,(Some b,c))):t). split; ibr_prover.
+    + exists ((inl (a, (None,c))):t). split; ibr_prover.
+    + exists ((inr (inl (b, (None, c)))):t). split; ibr_prover.
+    + exists ((inr (inr (c, (None,None)))):t). split; ibr_prover.
+  - ibr_prover; sim; ibr_prover.
+Qed.
+
+Hint Extern 0 =>
+  match goal with
+    | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
+      rewrite <- option_perm3_variation_rng in H; sim
+  end : ibr_rng_db.
+
+Hint Extern 1 (in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_))) =>
+  apply option_perm3_variation_rng : ibr_rng_db.
+
+
+  (* todo: move earlier *)
+  Lemma lock_with_op_override_rng_inv pre: 
+    in_bigrammar_rng (` prefix_grammar_lock_with_op_override) pre ->
+    op_override pre = true.
+  Proof. unfold prefix_grammar_lock_with_op_override; intros.
+    ibr_prover.
+    match goal with
+      | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
+        rewrite <- option_perm3_variation_rng in H; destruct H as [_ [_ H]];
+        apply op_override_p_rng_inv in H
+    end.
+    subst pre; trivial.
+  Qed.
+
+  Lemma lock_no_op_override_rng_inv pre:
+    in_bigrammar_rng (` prefix_grammar_lock_no_op_override) pre ->
+    op_override pre = false.
+  Proof. unfold prefix_grammar_lock_no_op_override; intros.
+    ibr_prover. subst pre; trivial. 
+  Qed.
 
   Definition instruction_grammar : wf_bigrammar (pair_t prefix_t instruction_t).
     let ige := eval unfold instr_grammar_env
@@ -5353,26 +5424,48 @@ End X86_PARSER_ARG.
                & _); clear_ast_defs; unfold from_instr;
     unfold invertible; split; [unfold printable | unfold parsable]; 
     compute [snd fst]; intros.
-    - Time 
-        (abstract
-           (destruct_union;
-            repeat match goal with
-                     | [v:[|pair_t _ _|] |- _] => destruct v
-                   end;
-            match goal with
-              | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
-                exists v; split; trivial
-            end)).
-    (* - Time abstract (destruct_union; printable_tac). *)
-    - Time 
+    - Time abstract
+        (repeat match goal with
+           | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
+           | [v: [| Unit_t |] |- _] => case v
+           | [v:[|pair_t _ _|] |- _] => destruct v
+         end;
+         try (match goal with
+              | [ |- exists v', ?c = Some v' /\ _] => 
+               match c with
+                 | Some ?v =>
+                   exists v; split; trivial
+                 | if op_override _ then Some ?v1 else Some ?v2 =>
+                   ibr_prover;
+                   match goal with
+                     | [ H: in_bigrammar_rng
+                            (` prefix_grammar_lock_with_op_override) ?pre |- _] =>
+                       assert (H2: op_override i = true) by
+                           (apply lock_with_op_override_rng_inv; trivial);
+                       rewrite H2;
+                       exists v1; split; ibr_prover
+                     | [ H: in_bigrammar_rng
+                            (` prefix_grammar_lock_no_op_override) ?pre |- _] =>
+                       assert (H2: op_override i = false) by
+                           (apply lock_no_op_override_rng_inv; trivial);
+                       rewrite H2;
+                       exists v2; split; ibr_prover
+                   end
+               end
+             end)).
+    - Time abstract
         ( (* adding abstract here adds a lot of time for some reason *)
            (destruct w as [p ins]; destruct ins;
             match goal with
-              | [H:None = Some _ |- _] => discriminate H
-              | [H:Some _ = Some _ |- _] => 
-                inversion H; clear H; subst; trivial
+              | [H: ?c = Some _ |- _] => 
+                match c with
+                  | None => discriminate H
+                  | Some _ => inversion H; clear H; subst; trivial
+                  | if op_override ?p then Some _ else Some _ => 
+                    destruct (op_override p);
+                  inversion H; clear H; subst; trivial
+                end
             end)).
-      (* Time abstract (destruct w as [p ins]; destruct ins; parsable_tac). *)
   Time Defined.
 
 idea for speeding up: env_split splitting into a tree in one short
