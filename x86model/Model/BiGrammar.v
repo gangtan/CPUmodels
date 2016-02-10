@@ -1262,6 +1262,34 @@ Definition option_perm3_variation t1 t2 t3
           & _); invertible_tac.
 Defined.
 
+Lemma option_perm3_variation_rng t1 t2 t3 (p1:wf_bigrammar t1)
+       (p2:wf_bigrammar t2) (p3:wf_bigrammar t3) oa ob c:
+  in_bigrammar_rng (` (option_perm p1)) oa /\ 
+  in_bigrammar_rng (` (option_perm p2)) ob /\ 
+  in_bigrammar_rng (` p3) c <->
+  in_bigrammar_rng (` (option_perm3_variation p1 p2 p3)) (oa, (ob, c)).
+Proof. unfold option_perm3_variation; split; intros.
+  - ibr_prover; compute [fst]; sim. 
+    set (t:=[|Sum_t (Pair_t t1 (Pair_t (Option_t t2) t3))
+              (Sum_t (Pair_t t2 (Pair_t (Option_t t1) t3))
+                 (Pair_t t3 (Pair_t (Option_t t1) (Option_t t2))))|]).
+    destruct oa as [a | ]; destruct ob as [b | ].
+    + exists ((inl (a,(Some b,c))):t). split; ibr_prover.
+    + exists ((inl (a, (None,c))):t). split; ibr_prover.
+    + exists ((inr (inl (b, (None, c)))):t). split; ibr_prover.
+    + exists ((inr (inr (c, (None,None)))):t). split; ibr_prover.
+  - ibr_prover; sim; ibr_prover.
+Qed.
+
+Hint Extern 0 =>
+  match goal with
+    | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
+      rewrite <- option_perm3_variation_rng in H; sim
+  end : ibr_rng_db.
+
+Hint Extern 1 (in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_))) =>
+  apply option_perm3_variation_rng : ibr_rng_db.
+
 (* This is beginning to get quite nasty. Someone should write a form for arbitrary
    n and prove it's correct :) *)
 Definition option_perm4 t1 t2 t3 t4

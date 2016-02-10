@@ -3460,7 +3460,7 @@ End X86_PARSER_ARG.
   Definition STR_p := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001".
 
-  Definition Test_env (opsize_override:bool) : 
+  Definition TEST_env (opsize_override:bool) : 
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
     {0, "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_p opsize_override,
      (fun v => (true, (fst v, Imm_op (snd v)))
@@ -3480,11 +3480,11 @@ End X86_PARSER_ARG.
      (fun b => (false, (Reg_op EAX, Imm_op (zero_extend8_32 b)))
                  %% pair_t bool_t (pair_t operand_t operand_t))} :::
     ast_env_nil.
-  Hint Unfold Test_env : env_unfold_db.
+  Hint Unfold TEST_env : env_unfold_db.
 
-  Definition Test_p (opsize_override: bool) : 
+  Definition TEST_p (opsize_override: bool) : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
-    intros; gen_ast_defs (Test_env opsize_override).
+    intros; gen_ast_defs (TEST_env opsize_override).
     refine (gr @ (mp: _ -> [|pair_t bool_t (pair_t operand_t operand_t)|])
                & (fun u:[|pair_t bool_t (pair_t operand_t operand_t)|] => 
                     let (w,u1) := u in
@@ -4972,6 +4972,152 @@ End X86_PARSER_ARG.
   Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111"
                                 $$ ! "1000".
 
+  (** ** Hierarchical instruction syntax *)
+  (* To solve the scalability problem *)
+
+  (* Definition instr_grammars_rep := *)
+  (*   INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: RET_p :: nil. *)
+
+  (* Definition instr_grammars_lock_with_op_override :=  *)
+  (*   ADD_p true :: ADC_p true :: AND_p true :: NEG_p :: NOT_p :: OR_p true *)
+  (*   :: SBB_p true :: SUB_p true :: XOR_p true :: XCHG_p :: nil. *)
+
+  (* Definition instr_grammars_lock_no_op_override :=  *)
+  (*   ADD_p false :: ADC_p false :: AND_p false :: BTC_p :: BTR_p ::  *)
+  (*   BTS_p :: CMPXCHG_p :: DEC_p :: INC_p :: NEG_p :: NOT_p :: OR_p false *)
+  (*   :: SBB_p false :: SUB_p false :: XOR_p false :: XADD_p :: XCHG_p :: nil. *)
+
+  (* Definition instr_grammars_seg_with_op_override :=  *)
+  (*   CMP_p true ::  IMUL_p true :: MOV_p true :: TEST_p true :: nil. *)
+
+  (* Definition instr_grammars_seg_op_override :=  *)
+  (*   CDQ_p :: CMOVcc_p :: CWDE_p :: DIV_p :: IDIV_p ::  *)
+  (*   MOVSX_p :: MOVZX_p :: MUL_p :: NOP_p ::  *)
+  (*   ROL_p :: ROR_p :: SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: nil. *)
+
+  (* Definition instr_grammars_seg_override :=  *)
+  (*   AAA_p :: AAD_p :: AAM_p :: AAS_p :: CMP_p false :: *)
+  (*   ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p ::  *)
+  (*   CALL_p :: CLC_p :: CLD_p :: CLI_p :: CLTS_p :: CMC_p :: CPUID_p :: DAA_p :: DAS_p :: *)
+  (*   HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p ::  *)
+  (*   LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p ::  *)
+  (*   LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p ::  *)
+  (*   MOVSR_p :: MOVBE_p ::  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p :: *)
+  (*   PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p ::  *)
+  (*   RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p ::  *)
+  (*   STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: 
+   floating point instrs
+     F2XM1_p :: *)
+  (*   FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCMOVcc_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p :: *)
+  (*   FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p *)
+  (*   :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p *)
+  (*   :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNCLEX_p :: FNINIT_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FNSTSW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *)  *)
+  (*   FSCALE_p ::  *)
+  (*   FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p :: *)
+  (*   FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p ::  *)
+  (*   EMMS_p :: MOVD_p :: MOVQ_p :: PACKSSDW_p :: PACKSSWB_p :: PACKUSWB_p :: PADD_p :: PADDS_p :: PADDUS_p :: PAND_p :: PANDN_p :: PCMPEQ_p :: PCMPGT_p ::  *)
+  (*   PMADDWD_p :: PMULHUW_p :: PMULHW_p :: PMULLW_p :: POR_p :: PSLL_p :: PSRA_p :: PSRL_p :: PSUB_p :: PSUBS_p :: PSUBUS_p :: PUNPCKH_p :: PUNPCKL_p :: PXOR_p ::  *)
+  (*   ADDPS_p :: ADDSS_p :: ANDNPS_p :: ANDPS_p :: CMPPS_p :: CMPSS_p :: COMISS_p :: CVTPI2PS_p :: CVTPS2PI_p :: CVTSI2SS_p :: CVTSS2SI_p :: CVTTPS2PI_p :: CVTTSS2SI_p :: *)
+  (*   DIVPS_p :: DIVSS_p :: LDMXCSR_p :: MAXPS_p :: MAXSS_p :: MINPS_p :: MINSS_p :: MOVAPS_p :: MOVHLPS_p :: MOVLPS_p :: MOVMSKPS_p :: MOVSS_p :: MOVUPS_p :: MULPS_p :: *)
+  (*   MULSS_p :: ORPS_p :: RCPPS_p :: RCPSS_p :: RSQRTPS_p :: RSQRTSS_p :: SHUFPS_p :: SQRTPS_p :: SQRTSS_p :: STMXCSR_p :: SUBPS_p :: SUBSS_p :: UCOMISS_p :: UNPCKHPS_p :: *)
+  (*   UNPCKLPS_p :: XORPS_p :: PAVGB_p :: PEXTRW_p :: PINSRW_p :: PMAXSW_p :: PMAXUB_p :: PMINSW_p :: PMINUB_p :: PMOVMSKB_p :: PSADBW_p :: PSHUFW_p :: MASKMOVQ_p :: *)
+  (*   MOVNTPS_p :: MOVNTQ_p :: PREFETCHT0_p :: PREFETCHT1_p :: PREFETCHT2_p :: PREFETCHNTA_p :: SFENCE_p :: nil. *)
+
+
+  (** This set of integer instructions
+     - take no parameters
+     - take only the seg_override prefix *)
+  Inductive i_instr1 : Set :=
+  | I_AAA
+  | I_AAD 
+  | I_AAM 
+  | I_AAS 
+  | I_CLC 
+  | I_CLD 
+  | I_CLI 
+  | I_CLTS 
+  | I_CMC
+  | I_CPUID 
+  | I_DAA 
+  | I_DAS
+  | I_HLT  
+  | I_INT
+  | I_INTO
+  | I_INVD
+  | I_IRET
+  | I_LAHF
+  | I_LEAVE
+  | I_POPA 
+  | I_POPF
+  | I_PUSHA
+  | I_PUSHF
+  | I_RDMSR
+  | I_RDPMC
+  | I_RDTSC
+  | I_RDTSCP
+  | I_RSM
+  | I_SAHF
+  | I_STC
+  | I_STD
+  | I_STI
+  | I_UD2
+  | I_WBINVD
+  | I_WRMSR
+  | I_XLAT.
+
+  (** This set of integer instructions
+     - take some parameters
+     - take only the seg_override prefix *)
+  Inductive i_instr2 : Set :=
+  | I_ARPL (op1 op2:operand)
+  | I_BOUND (op1 op2:operand)
+  | I_BSF (op1 op2:operand)
+  | I_BSR (op1 op2:operand)
+  | I_BSWAP (r:register)
+  | I_BT (op1 op2:operand)
+  | I_CALL (near:bool)(absolute: bool)(op1:operand)(sel:option selector)
+  | I_IN (w:bool)(p: option port_number)
+  | I_INTn (it:interrupt_type)
+  | I_INVLPG (op1:operand)
+  | I_Jcc (ct:condition_type)(disp:int32)
+  | I_JCXZ (b:int8)
+  | I_JMP (near:bool)(absolute:bool)(op1: operand)(sel:option selector)
+  | I_LAR (op1 op2:operand)
+  | I_LDS (op1 op2:operand)
+  | I_LEA (op1 op2:operand)
+  | I_LES (op1 op2:operand)
+  | I_LFS (op1 op2:operand)
+  | I_LGDT (op1:operand)
+  | I_LGS (op1 op2:operand)
+  | I_LIDT (op1:operand)
+  | I_LLDT (op1:operand)
+  | I_LMSW (op1:operand)
+  | I_LOOP (disp:int8)
+  | I_LOOPZ (disp:int8)
+  | I_LOOPNZ (disp:int8)
+  | I_LSL  (op1 op2:operand)
+  | I_LSS (op1 op2:operand)
+  | I_LTR (op1:operand)
+  | I_MOVCR (direction:bool)(cr:control_register)(r:register)
+  | I_MOVDR (direction:bool)(dr:debug_register)(r:register)
+  | I_MOVSR (direction:bool)(sr:segment_register)(op1:operand)
+  | I_MOVBE (op1 op2:operand)
+  | I_OUT (w:bool)(p:option port_number)
+  | I_POP (op1:operand)
+  | I_POPSR (sr:segment_register)
+  | I_PUSH (w:bool)(op1:operand)
+  | I_PUSHSR (sr:segment_register)
+  | I_RCL (w:bool)(op1:operand)(ri:reg_or_immed)
+  | I_RCR (w:bool)(op1:operand)(ri:reg_or_immed)
+  | I_SETcc (ct:condition_type)(op1:operand)
+  | I_SGDT (op1:operand)
+  | I_SIDT (op1:operand)
+  | I_SLDT (op1:operand)
+  | I_SMSW (op1:operand)
+  | I_STR (op1:operand)
+  | I_VERR (op1:operand)
+  | I_VERW (op1:operand).
+
   (** ** Glue all individual instruction grammars together into one big
          grammar.  *)
 
@@ -5122,14 +5268,14 @@ End X86_PARSER_ARG.
       category because it turns out many binaries use "rep ret" to avoid the
       branch prediction panelty in AMD processors; intel processor seems to
       just ignore the rep prefix in "rep ret". *)
-  Definition instr_grammars_rep_env : AST_Env instruction_t :=
-    {0, INS_p, (fun v => INS v %% instruction_t)} :::
-    {1, OUTS_p, (fun v => OUTS v %% instruction_t)} :::
-    {2, MOVS_p, (fun v => MOVS v %% instruction_t)} :::
-    {3, LODS_p, (fun v => LODS v %% instruction_t)} :::
-    {4, STOS_p, (fun v => STOS v %% instruction_t)} :::
-    {5, RET_p, (fun v => RET (fst v) (snd v) %% instruction_t)} :::
-    ast_env_nil.
+  (* Definition instr_grammars_rep_env : AST_Env instruction_t := *)
+  (*   {0, INS_p, (fun v => INS v %% instruction_t)} ::: *)
+  (*   {1, OUTS_p, (fun v => OUTS v %% instruction_t)} ::: *)
+  (*   {2, MOVS_p, (fun v => MOVS v %% instruction_t)} ::: *)
+  (*   {3, LODS_p, (fun v => LODS v %% instruction_t)} ::: *)
+  (*   {4, STOS_p, (fun v => STOS v %% instruction_t)} ::: *)
+  (*   {5, RET_p, (fun v => RET (fst v) (snd v) %% instruction_t)} ::: *)
+  (*   ast_env_nil. *)
 
   Definition prefix_grammar_rep_or_repn : wf_bigrammar prefix_t.
     refine ((option_perm3 rep_or_repn_p segment_override_p op_override_p)
@@ -5156,10 +5302,10 @@ End X86_PARSER_ARG.
 
   (** this set of instructions can take prefixes in prefix_grammar_repn;
       that is, in lock_or_rep, either rep or repn can be used, but not lock *)
-  Definition instr_grammars_rep_or_repn_env : AST_Env instruction_t :=
-    {10, CMPS_p, (fun v => CMPS v %% instruction_t)} :::
-    {11, SCAS_p, (fun v => SCAS v %% instruction_t)} :::
-    ast_env_nil.
+  (* Definition instr_grammars_rep_or_repn_env : AST_Env instruction_t := *)
+  (*   {10, CMPS_p, (fun v => CMPS v %% instruction_t)} ::: *)
+  (*   {11, SCAS_p, (fun v => SCAS v %% instruction_t)} ::: *)
+  (*   ast_env_nil. *)
 
   Definition prefix_grammar_lock_with_op_override : wf_bigrammar prefix_t.
     refine ((option_perm3_variation lock_p segment_override_p op_override_p)
@@ -5176,34 +5322,47 @@ End X86_PARSER_ARG.
     - destruct w as [l s op addr]; destruct addr; parsable_tac.
   Defined.
 
+  Lemma lock_with_op_override_rng_inv pre: 
+    in_bigrammar_rng (` prefix_grammar_lock_with_op_override) pre ->
+    op_override pre = true.
+  Proof. unfold prefix_grammar_lock_with_op_override; intros.
+    ibr_prover.
+    match goal with
+      | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
+        rewrite <- option_perm3_variation_rng in H; destruct H as [_ [_ H]];
+        apply op_override_p_rng_inv in H
+    end.
+    subst pre; trivial.
+  Qed.
+
   (** Instructions that can take prefixes in
      prefix_grammar_lock_with_op_override: in lock_or_rep, only lock can be
      used; segment override is optional; op_override prefix *must* be used;
      NEG, NOT, and XCHG appear in both instr_grammars_lock_with_op_override_env
      and instr_grammars_lock_no_op_override_env since they allow op_override
      prefix to be optional. *)
-  Definition instr_grammars_lock_with_op_override_env : AST_Env instruction_t :=
-    {20, ADC_p true, (fun v => match v with (b,(op1,op2)) => ADC b op1 op2 end
-                          %% instruction_t)} :::
-    {21, ADD_p true, (fun v => match v with (b,(op1,op2)) => ADD b op1 op2 end
-                          %% instruction_t)} :::
-    {22, AND_p true, (fun v => match v with (b,(op1,op2)) => AND b op1 op2 end
-                          %% instruction_t)} :::
-    {23, NEG_p, (fun v => match v with (b,op) => NEG b op end
-                          %% instruction_t)} :::
-    {24, NOT_p, (fun v => match v with (b,op) => NOT b op end
-                          %% instruction_t)} :::
-    {25, OR_p true, (fun v => match v with (b,(op1,op2)) => OR b op1 op2 end
-                          %% instruction_t)} :::
-    {26, SBB_p true, (fun v => match v with (b,(op1,op2)) => SBB b op1 op2 end
-                          %% instruction_t)} :::
-    {27, SUB_p true, (fun v => match v with (b,(op1,op2)) => SUB b op1 op2 end
-                          %% instruction_t)} :::
-    {28, XCHG_p, (fun v => match v with (b,(op1,op2)) => XCHG b op1 op2 end
-                          %% instruction_t)} :::
-    {29, XOR_p true, (fun v => match v with (b,(op1,op2)) => XOR b op1 op2 end
-                          %% instruction_t)} :::
-    ast_env_nil.
+  (* Definition instr_grammars_lock_with_op_override_env : AST_Env instruction_t := *)
+  (*   {20, ADC_p true, (fun v => match v with (b,(op1,op2)) => ADC b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {21, ADD_p true, (fun v => match v with (b,(op1,op2)) => ADD b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {22, AND_p true, (fun v => match v with (b,(op1,op2)) => AND b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {23, NEG_p, (fun v => match v with (b,op) => NEG b op end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {24, NOT_p, (fun v => match v with (b,op) => NOT b op end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {25, OR_p true, (fun v => match v with (b,(op1,op2)) => OR b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {26, SBB_p true, (fun v => match v with (b,(op1,op2)) => SBB b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {27, SUB_p true, (fun v => match v with (b,(op1,op2)) => SUB b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {28, XCHG_p, (fun v => match v with (b,(op1,op2)) => XCHG b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {29, XOR_p true, (fun v => match v with (b,(op1,op2)) => XOR b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   ast_env_nil. *)
 
   Definition prefix_grammar_lock_no_op_override : wf_bigrammar prefix_t.
     refine ((option_perm2 lock_p segment_override_p)
@@ -5219,47 +5378,186 @@ End X86_PARSER_ARG.
     - destruct w as [l s op addr]; destruct op; destruct addr; parsable_tac.
   Defined.
 
+  Lemma lock_no_op_override_rng_inv pre:
+    in_bigrammar_rng (` prefix_grammar_lock_no_op_override) pre ->
+    op_override pre = false.
+  Proof. unfold prefix_grammar_lock_no_op_override; intros.
+    ibr_prover. subst pre; trivial. 
+  Qed.
 
   (** Instructions that can take prefixes in
      prefix_grammar_lock_no_op_override; that is, in lock_or_rep, only lock
      can be used; segment override is optional; and op_override prefix
      *must not* be used *)
-  Definition instr_grammars_lock_no_op_override_env : AST_Env instruction_t :=
-    {30, ADC_p false, (fun v => match v with (b,(op1,op2)) => ADC b op1 op2 end
+  (* Definition instr_grammars_lock_no_op_override_env : AST_Env instruction_t := *)
+  (*   {30, ADC_p false, (fun v => match v with (b,(op1,op2)) => ADC b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {31, ADD_p false, (fun v => match v with (b,(op1,op2)) => ADD b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {32, AND_p false, (fun v => match v with (b,(op1,op2)) => AND b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {33, BTC_p, (fun v => match v with (op1,op2) => BTC op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {34, BTR_p, (fun v => match v with (op1,op2) => BTR op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {35, BTS_p, (fun v => match v with (op1,op2) => BTS op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {36, CMPXCHG_p, (fun v => match v with (b,(op1,op2)) => CMPXCHG b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {37, DEC_p, (fun v => match v with (b,op) => DEC b op end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {38, INC_p, (fun v => match v with (b,op) => INC b op end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {39, NEG_p, (fun v => match v with (b,op) => NEG b op end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {40, NOT_p, (fun v => match v with (b,op) => NOT b op end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {41, OR_p false, (fun v => match v with (b,(op1,op2)) => OR b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {42, SBB_p false, (fun v => match v with (b,(op1,op2)) => SBB b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {43, SUB_p false, (fun v => match v with (b,(op1,op2)) => SUB b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {44, XADD_p, (fun v => match v with (b,(op1,op2)) => XADD b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {45, XCHG_p, (fun v => match v with (b,(op1,op2)) => XCHG b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {46, XOR_p false, (fun v => match v with (b,(op1,op2)) => XOR b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   ast_env_nil. *)
+
+  Definition prefix_grammar_seg_with_op_override: wf_bigrammar prefix_t. 
+    refine ((option_perm2_variation segment_override_p op_override_p)
+              @ (fun v => match v with (s, op) =>
+                   mkPrefix None s op false %% prefix_t end)
+              & (fun u =>
+                   match addr_override u, lock_rep u with
+                     | false,None => Some (seg_override u, op_override u)
+                     | _,_ => None
+                   end)
+              & _); compute [op_override addr_override lock_rep seg_override];
+      ins_invertible_tac.
+    - destruct w as [l s op addr]; destruct l; destruct addr; parsable_tac.
+  Defined.
+
+  (* this set of instructions can take prefixes in 
+     prefix_grammar_seg_with_op_override;
+     that is, it cannot take a lock_or_rep prefix, must take op_override
+     prefix, can optionally take segment-override prefix *)
+  (* Definition instr_grammars_seg_with_op_override_env : AST_Env instruction_t := *)
+  (*   {50, CMP_p true, (fun v => match v with (b,(op1,op2)) => CMP b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {51, IMUL_p true, (fun v => match v with (b,(op1,(opopt,iopt))) => *)
+  (*                                  IMUL b op1 opopt iopt end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {52, MOV_p true, (fun v => match v with (b,(op1,op2)) => MOV b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   {53, TEST_p true, (fun v => match v with (b,(op1,op2)) => TEST b op1 op2 end *)
+  (*                         %% instruction_t)} ::: *)
+  (*   ast_env_nil. *)
+
+  Definition prefix_grammar_seg_op_override: wf_bigrammar prefix_t. 
+    refine ((option_perm2 segment_override_p op_override_p)
+              @ (fun v => match v with (s, op) =>
+                   mkPrefix None s (opt2b op false) false %% prefix_t end)
+              & (fun u =>
+                   match op_override u, addr_override u, lock_rep u with
+                     | true, false, None => Some (seg_override u, Some true)
+                     | false, false, None => Some (seg_override u, None)
+                     | _,_,_ => None
+                   end)
+              & _); compute [op_override addr_override lock_rep seg_override];
+    ins_invertible_tac.
+    - destruct v as [s op]. 
+      destruct op as [op | ]; [destruct op | ]; compute [opt2b].
+      + ins_printable_tac.
+      + printable_tac.
+        apply option_perm2_rng; sim; auto with ibr_rng_db.
+        apply option_perm_rng2.
+      + ins_printable_tac.
+    - destruct w as [l s op addr];
+      destruct op; destruct addr; destruct l; parsable_tac.
+  Defined.
+
+  (* this set of instructions can take prefixes in 
+     prefix_grammar_seg_op_override;
+     that is, it cannot take a lock_or_rep prefix, but can
+     optionally take segment or op override prefix *)
+  (* Definition instr_grammars_seg_op_override_env : AST_Env instruction_t := *)
+  (*   {60, CDQ_p, (fun v => CDQ %% instruction_t)} ::: *)
+  (*   {61, CMOVcc_p, (fun v => match v with (ct,(op1,op2)) *)
+  (*                                         => CMOVcc ct op1 op2 end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {62, CWDE_p, (fun v => CWDE %% instruction_t)} ::: *)
+  (*   {63, DIV_p, (fun v => match v with (w,op1) => DIV w op1 end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {64, IDIV_p, (fun v => match v with (w,op1) => IDIV w op1 end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {65, MOVSX_p, (fun v => match v with (w,(op1,op2)) => MOVSX w op1 op2 end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {66, MOVZX_p, (fun v => match v with (w,(op1,op2)) => MOVZX w op1 op2 end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {67, MUL_p, (fun v => match v with (w,op1) => MUL w op1 end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {68, NOP_p, (fun op => NOP op %% instruction_t)} ::: *)
+  (*   {69, ROL_p, (fun v => match v with (w,(op1,ri)) => ROL w op1 ri end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {70, ROR_p, (fun v => match v with (w,(op1,ri)) => ROR w op1 ri end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {71, SAR_p, (fun v => match v with (w,(op1,ri)) => SAR w op1 ri end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {72, SHL_p, (fun v => match v with (w,(op1,ri)) => SHL w op1 ri end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {73, SHLD_p, (fun v => match v with (op1,(r,ri)) => SHLD op1 r ri end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {74, SHR_p, (fun v => match v with (w,(op1,ri)) => SHR w op1 ri end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   {75, SHRD_p, (fun v => match v with (op1,(r,ri)) => SHRD op1 r ri end *)
+  (*                      %% instruction_t)} ::: *)
+  (*   ast_env_nil. *)
+
+  (* only allows seg override prefix *)
+  Definition prefix_grammar_seg_override_only : wf_bigrammar prefix_t.
+    refine ((option_perm segment_override_p)
+              @ (fun s => mkPrefix None s false false %% prefix_t)
+              & (fun u => 
+                   match op_override u, addr_override u, lock_rep u with
+                     | false, false, None => Some (seg_override u)
+                     | _,_,_ => None
+                   end)
+              & _); compute [op_override addr_override lock_rep seg_override];
+    ins_invertible_tac.
+    - destruct w as [l s op addr];
+      destruct op; destruct addr; destruct l; parsable_tac.
+  Defined.
+
+  (* this set of instructions can take only the seg_override prefix *)
+  Definition instr_grammars_seg_override : AST_Env instruction_t :=
+    {100, AAA_p, (fun v => AAA %% instruction_t)} :::
+    {101, AAD_p, (fun v => AAD %% instruction_t)} :::
+    {102, AAM_p, (fun v => AAM %% instruction_t)} :::
+    {103, AAS_p, (fun v => AAS %% instruction_t)} :::
+    {104, ARPL_p, (fun v => match v with (op1,op2) => ARPL op1 op2 end
                           %% instruction_t)} :::
-    {31, ADD_p false, (fun v => match v with (b,(op1,op2)) => ADD b op1 op2 end
+    {105, BOUND_p, (fun v => match v with (op1,op2) => BOUND op1 op2 end
                           %% instruction_t)} :::
-    {32, AND_p false, (fun v => match v with (b,(op1,op2)) => AND b op1 op2 end
+    {106, BSF_p, (fun v => match v with (op1,op2) => BSF op1 op2 end
                           %% instruction_t)} :::
-    {33, BTC_p, (fun v => match v with (op1,op2) => BTC op1 op2 end
+    {107, BSR_p, (fun v => match v with (op1,op2) => BSR op1 op2 end
                           %% instruction_t)} :::
-    {34, BTR_p, (fun v => match v with (op1,op2) => BTR op1 op2 end
+    {108, BSWAP_p, (fun r => BSWAP r %% instruction_t)} :::
+    {109, BT_p, (fun v => match v with (op1,op2) => BT op1 op2 end
                           %% instruction_t)} :::
-    {35, BTS_p, (fun v => match v with (op1,op2) => BTS op1 op2 end
-                          %% instruction_t)} :::
-    {36, CMPXCHG_p, (fun v => match v with (b,(op1,op2)) => CMPXCHG b op1 op2 end
-                          %% instruction_t)} :::
-    {37, DEC_p, (fun v => match v with (b,op) => DEC b op end
-                          %% instruction_t)} :::
-    {38, INC_p, (fun v => match v with (b,op) => INC b op end
-                          %% instruction_t)} :::
-    {39, NEG_p, (fun v => match v with (b,op) => NEG b op end
-                          %% instruction_t)} :::
-    {40, NOT_p, (fun v => match v with (b,op) => NOT b op end
-                          %% instruction_t)} :::
-    {41, OR_p false, (fun v => match v with (b,(op1,op2)) => OR b op1 op2 end
-                          %% instruction_t)} :::
-    {42, SBB_p false, (fun v => match v with (b,(op1,op2)) => SBB b op1 op2 end
-                          %% instruction_t)} :::
-    {43, SUB_p false, (fun v => match v with (b,(op1,op2)) => SUB b op1 op2 end
-                          %% instruction_t)} :::
-    {44, XADD_p, (fun v => match v with (b,(op1,op2)) => XADD b op1 op2 end
-                          %% instruction_t)} :::
-    {45, XCHG_p, (fun v => match v with (b,(op1,op2)) => XCHG b op1 op2 end
-                          %% instruction_t)} :::
-    {46, XOR_p false, (fun v => match v with (b,(op1,op2)) => XOR b op1 op2 end
+    {110, CMP_p false, (fun v => match v with (b,(op1,op2)) => CMP b op1 op2 end
                           %% instruction_t)} :::
     ast_env_nil.
+
+
+  (* Definition instr_grammars_seg_override :=  *)
+  (*   (* AAA_p :: AAD_p :: AAM_p :: AAS_p :: CMP_p false :: *) *)
+  (*   (* ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p ::  *) *)
+  (*   CALL_p :: CLC_p :: CLD_p :: CLI_p :: CLTS_p :: CMC_p :: CPUID_p :: DAA_p :: DAS_p :: *)
+  (*   HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p ::  *)
 
   Definition instr_grammar_env' := 
     (ast_env_cat prefix_grammar_rep instr_grammars_rep_env)
@@ -5271,7 +5569,16 @@ End X86_PARSER_ARG.
        instr_grammars_lock_with_op_override_env)
       +++
     (ast_env_cat prefix_grammar_lock_no_op_override
-       instr_grammars_lock_no_op_override_env).
+       instr_grammars_lock_no_op_override_env)
+      +++
+    (ast_env_cat prefix_grammar_seg_with_op_override
+       instr_grammars_seg_with_op_override_env)
+      +++
+    (ast_env_cat prefix_grammar_seg_op_override
+       instr_grammars_seg_op_override_env)
+      +++
+    (ast_env_cat prefix_grammar_seg_override
+       instr_grammars_seg_override).
 
   Definition instr_grammar_env : AST_Env (pair_t prefix_t instruction_t).
     let ige := eval cbv beta
@@ -5279,42 +5586,77 @@ End X86_PARSER_ARG.
                            instr_grammars_rep_or_repn_env
                            instr_grammars_lock_with_op_override_env
                            instr_grammars_lock_no_op_override_env
+                           instr_grammars_seg_with_op_override_env
+                           instr_grammars_seg_op_override_env
+                           instr_grammars_seg_override
                            ast_env_app ast_env_cat]
                     iota zeta
                in instr_grammar_env' in
     exact(ige).
   Defined.
+  (* Print instr_grammar_env. *)
 
   Definition instr_grammar_type : type.
     let ige := eval unfold instr_grammar_env in instr_grammar_env in
     let t:=gen_ast_type ige in exact(t).
   Defined.
+  (* Print instr_grammar_type. *)
 
   Definition from_instr (u:prefix * instr) : option [|instr_grammar_type|].
     intro.
     refine (match snd u with
+              | AAA => _
+              | AAD => _
+              | AAM => _
+              | AAS => _
               | ADC a1 a2 a3 => _
               | ADD a1 a2 a3 => _
               | AND a1 a2 a3 => _
+              | ARPL a1 a2 => _
+              | BOUND a1 a2 => _
+              | BSF a1 a2 => _
+              | BSR a1 a2 => _
+              | BSWAP a => _
+              | BT a1 a2 => _
               | BTC a1 a2 => _
               | BTR a1 a2 => _
               | BTS a1 a2 => _
+              | CDQ => _
+              | CMOVcc a1 a2 a3 => _
+              | CMP a1 a2 a3 => _
               | CMPS a => _
               | CMPXCHG a1 a2 a3 => _
+              | CWDE => _
               | DEC a1 a2 => _
+              | DIV a1 a2 => _
+              | IDIV a1 a2 => _
+              | IMUL a1 a2 a3 a4 => _
               | INC a1 a2 => _
               | INS a => _
               | LODS a => _
+              | MOV a1 a2 a3 => _
               | MOVS a => _
+              | MOVSX a1 a2 a3 => _
+              | MOVZX a1 a2 a3 => _
+              | MUL a1 a2 => _
               | NEG a1 a2 => _
+              | NOP a => _
               | NOT a1 a2 => _
               | OR a1 a2 a3 => _
               | OUTS a => _
               | RET a1 a2 => _
+              | ROL a1 a2 a3 => _
+              | ROR a1 a2 a3 => _
+              | SAR a1 a2 a3 => _
               | SBB a1 a2 a3 => _
               | SCAS a => _
+              | SHL a1 a2 a3 => _
+              | SHLD a1 a2 a3 => _
+              | SHR a1 a2 a3 => _
+              | SHRD a1 a2 a3 => _
               | STOS a => _
               | SUB a1 a2 a3 => _
+              | TEST a1 a2 a3 => _
               | XADD a1 a2 a3 => _
               | XCHG a1 a2 a3 => _
               | XOR a1 a2 a3 => _
@@ -5333,86 +5675,64 @@ End X86_PARSER_ARG.
     Local Ltac gen_op_override lbl1 lbl2 u arg := 
       refine (if (op_override (fst u)) then _ else _);
       [gen lbl1 u arg | gen lbl2 u arg].
+    * (* AAA *) gen 100 u tt.
+    * (* AAD *) gen 101 u tt.
+    * (* AAM *) gen 102 u tt.
+    * (* AAS *) gen 103 u tt.
     * (* ADC *) gen_op_override 20 30 u (a1,(a2,a3)).
     * (* ADD *) gen_op_override 21 31 u (a1,(a2,a3)).
     * (* AND *) gen_op_override 22 32 u (a1,(a2,a3)).
+    * (* ARPL *) gen 104 u (a1,a2).
+    * (* BOUND *) gen 105 u (a1,a2).
+    * (* BSF *) gen 106 u (a1,a2).
+    * (* BSR *) gen 107 u (a1,a2).
+    * (* BSWAP *) gen 108 u a.
+    * (* BT *) gen 109 u (a1,a2).
     * (* BTC *) gen 33 u (a1,a2).
     * (* BTR *) gen 34 u (a1,a2).
     * (* BTS *) gen 35 u (a1,a2).
+    * (* CDQ *) gen 60 u tt.
+    * (* CMOVcc *) gen 61 u (a1,(a2,a3)).
+    * (* CMP *) gen_op_override 50 110 u (a1,(a2,a3)).
     * (* CMPS *) gen 10 u a.
     * (* CMPXCHG *) gen 36 u (a1,(a2,a3)).
+    * (* CWDE *) gen 62 u tt.
     * (* DEC *) gen 37 u (a1,a2).
+    * (* DIV *) gen 63 u (a1,a2).
+    * (* IDIV *) gen 64 u (a1,a2).
+    * (* IMUL *) gen 51 u (a1,(a2,(a3,a4))).
     * (* INC *) gen 38 u (a1,a2).
     * (* INS *) gen 0 u a.
     * (* LODS *) gen 3 u a.
+    * (* MOV *) gen 52 u (a1,(a2,a3)).
     * (* MOVS *) gen 2 u a.
+    * (* MOVSX *) gen 65 u (a1,(a2,a3)).
+    * (* MOVZX *) gen 66 u (a1,(a2,a3)).
+    * (* MUL *) gen 67 u (a1,a2).
     * (* NEG *) gen_op_override 23 39 u (a1,a2).
+    * (* NOP *) gen 68 u a.
     * (* NOT *) gen_op_override 24 40 u (a1,a2).
     * (* OR *) gen_op_override 25 41 u (a1,(a2,a3)).
     * (* OUTS *) gen 1 u a.
     * (* RET *) gen 5 u (a1,a2).
+    * (* ROL *) gen 69 u (a1,(a2,a3)).
+    * (* ROR *) gen 70 u (a1,(a2,a3)).
+    * (* SAR *) gen 71 u (a1,(a2,a3)).
     * (* SBB *) gen_op_override 26 42 u (a1,(a2,a3)).
     * (* SCAS *) gen 11 u a.
+    * (* SHL *) gen 72 u (a1,(a2,a3)).
+    * (* SHLD *) gen 73 u (a1,(a2,a3)).
+    * (* SHR *) gen 74 u (a1,(a2,a3)).
+    * (* SHRD *) gen 75 u (a1,(a2,a3)).
     * (* STOS *) gen 4 u a.
     * (* SUB *) gen_op_override 27 43 u (a1,(a2,a3)).
+    * (* TEST *) gen 53 u (a1,(a2,a3)).
     * (* XADD *) gen 44 u (a1,(a2,a3)).
     * (* XCHG *) gen_op_override 28 45 u (a1,(a2,a3)).
     * (* XOR *) gen_op_override 29 46 u (a1,(a2,a3)).
   Defined.
 
-
   (* Print from_instr. *)
-
-(* todo: move to Bigrammar.v *)
-Lemma option_perm3_variation_rng t1 t2 t3 (p1:wf_bigrammar t1)
-       (p2:wf_bigrammar t2) (p3:wf_bigrammar t3) oa ob c:
-  in_bigrammar_rng (` (option_perm p1)) oa /\ 
-  in_bigrammar_rng (` (option_perm p2)) ob /\ 
-  in_bigrammar_rng (` p3) c <->
-  in_bigrammar_rng (` (option_perm3_variation p1 p2 p3)) (oa, (ob, c)).
-Proof. unfold option_perm3_variation; split; intros.
-  - ibr_prover; compute [fst]; sim. 
-    set (t:=[|sum_t (pair_t t1 (pair_t (option_t t2) t3))
-              (sum_t (pair_t t2 (pair_t (option_t t1) t3))
-                 (pair_t t3 (pair_t (option_t t1) (option_t t2))))|]).
-    destruct oa as [a | ]; destruct ob as [b | ].
-    + exists ((inl (a,(Some b,c))):t). split; ibr_prover.
-    + exists ((inl (a, (None,c))):t). split; ibr_prover.
-    + exists ((inr (inl (b, (None, c)))):t). split; ibr_prover.
-    + exists ((inr (inr (c, (None,None)))):t). split; ibr_prover.
-  - ibr_prover; sim; ibr_prover.
-Qed.
-
-Hint Extern 0 =>
-  match goal with
-    | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
-      rewrite <- option_perm3_variation_rng in H; sim
-  end : ibr_rng_db.
-
-Hint Extern 1 (in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_))) =>
-  apply option_perm3_variation_rng : ibr_rng_db.
-
-
-  (* todo: move earlier *)
-  Lemma lock_with_op_override_rng_inv pre: 
-    in_bigrammar_rng (` prefix_grammar_lock_with_op_override) pre ->
-    op_override pre = true.
-  Proof. unfold prefix_grammar_lock_with_op_override; intros.
-    ibr_prover.
-    match goal with
-      | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
-        rewrite <- option_perm3_variation_rng in H; destruct H as [_ [_ H]];
-        apply op_override_p_rng_inv in H
-    end.
-    subst pre; trivial.
-  Qed.
-
-  Lemma lock_no_op_override_rng_inv pre:
-    in_bigrammar_rng (` prefix_grammar_lock_no_op_override) pre ->
-    op_override pre = false.
-  Proof. unfold prefix_grammar_lock_no_op_override; intros.
-    ibr_prover. subst pre; trivial. 
-  Qed.
 
   Definition instruction_grammar : wf_bigrammar (pair_t prefix_t instruction_t).
     let ige := eval unfold instr_grammar_env
@@ -5424,38 +5744,105 @@ Hint Extern 1 (in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_))) =>
                & _); clear_ast_defs; unfold from_instr;
     unfold invertible; split; [unfold printable | unfold parsable]; 
     compute [snd fst]; intros.
-    - Time abstract
-        (repeat match goal with
-           | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-           | [v: [| Unit_t |] |- _] => case v
-           | [v:[|pair_t _ _|] |- _] => destruct v
-         end;
-         try (match goal with
-              | [ |- exists v', ?c = Some v' /\ _] => 
-               match c with
-                 | Some ?v =>
-                   exists v; split; trivial
-                 | if op_override _ then Some ?v1 else Some ?v2 =>
-                   ibr_prover;
-                   match goal with
-                     | [ H: in_bigrammar_rng
-                            (` prefix_grammar_lock_with_op_override) ?pre |- _] =>
-                       assert (H2: op_override i = true) by
-                           (apply lock_with_op_override_rng_inv; trivial);
-                       rewrite H2;
-                       exists v1; split; ibr_prover
-                     | [ H: in_bigrammar_rng
-                            (` prefix_grammar_lock_no_op_override) ?pre |- _] =>
-                       assert (H2: op_override i = false) by
-                           (apply lock_no_op_override_rng_inv; trivial);
-                       rewrite H2;
-                       exists v2; split; ibr_prover
-                   end
-               end
-             end)).
-    - Time abstract
-        ( (* adding abstract here adds a lot of time for some reason *)
+    - Local Ltac instr_printable := 
+        repeat match goal with
+          | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
+          | [v: [| unit_t |] |- _] => destruct v
+          | [v:[|pair_t _ _|] |- _] => destruct v
+        end;
+        try (match goal with
+             | [ |- exists v', ?c = Some v' /\ _] => 
+              match c with
+                | Some ?v =>
+                  exists v; split; trivial
+                | if op_override _ then Some ?v1 else Some ?v2 =>
+                  ibr_prover;
+                  match goal with
+                    | [ H: in_bigrammar_rng
+                           (` prefix_grammar_lock_with_op_override) ?pre |- _] =>
+                      assert (H2: op_override pre = true) by
+                          (apply lock_with_op_override_rng_inv; trivial);
+                      rewrite H2;
+                      exists v1; split; ibr_prover
+                    | [ H: in_bigrammar_rng
+                           (` prefix_grammar_lock_no_op_override) ?pre |- _] =>
+                      assert (H2: op_override pre = false) by
+                          (apply lock_no_op_override_rng_inv; trivial);
+                      rewrite H2;
+                      exists v2; split; ibr_prover
+                  end
+              end
+            end).
+      match goal with
+        | [ |- exists v', ?c = Some v' /\ _] => 
+          let tp:= type of v in
+          set (t:=tp)
+      end.
+
+      (* admit. *)
+       Time do 3 match goal with
+              | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
+            end.
+        abstract instr_printable.
+
+        abstract instr_printable.
+
+        abstract instr_printable.
+        abstract instr_printable.
+        repeat match goal with
+          | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
+          | [v: [| unit_t |] |- _] => destruct v
+          | [v:[|pair_t _ _|] |- _] => destruct v
+        end.
+        
+        ibr_prover.
+        assert (H2: op_override i = false) by
+            (apply lock_no_op_override_rng_inv; trivial).
+
+        rewrite H2.
+                      exists v2; split; ibr_prover
+
+
+        abstract instr_printable.
+        
+        abstract instr_printable.
+
+
+
+        abstract instr_printable.
+        abstract instr_printable.
+        abstract instr_printable.
+        abstract instr_printable.
+
+       (* split into a fixed number high-level cases and use abstract for
+          each case to avoid out of memory situation *)
+       Time do 3 match goal with
+              | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
+            end;
+        abstract instr_printable.
+    - Local Ltac ins_parsable := 
+            match goal with
+              | [H: ?c = Some _ |- _] => 
+                match c with
+                  | None => discriminate H
+                  | Some _ => inversion H; clear H; subst; trivial
+                  | if op_override ?p then Some _ else Some _ => 
+                    destruct (op_override p);
+                  inversion H; clear H; subst; trivial
+                end
+            end.
+      (* adding abstract somehow adds a lot of time *)
+      Time abstract (destruct w as [p ins]; destruct ins; ins_parsable).
+  Time Defined.
+
+idea: promote sharing somehow
+
+idea: splitting the instruction grammar to have hierarchies
+
+Time 
+        ( 
            (destruct w as [p ins]; destruct ins;
+            abstract
             match goal with
               | [H: ?c = Some _ |- _] => 
                 match c with
@@ -5468,24 +5855,46 @@ Hint Extern 1 (in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_))) =>
             end)).
   Time Defined.
 
-idea for speeding up: env_split splitting into a tree in one short
+  
+
+
+idea for speeding up: env_split splitting into a tree in one shot
 
 
 TBC:
 
-  Definition prefix_grammar_lock_no_op_override :=
-    option_perm2 lock_p segment_override_p @
-     (fun p => match p with (l, s) =>
-                 mkPrefix l s false false %% prefix_t end).
 
-  (** Instructions that can take prefixes in
-     prefix_grammar_lock_no_op_override; that is, in lock_or_rep, only lock
-     can be used; segment override is optional; and op_override prefix
-     *must not* be used *)
-  Definition instr_grammars_lock_no_op_override := 
-    ADD_p false :: ADC_p false :: AND_p false :: BTC_p :: BTR_p :: 
-    BTS_p :: CMPXCHG_p :: DEC_p :: INC_p :: NEG_p :: NOT_p :: OR_p false
-    :: SBB_p false :: SUB_p false :: XOR_p false :: XADD_p :: XCHG_p :: nil.
+  Definition prefix_grammar_seg_override :=
+    option_perm segment_override_p @
+     (fun s => mkPrefix None s false false %% prefix_t).
+
+  (* this set of instructions can take only the seg_override prefix *)
+  Definition instr_grammars_seg_override := 
+    AAA_p :: AAD_p :: AAM_p :: AAS_p :: CMP_p false ::
+    ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p :: 
+    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CLTS_p :: CMC_p :: CPUID_p :: DAA_p :: DAS_p ::
+    HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: 
+    LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: 
+    LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
+    MOVSR_p :: MOVBE_p ::  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
+    PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
+    RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
+    STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: F2XM1_p ::
+    FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCMOVcc_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
+    FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
+    :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
+    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNCLEX_p :: FNINIT_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FNSTSW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) 
+    FSCALE_p :: 
+    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
+    FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: 
+    EMMS_p :: MOVD_p :: MOVQ_p :: PACKSSDW_p :: PACKSSWB_p :: PACKUSWB_p :: PADD_p :: PADDS_p :: PADDUS_p :: PAND_p :: PANDN_p :: PCMPEQ_p :: PCMPGT_p :: 
+    PMADDWD_p :: PMULHUW_p :: PMULHW_p :: PMULLW_p :: POR_p :: PSLL_p :: PSRA_p :: PSRL_p :: PSUB_p :: PSUBS_p :: PSUBUS_p :: PUNPCKH_p :: PUNPCKL_p :: PXOR_p :: 
+    ADDPS_p :: ADDSS_p :: ANDNPS_p :: ANDPS_p :: CMPPS_p :: CMPSS_p :: COMISS_p :: CVTPI2PS_p :: CVTPS2PI_p :: CVTSI2SS_p :: CVTSS2SI_p :: CVTTPS2PI_p :: CVTTSS2SI_p ::
+    DIVPS_p :: DIVSS_p :: LDMXCSR_p :: MAXPS_p :: MAXSS_p :: MINPS_p :: MINSS_p :: MOVAPS_p :: MOVHLPS_p :: MOVLPS_p :: MOVMSKPS_p :: MOVSS_p :: MOVUPS_p :: MULPS_p ::
+    MULSS_p :: ORPS_p :: RCPPS_p :: RCPSS_p :: RSQRTPS_p :: RSQRTSS_p :: SHUFPS_p :: SQRTPS_p :: SQRTSS_p :: STMXCSR_p :: SUBPS_p :: SUBSS_p :: UCOMISS_p :: UNPCKHPS_p ::
+    UNPCKLPS_p :: XORPS_p :: PAVGB_p :: PEXTRW_p :: PINSRW_p :: PMAXSW_p :: PMAXUB_p :: PMINSW_p :: PMINUB_p :: PMOVMSKB_p :: PSADBW_p :: PSHUFW_p :: MASKMOVQ_p ::
+    MOVNTPS_p :: MOVNTQ_p :: PREFETCHT0_p :: PREFETCHT1_p :: PREFETCHT2_p :: PREFETCHNTA_p :: SFENCE_p :: nil.
+
 
 
   Definition instruction_grammar_list := 
