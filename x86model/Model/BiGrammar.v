@@ -1013,12 +1013,7 @@ Definition perm4 t1 t2 t3 t4
             & _); invertible_tac.
 Defined.
 
-(* Sometimes we want (perm2 p1 p2) and make both p1 and p2 accept Eps;
-   however, doing this would result a _highly_ ambiguous grammar because
-   the empty string can be parsed in two ways (p1 followed by p2 or p2
-   followed by p1). Instead we have a different combinator, called
-   option_perm2, that handles this without introducing extra ambiguity *)
-
+(* An grammar that accepts the empty string or strings acceptable by p1 *)
 Definition option_perm t1 (p1: wf_bigrammar t1) :
   wf_bigrammar (Option_t t1). 
   intros.
@@ -1064,6 +1059,11 @@ Proof. unfold option_perm; intros; ibr_prover.
 Qed.
 Hint Resolve option_perm_rng2 : ibr_rng_db.
 
+(* Sometimes we want (perm2 p1 p2) and make both p1 and p2 accept Eps;
+   however, doing this would result a _highly_ ambiguous grammar because
+   the empty string can be parsed in two ways (p1 followed by p2 or p2
+   followed by p1). Instead we have a different combinator, called
+   option_perm2, that handles this without introducing extra ambiguity *)
 Definition option_perm2 t1 t2 
            (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) :
   wf_bigrammar (Pair_t (Option_t t1) (Option_t t2)).

@@ -201,7 +201,7 @@ Module X86_PARSER_ARG.
 
   (** this set of instructions can take prefixes in prefix_grammar_seg_op_override *)
   Inductive i_instr6 : Set := 
-  | I_CDQ 
+  | I_CDQ
   | I_CMOVcc (ct:condition_type)(op1 op2: operand)
   | I_CWDE 
   | I_DIV (w:bool)(op1:operand)
