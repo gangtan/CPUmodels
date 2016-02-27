@@ -5388,7 +5388,7 @@ End X86_PARSER_ARG.
   Hint Unfold i_instr1_env: env_unfold_db.
 
   Definition i_instr1_p : wf_bigrammar i_instr1_t.
-    Time gen_ast_defs i_instr1_env.
+    gen_ast_defs i_instr1_env.
     refine (gr @ (mp: _ -> [|i_instr1_t|])
                & (fun u =>
                     match u with
@@ -5430,7 +5430,7 @@ End X86_PARSER_ARG.
                       | I_XLAT => case35 ()
                     end)
                & _); clear_ast_defs; invertible_tac.
-     - Time abstract (destruct w; parsable_tac).
+     - abstract (destruct w; parsable_tac).
   Defined.
 
   Definition i_instr2_env : AST_Env i_instr2_t := 
@@ -5676,7 +5676,7 @@ End X86_PARSER_ARG.
     let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
     let g := gen_ast_grammar ige in pose (gr:=g);
     let m := gen_ast_map ige in pose (mp:=m).
-    Time refine (gr @ (mp: _ -> [|pair_t prefix_t i_instr4_t|])
+    refine (gr @ (mp: _ -> [|pair_t prefix_t i_instr4_t|])
                  & from_instr4
                  & _); clear_ast_defs; unfold from_instr4;
     unfold invertible; split; [unfold printable | unfold parsable];
@@ -5880,9 +5880,9 @@ End X86_PARSER_ARG.
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
     let g := gen_ast_grammar ige in pose (gr:=g);
     let m := gen_ast_map ige in pose (mp:=m).
-    Time refine (gr @ (mp: _ -> [|pair_t prefix_t i_instr5_t|])
-                 & from_instr5
-                 & _); clear_ast_defs; unfold from_instr5;
+    refine (gr @ (mp: _ -> [|pair_t prefix_t i_instr5_t|])
+               & from_instr5
+               & _); clear_ast_defs; unfold from_instr5;
     unfold invertible; split; [unfold printable | unfold parsable];
     compute [snd fst]; intros.
     - abstract ins_com_printable.
@@ -7175,7 +7175,7 @@ End X86_PARSER_ARG.
     compute [snd fst]; intros.
     - destruct_union; destruct v as [pre hi];
         abstract (destruct hi; printable_tac).
-    - Time abstract (destruct w as [pre i]; destruct i; parsable_tac).
+    - abstract (destruct w as [pre i]; destruct i; parsable_tac).
   Defined.
 
 

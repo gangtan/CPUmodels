@@ -204,8 +204,7 @@ Inductive bigrammar : type -> Type :=
 | Any : bigrammar Char_t
 | Cat : forall t1 t2, bigrammar t1 -> bigrammar t2 -> bigrammar (Pair_t t1 t2)
 | Alt : forall t1 t2, bigrammar t1 -> bigrammar t2 -> bigrammar (Sum_t t1 t2)
-(* todo: add Star back *)
-(* | Star : forall t, bigrammar t -> bigrammar (List_t t) *)
+| Star : forall t, bigrammar t -> bigrammar (List_t t)
 | Map : forall t1 t2
           (fi: (funinv t1 t2)), (* a parse function and a pretty print function *)
           bigrammar t1 -> bigrammar t2.
@@ -226,10 +225,10 @@ Inductive in_bigrammar :
     in_bigrammar g1 s v1 -> v = inl _ v1 -> in_bigrammar (Alt g1 g2) s v
 | InAlt_r : forall t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) s v2 v, 
     in_bigrammar g2 s v2 -> v = inr _ v2 -> in_bigrammar (Alt g1 g2) s v
-(* | InStar_eps : forall t (g:bigrammar t) s v, s = nil -> v = nil -> in_bigrammar (Star g) s v *)
-(* | InStar_cons : forall t (g:bigrammar t) s1 v1 s2 v2 s v,  *)
-(*     in_bigrammar g s1 v1 -> in_bigrammar (Star g) s2 v2 ->  *)
-(*     s1 <> nil -> s = s1 ++ s2 -> v = v1::v2 -> in_bigrammar (Star g) s v *)
+| InStar_eps : forall t (g:bigrammar t) s v, s = nil -> v = nil -> in_bigrammar (Star g) s v
+| InStar_cons : forall t (g:bigrammar t) s1 v1 s2 v2 s v,
+    in_bigrammar g s1 v1 -> in_bigrammar (Star g) s2 v2 ->
+    s1 <> nil -> s = s1 ++ s2 -> v = v1::v2 -> in_bigrammar (Star g) s v
 | InMap : forall t1 t2 (fi:funinv t1 t2) (g:bigrammar t1) s v1 v2, 
     in_bigrammar g s v1 -> v2 = fst fi v1 -> in_bigrammar (@Map t1 t2 fi g) s v2.
 Hint Constructors in_bigrammar.
@@ -260,15 +259,15 @@ Lemma AltInv : forall t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) cs v,
 Proof.
   intros ; inversion H ; subst ; crush; eauto.
 Qed.
- (*Lemma StarInv : forall t (g:bigrammar t) cs v,  
+Lemma StarInv : forall t (g:bigrammar t) cs v,  
    in_bigrammar (Star g) cs v -> (cs = nil /\ v = nil) \/  
    (exists cs1, exists v1, exists cs2, exists v2,  
      cs1 <> nil /\ in_bigrammar g cs1 v1 /\ in_bigrammar (Star g) cs2 v2 /\  
     cs = cs1 ++ cs2 /\ v = v1::v2).
- Proof. 
-   intros ; inversion H ; clear H ; subst ; mysimp ; right ; exists s1 ; exists v1 ;  
+Proof. 
+   intros ; inversion H ; clear H ; subst ; crush ; right ; exists s1 ; exists v1 ;  
    exists s2 ; exists v2 ; auto. 
- Qed. *)
+Qed.
 Lemma MapInv : forall t1 t2 (fi: funinv t1 t2) (g:bigrammar t1) cs v,
   in_bigrammar (@Map t1 t2 fi g) cs v -> exists v', in_bigrammar g cs v' /\ v = fst fi v'.
 Proof.
@@ -286,8 +285,7 @@ Qed.
 *)
 
 (** Tactic for invoking inversion principles on a proof that some string
-    and value are in the denotation of a grammar.  We don't unroll the 
-    [Star] case because that would loop. *)
+    and value are in the denotation of a grammar.  *)
 Ltac in_bigrammar_inv := 
   repeat 
     match goal with 
@@ -302,6 +300,10 @@ Ltac in_bigrammar_inv :=
       | [ H : in_bigrammar (Zero _) _ _ |- _ ] => contradiction (ZeroInv H)
       | [ H : in_bigrammar (Map _ _) _ _ |- _ ] => 
         generalize (MapInv H) ; clear H; intro
+      | [H: in_bigrammar (Star _) _ nil |- _] => 
+        apply StarInv in H; destruct H as [[H _]| H]; [idtac | crush]
+      | [H: in_bigrammar (Star _) _ (_ :: _) |- _] => 
+        apply StarInv in H; destruct H; [crush | idtac]
       | _ => idtac
     end.
 
@@ -344,7 +346,6 @@ Definition funinv_compose t1 t2 t3 (fi2: funinv t2 t3) (fi1: funinv t1 t2) :=
             end).
 Implicit Arguments funinv_compose [t1 t2 t3].
 
-
 (* The following version of invertible uses subset types to simplify the
    definition, but I found it's difficult to work this definition with
    tactics; whenever there is a value of the subset type, I need to
@@ -358,12 +359,21 @@ Implicit Arguments funinv_compose [t1 t2 t3].
 (*   (forall (v: in_rng_val _ g) (w:interp t2),  *)
 (*      finv w = Some (` v) -> f (` v) = w). *)
 
+(* "non_empty g" holds when g cannot accept empty input *)
+Definition non_empty t (g: bigrammar t) := 
+  forall v, not (in_bigrammar g nil v).
+
 (* well-formedness of grammars *)
 Fixpoint wf_grammar t (g:bigrammar t) : Prop := 
   match g with 
       | Cat t1 t2 g1 g2 => wf_grammar g1 /\ wf_grammar g2
       | Alt t1 t2 g1 g2 => wf_grammar g1 /\ wf_grammar g2
-      (* | Star t g => wf_grammar g *)
+      | Star t g => 
+        (* the non_empty restriction is necessary to push the corretness
+           proof of pretty_print to go through; 
+           it's reasonable to ask g to be non-empty in g*, which can 
+           already accept empty input *)
+        wf_grammar g /\ non_empty g
       | Map t1 t2 fi g => 
         wf_grammar g /\ invertible fi g
       | g' => True
@@ -564,18 +574,18 @@ Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
                  | inl x1 => pretty_print g1 x1
                  | inr x2 => pretty_print g2 x2
                end
-    (* | Star t g => *)
-    (*   (* this is a non-tail-recusive version, which is easier to prover *) *)
-    (*   fix loop (v:interp (List_t t)) : option (list char_p) := *)
-    (*      match v with *)
-    (*        | nil => Some nil *)
-    (*        | hd::tl => *)
-    (*          s' <- pretty_print g hd; *)
-    (*          match s' with *)
-    (*            | nil => None (* g cannot match the empty input list *) *)
-    (*            | _ => s <- loop tl; ret s' ++ s *)
-    (*          end *)
-    (*      end *)
+    | Star t g =>
+      (* this is a non-tail-recusive version, which is easier for proofs *)
+      fix loop (v:interp (List_t t)) : option (list char_p) :=
+         match v with
+           | nil => Some nil
+           | hd::tl =>
+             s' <- pretty_print g hd;
+             match s' with
+               | nil => None (* g cannot match the empty input list *)
+               | _ => s <- loop tl; ret s' ++ s
+             end
+         end
     (*   (* (fix loop (s : list char_p)(v:interp (List_t t)) : option (list char_p) := *) *)
     (*   (*    match v with *) *)
     (*   (*      | nil => Some s *) *)
@@ -591,32 +601,6 @@ Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
   end.
 
 Lemma pretty_print_corr1: forall t (g:bigrammar t) (v:interp t) s,
-  in_bigrammar g s v -> wf_grammar g -> exists s', pretty_print g v = Some s'.
-Proof. 
-  induction g; try (localsimpl; fail).
-
-  - (* Cat *)
-    localsimpl. crush_hyp.
-    
-  (* Case "Star". *)
-  (*   induction v. simprover; eauto. *)
-  (*   intros. *)
-  (*   in_inv. *)
-  (*   apply StarInv in H. *)
-  (*   simprover. *)
-  (*   assert (exists s1, pretty_print g x0 = Some s1); eauto. *)
-  (*   assert (exists s2, pretty_print (Star g) x2 = Some s2); eauto. *)
-  (*   simprover. *)
-  (*   eexists. *)
-  (*   simprover. *)
-  (*   eauto. rewrite H3. *)
-  (*   ??? *)
-  
-  - (* Map *)
-    localsimpl. guess x H1. crush.
-Qed.
-
-Lemma pretty_print_corr2: forall t (g:bigrammar t) (v:interp t) s,
   pretty_print g v = Some s -> wf_grammar g -> in_bigrammar g s v.
 Proof. 
   induction g; try (localsimpl; fail).
@@ -632,12 +616,12 @@ Proof.
     localsimpl.
     destruct v; eauto using InAlt_l, InAlt_r.
 
-  (* Case "Star". *)
-  (*   induction v; simprover. *)
-  (*   remember_head_in_hyp as e1; destruct e1; try discriminate. *)
-  (*   destruct l; try discriminate. *)
-  (*   remember_head_in_hyp as e2; destruct e2; try discriminate. *)
-  (*   eapply InStar_cons; (eauto || simprover). *)
+  - (* Star *)
+    induction v; crush.
+    remember_head_in_hyp as e1; destruct e1; try discriminate.
+    destruct l; try discriminate.
+    remember_head_in_hyp as e2; destruct e2; try discriminate.
+    eapply InStar_cons; (eauto || crush).
 
   - (* Map. *)
     localsimpl.
@@ -645,6 +629,38 @@ Proof.
     guess v H2. crush.
 Qed.
 
+Lemma pretty_print_corr2: forall t (g:bigrammar t) (v:interp t) s,
+  in_bigrammar g s v -> wf_grammar g -> exists s', pretty_print g v = Some s'.
+Proof. 
+  induction g; try (localsimpl; fail).
+  - (* Cat *)
+    localsimpl. crush_hyp.
+  - (* Star *)
+    induction v. 
+    + crush.
+    + intros.
+      in_bigrammar_inv.
+      match goal with
+        | [H: exists _, exists _,  _ |- _] =>
+        destruct H as [s1 [v1 [s2 [v2 H]]]]; sim
+      end.
+      use_lemma IHv by eassumption.
+      use_lemma IHg by crush.
+      simpl.
+      match goal with
+        | [H: exists _, pretty_print g _ = _ |- _] =>
+          destruct H as [s1' H]; rewrite H
+      end.
+      assert (s1' <> nil).
+        use_lemma pretty_print_corr1 by crush.
+        match goal with
+          | [H: in_bigrammar g s1' v1 |- _] => contradict H; crush
+        end.
+      simpl.
+      remember_destruct_head as Hs1'; crush.
+  - (* Map *)
+    localsimpl. guess x H1. crush.
+Qed.
 
 (** * Constructors for wf bigrammars *)
 
@@ -717,12 +733,12 @@ Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
   - destruct_pr_var.
     + remember_destruct_head as v1; eauto.
       remember_destruct_head as v2.
-      * localsimpl. eexists. eauto using pretty_print_corr1, pretty_print_corr2.
-      * localsimpl. generalize pretty_print_corr1; crush_hyp.
+      * localsimpl. eexists. eauto using pretty_print_corr2, pretty_print_corr1.
+      * localsimpl. generalize pretty_print_corr2; crush_hyp.
     + localsimpl.
-      remember_destruct_head as v1; eauto 6 using pretty_print_corr2.
+      remember_destruct_head as v1; eauto 6 using pretty_print_corr1.
       remember_destruct_head as v2; eauto 6.
-      generalize pretty_print_corr1; crush_hyp.
+      generalize pretty_print_corr2; crush_hyp.
   - remember_head_in_hyp as e1; destruct e1; try crush.
     remember_head_in_hyp as e2; destruct e2; crush.
 Defined.
