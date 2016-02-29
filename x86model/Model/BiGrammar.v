@@ -209,6 +209,13 @@ Inductive bigrammar : type -> Type :=
           (fi: (funinv t1 t2)), (* a parse function and a pretty print function *)
           bigrammar t1 -> bigrammar t2.
 Implicit Arguments Map [t1 t2].
+Extraction Implicit Zero [t].
+Extraction Implicit Cat [t1 t2].
+Extraction Implicit Alt [t1 t2].
+Extraction Implicit Star [t].
+Extraction Implicit Map [t1 t2].
+
+
 
 (** Denotation of Bi-Grammars *)
 (* I'm a little annoyed that I had to break out so many equalities, but
@@ -1357,3 +1364,16 @@ Definition option_perm4 t1 t2 t3 t4
                  end)
             & _); subst t; invertible_tac.
 Defined.
+
+Extraction Implicit map [t1 t2].
+Extraction Implicit seq [t1 t2].
+Extraction Implicit alt [t1 t2].
+Extraction Implicit perm2 [t1 t2].
+Extraction Implicit perm3 [t1 t2 t3].
+Extraction Implicit perm4 [t1 t2 t3 t4].
+Extraction Implicit option_perm [t1].
+Extraction Implicit option_perm2 [t1 t2].
+Extraction Implicit option_perm3 [t1 t2 t3].
+Extraction Implicit option_perm4 [t1 t2 t3 t4].
+Extraction Implicit option_perm2_variation [t1 t2].
+Extraction Implicit option_perm3_variation [t1 t2 t3].

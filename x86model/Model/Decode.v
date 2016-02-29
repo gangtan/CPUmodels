@@ -2775,7 +2775,7 @@ End X86_PARSER_ARG.
         destruct v as [[r1 op2] imm].
         destruct opsize_override; compute [negb];
         ins_printable_tac.
-    - abstract
+    - Time abstract
         (destruct w as [bl [op1 [w1 w2]]];
          destruct op1; destruct bl;
          destruct w1 as [op2 | ];
@@ -6159,7 +6159,7 @@ End X86_PARSER_ARG.
                | [v: [| unit_t |] |- _] => destruct v
                | [v:[|pair_t _ _|] |- _] => destruct v
              end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
+    - Time abstract (destruct w; parsable_tac).
   Defined.
 
   Definition m_instr_env : AST_Env m_instr_t := 
@@ -6260,7 +6260,7 @@ End X86_PARSER_ARG.
                | [v: [| unit_t |] |- _] => destruct v
                | [v:[|pair_t _ _|] |- _] => destruct v
              end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
+    - Time abstract (destruct w; parsable_tac).
   Defined.
 
   Definition s_instr1_env : AST_Env s_instr1_t := 
@@ -7175,19 +7175,17 @@ End X86_PARSER_ARG.
     compute [snd fst]; intros.
     - destruct_union; destruct v as [pre hi];
         abstract (destruct hi; printable_tac).
-    - abstract (destruct w as [pre i]; destruct i; parsable_tac).
+    - Time abstract (destruct w as [pre i]; destruct i; parsable_tac).
   Defined.
-
-
-Todo: integrate the BiGrammar with the rest of the code development
 
   (** Starting constructing the x86 parser *)
   Require Import Parser.
 
-  Definition instruction_regexp := projT1 (split_grammar (instruction_grammar)).
+  Definition instruction_regexp := 
+    projT1 (split_bigrammar (proj1_sig instruction_grammar)).
 
   Definition ini_decoder_state := 
-    initial_parser_state instruction_grammar.
+    initial_parser_state (proj1_sig instruction_grammar).
 
   (* Preventing Coq from expanding the def of ini_decoder_state *)
   Module Type ABSTRACT_INI_DECODER_STATE_SIG.
@@ -7223,25 +7221,11 @@ Todo: integrate the BiGrammar with the rest of the code development
 
 Extraction Implicit never [t].
 Extraction Implicit always [t].
-Extraction Implicit alt [t].
-Extraction Implicit alts0 [t].
-Extraction Implicit alts' [t].
-Extraction Implicit alts [t].
-Extraction Implicit map [t1 t2].
-Extraction Implicit seq [t1 t2].
-Extraction Implicit cons [t].
-Extraction Implicit seqs [t].
+(* Extraction Implicit alts0 [t]. *)
+(* Extraction Implicit alts' [t]. *)
+(* Extraction Implicit alts [t]. *)
 Extraction Implicit bitsleft [t].
-Extraction Implicit modrm_gen [res_t].
-Extraction Implicit modrm_gen_noreg [reg_t res_t].
-Extraction Implicit ext_op_modrm_gen_noreg2 [res_t].
-Extraction Implicit ext_op_modrm_gen [res_t].
-Extraction Implicit perm2 [t1 t2].
-Extraction Implicit perm3 [t1 t2 t3].
-Extraction Implicit perm4 [t1 t2 t3 t4].
-Extraction Implicit option_perm [t1].
-Extraction Implicit option_perm2 [t1 t2].
-Extraction Implicit option_perm3 [t1 t2 t3].
-Extraction Implicit option_perm4 [t1 t2 t3 t4].
-Extraction Implicit option_perm2_variation [t1 t2].
-Extraction Implicit option_perm3_variation [t1 t2 t3].
+Extraction Implicit modrm_gen [reg_t].
+(* Extraction Implicit modrm_gen_noreg [reg_t res_t]. *)
+(* Extraction Implicit ext_op_modrm_gen_noreg2 [res_t]. *)
+(* Extraction Implicit ext_op_modrm_gen [res_t]. *)
