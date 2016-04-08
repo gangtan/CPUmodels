@@ -887,17 +887,8 @@ Definition enc_XOR := enc_logic_or_arith "00110" "110".
 
 (* Definition matches a floating-point register and returns a list of booleans that 
  * represents its bit encoding. *)
-Definition enc_mmx_reg r : list bool :=
-  match r with
-    | MM0 => s2bl "000"
-    | MM1 => s2bl "001"
-    | MM2 => s2bl "010"
-    | MM3 => s2bl "011"
-    | MM4 => s2bl "100"
-    | MM5 => s2bl "101"
-    | MM6 => s2bl "110"
-    | MM7 => s2bl "111"
-  end.
+Definition enc_mmx_reg (r:mmx_register) : list bool :=
+  int_explode r 3.  
 
 (* encoding the modrm byte for floating-point instructions, given the 3 bits for
    the opb field in the byte *)
@@ -1488,17 +1479,8 @@ Definition enc_FYL2XP1 := ret (s2bl "1101100111111001").
     end.
 
   (*SSE Encodings*)
-  Definition enc_xmm_r r := 
-    match r with 
-      | XMM0 => s2bl "000"
-      | XMM1 => s2bl "001"
-      | XMM2 => s2bl "010"
-      | XMM3 => s2bl "011"
-      | XMM4 => s2bl "100" 
-      | XMM5 => s2bl "101"
-      | XMM6 => s2bl "110"
-      | _    => s2bl "111"
-    end.
+  Definition enc_xmm_r (r:sse_register) := 
+    int_explode r 3.
 
   Definition enc_xmm_modrm_gen (xmm_reg: list bool) (op2: sse_operand) : Enc (list bool) := 
   match op2 with
@@ -1593,22 +1575,20 @@ Definition enc_ANDPS (op1 op2: sse_operand):=
   | _, _  => invalid
   end.
 
-Definition enc_CMPPS (op1 op2 imm: sse_operand) := 
-  match op1, op2, imm with
-  | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
+Definition enc_CMPPS (op1 op2: sse_operand) (imm: int8) := 
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a => 
     l1 <- enc_xmm_modrm op1 op2; 
-    l_i <- enc_byte_i32 i;
-    ret (s2bl "0000111101010100" ++ l1 ++ l_i) 
-  | _, _, _  => invalid
+    ret (s2bl "0000111101010100" ++ l1 ++ enc_byte imm)
+  | _, _  => invalid
   end.
 
-Definition enc_CMPSS (op1 op2 imm: sse_operand) := 
-  match op1, op2, imm with
-  | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
+Definition enc_CMPSS (op1 op2: sse_operand) (imm: int8) := 
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a =>
     l1 <- enc_xmm_modrm op1 op2; 
-    l_i <- enc_byte_i32 i;
-    ret (s2bl "111100110000111111000010" ++ l1 ++ l_i) 
-  | _, _, _  => invalid
+    ret (s2bl "111100110000111111000010" ++ l1 ++ enc_byte imm) 
+  | _, _  => invalid
   end.
 
 Definition enc_COMISS (op1 op2: sse_operand) :=
@@ -1832,13 +1812,12 @@ Definition enc_RSQRTSS (op1 op2: sse_operand):=
   | _, _  => invalid
   end.
 
-Definition enc_SHUFPS (op1 op2 imm: sse_operand) :=
-  match op1, op2, imm with
-  | SSE_XMM_Reg_op r, SSE_Addr_op a, SSE_Imm_op i => 
+Definition enc_SHUFPS (op1 op2: sse_operand) (imm: int8) :=
+  match op1, op2 with
+  | SSE_XMM_Reg_op r, SSE_Addr_op a =>
     l1 <- enc_xmm_modrm op1 op2; 
-    l_i <- enc_byte_i32 i;
-    ret (s2bl "0000111111000110" ++ l1 ++ l_i) 
-  | _, _, _  => invalid
+    ret (s2bl "0000111111000110" ++ l1 ++ enc_byte imm) 
+  | _, _  => invalid
   end.
 
 Definition enc_SQRTPS (op1 op2: sse_operand):=
@@ -1914,24 +1893,22 @@ Definition enc_PAVGB (op1 op2: sse_operand):=
   | _, _  => invalid
   end.
 
-Definition enc_PEXTRW (op1 op2 imm: sse_operand):=
-  match op1, op2, imm with
-  | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
-    l_i <- enc_byte_i32 i;
-    ret (s2bl "000011111100010111" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ l_i) 
-  | _, _, _  => invalid
+Definition enc_PEXTRW (op1 op2: sse_operand) (imm: int8):=
+  match op1, op2 with
+  | SSE_GP_Reg_op r, SSE_MM_Reg_op mx =>
+    ret (s2bl "000011111100010111" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ enc_byte imm) 
+  |  _, _  => invalid
   end.
 
-Definition enc_PINSRW (op1 op2 imm: sse_operand):=
-  match op1, op2, imm with
-  | SSE_MM_Reg_op xmm, SSE_GP_Reg_op r32, SSE_Imm_op i => 
-    l_i <- enc_byte_i32 i;
-    ret (s2bl "000011111100010011" ++ (enc_mmx_reg xmm) ++(enc_reg r32) ++ l_i) 
-  | SSE_MM_Reg_op mm, SSE_Addr_op a, SSE_Imm_op i =>
+Definition enc_PINSRW (op1 op2: sse_operand) (imm: int8):=
+  match op1, op2 with
+  | SSE_MM_Reg_op xmm, SSE_GP_Reg_op r32 => 
+    ret (s2bl "000011111100010011" ++ (enc_mmx_reg xmm)
+              ++ (enc_reg r32) ++ enc_byte imm) 
+  | SSE_MM_Reg_op mm, SSE_Addr_op a =>
     l1 <- enc_mm_modrm_noreg (enc_mmx_reg mm) op2; 
-    l_i <- enc_byte_i32 i;
-    ret (s2bl "0000111111000100" ++ l1 ++ l_i) 
-  | _, _, _  => invalid
+    ret (s2bl "0000111111000100" ++ l1 ++ enc_byte imm) 
+  | _, _  => invalid
   end.
 
 Definition enc_PMAXSW (op1 op2: sse_operand):=
@@ -1976,12 +1953,12 @@ Definition enc_PSADBW (op1 op2: sse_operand):=
   | _, _  => invalid
   end.
 
-Definition enc_PSHUFW (op1 op2 imm: sse_operand) :=
-  match op1, op2, imm with
-  | SSE_GP_Reg_op r, SSE_MM_Reg_op mx, SSE_Imm_op i => 
-    l_i <- enc_byte_i32 i;
-    ret (s2bl "0000111101110000" ++ (enc_reg r) ++(enc_mmx_reg mx) ++ l_i) 
-  | _, _, _  => invalid
+Definition enc_PSHUFW (op1 op2: sse_operand) (imm: int8) :=
+  match op1, op2 with
+  | SSE_GP_Reg_op r, SSE_MM_Reg_op mx =>
+    ret (s2bl "0000111101110000" ++ (enc_reg r)
+              ++ (enc_mmx_reg mx) ++ enc_byte imm) 
+  | _, _  => invalid
   end.
 
 Definition enc_MASKMOVQ (op1 op2: sse_operand) :=

@@ -23,6 +23,8 @@ Require Import Maps.
 Require Export X86Syntax.
 Require Export RTL.
 
+Require Import Program.
+
 Set Implicit Arguments.
 Unset Automatic Introduction.
 
@@ -687,20 +689,42 @@ Module X86_Compile.
 
   (* load an n-byte vector from memory -- takes into account the segment *)
   Program Fixpoint load_mem_n (seg:segment_register) (addr:rtl_exp size32)
-    (nbytes_minus_one:nat) : Conv (rtl_exp ((nbytes_minus_one+1) * 8 -1)%nat) := 
-    match nbytes_minus_one with 
+    (nbytes_minus_one:nat) : Conv (rtl_exp ((nbytes_minus_one+1) * 8 -1)%nat) :=
+    match nbytes_minus_one with
       | 0 => lmem seg addr
-      | S n => 
-        rec <- load_mem_n seg addr n ; 
-        count <- load_Z size32 (Z_of_nat (S n)) ; 
+      | S n =>
+        rec <- load_mem_n seg addr n ;
+        count <- load_Z size32 (Z_of_nat (S n)) ;
         p3 <- arith add_op addr count ;
-        nb <- lmem seg p3 ; 
-        p5 <- cast_u ((nbytes_minus_one + 1)*8-1)%nat rec ; 
+        nb <- lmem seg p3 ;
+        p5 <- cast_u ((nbytes_minus_one + 1)*8-1)%nat rec ;
         p6 <- cast_u ((nbytes_minus_one + 1)*8-1)%nat nb ;
         p7 <- load_Z _ (Z_of_nat (S n) * 8) ;
         p8 <- arith shl_op p6 p7 ;
         arith or_op p5 p8
     end.
+
+  (* Definition load_mem32 (seg: segment_register) (addr: rtl_exp size32) := *)
+  (*   b0 <- lmem seg addr; *)
+  (*   one <- load_Z size32 1; *)
+  (*   addr1 <- arith add_op addr one; *)
+  (*   b1 <- lmem seg addr1; *)
+  (*   addr2 <- arith add_op addr1 one; *)
+  (*   b2 <- lmem seg addr2; *)
+  (*   addr3 <- arith add_op addr2 one; *)
+  (*   b3 <- lmem seg addr3; *)
+
+  (*   w0 <- cast_u size32 b0; *)
+  (*   w1 <- cast_u size32 b1; *)
+  (*   w2 <- cast_u size32 b2; *)
+  (*   w3 <- cast_u size32 b3; *)
+  (*   eight <- load_Z size32 8; *)
+  (*   r0 <- arith shl_op w3 eight; *)
+  (*   r1 <- arith or_op r0 w2; *)
+  (*   r2 <- arith shl_op r1 eight; *)
+  (*   r3 <- arith or_op r2 w1; *)
+  (*   r4 <- arith shl_op r3 eight; *)
+  (*   arith or_op r4 w0. *)
 
   Definition load_mem80 (seg : segment_register)(addr:rtl_exp size32) := 
     load_mem_n seg addr 9.
@@ -711,31 +735,9 @@ Module X86_Compile.
   Definition load_mem32 (seg:segment_register) (addr:rtl_exp size32) := 
     load_mem_n seg addr 3.
 
-  (*Definition load_mem32 (seg: segment_register) (addr: pseudo_reg size32) :=
-    b0 <- lmem seg addr;
-    one <- load_Z size32 1;
-    addr1 <- arith add_op addr one;
-    b1 <- lmem seg addr1;
-    addr2 <- arith add_op addr1 one;
-    b2 <- lmem seg addr2;
-    addr3 <- arith add_op addr2 one;
-    b3 <- lmem seg addr3;
-
-    w0 <- cast_u size32 b0;
-    w1 <- cast_u size32 b1;
-    w2 <- cast_u size32 b2;
-    w3 <- cast_u size32 b3;
-    eight <- load_Z size32 8;
-    r0 <- arith shl_op w3 eight;
-    r1 <- arith or_op r0 w2;
-    r2 <- arith shl_op r1 eight;
-    r3 <- arith or_op r2 w1;
-    r4 <- arith shl_op r3 eight;
-    arith or_op r4 w0.*)
-    
-
   Definition load_mem16 (seg:segment_register) (addr:rtl_exp size32) := 
     load_mem_n seg addr 1.
+
   Definition load_mem8 (seg:segment_register) (addr:rtl_exp size32) := 
     load_mem_n seg addr 0.
 
