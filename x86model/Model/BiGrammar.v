@@ -1,6 +1,5 @@
 (** Gang Tan: Bi-directional grammars for both parsing and pretty-printing *)
 
-Require Import Coq.Program.Equality.
 Require Import Coq.Init.Logic.
 Require Import Coqlib.  (* for extensionality & proof_irrelevance *)
 Require Import Arith.
@@ -16,6 +15,7 @@ Require Import Monad.
 Local Open Scope monad_scope.
 
 Require Import ParserArg.
+Require Export GrammarType.
 
 (* Module Type NEW_PARSER_ARG. *)
 (*   (* the type of characters used in the grammar specifications *) *)
@@ -142,43 +142,7 @@ Require Import ParserArg.
 (*   Definition token_id_to_chars : token_id -> list char_p := nat_explode. *)
 (* End X86_PARSER_ARG. *)
 
-Definition char_p := X86_PARSER_ARG.char_p.
-Definition char_dec := X86_PARSER_ARG.char_dec.
-Definition user_type := X86_PARSER_ARG.user_type.
-Definition user_type_dec := X86_PARSER_ARG.user_type_dec.
-Definition user_type_denote := X86_PARSER_ARG.user_type_denote.
-Definition token_id := X86_PARSER_ARG.token_id.
-Definition num_tokens := X86_PARSER_ARG.num_tokens.
-Definition token_id_to_chars := X86_PARSER_ARG.token_id_to_chars.
-
-(** * Key defs for bigrammars, types, their interpretation, etc. *)
-
-(** The [type]s for our grammars. *)
-Inductive type : Type := 
-| Unit_t : type
-| Char_t : type
-| Void_t : type
-| Pair_t : type -> type -> type
-| Sum_t : type -> type -> type
-| List_t : type -> type
-| Option_t : type -> type
-| User_t : user_type -> type.
-
-(** [void] is an empty type. *)
-Inductive void : Type := .
-
-(** The interpretation of [type]s as Coq [Type]s. *)
-Fixpoint interp (t:type) : Type := 
-  match t with 
-    | Unit_t => unit
-    | Char_t => char_p
-    | Void_t => void
-    | Pair_t t1 t2 => (interp t1) * (interp t2)
-    | Sum_t t1 t2 => (interp t1) + (interp t2)
-    | List_t t => list (interp t)
-    | Option_t t => option (interp t)
-    | User_t t => user_type_denote t
-  end%type.
+(** * Key defs for bigrammars and their interpretation, etc. *)
 
 (* Notation [[ t ]] would interfere with "destruct H as [v [H2 H4]]" *)
 Notation "[| t |]" := (interp t).
@@ -1377,3 +1341,126 @@ Extraction Implicit option_perm3 [t1 t2 t3].
 Extraction Implicit option_perm4 [t1 t2 t3 t4].
 Extraction Implicit option_perm2_variation [t1 t2].
 Extraction Implicit option_perm3_variation [t1 t2 t3].
+
+(** * Splitting a [bigrammar] into a [regexp] and a top-level fix-up function *)
+Require Import Regexp.
+Require Import Xform.
+Require Import Coq.Program.Equality.
+
+Definition fixfn (r:regexp) (t:type) := 
+  xt_interp (regexp_type r) -> interp t.
+Definition re_and_fn (t:type) (r:regexp) (f:fixfn r t): {r:regexp & fixfn r t } :=
+  existT (fun r => fixfn r t) r f.
+Extraction Implicit re_and_fn [t].
+
+(** Split a [bigrammar] into a simplified [regexp] (with no maps) and a
+    top-level fix-up function that can turn the results of the [regexp]
+    back into the user-specified values. The pretty-print information is
+    thrown away in the process.  Notice that the resulting regexp has no
+    [gMap] or [gXform] inside of it. *)
+Fixpoint split_bigrammar t (g:bigrammar t) : { ag : regexp & fixfn ag t} := 
+  match g in bigrammar t' return { ag : regexp & fixfn ag t'} with
+    | Eps => @re_and_fn Unit_t rEps (fun x => x)
+    | Zero t => @re_and_fn _ rZero (fun x => match x with end)
+    | Char c => @re_and_fn Char_t (rChar c) (fun x => x)
+    | Any => @re_and_fn Char_t rAny (fun x => x)
+    | Cat t1 t2 g1 g2 => 
+      let (ag1, f1) := split_bigrammar g1 in 
+        let (ag2, f2) := split_bigrammar g2 in 
+          @re_and_fn _ (rCat ag1 ag2) 
+          (fun p => (f1 (fst p), f2 (snd p)) : interp (Pair_t t1 t2))
+    | Alt t1 t2 g1 g2 => 
+      let (ag1, f1) := split_bigrammar g1 in 
+        let (ag2, f2) := split_bigrammar g2 in 
+          @re_and_fn _ (rAlt ag1 ag2)
+          (fun s => match s with 
+                      | inl x => inl _ (f1 x)
+                      | inr y => inr _ (f2 y)
+                    end : interp (Sum_t t1 t2))
+    | Star t g => 
+      let (ag, f) := split_bigrammar g in 
+        @re_and_fn _ (rStar ag) (fun xs => (List.map f xs) : interp (List_t t))
+    | Map t1 t2 fi g => 
+      let (ag, f2) := split_bigrammar g in 
+        @re_and_fn _ ag (fun x => (fst fi) (f2 x))
+    (* | Xform t1 t2 f g =>  *)
+    (*   let (ag, f2) := split_grammar g in  *)
+    (*     @re_and_fn _ ag (fun x => (xinterp f) (f2 x)) *)
+  end.
+Extraction Implicit split_bigrammar [t].
+
+Definition par2rec t (g:bigrammar t) : regexp := 
+  let (ag, _) := split_bigrammar g in ag.
+Extraction Implicit par2rec [t].
+
+Local Ltac break_split_bigrammar := 
+  repeat 
+    match goal with
+      | [ H : match split_bigrammar ?g with | existT _ _ => _ end |- _ ] =>  
+        let p := fresh "p" in
+        remember (split_bigrammar g) as p ; destruct p ; simpl in *
+    end. 
+
+Lemma split_bigrammar_corr1 t (g:bigrammar t) : 
+  let (r,f) := split_bigrammar g in 
+    forall s v, in_regexp r s v -> in_bigrammar g s (f v).
+Proof.
+  induction g ; simpl ; repeat in_regexp_inv; break_split_bigrammar; intros;
+   dependent induction H ; subst ; simpl ; eauto. 
+Qed.
+
+(** Correctness of [split_grammar] part 2:  This direction requires a quantifier 
+    so is a little harder. *)
+Lemma split_bigrammar_corr2 t (g:bigrammar t) : 
+  let (r, f) := split_bigrammar g in 
+    forall s v, in_bigrammar g s v -> exists v', in_regexp r s v' /\ v = f v'.
+Proof.
+  induction g; simpl; intros; in_bigrammar_inv ; repeat in_regexp_inv;
+  break_split_bigrammar; intros; crush.
+  - (* Cat *)
+    in_bigrammar_inv. crush_hyp.
+  - (* Alt *)
+    in_bigrammar_inv. crush_hyp.
+  - (* Star *)
+    dependent induction H. 
+    + (* nStar_eps *) crush.
+    + (* InStar_cons *)
+      use_lemma IHg by eassumption.
+      destruct H2 as [v' [H2 H4]].
+      clear IHin_bigrammar1. 
+      specialize (IHin_bigrammar2 _ g f Heqp IHg v2 (eq_refl _)
+                    (JMeq_refl _) (JMeq_refl _)). 
+      destruct IHin_bigrammar2 as [v'' [H6 H8]].
+      exists (v'::v''). crush.
+  - (* Map *) in_bigrammar_inv. crush_hyp.
+  (* Case "Xform". in_grammar_inv. intros. crush_hyp. *)
+Qed.
+
+(** * converting a [bigrammar] to a [grammar] *)
+Require Grammar.
+Module G:=Grammar.
+
+Fixpoint bigrammar_to_grammar t (g:bigrammar t): G.grammar t :=
+  match g with
+    | Eps => G.Eps
+    | Zero t => G.Zero t
+    | Char c => G.Char c
+    | Any => G.Any
+    | Cat t1 t2 g1 g2 => G.Cat (bigrammar_to_grammar g1)
+                               (bigrammar_to_grammar g2)
+    | Alt t1 t2 g1 g2 => G.Alt (bigrammar_to_grammar g1)
+                               (bigrammar_to_grammar g2)
+    | Star t g => G.Star (bigrammar_to_grammar g)
+    | Map t1 t2 fi g => G.Map t2 (fst fi) (bigrammar_to_grammar g)
+  end.
+
+Lemma b2g_corr1 t (g:bigrammar t) s v : 
+  in_bigrammar g s v -> G.in_grammar (bigrammar_to_grammar g) s v.
+Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
+
+Lemma b2g_corr2 t (g:bigrammar t) s v : 
+  G.in_grammar (bigrammar_to_grammar g) s v -> in_bigrammar g s v.
+Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
+
+
+

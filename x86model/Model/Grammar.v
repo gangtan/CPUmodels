@@ -1,48 +1,12 @@
+Require Import CommonTacs.
+Set Implicit Arguments.
+
 Require Import List.
 
 Require Import ParserArg.
 Require Export Xform.
+Require Export GrammarType.
 
-Require Import CommonTacs.
-Set Implicit Arguments.
-
-(* Grammar should be parametrized by a PARSER_ARG module; however, that
-   would impede code extraction because of a Coq bug.  Instead, we
-   introduce a bunch of definitions below to achieve some separation as
-   long as we never directly use definitions in X86_PARSER_ARG *)
-Definition char_p := X86_PARSER_ARG.char_p.
-Definition char_dec := X86_PARSER_ARG.char_dec.
-Definition user_type := X86_PARSER_ARG.user_type.
-Definition user_type_dec := X86_PARSER_ARG.user_type_dec.
-Definition user_type_denote := X86_PARSER_ARG.user_type_denote.
-Definition token_id := X86_PARSER_ARG.token_id.
-Definition num_tokens := X86_PARSER_ARG.num_tokens.
-Definition token_id_to_chars := X86_PARSER_ARG.token_id_to_chars.
-
-(** The [type]s for our grammars. *)
-Inductive type : Type := 
-| Unit_t : type
-| Char_t : type
-| Void_t : type
-| Pair_t : type -> type -> type
-| Sum_t : type -> type -> type
-| List_t : type -> type
-| User_t : user_type -> type.
-
-(** [void] is an empty type. *)
-Inductive void : Type := .
-
-(** The interpretation of [type]s as Coq [Type]s. *)
-Fixpoint interp (t:type) : Type := 
-  match t with 
-    | Unit_t => unit
-    | Char_t => char_p
-    | Void_t => void
-    | Pair_t t1 t2 => (interp t1) * (interp t2)
-    | Sum_t t1 t2 => (interp t1) + (interp t2)
-    | List_t t => list (interp t)
-    | User_t t => user_type_denote t
-  end%type.
 
 (** Our user-facing [grammar]s, indexed by a [type], reflecting the type of the
     semantic value returned by the grammar when used in parsing. *)
@@ -323,3 +287,97 @@ Qed.
 (*   end. *)
 (* Extraction Implicit deriv [t]. *)
 
+
+(** * Splitting a [grammar] into a [regexp] and a top-level fix-up function *)
+
+Require Import Coq.Program.Equality.
+Require Import Regexp.
+
+(* a fixup function; used in split_grammar and split_bigrammar *)
+Definition fixfn (r:regexp) (t:type) := 
+  xt_interp (regexp_type r) -> interp t.
+
+Definition re_and_fn (t:type) (r:regexp) (f:fixfn r t): {r:regexp & fixfn r t } :=
+  existT (fun r => fixfn r t) r f.
+Extraction Implicit re_and_fn [t].
+
+(** Split a [grammar] into a simplified [regexp] (with no maps) and a top-level fix-up
+    function that can turn the results of the [regexp] back into the user-specified 
+    values.  Notice that the resulting regexp has no [gMap] or [gXform] inside of it. *)
+Fixpoint split_grammar t (g:grammar t) : { ag : regexp & fixfn ag t} := 
+  match g in grammar t' return { ag : regexp & fixfn ag t'} with
+    | Eps => @re_and_fn Unit_t rEps (fun x => x)
+    | Zero t => @re_and_fn _ rZero (fun x => match x with end)
+    | Char c => @re_and_fn Char_t (rChar c) (fun x => x)
+    | Any => @re_and_fn Char_t rAny (fun x => x)
+    | Cat t1 t2 g1 g2 => 
+      let (ag1, f1) := split_grammar g1 in 
+        let (ag2, f2) := split_grammar g2 in 
+          @re_and_fn _ (rCat ag1 ag2) 
+          (fun p => (f1 (fst p), f2 (snd p)) : interp (Pair_t t1 t2))
+    | Alt t1 t2 g1 g2 => 
+      let (ag1, f1) := split_grammar g1 in 
+        let (ag2, f2) := split_grammar g2 in 
+          @re_and_fn _ (rAlt ag1 ag2)
+          (fun s => match s with 
+                      | inl x => inl _ (f1 x)
+                      | inr y => inr _ (f2 y)
+                    end : interp (Sum_t t1 t2))
+    | Star t g => 
+      let (ag, f) := split_grammar g in 
+        @re_and_fn _ (rStar ag) (fun xs => (List.map f xs) : interp (List_t t))
+    | Map t1 t2 f1 g => 
+      let (ag, f2) := split_grammar g in 
+        @re_and_fn _ ag (fun x => f1 (f2 x))
+    (* | Xform t1 t2 f g =>  *)
+    (*   let (ag, f2) := split_grammar g in  *)
+    (*     @re_and_fn _ ag (fun x => (xinterp f) (f2 x)) *)
+  end.
+Extraction Implicit split_grammar [t].
+
+Definition par2rec t (g:grammar t) : regexp := 
+  let (ag, _) := split_grammar g in ag.
+Extraction Implicit par2rec [t].
+
+Local Ltac break_split_grammar := 
+  repeat 
+    match goal with
+      | [ H : match split_grammar ?g with | existT _ _ => _ end |- _ ] =>  
+        let p := fresh "p" in
+        remember (split_grammar g) as p ; destruct p ; simpl in *
+    end. 
+
+Lemma split_grammar_corr1 t (g:grammar t) : 
+  let (r,f) := split_grammar g in 
+    forall s v, in_regexp r s v -> in_grammar g s (f v).
+Proof.
+  induction g ; simpl ; repeat in_regexp_inv; break_split_grammar; intros;
+  dependent induction H ; subst ; simpl ; eauto. 
+Qed.
+
+(** Correctness of [split_grammar] part 2:  This direction requires a quantifier 
+    so is a little harder. *)
+Lemma split_grammar_corr2 t (g:grammar t) : 
+  let (r, f) := split_grammar g in 
+    forall s v, in_grammar g s v -> exists v', in_regexp r s v' /\ v = f v'.
+Proof.
+  induction g; simpl ; repeat in_grammar_inv ; repeat in_regexp_inv;
+  break_split_grammar; intros.
+  Case "Cat".
+    repeat in_grammar_inv. crush_hyp.
+  Case "Alt".
+    in_grammar_inv. intros. crush_hyp.
+  Case "Star".
+    dependent induction H. 
+    SCase "InStar_eps". crush.
+    SCase "InStar_cons". 
+      use_lemma IHg by eassumption.
+      destruct H2 as [v' [H2 H4]].
+      clear IHin_grammar1. 
+      specialize (IHin_grammar2 _ g f Heqp IHg v2 (eq_refl _)
+                    (JMeq_refl _) (JMeq_refl _)). 
+      destruct IHin_grammar2 as [v'' [H6 H8]].
+      exists (v'::v''). crush.
+  Case "Map". in_grammar_inv. intros. crush_hyp.
+  (* Case "Xform". in_grammar_inv. intros. crush_hyp. *)
+Qed.

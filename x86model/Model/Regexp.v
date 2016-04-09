@@ -296,4 +296,3 @@ Module REOrderedTypeAlt <: OrderedTypeAlt.
 End REOrderedTypeAlt.
 
 Module REOrderedType := OT_from_Alt REOrderedTypeAlt.
-

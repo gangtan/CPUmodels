@@ -12,10 +12,6 @@
 (** In this section, we build a table-driven DFA parser for a [grammar]. *)
 
 Require Import Coq.Program.Equality.
-(* Require Import Coq.Classes.Morphisms. *)
-(* Require Import Coq.Program.Basics. *)
-(* Require Import Coq.Init.Logic. *)
-(* Require Import Eqdep. *)
 Require Import Coq.Lists.SetoidList.
 Require Import List.
 Require Import Arith.
@@ -27,8 +23,7 @@ Require Import Regexp.
 Require Import ParserArg.
 (* Import X86_PARSER_ARG. *)
 Require Export Xform.
-Require Export BiGrammar.
-Require Import Program.
+Require Export Grammar.
 
 Require Import CommonTacs.
 Set Implicit Arguments.
@@ -109,7 +104,7 @@ Definition set_cat_re (s:RES.t) (r:regexp): RES.t :=
     | rZero => RES.empty
     | _ => RESF.map (re_set_build_map (fun r1 => rCat r1 r)) s
   end.
-Local Notation "s # r" := (set_cat_re s r) (at level 60, no associativity).
+Local Notation "s $ r" := (set_cat_re s r) (at level 60, no associativity).
 
 Definition rs_xf_pair := RES.rs_xf_pair.
 Definition re_xf_pair := RES.re_xf_pair.
@@ -270,9 +265,9 @@ Fixpoint prebase (r:regexp): RES.t :=
   match r with
     | rEps | rZero => RES.empty
     | rChar _ | rAny => RES.singleton rEps
-    | rCat r1 r2 => RES.union ((prebase r1) # r2) (prebase r2)
+    | rCat r1 r2 => RES.union ((prebase r1) $ r2) (prebase r2)
     | rAlt r1 r2 => RES.union (prebase r1) (prebase r2)
-    | rStar r1 => (prebase r1) # (rStar r1)
+    | rStar r1 => (prebase r1) $ (rStar r1)
   end.
 
 (** The set of possible partial derivatives*)
@@ -300,18 +295,18 @@ Fixpoint num_of_syms (r: regexp): nat :=
 (** ** Lemmas about set_cat_re *)
 
 Lemma set_cat_re_intro1 : forall r s r2,
-  RES.In r s -> r2 = rEps -> RES.In r (s # r2).
+  RES.In r s -> r2 = rEps -> RES.In r (s $ r2).
 Proof. crush. Qed.
 
 Lemma set_cat_re_intro2 : forall r s r1 r2,
   RES.In r1 s -> r = rCat r1 r2 -> r2 <> rEps -> r2 <> rZero
-    -> RES.In r (s # r2).
+    -> RES.In r (s $ r2).
 Proof. destruct r2; 
   (congruence || simpl; intros; eapply re_set_map_intro; eassumption).
 Qed.
 
 Lemma set_cat_re_elim : forall r s r2,
-  RES.In r (s # r2) -> 
+  RES.In r (s $ r2) -> 
     (r2=rEps /\ RES.In r s) \/
     (r2=rZero /\ False) \/
     (r2<>rEps /\ r2<>rZero /\ exists r1, RES.In r1 s /\ r = rCat r1 r2).
@@ -326,7 +321,7 @@ Proof. intros. destruct r2;
 Qed.
 
 Lemma set_cat_re_cardinal: 
-  forall s r, RES.cardinal (s # r) <= RES.cardinal s.
+  forall s r, RES.cardinal (s $ r) <= RES.cardinal s.
 Proof. unfold set_cat_re. 
   destruct r; auto using RESF.map_cardinal_le.
   Case "Zero".
@@ -335,7 +330,7 @@ Proof. unfold set_cat_re.
 Qed.
 
 Lemma set_cat_re_subset : forall s1 s2 r,
-  RES.Subset s1 s2 -> RES.Subset (s1 # r) (s2 # r).
+  RES.Subset s1 s2 -> RES.Subset (s1 $ r) (s2 $ r).
 Proof. destruct r; simpl; intros; try (auto using RESF.map_subset).
   trivial.
   apply RESP.subset_refl.
@@ -348,7 +343,7 @@ Lemma prebase_upper_bound :
 Proof. induction r; try (simpl; trivial).
   Case "Cat". 
     generalize
-      (RESP.union_cardinal_le (prebase r1 # r2) (prebase r2)).
+      (RESP.union_cardinal_le (prebase r1 $ r2) (prebase r2)).
     generalize (set_cat_re_cardinal (prebase r1) r2).
     omega.
   Case "Alt". 
@@ -366,15 +361,15 @@ Lemma prebase_trans :
 Proof. induction r1; try (simpl; intros; re_set_simpl; fail).
   Case "Cat". simpl. intros.
     apply RES.union_spec in H; destruct H.
-    SCase "r2 in (prebase r1_1 # r1_2)".
-      apply set_cat_re_elim in H. destruct H as [ | [ | ]];
+    SCase "r2 in (prebase r1_1 $ r1_2)".
+      apply set_cat_re_elim in H; destruct H as [|[|]]; 
         try (apply RESP.FM.union_2; crush; fail).
       SSCase "r1_2<>eps and r1_2<>zero". sim. subst. simpl in *.
         apply RESP.FM.union_1 in H0.
         destruct H0.
-        SSSCase "r3 in prebase _ # r1_2".
+        SSSCase "r3 in prebase _ $ r1_2".
           apply set_cat_re_elim in H0; 
-            destruct H0 as [ | [ | ]]; try crush.
+            destruct H0 as [|[|]]; try crush.
           apply RESP.FM.union_2.
           assert (RES.In x0 (prebase r1_1)). crush.
           eapply set_cat_re_intro2; try eassumption. trivial.
@@ -390,11 +385,11 @@ Proof. induction r1; try (simpl; intros; re_set_simpl; fail).
     apply re_set_map_elim in H; sim; subst.
     simpl in H0.
     apply RES.union_spec in H0; destruct H0.
-    SCase "r3 in (prebase x) # (r1*)".
+    SCase "r3 in (prebase x) $ (r1*)".
       apply re_set_map_elim in H0; sim; subst.
       assert (RES.In x0 (prebase r1)) by crush.
       eapply re_set_map_intro; crush.
-    SCase "r3 in (prebase r1) # (r1*)".
+    SCase "r3 in (prebase r1) $ (r1*)".
       apply re_set_map_elim in H0; sim; subst.
       assert (RES.In x0 (prebase r1)) by crush.
       eapply re_set_map_intro; crush.
@@ -546,7 +541,7 @@ Proof. unfold erase; induction r; simpl; try (apply RESP.subset_refl).
   Case "Cat".
     remember_rev (RES.cat_re_xform (pdrv a r1) r2) as crx.
     destruct crx as [rsc fc].
-    assert (H4: rsc = projT1 (pdrv a r1) # r2).
+    assert (H4: rsc = projT1 (pdrv a r1) $ r2).
       rewrite <- cat_re_xform_erase2. rewrite Hcrx. trivial.
     destruct (nullable r1) as [b fnull]; destruct b.
     SCase "b=true".
@@ -566,7 +561,7 @@ Proof. unfold erase; induction r; simpl; try (apply RESP.subset_refl).
   Case "Star". 
     remember_rev (RES.cat_re_xform (pdrv a r) (rStar r)) as crx.
     destruct crx as [rsc fc].
-    assert (H4: rsc = projT1 (pdrv a r) # (rStar r)).
+    assert (H4: rsc = projT1 (pdrv a r) $ (rStar r)).
       rewrite <- cat_re_xform_erase2. rewrite Hcrx. trivial.
     simpl. rewrite H4.
     apply RESF.map_subset. assumption.
@@ -625,7 +620,7 @@ Section PDRV_CORRECT.
         split; intros. 
           in_regexp_inv.
           match goal with
-            | [H:In v (List.map inl _ ++ List.map inr _) |- _] =>
+            | [H:In v (map inl _ ++ map inr _) |- _] =>
               apply in_app_or in H; destruct H;
               apply Coqlib.list_in_map_inv in H; crush
           end.
@@ -689,7 +684,7 @@ Section PDRV_CORRECT.
       split; intros.
       SCase "->".
         apply inv_cat in H. destruct H as [s1 [s2 [v1 [v2]]]]. crush.
-        destruct s1 as [ | b s1'].
+        destruct s1 as [| b s1'].
         SSCase "s1=nil".
           destruct n.
           SSSCase "nullable r1".
@@ -704,14 +699,14 @@ Section PDRV_CORRECT.
           destruct n;
             [rewrite RES.union_xform_corr; left | idtac];
             rewrite <- Hcx;
-            apply cat_re_xform_corr2; exists s1' s2 v1 v2;
+            apply cat_re_xform_corr2; exists s1', s2, v1, v2;
             clear H10 IHr2 Hpr2; crush_hyp.
       SCase "<-".
         destruct n.
         SSCase "nullable r1".
           apply RES.union_xform_corr in H.
           destruct H.
-          SSSCase "s in (pdrv a r1) # r2".
+          SSSCase "s in (pdrv a r1) $ r2".
             rewrite <- Hcx in H.
             apply cat_re_xform_corr2 in H.
             destruct H as [s1 [s2 [v1 [v2 H]]]]. 
@@ -752,8 +747,8 @@ Section PDRV_CORRECT.
         in_regexp_inv.
         exists (x1, x2); split; [idtac | trivial].
         apply cat_re_xform_corr2 with (r:=rStar r).
-        destruct x as [ | b x']; [crush | idtac].
-        exists x' x0 x1 x2. crush_hyp.
+        destruct x as [|b x']; [crush | idtac].
+        exists x', x0, x1, x2. crush_hyp.
       SCase "<-".
         destruct H as [[v1 v2] [H2 H4]].
         apply cat_re_xform_corr2 with (r:=rStar r) in H2.
@@ -1505,15 +1500,14 @@ Section DFA.
    {| vdfa_num_states := dfa_num_states d; 
       vdfa_states := dfa_states d; 
       vdfa_states_len := dfa_states_len d; 
-      vdfa_transition := Vector.of_list 
-                           (List.map (@transition_to_vtransition (dfa_states d)) 
-                                     (dfa_transition d)); 
+      vdfa_transition := Vector.of_list (map (@transition_to_vtransition (dfa_states d)) 
+                                         (dfa_transition d)); 
       vdfa_transition_len := _ ;
       vdfa_transition_r := _
    |}
   ).
   rewrite Vector.length_of_list. rewrite map_length. apply (dfa_transition_len d).
-  intros. generalize (Vector.get_of_list _ (List.map (transition_to_vtransition (ss:=dfa_states d)) (dfa_transition d)) i H). intro.
+  intros. generalize (Vector.get_of_list _ (map (transition_to_vtransition (ss:=dfa_states d)) (dfa_transition d)) i H). intro.
   generalize (Coqlib.map_nth_error_imply _ _ _ H0). crush.
   specialize (dfa_transition_r d i). rewrite H1. rewrite <- H2.
   destruct x. simpl. auto.
@@ -1523,8 +1517,8 @@ Section DFA.
   Section DFA_TO_STRING.
     Require Import Coq.Program.Wf.
     Require Import String.
-    Definition digit2string (n:nat) :string :=
-      match n with
+    Definition digit2string (n:nat) :string := 
+      match n with 
         | 0 => "0" | 1 => "1" | 2 => "2" | 3 => "3" | 4 => "4" | 5 => "5"
         | 6 => "6" | 7 => "7" | 8 => "8" | _ => "9"
       end.
@@ -1543,19 +1537,19 @@ Section DFA.
     Definition nl := String (Ascii.ascii_of_nat 10) EmptyString.
 
     Definition entry_show {n ss} (e:entry_t n ss) : string := nat_show (next_state e).
-    Fixpoint list_show' {A} (show:A -> string) (sep:string) (stop:string) (xs:list A) :
-      string :=
-      match xs with
+    Fixpoint list_show' {A} (show:A -> string) (sep:string) (stop:string) (xs:list A) : 
+      string := 
+      match xs with 
         | nil => stop
         | x::xs' => (show x) ++ sep ++ (list_show' show sep stop xs')
       end.
     Definition list_show {A} (show:A -> string) (start sep stop:string) (xs:list A) :=
       start ++ (list_show' show sep stop xs).
-    Definition entries_show {i ss} (xs:list (entry_t i ss)) : string :=
+    Definition entries_show {i ss} (xs:list (entry_t i ss)) : string := 
       nat_show i ++ ": " ++ (list_show entry_show "[" "," "]" xs).
-    Definition transition_show {ss} (t:transition_t ss) : string :=
+    Definition transition_show {ss} (t:transition_t ss) : string := 
       entries_show (row_entries t).
-    Definition transitions_show {ss} (ts:transitions_t ss) : string :=
+    Definition transitions_show {ss} (ts:transitions_t ss) : string := 
       list_show transition_show "{" (";" ++ nl) "}" ts.
     Definition dfa_show (d:DFA) : string := transitions_show (dfa_transition d).
   End DFA_TO_STRING.
@@ -2291,7 +2285,7 @@ Section DFA.
 
   Definition ini_state: wf_state.
     refine (exist _ (RESet.singleton r) _).
-    exists (@nil char_p). simpl. reflexivity. 
+    exists nil. simpl. reflexivity. 
   Defined.
 
   Definition ini_states: wf_states.
@@ -2662,98 +2656,6 @@ Extraction Implicit dfa_to_vdfa [r].
 (* Time Eval compute in (build_dfa test3). *)
 
 
-(** * Splitting a [grammar] into a [regexp] and a top-level fix-up function *)
-
-Definition fixfn (r:regexp) (t:type) := 
-  xt_interp (regexp_type r) -> interp t.
-
-Definition re_and_fn (t:type) (r:regexp) (f:fixfn r t): {r:regexp & fixfn r t } :=
-  existT (fun r => fixfn r t) r f.
-Extraction Implicit re_and_fn [t].
-
-(** Split a [bigrammar] into a simplified [regexp] (with no maps) and a
-    top-level fix-up function that can turn the results of the [regexp]
-    back into the user-specified values. The pretty-print information is
-    thrown away in the process.  Notice that the resulting regexp has no
-    [gMap] or [gXform] inside of it. *)
-Fixpoint split_bigrammar t (g:bigrammar t) : { ag : regexp & fixfn ag t} := 
-  match g in bigrammar t' return { ag : regexp & fixfn ag t'} with
-    | Eps => @re_and_fn Unit_t rEps (fun x => x)
-    | Zero t => @re_and_fn _ rZero (fun x => match x with end)
-    | Char c => @re_and_fn Char_t (rChar c) (fun x => x)
-    | Any => @re_and_fn Char_t rAny (fun x => x)
-    | Cat t1 t2 g1 g2 => 
-      let (ag1, f1) := split_bigrammar g1 in 
-        let (ag2, f2) := split_bigrammar g2 in 
-          @re_and_fn _ (rCat ag1 ag2) 
-          (fun p => (f1 (fst p), f2 (snd p)) : interp (Pair_t t1 t2))
-    | Alt t1 t2 g1 g2 => 
-      let (ag1, f1) := split_bigrammar g1 in 
-        let (ag2, f2) := split_bigrammar g2 in 
-          @re_and_fn _ (rAlt ag1 ag2)
-          (fun s => match s with 
-                      | inl x => inl _ (f1 x)
-                      | inr y => inr _ (f2 y)
-                    end : interp (Sum_t t1 t2))
-    | Star t g => 
-      let (ag, f) := split_bigrammar g in 
-        @re_and_fn _ (rStar ag) (fun xs => (List.map f xs) : interp (List_t t))
-    | Map t1 t2 fi g => 
-      let (ag, f2) := split_bigrammar g in 
-        @re_and_fn _ ag (fun x => (fst fi) (f2 x))
-    (* | Xform t1 t2 f g =>  *)
-    (*   let (ag, f2) := split_grammar g in  *)
-    (*     @re_and_fn _ ag (fun x => (xinterp f) (f2 x)) *)
-  end.
-Extraction Implicit split_bigrammar [t].
-
-Definition par2rec t (g:bigrammar t) : regexp := 
-  let (ag, _) := split_bigrammar g in ag.
-Extraction Implicit par2rec [t].
-
-Local Ltac break_split_bigrammar := 
-  repeat 
-    match goal with
-      | [ H : match split_bigrammar ?g with | existT _ _ => _ end |- _ ] =>  
-        let p := fresh "p" in
-        remember (split_bigrammar g) as p ; destruct p ; simpl in *
-    end. 
-
-Lemma split_bigrammar_corr1 t (g:bigrammar t) : 
-  let (r,f) := split_bigrammar g in 
-    forall s v, in_regexp r s v -> in_bigrammar g s (f v).
-Proof.
-  induction g ; simpl ; repeat in_regexp_inv; break_split_bigrammar; intros;
-   dependent induction H ; subst ; simpl ; eauto. 
-Qed.
-
-(** Correctness of [split_grammar] part 2:  This direction requires a quantifier 
-    so is a little harder. *)
-Lemma split_bigrammar_corr2 t (g:bigrammar t) : 
-  let (r, f) := split_bigrammar g in 
-    forall s v, in_bigrammar g s v -> exists v', in_regexp r s v' /\ v = f v'.
-Proof.
-  induction g; simpl; intros; in_bigrammar_inv ; repeat in_regexp_inv;
-  break_split_bigrammar; intros; crush.
-  - (* Cat *)
-    in_bigrammar_inv. crush_hyp.
-  - (* Alt *)
-    in_bigrammar_inv. crush_hyp.
-  - (* Star *)
-    dependent induction H. 
-    + (* nStar_eps *) crush.
-    + (* InStar_cons *)
-      use_lemma IHg by eassumption.
-      destruct H2 as [v' [H2 H4]].
-      clear IHin_bigrammar1. 
-      specialize (IHin_bigrammar2 _ g f Heqp IHg v2 (eq_refl _)
-                    (JMeq_refl _) (JMeq_refl _)). 
-      destruct IHin_bigrammar2 as [v'' [H6 H8]].
-      exists (v'::v''). crush.
-  - (* Map *) in_bigrammar_inv. crush_hyp.
-  (* Case "Xform". in_grammar_inv. intros. crush_hyp. *)
-Qed.
-
 (** * An naive, online derivative parser.
 
    This parser is not really used, but only for speed comparison. *)
@@ -2776,17 +2678,17 @@ Section NAIVE_PARSE.
     transform [xfinal] to map them back to values of the type of the original
     [astgram], and then apply the split out user-level function to get back a 
     list of [t] results. *)
-  Definition naive_parse t (g:bigrammar t) (cs : list char_p) : list (interp t) :=
-  let (r, fuser) := split_bigrammar g in 
+  Definition naive_parse t (g:grammar t) (cs : list char_p) : list (interp t) :=
+  let (r, fuser) := split_grammar g in 
   let (rs, f) := wpdrv cs (RES.singleton_xform r) in
     flat_map (compose (List.map fuser) (xinterp f)) 
              (RES.re_set_extract_nil rs).
 
-  Lemma naive_parse_corr1 : forall t (g:bigrammar t) cs v, in_bigrammar g cs v -> 
+  Lemma naive_parse_corr1 : forall t (g:grammar t) cs v, in_grammar g cs v -> 
                                                        In v (naive_parse g cs).
   Proof.
     intros. unfold naive_parse. 
-    generalize (split_bigrammar_corr2 g). intros.
+    generalize (split_grammar_corr2 g). intros.
     remember_head as sg. destruct sg as [r fuser]. 
     specialize (H0 _ _ H). destruct H0 as [v1 [H2 H4]].
     subst.
@@ -2803,12 +2705,11 @@ Section NAIVE_PARSE.
     unfold compose. auto using in_map.
   Qed.
 
-  Lemma naive_parse_corr2 : forall t (g:bigrammar t) cs v,
-                              In v (naive_parse g cs) -> 
-                              in_bigrammar g cs v.
+  Lemma naive_parse_corr2 : forall t (g:grammar t) cs v, In v (naive_parse g cs) -> 
+                                                 in_grammar g cs v.
   Proof.
     unfold naive_parse. intros. 
-    generalize (split_bigrammar_corr1 g). intro H0.
+    generalize (split_grammar_corr1 g). intro H0.
     remember_head in H as sg. destruct sg as [r fuser].
     remember_head in H as wr. destruct wr as [rs f].
     apply in_flat_map in H.
@@ -2887,15 +2788,15 @@ Section NAIVE_PARSE.
         eapply in_re_set_xform_intro2; crush.
   Qed.
 
-  Lemma inps_help1 t (g:bigrammar t) r f:
-    split_bigrammar g = existT _ r f ->
-    regexp_type r = regexp_type (projT1 (split_bigrammar g)).
+  Lemma inps_help1 t (g:grammar t) r f:
+    split_grammar g = existT _ r f ->
+    regexp_type r = regexp_type (projT1 (split_grammar g)).
   Proof. crush. Qed.
 
 
-  Definition initial_naive_parser_state t (g:bigrammar t) : 
-    naiveParserState (regexp_type (projT1 (split_bigrammar g))) t.
-    refine (match split_bigrammar g as sr return split_bigrammar g = sr -> _ with
+  Definition initial_naive_parser_state t (g:grammar t) : 
+    naiveParserState (regexp_type (projT1 (split_grammar g))) t.
+    refine (match split_grammar g as sr return split_grammar g = sr -> _ with
               | existT r f => fun Hsr =>
                  @mkNPS _ _ (coerce_rx (inps_help1 g Hsr) (RES.singleton_xform r))
                         (coerce_dom (inps_help1 g Hsr) f)
@@ -2950,7 +2851,7 @@ Section DFA_PARSE.
     intros. rewrite <- H. trivial.
   Defined.
 
-  Lemma ips_help1 t (g:bigrammar t) r r2 (H:r=r2):
+  Lemma ips_help1 t (g:grammar t) r r2 (H:r=r2):
     dfa_states (coerce_dfa H (build_dfa r)).[0] = projT1 (RES.singleton_xform r2).
   Proof. rewrite RES.singleton_xform_erase.
     rewrite H. simpl.
@@ -2958,27 +2859,27 @@ Section DFA_PARSE.
     auto.
   Qed.
 
-  Lemma ips_help2 t (g:bigrammar t) r r2 (H:r=r2):
+  Lemma ips_help2 t (g:grammar t) r r2 (H:r=r2):
     RES.re_set_type (projT1 (RES.singleton_xform r)) =
     RES.re_set_type (dfa_states (coerce_dfa H (build_dfa r)).[0]).
   Proof. f_equal. rewrite (ips_help1 g). rewrite H. trivial. Qed.
 
-  Lemma ips_help3 t (g:bigrammar t) r r2 (H:r=r2):
+  Lemma ips_help3 t (g:grammar t) r r2 (H:r=r2):
     wf_dfa (coerce_dfa H (build_dfa r)).
   Proof. rewrite H. simpl. apply build_dfa_prop. Qed.
 
-  Lemma ips_help4 t (g:bigrammar t) r r2 (H:r=r2):
+  Lemma ips_help4 t (g:grammar t) r r2 (H:r=r2):
     0 < dfa_num_states (coerce_dfa H (build_dfa r)).
   Proof. rewrite H. simpl. apply dfa_at_least_one. Qed.
 
-  Lemma ips_help5 t (g:bigrammar t) r f:
-    split_bigrammar g = existT _ r f -> r = projT1 (split_bigrammar g).
+  Lemma ips_help5 t (g:grammar t) r f:
+    split_grammar g = existT _ r f -> r = projT1 (split_grammar g).
   Proof. crush. Qed.
 
-  Definition initial_parser_state t (g:bigrammar t) :
-    instParserState t (projT1 (split_bigrammar g)).
+  Definition initial_parser_state t (g:grammar t) :
+    instParserState t (projT1 (split_grammar g)).
     refine (
-      match split_bigrammar g as sr return split_bigrammar g = sr -> _ with
+      match split_grammar g as sr return split_grammar g = sr -> _ with
         | existT r f => fun Hsr =>
           match build_dfa r with
             | d => 
@@ -3169,12 +3070,12 @@ Section DFA_PARSE.
                In v ((fixup_ps ps) v').
 
   Opaque RES.re_set_type.
-  Lemma initial_parser_state_corr t (g:bigrammar t) str v:
-    in_ps (initial_parser_state g) str v <-> in_bigrammar g str v.
+  Lemma initial_parser_state_corr t (g:grammar t) str v:
+    in_ps (initial_parser_state g) str v <-> in_grammar g str v.
   Proof. unfold initial_parser_state.
     generalize (ips_help3 g) (ips_help4 g) (ips_help5 g).
     generalize (ips_help2 g).
-    remember_rev (split_bigrammar g) as sr.
+    remember_rev (split_grammar g) as sr.
     destruct sr as [r f]. 
     intros.
     rewrite (proof_irrelevance _ (e0 r f eq_refl) eq_refl). simpl.
@@ -3189,7 +3090,7 @@ Section DFA_PARSE.
     rewrite (proof_irrelevance _ e1 eq_refl). simpl.
     unfold in_ps; simpl; split; intros.
     Case "->".
-      generalize (split_bigrammar_corr1 g). rewrite Hsr. intros.
+      generalize (split_grammar_corr1 g). rewrite Hsr. intros.
       destruct H as [v' [H4 H6]].
       unfold compose in H6.
       apply Coqlib.list_in_map_inv in H6.
@@ -3198,7 +3099,7 @@ Section DFA_PARSE.
       apply RES.singleton_xform_corr.
       eapply in_re_set_xform_intro; eassumption. 
     Case "<-".
-      generalize (split_bigrammar_corr2 g). rewrite Hsr. intros.
+      generalize (split_grammar_corr2 g). rewrite Hsr. intros.
       use_lemma H0 by eassumption.
       destruct H1 as [v' [H4 H6]].
       apply RES.singleton_xform_corr in H4.
@@ -3326,7 +3227,7 @@ Section DFA_PARSE.
   Proof. induction ts1 as [ | tk ts1]; intros.
     Case "nil". simpl in H. inversion_clear H.
       split. apply ps_extract_nil_corr. 
-        exists (@nil token_id); crush.
+        exists nil; crush.
     Case "tk::ts1".
       simpl in Hts1. destruct Hts1 as [Htk Hts1].
       simpl in H.
@@ -3359,14 +3260,13 @@ Section DFA_PARSE.
       (b) a list of semantic values [vs], such that for each [v] in [vs],
       and a guarantee that [v] is is related by [g] and the consumed tokens. *)
   Lemma parse_tokens_initial_ps : 
-    forall t (g:bigrammar t) ps0, 
+    forall t (g:grammar t) ps0, 
       initial_parser_state g = ps0 -> 
       forall ts0 (H:list_all (fun tk => tk < num_tokens) ts0),
         match parse_tokens ps0 ts0 H with 
             | (ts2, ps2, vs) => 
               exists ts1, ts0 = ts1 ++ ts2 /\ 
-                forall v, In v vs -> 
-                          in_bigrammar g (flat_map token_id_to_chars ts1) v
+                forall v, In v vs -> in_grammar g (flat_map token_id_to_chars ts1) v
         end.
   Proof. intros.
     remember_head as pt. destruct pt as [[ts2 ps2] vs].
@@ -3397,7 +3297,7 @@ Section VDFA_PARSE.
     intros. rewrite <- H. trivial.
   Defined.
 
-  Lemma vips_help1 t (g:bigrammar t) r r2 (H:r=r2):
+  Lemma vips_help1 t (g:grammar t) r r2 (H:r=r2):
     vdfa_states (coerce_vdfa H (build_vdfa r)).[0] = projT1 (RES.singleton_xform r2).
   Proof. rewrite RES.singleton_xform_erase.
     rewrite H. simpl.
@@ -3405,26 +3305,26 @@ Section VDFA_PARSE.
     auto.
   Qed.
   
-  Definition vips_help2 t (g:bigrammar t) r r2 (H:r=r2):
+  Definition vips_help2 t (g:grammar t) r r2 (H:r=r2):
     RES.re_set_type (projT1 (RES.singleton_xform r)) =
     RES.re_set_type (vdfa_states (coerce_vdfa H (build_vdfa r)).[0]).
   Proof. f_equal. rewrite (vips_help1 g). rewrite H. trivial. Qed.
 
-  Lemma vips_help3 t (g:bigrammar t) r r2 (H:r=r2):
+  Lemma vips_help3 t (g:grammar t) r r2 (H:r=r2):
     wf_vdfa (coerce_vdfa H (build_vdfa r)).
   Proof. rewrite H. simpl. apply build_vdfa_prop. Qed.
 
-  Lemma vips_help4 t (g:bigrammar t) r r2 (H:r=r2):
+  Lemma vips_help4 t (g:grammar t) r r2 (H:r=r2):
     0 < Vector.length (vdfa_transition (coerce_vdfa H (build_vdfa r))).
   Proof. rewrite H. 
          generalize (vdfa_transition_len (build_vdfa r2)).
          simpl. intros. rewrite H0. apply vdfa_at_least_one. 
   Qed.
 
-  Definition vinitial_parser_state t (g:bigrammar t) : 
-    vinstParserState t (projT1 (split_bigrammar g)).
+  Definition vinitial_parser_state t (g:grammar t) : 
+    vinstParserState t (projT1 (split_grammar g)).
     refine (
-      match split_bigrammar g as sr return split_bigrammar g = sr -> _ with
+      match split_grammar g as sr return split_grammar g = sr -> _ with
         | existT r f => fun Hsr => 
           match build_vdfa r with 
             | d =>
@@ -3537,11 +3437,11 @@ Section VDFA_PARSE.
     exists v', in_re_set (vdfa_states (vdfa_ps ps).[vrow_ps ps]) str v' /\ 
                In v ((vfixup_ps ps) v').
 
-  Lemma vinitial_parser_state_corr t (g:bigrammar t) str v:
-    in_vps (vinitial_parser_state g) str v <-> in_bigrammar g str v.
+  Lemma vinitial_parser_state_corr t (g:grammar t) str v:
+    in_vps (vinitial_parser_state g) str v <-> in_grammar g str v.
   Proof. unfold vinitial_parser_state.
     generalize (vips_help2 g) (vips_help3 g) (vips_help4 g) (ips_help5 g).
-    remember_rev (split_bigrammar g) as sr.
+    remember_rev (split_grammar g) as sr.
     destruct sr as [r f]. 
     intros.
     rewrite (proof_irrelevance _ (e0 r f eq_refl) eq_refl). simpl.
@@ -3556,7 +3456,7 @@ Section VDFA_PARSE.
     rewrite (proof_irrelevance _ e1 eq_refl). simpl.
     unfold in_ps; simpl; split; intros.
     Case "->".
-      generalize (split_bigrammar_corr1 g). rewrite Hsr. intros.
+      generalize (split_grammar_corr1 g). rewrite Hsr. intros.
       destruct H as [v' [H4 H6]].
       unfold compose in H6.
       apply Coqlib.list_in_map_inv in H6.
@@ -3565,7 +3465,7 @@ Section VDFA_PARSE.
       apply RES.singleton_xform_corr.
       eapply in_re_set_xform_intro; eassumption. 
     Case "<-".
-      generalize (split_bigrammar_corr2 g). rewrite Hsr. intros.
+      generalize (split_grammar_corr2 g). rewrite Hsr. intros.
       use_lemma H0 by eassumption.
       destruct H1 as [v' [H4 H6]].
       apply RES.singleton_xform_corr in H4.
