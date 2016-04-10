@@ -933,21 +933,21 @@ Section VERIFIER_CORR.
          process_buffer_aux_Sn_tac.
          SSSCase "nacljmp_dfa matches". clear Hd1 Hd2.
            assert (length remaining3 > 0)%nat by (destruct remaining3; pbprover).
-           use_lemma dfa_recognize_inv by eassumption. breakHyp.
-           use_lemma process_buffer_arith_facts by eassumption. breakHyp.
+           use_lemma dfa_recognize_inv by eassumption. break_hyp.
+           use_lemma process_buffer_arith_facts by eassumption. break_hyp.
            apply IHn with (pc:=pc) in H; try (assumption || omega). clear IHn. 
            int32_simplify. lia.
         SSSCase "non_cflow_dfa matches". clear Hd2 Hd3.
            assert (length remaining1 > 0)%nat by (destruct remaining1; pbprover).
-           use_lemma dfa_recognize_inv by eassumption. breakHyp.
-           use_lemma process_buffer_arith_facts by eassumption. breakHyp.
+           use_lemma dfa_recognize_inv by eassumption. break_hyp.
+           use_lemma process_buffer_arith_facts by eassumption. break_hyp.
            apply IHn with (pc:=pc) in H; try (assumption || omega). clear IHn.
            int32_simplify. lia.
         SSSCase "dir_cflow_dfa matches". clear Hd1 Hd3.
            destruct_head in H; try discriminate.
            assert (length remaining2 > 0)%nat by (destruct remaining2; pbprover).
-           use_lemma dfa_recognize_inv by eassumption. breakHyp.
-           use_lemma process_buffer_arith_facts by eassumption. breakHyp.
+           use_lemma dfa_recognize_inv by eassumption. break_hyp.
+           use_lemma process_buffer_arith_facts by eassumption. break_hyp.
            apply IHn with (pc:=pc) in H; try (assumption || omega). clear IHn.
            int32_simplify. lia.
   Qed.
@@ -995,7 +995,7 @@ Section VERIFIER_CORR.
         process_buffer_aux_Sn_tac.
         SSCase "nacljmp_dfa matches". clear Hd1 Hd2.
           use_lemma IHn by eassumption.
-          breakHyp.
+          break_hyp.
           split.
             eapply Int32SetFacts.Subset_trans; [idtac | eassumption].
               apply Int32Set_subset_add.
@@ -1003,7 +1003,7 @@ Section VERIFIER_CORR.
               apply Int32SetFacts.Subset_refl.
         SSCase "non_cflow_dfa matches". clear Hd2 Hd3.
           use_lemma IHn by eassumption.
-          breakHyp.
+          break_hyp.
           split.
             eapply Int32SetFacts.Subset_trans; [idtac | eassumption].
               apply Int32Set_subset_add.
@@ -1012,7 +1012,7 @@ Section VERIFIER_CORR.
         SSCase "dir_cflow_dfa matches". clear Hd1 Hd3.
           destruct_head in H; try discriminate.
           use_lemma IHn by eassumption.
-          breakHyp.
+          break_hyp.
           split.
             eapply Int32SetFacts.Subset_trans; [idtac | eassumption].
               apply Int32Set_subset_add.
@@ -1144,7 +1144,7 @@ Section VERIFIER_CORR.
           assert (length remaining3 > 0)%nat by (destruct remaining3; pbprover).
           use_lemma (process_buffer_arith_facts start len3 (t1::tokens1) remaining3)
             by assumption.
-          breakHyp.
+          break_hyp.
           use_lemma process_buffer_aux_addrRange by eassumption.
           use_lemma IHn by eassumption.
           destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
@@ -1183,7 +1183,7 @@ Section VERIFIER_CORR.
           assert (length remaining1 > 0)%nat by (destruct remaining1; pbprover).
           use_lemma (process_buffer_arith_facts start len1 (t1::tokens1) remaining1)
             by assumption.
-          breakHyp.
+          break_hyp.
           use_lemma process_buffer_aux_addrRange by eassumption.
           use_lemma IHn by eassumption.
           destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
@@ -1192,7 +1192,7 @@ Section VERIFIER_CORR.
           assert (Zabs_nat (unsigned pc - (unsigned start + Z_of_nat len1)) + len1 =
                   Zabs_nat (unsigned pc - unsigned start))%nat as H30.
             apply inj_eq_rev; int32_simplify_in_goal; ring.
-          rewrite H30 in H22. breakHyp.
+          rewrite H30 in H22. break_hyp.
           assert (goodDefaultPC_aux (pc +32_n len) start allStartAddrs
                     (length (t1 :: tokens1))).
             destruct H21. left. assumption.
@@ -1232,7 +1232,7 @@ Section VERIFIER_CORR.
           assert (length remaining2 > 0)%nat by (destruct remaining2; pbprover).
           use_lemma (process_buffer_arith_facts start len2 (t1::tokens1) remaining2)
             by assumption.
-          breakHyp.
+          break_hyp.
           use_lemma process_buffer_aux_addrRange by eassumption.
           use_lemma IHn by eassumption.
           destruct H12 as [tokens'' [len [remaining [H20 [H21 H22]]]]].
@@ -1281,7 +1281,7 @@ Section VERIFIER_CORR.
     apply process_buffer_aux_inversion with (pc:=pc) in H;
       [idtac | assumption | (rewrite list_length_map; omega) | pbprover].
     destruct H as [tokens' [len [remaining H]]].
-    breakHyp.
+    break_hyp.
     assert (goodDefaultPC (pc +32_n len) startAddrs (length buffer)).
       unfold goodDefaultPC, goodDefaultPC_aux in *.
       destruct H3. left. trivial.
@@ -1650,7 +1650,7 @@ Section VERIFIER_CORR.
       | [H:safeState ?s ?inv |- _] => 
         unfold safeState, appropState in H; 
         destruct inv as [[sregs_st sregs_lm] code];
-        breakHyp
+        break_hyp
     end.
 
   Ltac same_seg_regs_rel_tac := 
@@ -1891,7 +1891,7 @@ Section VERIFIER_CORR.
       -> pc = int32_of_nat (length code)
       -> Int32Set.In pc startAddrs \/ ~inBoundCodeAddr pc s.
   Proof. unfold codeLoaded; intros.
-    breakHyp.
+    break_hyp.
     generalize (unsigned_range (CLimit s)); intro.
     assert (H20:unsigned (CLimit s) + 1 <= w32modulus) by omega.
     apply Zle_lt_or_eq in H20.
@@ -2261,7 +2261,7 @@ Section VERIFIER_CORR.
     destruct cmp.
     Case "pc <= (CLimit s)". left. simpl.
       unfold codeLoaded in *.
-      breakHyp.
+      break_hyp.
       assert (0 <= unsigned pc < Z_of_nat (length code)) by int32_prover.
       rewrite <- (repr_unsigned _ pc).
       eapply checkAligned_corr; try eassumption.
@@ -2388,7 +2388,7 @@ Section VERIFIER_CORR.
     assert (H20:same_pc (RTL_step_list (instr_to_rtl pre1 ins1))).
       eapply nci_same_pc; eassumption.
     use_lemma nacljmp_no_prefix by eassumption.
-    breakHyp. 
+    break_hyp. 
     assert (H21:lock_rep pre1 = None).
       eauto using filter_prefix_no_lock_or_rep.
     rewrite H21 in *.
@@ -2444,13 +2444,13 @@ Section VERIFIER_CORR.
       remember_rev (lock_rep pre2) as lr.
       destruct lr. destruct l.
         Case "lock". 
-          apply nacljmp_no_prefix in H1. breakHyp. 
+          apply nacljmp_no_prefix in H1. break_hyp. 
           crush' no_prefix_no_lock_rep fail.
         Case "rep". 
-          apply nacljmp_no_prefix in H1. breakHyp. 
+          apply nacljmp_no_prefix in H1. break_hyp. 
           crush' no_prefix_no_lock_rep fail.
         Case "repn". 
-          apply nacljmp_no_prefix in H1. breakHyp. 
+          apply nacljmp_no_prefix in H1. break_hyp. 
           crush' no_prefix_no_lock_rep fail.
         Case "none". no_fail_tac.
   Qed.
@@ -2663,7 +2663,7 @@ Section VERIFIER_CORR.
       -> aligned (PC s'').
   Proof. intros.
     dupHyp H1; unfold nacljmp_mask_instr in H1.
-    dupHyp H2; safestate_unfold_tac.  breakHyp.
+    dupHyp H2; safestate_unfold_tac.  break_hyp.
     destruct ins1; bool_elim_tac; try congruence.
     destruct w; try congruence.
     destruct op1; try congruence.
@@ -2764,7 +2764,7 @@ Section VERIFIER_CORR.
             use_lemma nacljmp_snd_step_same_seg_regs by eassumption.
             assert (H20: CLimit s = CLimit s'').
               unfold Same_Seg_Regs_Rel.brel in *.
-              breakHyp. crush.
+              break_hyp. crush.
             assert (eqCodeRegion s' s'').
               eapply eqCodeRegion_intro; try eassumption.
               right; left. 
@@ -2793,7 +2793,7 @@ Section VERIFIER_CORR.
   Lemma eqMemBuffer_succ : forall b buffer s lc,
     eqMemBuffer (b::buffer) s lc -> eqMemBuffer buffer s (lc +32_z 1).
   Proof. unfold eqMemBuffer. intros.
-    breakHyp.
+    break_hyp.
     simpl in H.
     split. int32_prover.
     intros.
@@ -2889,7 +2889,7 @@ Section VERIFIER_CORR.
 
   Lemma eqMemBuffer_skipn : forall n ls s lc,
     eqMemBuffer ls s lc -> eqMemBuffer (skipn n ls) s (lc +32_n n).
-  Proof. unfold eqMemBuffer. intros. breakHyp.
+  Proof. unfold eqMemBuffer. intros. break_hyp.
     split.
       eapply Zle_trans. eapply inj_le. eapply skipn_length_leq. assumption.
       intros.
@@ -2912,7 +2912,7 @@ Section VERIFIER_CORR.
 
   Lemma eqMemBuffer_firstn : forall n ls s lc,
     eqMemBuffer ls s lc -> eqMemBuffer (firstn n ls) s lc.
-  Proof. unfold eqMemBuffer. intros. breakHyp.
+  Proof. unfold eqMemBuffer. intros. break_hyp.
     assert (length (firstn n ls) <= length ls)%nat.
       rewrite firstn_length. apply Min.le_min_r.
     split. omega.
@@ -3105,7 +3105,7 @@ Section VERIFIER_CORR.
       eapply eqMemBuffer_firstn. 
       subst code'. rewrite H3 at 2.
       apply eqMemBuffer_skipn. unfold codeLoaded in *. 
-      breakHyp. assumption.
+      break_hyp. assumption.
     use_lemma process_buffer_addrRange by eassumption.
     assert ((nat_of_int32 (PC s)) + length tokens = length code)%nat.
       rewrite H20. rewrite list_length_map. rewrite plus_comm.
@@ -3125,8 +3125,8 @@ Section VERIFIER_CORR.
       use_lemma simple_parse_corr_parse_instr by eassumption.
       destruct H9 as [pos [H40 H42]].
       assert (unsigned (PC s) + Zpos pos <= unsigned (CLimit s) + 1).
-        use_lemma dfa_recognize_inv by eassumption. breakHyp.
-        unfold codeLoaded in *. breakHyp. clean.
+        use_lemma dfa_recognize_inv by eassumption. break_hyp.
+        unfold codeLoaded in *. break_hyp. clean.
         int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
       exists pre. exists ins. exists pos.
@@ -3134,7 +3134,7 @@ Section VERIFIER_CORR.
       split. assumption. 
         rewrite H42. assumption.
     Case "dir_cflow_dfa matches". right; left.
-      breakHyp.
+      break_hyp.
       use_lemma dir_cflow_dfa_corr by (subst tokens; eassumption).
       destruct H10 as [insBytes [pre [ins [H30 [H32 [H34 H36]]]]]].
       assert (len = length code' - length (List.map nat_to_byte remaining))%nat.
@@ -3148,8 +3148,8 @@ Section VERIFIER_CORR.
       use_lemma simple_parse_corr_parse_instr by eassumption.
       destruct H12 as [pos [H40 H42]].
       assert (unsigned (PC s) + Zpos pos <= unsigned (CLimit s) + 1).
-        use_lemma dfa_recognize_inv by eassumption. breakHyp.
-        unfold codeLoaded in *. breakHyp.
+        use_lemma dfa_recognize_inv by eassumption. break_hyp.
+        unfold codeLoaded in *. break_hyp.
         int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
       exists pre. exists ins. exists pos.
@@ -3161,7 +3161,7 @@ Section VERIFIER_CORR.
         rewrite H42.
         eapply goodJmp_lemma; eassumption.
     Case "nacljmp_dfa matches". right; right.
-      breakHyp.
+      break_hyp.
       use_lemma nacljmp_dfa_corr by (subst tokens; eassumption).
       destruct H8 as 
         [bytes1 [pre1 [ins1 [bytes [pre2 [ins2 [H30 [H32 [H34 [H36 H38]]]]]]]]]].
@@ -3182,8 +3182,8 @@ Section VERIFIER_CORR.
       destruct H12 as [pos1 [H40 H42]].
 
       assert (unsigned (PC s) + Zpos pos1 <= unsigned (CLimit s) + 1).
-        use_lemma dfa_recognize_inv by eassumption. breakHyp.
-        unfold codeLoaded in *. breakHyp.
+        use_lemma dfa_recognize_inv by eassumption. break_hyp.
+        unfold codeLoaded in *. break_hyp.
         int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
 
@@ -3214,8 +3214,8 @@ Section VERIFIER_CORR.
       use_lemma simple_parse_corr_parse_instr by (subst code'; eassumption).
       destruct H17 as [pos2 [H50 H52]].
 
-      use_lemma dfa_recognize_inv by eassumption. breakHyp.
-      unfold codeLoaded in *. breakHyp.
+      use_lemma dfa_recognize_inv by eassumption. break_hyp.
+      unfold codeLoaded in *. break_hyp.
       generalize (Zgt_pos_0 pos1) (Zgt_pos_0 pos2). intros.
       assert (Z_of_nat (length bytes1) < w32modulus). 
         int32_simplify. omega.
@@ -3239,7 +3239,7 @@ Section VERIFIER_CORR.
   Proof. unfold safeInSomeK. intros.
     exists (S O). simpl.
     split. 
-      unfold safeState in *. destruct inv. breakHyp. assumption.
+      unfold safeState in *. destruct inv. break_hyp. assumption.
     split.
       unfold nextStepNoFail. intros. contradict H.
         eapply step_fail_pc_inBound; eassumption.

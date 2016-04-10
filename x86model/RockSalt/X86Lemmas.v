@@ -1240,7 +1240,7 @@ Proof. induction n.
       rewrite cons_nth by assumption.
       erewrite IHn by trivial.
       unfold "+32". rewrite add_assoc. rewrite add_repr.
-      assert (1 + Z_of_nat (k-1) = Z_of_nat k).
+      assert (1 + Z_of_nat (k-1) = Z_of_nat k)%Z.
         rewrite inj_minus1 by omega. ring.
       crush.
 Qed.    

@@ -9,10 +9,9 @@
    the License, or (at your option) any later version.
 *)
 
-(* This file glues all individual x86 instruction bigrammars in
-   Decode_ins.v into one big bigrammar. *)
-
-Require Import Coqlib.
+(* This file provides simple bit-level parsing combinators for disassembling
+ * Intel IA32 (x86) 32-bit binaries. *)
+Require Coqlib.
 Require Import Coq.Init.Logic.
 Require Import Bool.
 Require Import String.
@@ -21,2221 +20,2121 @@ Require Import Maps.
 Require Import Ascii.
 Require Import ZArith.
 Require Import Eqdep.
-Require Import CommonTacs.
-Require Import Program.
-Require Import Coq.Classes.Morphisms.
-
 Unset Automatic Introduction.
 Set Implicit Arguments.
+Local Open Scope Z_scope.
 
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 
+
+(* This is now defined in Grammar.v because of the bug with Extraction 
+   Implicit.  
+
+(* a module for generating the parser for x86 instructions *)
+Module X86_PARSER_ARG.
+  Require Import X86Syntax.
+  Require Import Bits.
+  
+  Definition char_p : Set := bool.
+  Definition char_eq : forall (c1 c2:char_p), {c1=c2}+{c1<>c2} := bool_dec.
+  Inductive type : Set := 
+  | Int_t : type
+  | Register_t : type
+  | Byte_t : type
+  | Half_t : type
+  | Word_t : type
+  | Double_Word_t : type
+  | Ten_Byte_t : type
+  | Scale_t : type
+  | Condition_t : type
+  | Address_t : type
+  | Operand_t : type
+  | Fpu_Register_t : type
+  | Fp_Debug_Register_t : type
+  | Fp_Operand_t : type 
+  | MMX_Granularity_t : type
+  | MMX_Register_t : type
+  | MMX_Operand_t : type
+  | SSE_Register_t : type
+  | SSE_Operand_t : type
+  | Instruction_t : type
+  | Control_Register_t : type
+  | Debug_Register_t : type
+  | Segment_Register_t : type
+  | Lock_or_Rep_t : type
+  | Bool_t : type
+  | Prefix_t : type
+  | Option_t (t: type) : type
+  (* Need pairs at this level if I want to have options of pairs*)
+  | Pair_t (t1 t2: type) : type. 
+
+  Definition tipe := type.
+  Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
+    intros ; decide equality.
+  Defined.
+
+  Fixpoint tipe_m (t:tipe) := 
+    match t with 
+      | Int_t => Z
+      | Register_t => register
+      | Byte_t => int8
+      | Half_t => int16
+      | Word_t => int32
+      | Double_Word_t => int64
+      | Ten_Byte_t => int80
+      | Scale_t => scale
+      | Condition_t => condition_type
+      | Address_t => address
+      | Operand_t => operand
+      | Fpu_Register_t => int3
+      | Fp_Debug_Register_t => fp_debug_register
+      | Fp_Operand_t => fp_operand  
+      | MMX_Granularity_t => mmx_granularity
+      | MMX_Register_t => mmx_register
+      | MMX_Operand_t => mmx_operand
+      | SSE_Register_t => sse_register
+      | SSE_Operand_t => sse_operand
+      | Instruction_t => instr
+      | Control_Register_t => control_register
+      | Debug_Register_t => debug_register
+      | Segment_Register_t => segment_register
+      | Lock_or_Rep_t => lock_or_rep
+      | Bool_t => bool
+      | Prefix_t => prefix
+      | Option_t t => option (tipe_m t)
+      | Pair_t t1 t2 => ((tipe_m t1) * (tipe_m t2))%type
+    end.
+End X86_PARSER_ARG.
+*)
+
+(* Module X86_PARSER. *)
+  (* Commented out because the Parser is no longer a functor, due to the
+     bug with Extraction Implicit. 
+     Module X86_BASE_PARSER := Parser.Parser(X86_PARSER_ARG).
+  *)
   Require Import X86Syntax.
   Require Import Bits.
   Require ParserArg.
   Import ParserArg.X86_PARSER_ARG.
-  Require Import BiGrammar.
-  Require Import Decode_ins.
+  Require Import Parser.
+
+  Definition option_t := Option_t.
+  Definition int_t := User_t Int_t.
+  Definition register_t := User_t Register_t.
+  Definition byte_t := User_t Byte_t.
+  Definition half_t := User_t Half_t.
+  Definition word_t := User_t Word_t.
+  Definition double_word_t := User_t Double_Word_t.
+  Definition ten_byte_t := User_t Ten_Byte_t.
+  Definition scale_t := User_t Scale_t.
+  Definition condition_t := User_t Condition_t.
+  Definition fpu_register_t := User_t Fpu_Register_t.
+  Definition fp_debug_register_t := User_t Fp_Debug_Register_t.
+  Definition mmx_granularity_t := User_t MMX_Granularity_t.
+  Definition mmx_operand_t := User_t MMX_Operand_t.
+  Definition mmx_register_t := User_t MMX_Register_t.
+  Definition sse_operand_t := User_t SSE_Operand_t.
+  Definition sse_register_t := User_t SSE_Register_t.
+  Definition address_t := User_t Address_t.
+  Definition operand_t := User_t Operand_t.
+  Definition fp_operand_t := User_t Fp_Operand_t.  
+  Definition instruction_t := User_t Instruction_t.
+  Definition control_register_t := User_t Control_Register_t.
+  Definition debug_register_t := User_t Debug_Register_t.
+  Definition segment_register_t := User_t Segment_Register_t.
+  Definition lock_or_rep_t := User_t Lock_or_Rep_t.
+  Definition bool_t := User_t Bool_t.
+  Definition prefix_t := User_t Prefix_t.
+  Definition bitvector_t n := User_t (BitVector_t n).
+
+  Notation pair_t := Pair_t.
 
 
-  Definition lock_p : wf_bigrammar lock_or_rep_t. 
-    refine("1111" $$ ! "0000"
-             @ (fun v => lock %% lock_or_rep_t)
-             & (fun lr => 
-                  match lr with
-                    | lock => Some ()
-                    | _ => None
-                  end)
-             & _); ins_invertible_tac.
-    - destruct w; parsable_tac.
-  Defined.
+  (* combinators for building grammars *)
+  Definition bit(x:bool) : grammar Char_t := Char x.
+  Definition never t : grammar t := Zero t.
+  Definition always t (x:interp t) : grammar t := @Map Unit_t t (fun (_:unit) => x) Eps.
+  Definition alt t (p1 p2:grammar t) : grammar t := 
+    Map _ (fun (x:interp (Sum_t t t)) => match x with inl a => a | inr b => b end) 
+        (Alt p1 p2).
 
-  Definition rep_or_repn_p : wf_bigrammar lock_or_rep_t. 
-    refine ((("1111" $$ ! "0010") |+| ("1111" $$ ! "0011"))
-              @ (fun v => 
-                   match v with
-                     | inl () => repn
-                     | inr () => rep
-                   end %% lock_or_rep_t)
-              & (fun u => 
-                   match u with
-                     | repn => Some (inl ())
-                     | rep => Some (inr ())
-                     | _ => None
-                   end)
-              & _); ins_invertible_tac.
-    - destruct w; parsable_tac.
-  Defined.
+  Fixpoint alts0 t (ps:list (grammar t)) : grammar t := 
+    match ps with 
+      | nil => @never t
+      | p::nil => p
+      | p::rest => alt p (alts0 rest)
+    end.
 
-  Definition rep_p : wf_bigrammar lock_or_rep_t. 
-    refine ("1111" $$ ! "0011"
-              @ (fun v => rep  %% lock_or_rep_t)
-              & (fun u => 
-                   match u with
-                     | rep => Some ()
-                     | _ => None
-                   end)
-              & _); ins_invertible_tac.
-    - destruct w; parsable_tac.
-  Defined.
+  Fixpoint half A (xs ys zs: list A) : (list A) * (list A) := 
+    match xs with 
+      | nil => (ys,zs) 
+      | h::t => half t zs (h::ys)
+    end.
 
-  Definition lock_or_rep_p : wf_bigrammar lock_or_rep_t.
-    refine (("1111" $$ ( ! "0000" |+| ! "0010" |+| ! "0011"))
-              @ (fun v => 
-                   match v with
-                     | inl () => lock
-                     | inr (inl ()) => repn
-                     | inr (inr ()) => rep
-                   end %% lock_or_rep_t)
-              & (fun lr => 
-                   match lr with
-                     | lock => Some (inl ())
-                     | repn => Some (inr (inl ()))
-                     | rep => Some (inr (inr ()))
-                   end)
-              & _); ins_invertible_tac.
-    - destruct w; parsable_tac.
-  Defined.
+  Fixpoint alts' n t (ps:list (grammar t)) : grammar t := 
+    match n, ps with 
+      | 0%nat, _ => alts0 ps
+      | S n, nil => @never t
+      | S n, p::nil => p
+      | S n, ps => 
+        let (ps1,ps2) := half ps nil nil in 
+          let g1 := alts' n ps1 in 
+            let g2 := alts' n ps2 in 
+              alt g1 g2
+    end.
 
-  Definition segment_override_env : AST_Env segment_register_t :=
-    {0, "0010" $$ ! "1110", (fun v => CS %% segment_register_t)} :::
-    {1, "0011" $$ ! "0110", (fun v => SS %% segment_register_t)} :::
-    {2, "0011" $$ ! "1110", (fun v => DS %% segment_register_t)} :::
-    {3, "0010" $$ ! "0110", (fun v => ES %% segment_register_t)} :::
-    {4, "0110" $$ ! "0100", (fun v => FS %% segment_register_t)} :::
-    {5, "0110" $$ ! "0101", (fun v => GS %% segment_register_t)} :::
-    ast_env_nil.
-  Hint Unfold segment_override_env : env_unfold_db.
+  Definition alts t (ps:list (grammar t)) : grammar t := alts' 20 ps.
+  Definition map t1 t2 (p:grammar t1) (f:interp t1 -> interp t2) : grammar t2 := 
+    @Map t1 t2 f p.
+  Implicit Arguments map [t1 t2].
+  Definition seq t1 t2 (p1:grammar t1) (p2:grammar t2) : grammar (Pair_t t1 t2) := Cat p1 p2.
+  Definition cons t (pair : interp (Pair_t t (List_t t))) : interp (List_t t) := 
+    (fst pair)::(snd pair).
+  Definition seqs t (ps:list (grammar t)) : grammar (List_t t) := 
+    List.fold_right (fun p1 p2 => map (seq p1 p2) (@cons t)) 
+      (@always (List_t t) (@nil (interp t))) ps.
 
-  Definition segment_override_p : wf_bigrammar segment_register_t.
-    gen_ast_defs segment_override_env.
-    refine (gr @ (mp: _ -> [|segment_register_t|])
-               & (fun u => 
-                    match u with 
-                      | CS => case0 ()
-                      | SS => case1 ()
-                      | DS => case2 ()
-                      | ES => case3 ()
-                      | FS => case4 ()
-                      | GS => case5 ()
-                    end)
-               & _); clear_ast_defs; ins_invertible_tac.
-  Defined.
+  Fixpoint string_to_bool_list (s:string) : list bool := 
+    match s with
+      | EmptyString => nil
+      | String a s => 
+        (if ascii_dec a "0"%char then false else true)::(string_to_bool_list s)
+    end.
 
-  Definition op_override_p : wf_bigrammar bool_t.
-    refine ("0110" $$ ! "0110"
-              @ (fun v => true %% bool_t)
-              & (fun u =>
-                   match u with
-                     | true => Some ()
-                     | false => None
-                   end)
-              & _); ins_invertible_tac.
-  Defined.
+  Fixpoint bits_n (n:nat) : type := 
+    match n with 
+      | 0%nat => Unit_t
+      | S n => Pair_t Char_t (bits_n n)
+    end.
+  Fixpoint field'(n:nat) : grammar (bits_n n) := 
+    match n with 
+      | 0%nat => Eps
+      | S n => Cat Any (field' n)
+    end.
+  Fixpoint bits2Z(n:nat)(a:Z) : interp (bits_n n) -> interp int_t := 
+    match n with 
+      | 0%nat => fun _ => a
+      | S n => fun p => bits2Z n (2*a + (if (fst p) then 1 else 0)) (snd p)
+    end.
+  Definition bits2int(n:nat)(bs:interp (bits_n n)) : interp int_t := bits2Z n 0 bs.
+  Fixpoint bits (x:string) : grammar (bits_n (String.length x)) := 
+    match x with 
+      | EmptyString => Eps
+      | String c s => 
+        (Cat (Char (if ascii_dec c "0"%char then false else true)) (bits s))
+    end.
 
-  Definition addr_override_p : wf_bigrammar bool_t.
-    refine ("0110" $$ ! "0111"
-              @ (fun v => true %% bool_t)
-              & (fun u =>
-                   match u with
-                     | true => Some ()
-                     | false => None
-                   end)
-              & _); ins_invertible_tac.
-  Defined.
 
-  Lemma op_override_p_rng_inv op :
-    in_bigrammar_rng (` op_override_p) op -> op = true.
-  Proof. unfold op_override_p; intros; ins_ibr_sim. Qed.
 
+  (* notation for building grammars *)
+  Infix "|+|" := alt (right associativity, at level 80).
+  Infix "$" := seq (right associativity, at level 70).
+  Infix "@" := map (right associativity, at level 75).
+  Notation "e %% t" := (e : interp t) (at level 80).
+  Definition bitsleft t (s:string)(p:grammar t) : grammar t := 
+    bits s $ p @ (@snd _ _).
+  Infix "$$" := bitsleft (right associativity, at level 70).
+
+  Definition anybit : grammar Char_t := Any.
+  Definition field(n:nat) := (field' n) @ (bits2int n).
+  Definition reg := (field 3) @ (Z_to_register : _ -> interp register_t). 
+
+  (** convert a sequence of bits to a signature function that maps position
+     indexes to bits so that we are not restricted by the
+     right-associateness of the bits when processing them; position indexes
+     in the signature function start at 0 *)
+  Fixpoint sig_of_bitsn (n:nat) : interp (bits_n n) -> (Z -> bool) := 
+    match n with
+      | O => fun _ _ => false
+      | S n' => 
+        fun v =>
+          let f' := sig_of_bitsn n' (snd v) in
+          fun x => if Coqlib.zeq x (Z_of_nat n') then fst v else f' x
+    end.
+
+  Definition intn_of_sig (n:nat) (f:Z->bool): Word.int n :=
+    Word.mkint _ (Word.Z_of_bits (S n) f) (Word.Z_of_bits_range n f).
+
+  Definition intn_of_bitsn (n:nat) (bs:interp (bits_n (S n))) : Word.int n :=
+    intn_of_sig n (sig_of_bitsn (S n) bs).
+
+  Definition field_intn (n:nat) : grammar (bitvector_t n) :=
+    (field' (S n)) @ (@intn_of_bitsn n: _ -> interp (bitvector_t n)).
+
+  Definition int_n (n:nat): grammar (User_t (BitVector_t n)) := 
+    (field (S n)) @ (@Word.repr n : _ ->  interp (bitvector_t n)).
+
+  Definition fpu_reg := (field 3) @ (@Word.repr 2 :_ -> interp fpu_register_t).
+  Definition mmx_reg := field_intn 2.
+  Definition sse_reg := field_intn 2.
+
+  Definition byte : grammar byte_t := int_n 7.
+  Definition halfword : grammar half_t := int_n 15.
+  Definition word : grammar word_t := int_n 31.
+
+  Definition scale_p := (field 2) @ (Z_to_scale : _ -> interp scale_t).
+  Definition tttn := (field 4) @ (Z_to_condition_type : _ -> interp condition_t).
+
+  (* This is used in a strange edge-case for modrm parsing. See the
+     footnotes on p37 of the manual in the repo This is a case where I
+     think intersections/complements would be nice operators *)
+
+  (* JGM: we can handle this in the semantic action instead of the grammar, 
+     so I replaced si, which used this and another pattern for [bits "100"]
+     to the simpler case below -- helps to avoid some explosions in the 
+     definitions. *)
+  Definition reg_no_esp : grammar register_t :=
+     (bits "000" |+| bits "001" |+| bits "010" |+|
+     bits "011" |+| (* bits "100" <- this is esp *)  bits "101" |+|
+     bits "110" |+| bits "111") @ 
+       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> interp register_t).
+
+  Definition reg_no_ebp : grammar register_t :=
+     (bits "000" |+| bits "001" |+| bits "010" |+|
+     bits "011" |+|  bits "100"  (* |+| bits "101" <- this is ebp *) |+|
+     bits "110" |+| bits "111") @ 
+       ((fun bs => Z_to_register (bits2int 3 bs)) : _ -> interp register_t).
+
+  Definition si := 
+    (scale_p $ reg) @ (fun p => match snd p with 
+                                  | ESP => None
+                                  | _ => Some p
+                                end %% option_t (pair_t scale_t register_t)).
+
+  Definition sib := si $ reg.
+
+  (* These next 4 grammars are used in the definition of the mod/rm grammar *)
+  Definition rm00 : grammar address_t := 
+    (     bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011" 
+      |+| bits "110"
+      |+| bits "111" ) @ 
+          (fun bs => (mkAddress (Word.repr 0) 
+            (Some (Z_to_register(bits2int 3 bs))) None) %% address_t)
+      |+| bits "100" $ si $ reg_no_ebp @ 
+          (fun p => match p with
+                      | (_,(si,base)) => 
+                        (mkAddress (Word.repr 0) (Some base) si)
+                    end : interp address_t)     
+      |+| bits "100" $ si $ bits "101" $ word @
+          (fun p => match p with
+                      | (_,(si,(_, disp))) => 
+                        (mkAddress disp None si)
+                    end : interp address_t)
+      |+| bits "101" $ word @
+          (fun p => match p with 
+                      | (_, disp) => 
+                        (mkAddress disp None None)
+                    end %% address_t).  
+
+  Definition rm01 : grammar address_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ byte) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                (mkAddress (sign_extend8_32 disp) 
+                  (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% address_t)
+      |+| bits "100" $ sib $ byte @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                (mkAddress (sign_extend8_32 disp) (Some base) (si))
+            end %% address_t).
+
+  Definition rm10 : grammar address_t := 
+    ((    bits "000" 
+      |+| bits "001" 
+      |+| bits "010" 
+      |+| bits "011"
+      |+| bits "101" 
+      |+| bits "110"
+      |+| bits "111") $ word) @ 
+          (fun p => 
+            match p with 
+              | (bs, disp) =>
+                (mkAddress disp (Some (Z_to_register(bits2int 3 bs))) None)
+            end %% address_t)
+      |+|  bits "100" $ sib $ word @ 
+          (fun p => 
+            match p with
+              | (_,((si,base),disp)) => 
+                (mkAddress disp (Some base) si)
+            end %% address_t).
+
+  (* a general modrm grammar for integer, floating-point, sse, mmx instructions *)
+  Definition modrm_gen (res_t: type) 
+    (reg_p : grammar res_t)  (* the grammar that parse a register *)
+    (addr_op : address -> interp res_t) (* the constructor that consumes an address *)
+    : grammar (Pair_t res_t res_t) :=
+    (     ("00" $$ reg_p $ rm00) 
+      |+| ("01" $$ reg_p $ rm01)
+      |+| ("10" $$ reg_p $ rm10)) @
+            (fun p => match p with
+                      | (op1, addr) => (op1, addr_op addr)
+                      end %% (Pair_t res_t res_t))
+    |+| ("11" $$ reg_p $ reg_p) @
+    (fun p => match p with 
+                | (op1, op2) => (op1, op2)
+              end %% (Pair_t res_t res_t)).
+  Implicit Arguments modrm_gen [res_t].
+
+  Definition reg_op : grammar operand_t := reg @ (fun x => Reg_op x : interp operand_t).
+
+  Definition modrm : grammar (Pair_t operand_t operand_t) := 
+    modrm_gen reg_op Address_op.
+
+  Definition mmx_reg_op := mmx_reg @ (fun r => MMX_Reg_op r : interp mmx_operand_t).
+
+  Definition modrm_mmx : grammar (Pair_t mmx_operand_t mmx_operand_t) := 
+    modrm_gen mmx_reg_op MMX_Addr_op.
+
+  Definition sse_reg_op := sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t).
+
+  (* mod xmmreg r/m in manual*)
+  Definition modrm_xmm : grammar (Pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen sse_reg_op SSE_Addr_op.
+
+  (* mod mmreg r/m (no x) in manual; this uses mmx regs in sse instrs *)
+  Definition modrm_mm : grammar (Pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen 
+      (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t))
+      SSE_Addr_op.
+
+
+  (* same as modrm_gen but no mod "11" case;
+     that is, the second operand must be a mem operand *)
+  Definition modrm_gen_noreg (reg_t res_t: type) 
+    (reg_p : grammar reg_t) 
+    (addr_op : address -> interp res_t)
+    : grammar (Pair_t reg_t res_t) :=
+    (     ("00" $$ reg_p $ rm00) 
+      |+| ("01" $$ reg_p $ rm01)
+      |+| ("10" $$ reg_p $ rm10)) @
+            (fun p => match p with
+                      | (op1, addr) => (op1, addr_op addr)
+                      end %% (Pair_t reg_t res_t)).
+  Implicit Arguments modrm_gen_noreg [reg_t res_t].
+
+  Definition modrm_noreg : grammar (Pair_t register_t operand_t) := 
+    modrm_gen_noreg reg (Address_op: address -> interp operand_t).
+
+  Definition modrm_xmm_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen_noreg sse_reg_op (SSE_Addr_op: address -> interp sse_operand_t).
+
+  (* general-purpose regs used in SSE instructions *)
+  Definition modrm_xmm_gp_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen_noreg 
+      (reg @ (fun r => SSE_GP_Reg_op r : interp sse_operand_t))
+      (SSE_Addr_op : address -> interp sse_operand_t).
+
+  Definition modrm_mm_noreg : grammar (Pair_t sse_operand_t sse_operand_t) := 
+    modrm_gen_noreg
+      (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t))
+      (SSE_Addr_op : address -> interp sse_operand_t).
+
+
+  (* Similar to mod/rm grammar except that the register field is fixed to a
+   * particular bit-pattern, and the pattern starting with "11" is excluded. *)
+  Definition ext_op_modrm_gen (res_t: type) 
+    (addr_op : address -> interp res_t)
+    (bs:string) : grammar res_t :=
+    (      (bits "00" $ bits bs $ rm00)
+     |+|   (bits "01" $ bits bs $ rm01)
+     |+|   (bits "10" $ bits bs $ rm10) ) @
+           (fun p => match p with 
+                       | (_,(_,addr)) => addr_op addr
+                     end %% res_t).
+  Implicit Arguments ext_op_modrm_gen [res_t].
+
+  Definition ext_op_modrm : string -> grammar operand_t := 
+    ext_op_modrm_gen (Address_op: address -> interp operand_t).
+  
+  (*mod^A "bbb" mem in manual for SSE instructions*)
+  Definition ext_op_modrm_sse : string -> grammar sse_operand_t := 
+    ext_op_modrm_gen (SSE_Addr_op: address -> interp sse_operand_t).
+    
+  Definition ext_op_modrm_FPM16 : string -> grammar fp_operand_t := 
+    ext_op_modrm_gen (FPM16_op: address -> interp fp_operand_t).
+
+  Definition ext_op_modrm_FPM32 : string -> grammar fp_operand_t := 
+    ext_op_modrm_gen (FPM32_op: address -> interp fp_operand_t).
+
+  Definition ext_op_modrm_FPM64 : string -> grammar fp_operand_t := 
+    ext_op_modrm_gen (FPM64_op: address -> interp fp_operand_t).
+
+  Definition ext_op_modrm_FPM80 : string -> grammar fp_operand_t := 
+    ext_op_modrm_gen (FPM80_op: address -> interp fp_operand_t).
+
+  (* Similar to mod/rm grammar except that the register field is fixed to a
+   * particular bit-pattern*)
+  Definition ext_op_modrm2_gen (res_t: type) 
+    (reg_p: grammar res_t)
+    (addr_op: address -> interp res_t)
+    (bs:string) : grammar res_t :=
+    (      (bits "00" $ bits bs $ rm00)
+     |+|   (bits "01" $ bits bs $ rm01)
+     |+|   (bits "10" $ bits bs $ rm10) ) @
+           (fun p => match p with 
+                       | (_,(_,addr)) => addr_op addr
+                     end %% res_t)
+     |+|   ("11" $$ bits bs $ reg_p) @ 
+           (fun p => match p with 
+                       | (_, op) => op
+                     end %% res_t).
+  Implicit Arguments ext_op_modrm2_gen [res_t].
+
+  Definition ext_op_modrm2 :=
+    ext_op_modrm2_gen reg_op Address_op.
+
+
+  (* Grammars for the individual instructions *)
+  Definition AAA_p := bits "00110111" @ (fun _ => AAA %% instruction_t).
+  Definition AAD_p := bits "1101010100001010" @ (fun _ => AAD %% instruction_t).
+  Definition AAM_p := bits "1101010000001010" @ (fun _ => AAM %% instruction_t).
+  Definition AAS_p := bits "00111111" @ (fun _ => AAS %% instruction_t).
+
+  (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
+
+  Definition imm_op (opsize_override: bool) : grammar operand_t :=
+    match opsize_override with
+      | false => word @ (fun w => Imm_op w %% operand_t)
+      | true => halfword @ (fun w => Imm_op (sign_extend16_32 w) %% operand_t)
+    end.
+      
+  Definition logic_or_arith_p (opsize_override: bool)
+    (op1 : string) (* first 5 bits for most cases *)
+    (op2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
+                      that determine the opcode *)
+    (InstCon : bool->operand->operand->instr) (* instruction constructor *)
+    : grammar instruction_t
+    :=
+  (* register/memory to register and vice versa -- the d bit specifies
+   * the direction. *)
+  op1 $$ "0" $$ anybit $ anybit $ modrm @
+    (fun p => match p with 
+                | (d, (w, (op1, op2))) => 
+                  if d then InstCon w op1 op2 else InstCon w op2 op1
+              end %% instruction_t)
+  |+|
+  (* sign extend immediate byte to register *)
+  "1000" $$ "0011" $$ "11" $$ op2 $$ reg $ byte @ 
+    (fun p => 
+      let (r,imm) := p in InstCon true (Reg_op r) (Imm_op (sign_extend8_32 imm)) %%
+    instruction_t)
+  |+|
+  (* zero-extend immediate byte to register *)
+  "1000" $$ "0000" $$ "11" $$ op2 $$ reg $ byte @ 
+    (fun p => 
+      let (r,imm) := p in InstCon false (Reg_op r) (Imm_op (zero_extend8_32 imm)) %%
+    instruction_t)
+  |+|
+  (* immediate word to register *)
+  "1000" $$ "0001" $$ "11" $$ op2 $$ reg $ imm_op opsize_override @ 
+    (fun p => let (r,imm) := p in InstCon true (Reg_op r) imm %% instruction_t)
+  |+|
+  (* zero-extend immediate byte to EAX *)
+  op1 $$ "100" $$ byte @
+    (fun imm => InstCon false (Reg_op EAX) (Imm_op (zero_extend8_32 imm)) %% instruction_t)
+  |+|
+  (* word to EAX *)
+  op1 $$ "101" $$ imm_op opsize_override @
+    (fun imm => InstCon true (Reg_op EAX)  imm %% instruction_t)
+  |+|
+  (* zero-extend immediate byte to memory *)
+  "1000" $$ "0000" $$ ext_op_modrm op2 $ byte @ 
+    (fun p => let (op,imm) := p in InstCon false op (Imm_op (zero_extend8_32 imm)) %% 
+    instruction_t)
+  |+|
+  (* sign-extend immediate byte to memory *)
+  "1000" $$ "0011" $$ ext_op_modrm op2 $ byte @ 
+    (fun p => let (op,imm) := p in InstCon true op (Imm_op (sign_extend8_32 imm)) %%
+    instruction_t)
+  |+|
+  (* immediate word to memory *)
+  "1000" $$ "0001" $$ ext_op_modrm op2 $ imm_op opsize_override @ 
+    (fun p => let (op,imm) := p in InstCon true op imm %% instruction_t).
+
+  Definition ADC_p s := logic_or_arith_p s "00010" "010" ADC.
+  Definition ADD_p s := logic_or_arith_p s "00000" "000" ADD.
+  Definition AND_p s := logic_or_arith_p s "00100" "100" AND.
+  Definition CMP_p s := logic_or_arith_p s "00111" "111" CMP.
+  Definition OR_p  s := logic_or_arith_p s "00001" "001" OR.
+  Definition SBB_p s := logic_or_arith_p s "00011" "011" SBB.
+  Definition SUB_p s := logic_or_arith_p s "00101" "101" SUB.
+  Definition XOR_p s := logic_or_arith_p s "00110" "110" XOR.
+
+  Definition ARPL_p := 
+  "0110" $$ "0011" $$ modrm @ 
+    (fun p => let (op1,op2) := p in ARPL op1 op2 %% instruction_t).
+
+  Definition BOUND_p := 
+  "0110" $$ "0010" $$ modrm @ 
+    (fun p => let (op1,op2) := p in BOUND op1 op2 %% instruction_t).
+
+  Definition BSF_p := 
+  "0000" $$ "1111" $$ "1011" $$ "1100" $$ modrm @ 
+    (fun p => let (op1,op2) := p in BSF op1 op2 %% instruction_t).
+
+  Definition BSR_p := 
+  "0000" $$ "1111" $$ "1011" $$ "1101" $$ modrm @ 
+    (fun p => let (op1,op2) := p in BSR op1 op2 %% instruction_t).
+
+  Definition BSWAP_p := 
+  "0000" $$ "1111" $$ "1100" $$ "1" $$ reg @ (fun x => BSWAP x %% instruction_t).
+
+  (* The various bit-testing operations can also share a grammar *)
+  Definition bit_test_p (opcode1:string) (opcode2:string)
+    (Instr : operand -> operand -> instr) := 
+    "0000" $$ "1111" $$ "1011" $$ "1010" $$ "11" $$ opcode1 $$ reg $ byte @ 
+    (fun p => 
+      let (r,imm) := p in Instr (Reg_op r) (Imm_op (zero_extend8_32 imm)) %% instruction_t)
+  |+| 
+    "0000" $$ "1111" $$ "1011" $$ "1010" $$ ext_op_modrm opcode1 $ byte @
+    (fun p => 
+      let (op1,imm) := p in Instr op1 (Imm_op (zero_extend8_32 imm)) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "101" $$ opcode2 $$ "011" $$ modrm @
+    (fun p => let (op2,op1) := p in Instr op1 op2 %% instruction_t).
+
+  Definition BT_p := bit_test_p "100" "00" BT.
+  Definition BTC_p := bit_test_p "111" "11" BTC.
+  Definition BTR_p := bit_test_p "110" "10" BTR.
+  Definition BTS_p := bit_test_p "101" "01" BTS.
+
+  Definition CALL_p := 
+    "1110" $$ "1000" $$ word  @ 
+    (fun w => CALL true false (Imm_op w) None %% instruction_t)
+  |+|
+    "1111" $$ "1111" $$ ext_op_modrm2 "010" @ 
+    (fun op => CALL true true op None %% instruction_t)
+  |+| 
+    "1001" $$ "1010" $$ word $ halfword @ 
+    (fun p => CALL false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
+  |+|
+    "1111" $$ "1111" $$ ext_op_modrm2 "011" @ 
+    (fun op => CALL false true op None %% instruction_t).
+
+  Definition CDQ_p := "1001" $$ bits "1001" @ (fun _ => CDQ %% instruction_t).
+  Definition CLC_p := "1111" $$ bits "1000" @ (fun _ => CLC %% instruction_t).
+  Definition CLD_p := "1111" $$ bits "1100" @ (fun _ => CLD %% instruction_t).
+  Definition CLI_p := "1111" $$ bits "1010" @ (fun _ => CLI %% instruction_t).
+  Definition CLTS_p := "0000" $$ "1111" $$ "0000" $$ bits "0110" @ 
+    (fun _ => CLTS %% instruction_t).
+  Definition CMC_p := "1111" $$ bits "0101" @ (fun _ => CMC %% instruction_t).
+  Definition CMPS_p := "1010" $$ "011" $$ anybit @ (fun x => CMPS x %% instruction_t).
+  Definition CMPXCHG_p := 
+   "0000" $$ "1111" $$ "1011" $$ "000" $$ anybit $ modrm @ 
+    (fun p => match p with 
+                | (w,(op1,op2)) => CMPXCHG w op2 op1
+              end %% instruction_t).
+
+  Definition CPUID_p := "0000" $$ "1111" $$ "1010" $$ bits "0010" @ 
+    (fun _ => CPUID %% instruction_t).
+  Definition CWDE_p := "1001" $$ bits "1000" @ (fun _ => CWDE %% instruction_t).
+  Definition DAA_p := "0010" $$ bits "0111" @ (fun _ => DAA %% instruction_t).
+  Definition DAS_p := "0010" $$ bits "1111" @ (fun _ => DAS %% instruction_t).
+
+  Definition DEC_p := 
+    "1111" $$ "111" $$ anybit $ "11001" $$ reg @ 
+      (fun p => let (w,r) := p in DEC w (Reg_op r) %% instruction_t)
+  |+|
+    "0100" $$ "1" $$ reg @ 
+      (fun r => DEC true (Reg_op r) %% instruction_t)
+  |+| 
+    "1111" $$ "111" $$ anybit $ ext_op_modrm "001" @
+      (fun p => let (w,op1) := p in DEC w op1 %% instruction_t).
+
+  Definition DIV_p := 
+    "1111" $$ "011" $$ anybit $ "11110" $$ reg @ 
+      (fun p => let (w,r) := p in DIV w (Reg_op r) %% instruction_t)
+  |+| 
+    "1111" $$ "011" $$ anybit $ ext_op_modrm "110" @ 
+      (fun p => let (w,op1) := p in DIV w op1 %% instruction_t).
+
+  Definition HLT_p := "1111" $$ bits "0100" @ (fun _ => HLT %% instruction_t).
+
+  Definition IDIV_p := 
+    "1111" $$ "011" $$ anybit $ "11111" $$ reg @ 
+    (fun p => let (w,r) := p in IDIV w (Reg_op r) %% instruction_t)
+  |+|
+    "1111" $$ "011" $$ anybit $ ext_op_modrm "111" @ 
+     (fun p => let (w,op1) := p in IDIV w op1 %% instruction_t).
+
+  Definition IMUL_p opsize_override := 
+    "1111" $$ "011" $$ anybit $ ext_op_modrm2 "101" @
+    (fun p => let (w,op1) := p in IMUL w op1 None None %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "1010" $$ "1111" $$ modrm @
+    (fun p => let (op1,op2) := p in IMUL false op1 (Some op2) None %% instruction_t)
+  |+|
+    "0110" $$ "1011" $$ modrm $ byte @
+    (fun p => match p with 
+                | ((op1,op2),imm) => 
+                  IMUL true op1 (Some op2) (Some (sign_extend8_32 imm))
+              end %% instruction_t)
+  |+|
+    match opsize_override with
+      | false =>
+          "0110" $$ "1001" $$ modrm $ word @
+           (fun p => match p with 
+                | ((op1,op2),imm) => 
+                  IMUL true op1 (Some op2) (Some imm)
+              end  %% instruction_t)
+      | true => 
+          "0110" $$ "1001" $$ modrm $ halfword @
+           (fun p => match p with 
+                | ((op1,op2),imm) => 
+                  IMUL false op1 (Some op2) (Some (sign_extend16_32 imm))
+              end  %% instruction_t)
+    end.
+
+  Definition IN_p := 
+    "1110" $$ "010" $$ anybit $ byte @ 
+    (fun p => let (w,pt) := p in IN w (Some pt) %% instruction_t)
+  |+|
+    "1110" $$ "110" $$ anybit @ (fun w => IN w None %% instruction_t).
+
+  Definition INC_p := 
+    "1111" $$ "111" $$ anybit  $ "11000" $$ reg @ 
+      (fun p => let (w,r) := p in INC w (Reg_op r) %% instruction_t)
+  |+|
+    "0100" $$ "0" $$ reg @ (fun r => INC true (Reg_op r) %% instruction_t)
+  |+|
+    "1111" $$ "111" $$ anybit $ ext_op_modrm "000" @ 
+       (fun p => let (w,op1) := p in INC w op1 %% instruction_t).
+
+  Definition INS_p := "0110" $$ "110" $$ anybit @ (fun x => INS x %% instruction_t).
+
+  Definition INTn_p := "1100" $$ "1101" $$ byte @ (fun x => INTn x %% instruction_t).
+  Definition INT_p := "1100" $$ bits "1100" @ (fun _ => INT %% instruction_t).
+
+  Definition INTO_p := "1100" $$ bits "1110" @ (fun _ => INTO %% instruction_t).
+  Definition INVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1000" @ 
+    (fun _ => INVD %% instruction_t).
+
+  Definition INVLPG_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "111" @ 
+    (fun x => INVLPG x %% instruction_t).
+
+  Definition IRET_p := "1100" $$ bits "1111" @ (fun _ => IRET %% instruction_t).
+
+  Definition Jcc_p := 
+    "0111" $$ tttn $ byte @ 
+    (fun p => let (ct,imm) := p in Jcc ct (sign_extend8_32 imm) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "1000" $$ tttn $ word @ 
+    (fun p => let (ct,imm) := p in Jcc ct imm %% instruction_t).
+
+  Definition JCXZ_p := "1110" $$ "0011" $$ byte @ (fun x => JCXZ x %% instruction_t).
+
+  Definition JMP_p := 
+    "1110" $$ "1011" $$ byte @
+    (fun b => JMP true false (Imm_op (sign_extend8_32 b)) None %% instruction_t)
+  |+|
+    "1110" $$ "1001" $$ word @ 
+    (fun w => JMP true false (Imm_op w) None %% instruction_t)
+  |+|
+    "1111" $$ "1111" $$ ext_op_modrm2 "100" @ 
+    (fun op => JMP true true op None %% instruction_t)
+  |+|
+    "1110" $$ "1010" $$ word $ halfword @ 
+      (fun p => JMP false true (Imm_op (fst p)) (Some (snd p)) %% instruction_t)
+  |+|
+    "1111" $$ "1111" $$ ext_op_modrm2 "101" @ 
+    (fun op => JMP false true op None %% instruction_t).
+
+  Definition LAHF_p := "1001" $$ bits "1111" @ (fun _ => LAHF %% instruction_t).
+
+  Definition LAR_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0010" $$ modrm @ 
+      (fun p => LAR (fst p) (snd p) %% instruction_t).
+
+  Definition LDS_p := "1100" $$ "0101" $$ modrm @ 
+    (fun p => LDS (fst p) (snd p) %% instruction_t).
+  Definition LEA_p := "1000" $$ "1101" $$ modrm_noreg @ 
+    (fun p => LEA (Reg_op (fst p)) (snd p) %% instruction_t).
+  Definition LEAVE_p := "1100" $$ bits "1001" @ 
+    (fun _ => LEAVE %% instruction_t).
+  Definition LES_p := "1100" $$ "0100" $$ modrm @ 
+    (fun p => LES (fst p) (snd p) %% instruction_t).
+  Definition LFS_p := "0000" $$ "1111" $$ "1011" $$ "0100" $$ modrm @ 
+    (fun p => LFS (fst p) (snd p) %% instruction_t).
+  Definition LGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "010" @ 
+    (fun x => LGDT x %% instruction_t).
+  Definition LGS_p := "0000" $$ "1111" $$ "1011" $$ "0101" $$ modrm @ 
+    (fun p => LGS (fst p) (snd p) %% instruction_t).
+  Definition LIDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "011" @ 
+    (fun x => LIDT x %% instruction_t).
+  Definition LLDT_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ "11" $$ "010" $$ reg @ 
+    (fun r => LLDT (Reg_op r) %% instruction_t)
+  |+| 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "010" @ 
+    (fun x => LLDT x %% instruction_t).
+
+  Definition LMSW_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ "110" $$ reg @ 
+      (fun r => LMSW (Reg_op r) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ ext_op_modrm "110" @ 
+      (fun x => LMSW x %% instruction_t).
+
+  (* JGM: note, this isn't really an instruction, but rather a prefix.  So it
+     shouldn't be included in the list of instruction grammars. *)
+(*  Definition LOCK_p := "1111" $$ bits "0000" @ (fun _ => LOCK %% instruction_t). *)
+  Definition LODS_p := "1010" $$ "110" $$ anybit @ (fun x => LODS x %% instruction_t).
+  Definition LOOP_p := "1110" $$ "0010" $$ byte @ (fun x => LOOP x %% instruction_t).
+  Definition LOOPZ_p := "1110" $$ "0001" $$ byte @ (fun x => LOOPZ x %% instruction_t).
+  Definition LOOPNZ_p := "1110" $$ "0000" $$ byte @ (fun x => LOOPNZ x %% instruction_t).
+  Definition LSL_p := "0000" $$ "1111" $$ "0000" $$ "0011" $$ modrm @ 
+    (fun p => LSL (fst p) (snd p) %% instruction_t).
+  Definition LSS_p := "0000" $$ "1111" $$ "1011" $$ "0010" $$ modrm @ 
+    (fun p => LSS (fst p) (snd p) %% instruction_t).
+  Definition LTR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "011" @ 
+    (fun x => LTR x %% instruction_t).
+
+  (* This may not be right. Need to test this thoroughly. 
+     There is no 8bit mode for CMOVcc *)
+
+  Definition CMOVcc_p :=
+    "0000" $$ "1111" $$ "0100" $$ tttn $ modrm @
+    (fun p => match p with | (tttn, (op1, op2))=>CMOVcc tttn op1 op2 end %% instruction_t).
+
+  Definition MOV_p opsize_override := 
+    "1000" $$ "101" $$ anybit $ modrm @ 
+      (fun p => match p with | (w,(op1,op2)) => MOV w op1 op2 end %% instruction_t)
+  |+|
+    "1000" $$ "100" $$ anybit $ modrm @ 
+      (fun p => match p with | (w,(op1,op2)) => MOV w op2 op1 end %% instruction_t)
+  |+|
+   "1100" $$ "0111" $$ "11" $$ "000" $$ reg $ imm_op opsize_override @
+     (fun p => match p with | (r,w) => MOV true  (Reg_op r) w end %% instruction_t)
+  |+|
+   "1100" $$ "0110" $$ "11" $$ "000" $$ reg $ byte @
+     (fun p => match p with
+                 | (r,b) => MOV false (Reg_op r) (Imm_op (zero_extend8_32 b)) 
+               end %% instruction_t)
+  |+|
+    "1011" $$ "1" $$ reg $ imm_op opsize_override @ 
+      (fun p => match p with | (r,w) => MOV true (Reg_op r)  w
+                end %% instruction_t)
+  |+| 
+    "1011" $$ "0" $$ reg $ byte @ 
+      (fun p => match p with 
+                  | (r,b) => MOV false (Reg_op r) (Imm_op (zero_extend8_32 b))
+                end %% instruction_t)
+  |+|
+    "1100" $$ "0111" $$ ext_op_modrm "000" $ imm_op opsize_override @ 
+      (fun p => match p with | (op,w) => MOV true op w end %% instruction_t)
+  |+|
+    "1100" $$ "0110" $$ ext_op_modrm "000" $ byte @ 
+    (fun p => match p with | (op,b) => MOV false op (Imm_op (zero_extend8_32 b)) end %% instruction_t)
+  |+|
+    "1010" $$ "0001" $$ word @ (fun w => MOV true  (Reg_op EAX) (Offset_op w) %% instruction_t)
+  |+|
+    "1010" $$ "0000" $$ word @ (fun w => MOV false (Reg_op EAX) (Offset_op w)  %% instruction_t)
+  |+|
+    "1010" $$ "0011" $$ word @ (fun w => MOV true (Offset_op w) (Reg_op EAX) %% instruction_t)
+  |+|
+    "1010" $$ "0010" $$ word @ (fun w => MOV false (Offset_op w) (Reg_op EAX) %% instruction_t).
+  
+
+  Definition control_reg_p := 
+      bits "000" @ (fun _ => CR0 %% control_register_t) 
+  |+| bits "010" @ (fun _ => CR2 %% control_register_t) 
+  |+| bits "011" @ (fun _ => CR3 %% control_register_t) 
+  |+| bits "100" @ (fun _ => CR4 %% control_register_t).
+  
+  Definition MOVCR_p := 
+    "0000" $$ "1111" $$ "0010" $$ "0010" $$ "11" $$ control_reg_p $ reg @ 
+    (fun p => MOVCR true (fst p) (snd p) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0010" $$ "0000" $$ "11" $$ control_reg_p $ reg @ 
+    (fun p => MOVCR false (fst p) (snd p) %% instruction_t).
+
+  (* Note:  apparently, the bit patterns corresponding to DR4 and DR5 either
+   * (a) get mapped to DR6 and DR7 respectively or else (b) cause a fault,
+   * depending upon the value of some control register.  My guess is that it's
+   * okay for us to just consider this a fault. Something similar seems to
+   * happen with the CR registers above -- e.g., we don't have a CR1. *)
+  Definition debug_reg_p := 
+      bits "000" @ (fun _ => DR0 %% debug_register_t) 
+  |+| bits "001" @ (fun _ => DR1 %% debug_register_t) 
+  |+| bits "010" @ (fun _ => DR2 %% debug_register_t) 
+  |+| bits "011" @ (fun _ => DR3 %% debug_register_t) 
+  |+| bits "110" @ (fun _ => DR6 %% debug_register_t) 
+  |+| bits "111" @ (fun _ => DR7 %% debug_register_t).
+
+  Definition MOVDR_p := 
+    "0000" $$ "1111" $$ "0010" $$ "0011" $$ "11" $$ debug_reg_p $ reg @
+    (fun p => MOVDR true (fst p) (snd p) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0010" $$ "0001" $$ "11" $$ debug_reg_p $ reg @
+    (fun p => MOVDR false (fst p) (snd p) %% instruction_t).
+
+  Definition segment_reg_p := 
+      bits "000" @ (fun _ => ES %% segment_register_t) 
+  |+| bits "001" @ (fun _ => CS %% segment_register_t) 
+  |+| bits "010" @ (fun _ => SS %% segment_register_t) 
+  |+| bits "011" @ (fun _ => DS %% segment_register_t) 
+  |+| bits "100" @ (fun _ => FS %% segment_register_t) 
+  |+| bits "101" @ (fun _ => GS %% segment_register_t).
+
+  Definition seg_modrm : grammar (Pair_t segment_register_t operand_t) := 
+    (     ("00" $$ segment_reg_p $ rm00) 
+      |+| ("01" $$ segment_reg_p $ rm01)
+      |+| ("10" $$ segment_reg_p $ rm10)) @
+            (fun p => match p with
+                      | (sr, addr) => (sr, Address_op addr)
+                      end %% (Pair_t segment_register_t operand_t))
+   |+| ("11" $$ segment_reg_p $ reg_op).
+
+  Definition MOVSR_p := 
+    "1000" $$ "1110" $$ seg_modrm @ 
+      (fun p => MOVSR true (fst p) (snd p) %% instruction_t)
+  |+|
+    "1000" $$ "1100" $$ seg_modrm @ 
+     (fun p => MOVSR false (fst p) (snd p) %% instruction_t).
+
+  Definition MOVBE_p := 
+    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0001" $$ modrm @
+    (fun p => MOVBE (snd p) (fst p) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "0000" $$ modrm @ 
+    (fun p => MOVBE (fst p) (snd p) %% instruction_t).
+
+  Definition MOVS_p := "1010" $$ "010" $$ anybit @ (fun x => MOVS x %% instruction_t).
+
+  Definition MOVSX_p := "0000" $$ "1111" $$ "1011" $$ "111" $$ anybit $ modrm @
+    (fun p => match p with | (w,(op1,op2)) => MOVSX w op1 op2 end %% instruction_t).
+
+  Definition MOVZX_p := "0000" $$ "1111" $$ "1011" $$ "011" $$ anybit $ modrm @
+    (fun p => match p with | (w,(op1,op2)) => MOVZX w op1 op2 end %% instruction_t).
+
+  Definition MUL_p := 
+  "1111" $$ "011" $$ anybit $ ext_op_modrm2 "100" @ 
+    (fun p => MUL (fst p) (snd p) %% instruction_t).
+
+  Definition NEG_p := 
+  "1111" $$ "011" $$ anybit $ ext_op_modrm2 "011" @ 
+    (fun p => NEG (fst p) (snd p) %% instruction_t).
+
+  Definition NOP_p := 
+  (* The following is the same as the encoding of "XCHG EAX, EAX"
+    "1001" $$ bits "0000" @ (fun _ => NOP None %% instruction_t)
+  |+| *)
+    "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm2 "000" @ 
+    (fun op => NOP op %% instruction_t).
+
+  Definition NOT_p := 
+    "1111" $$ "011" $$ anybit $ ext_op_modrm2 "010" @ 
+    (fun p => NOT (fst p) (snd p) %% instruction_t).
+
+  Definition OUT_p := 
+    "1110" $$ "011" $$ anybit $ byte @ 
+      (fun p => OUT (fst p) (Some (snd p)) %% instruction_t)
+  |+|
+    "1110" $$ "111" $$ anybit @ (fun w => OUT w None %% instruction_t).
+
+  Definition OUTS_p := "0110" $$ "111" $$ anybit @ (fun x => OUTS x %% instruction_t).
+
+  Definition POP_p := 
+  "1000" $$ "1111" $$ ext_op_modrm2 "000" @ (fun x => POP x %% instruction_t)
+  |+|
+    "0101" $$ "1" $$ reg @ (fun r => POP (Reg_op r) %% instruction_t).
+
+  Definition POPSR_p := 
+    "000" $$ "00" $$ bits "111" @ (fun _ => POPSR ES %% instruction_t)
+  |+|
+    "000" $$ "10" $$ bits "111" @ (fun _ => POPSR SS %% instruction_t)
+  |+|
+    "000" $$ "11" $$ bits "111" @ (fun _ => POPSR DS %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "10" $$ "100" $$ bits "001" @ 
+      (fun _ => POPSR FS %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "10" $$ "101" $$ bits "001" @ 
+      (fun _ => POPSR GS %% instruction_t).
+
+  Definition POPA_p := "0110" $$ bits "0001" @ (fun _ => POPA %% instruction_t).
+  Definition POPF_p := "1001" $$ bits "1101" @ (fun _ => POPF %% instruction_t).
+  
+  Definition PUSH_p := 
+    "1111" $$ "1111" $$ ext_op_modrm "110" @ (fun x => PUSH true x %% instruction_t)
+  |+|
+    "0101" $$ "0" $$ reg @ (fun r => PUSH true (Reg_op r) %% instruction_t)
+  |+|
+    "0110" $$ "1010" $$ byte @ 
+    (fun b => PUSH false (Imm_op (sign_extend8_32 b)) %% instruction_t)
+  |+|
+    "0110" $$ "1000" $$ word @ (fun w => PUSH true (Imm_op w) %% instruction_t).
+
+  Definition segment_reg2_p := 
+        bits "00" @ (fun _ => ES %% segment_register_t) 
+    |+| bits "01" @ (fun _ => CS %% segment_register_t) 
+    |+| bits "10" @ (fun _ => SS %% segment_register_t) 
+    |+| bits "11" @ (fun _ => DS %% segment_register_t).
+
+  Definition PUSHSR_p := 
+    "000" $$ segment_reg2_p $ bits "110" @ 
+    (fun p => PUSHSR (fst p) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "10" $$ "100" $$ bits "000" @ 
+    (fun _ => PUSHSR FS %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "10" $$ "101" $$ bits "000" @ 
+    (fun _ => PUSHSR GS %% instruction_t).
+
+  Definition PUSHA_p := "0110" $$ bits "0000" @ (fun _ => PUSHA %% instruction_t).
+  Definition PUSHF_p := "1001" $$ bits "1100" @ (fun _ => PUSHF %% instruction_t).
+
+  Definition rotate_p extop (inst : bool -> operand -> reg_or_immed -> instr) := 
+    "1101" $$ "000" $$ anybit $ ext_op_modrm2 extop @ 
+    (fun p => inst (fst p) (snd p) (Imm_ri (Word.repr 1)) %% instruction_t)
+  |+|
+    "1101" $$ "001" $$ anybit $ ext_op_modrm2 extop @
+    (fun p => inst (fst p) (snd p) (Reg_ri ECX) %% instruction_t)
+  |+|
+    "1100" $$ "000" $$ anybit $ ext_op_modrm2 extop $ byte @
+    (fun p => match p with | (w, (op,b)) => inst w op (Imm_ri b) end %% instruction_t).
+
+  Definition RCL_p := rotate_p "010" RCL.
+  Definition RCR_p := rotate_p "011" RCR.
+
+  Definition RDMSR_p := "0000" $$ "1111" $$ "0011" $$ bits "0010" @ 
+    (fun _ => RDMSR %% instruction_t).
+  Definition RDPMC_p := "0000" $$ "1111" $$ "0011" $$ bits "0011" @ 
+    (fun _ => RDPMC %% instruction_t).
+  Definition RDTSC_p := "0000" $$ "1111" $$ "0011" $$ bits "0001" @ 
+    (fun _ => RDTSC %% instruction_t).
+  Definition RDTSCP_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ "1111" $$ bits "1001" @
+    (fun _ => RDTSCP %% instruction_t).
+
+  (*
+  Definition REPINS_p := "1111" $$ "0011" $$ "0110" $$ "110" $$ anybit @ 
+    (fun x => REPINS x %% instruction_t).
+  Definition REPLODS_p := "1111" $$ "0011" $$ "1010" $$ "110" $$ anybit @ 
+    (fun x => REPLODS x %% instruction_t).
+  Definition REPMOVS_p := "1111" $$ "0011" $$ "1010" $$ "010" $$ anybit @ 
+    (fun x => REPMOVS x %% instruction_t).
+  Definition REPOUTS_p := "1111" $$ "0011" $$ "0110" $$ "111" $$ anybit @ 
+    (fun x => REPOUTS x %% instruction_t).
+  Definition REPSTOS_p := "1111" $$ "0011" $$ "1010" $$ "101" $$ anybit @ 
+    (fun x => REPSTOS x %% instruction_t).
+  Definition REPECMPS_p := "1111" $$ "0011" $$ "1010" $$ "011" $$ anybit @ 
+    (fun x => REPECMPS x %% instruction_t).
+  Definition REPESCAS_p := "1111" $$ "0011" $$ "1010" $$ "111" $$ anybit @ 
+    (fun x => REPESCAS x %% instruction_t).
+  Definition REPNECMPS_p := "1111" $$ "0010" $$ "1010" $$ "011" $$ anybit @ 
+    (fun x => REPNECMPS x %% instruction_t).
+  Definition REPNESCAS_p := "1111" $$ "0010" $$ "1010" $$ "111" $$ anybit @ 
+    (fun x => REPNESCAS x %% instruction_t).
+  *)
+
+  Definition RET_p := 
+    "1100" $$ bits "0011" @ (fun _ => RET true None %% instruction_t)
+  |+|
+    "1100" $$ "0010" $$ halfword @ (fun h => RET true (Some h) %% instruction_t)
+  |+|
+    "1100" $$ bits "1011" @ (fun _ => RET false None %% instruction_t)
+  |+|
+    "1100" $$ "1010" $$ halfword @ (fun h => RET false (Some h) %% instruction_t).
+
+  Definition ROL_p := rotate_p "000" ROL.
+  Definition ROR_p := rotate_p "001" ROR.
+  Definition RSM_p := "0000" $$ "1111" $$ "1010" $$ bits "1010" @ 
+    (fun _ => RSM %% instruction_t).
+  Definition SAHF_p := "1001" $$ bits "1110" @ 
+    (fun _ => SAHF %% instruction_t).
+  Definition SAR_p := rotate_p "111" SAR.
+  Definition SCAS_p := "1010" $$ "111" $$ anybit @ (fun x => SCAS x %% instruction_t).
+  Definition SETcc_p := 
+  "0000" $$ "1111" $$ "1001" $$ tttn $ modrm @ 
+    (fun p => SETcc (fst p) (snd (snd p)) %% instruction_t).
+  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "000" @ 
+    (fun x => SGDT x %% instruction_t).
+  Definition SHL_p := rotate_p "100" SHL.
+
+  Definition shiftdouble_p opcode inst :=
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte) @
+    (fun p => match p with | (r2,(r1,b)) => inst (Reg_op r1) r2 (Imm_ri b) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte) @
+    (fun p => match p with | ((r,op), b) => inst op r (Imm_ri b) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg) @
+    (fun p => match p with | (r2,r1) => inst (Reg_op r1) r2 (Reg_ri ECX) end %% instruction_t)
+  |+|
+    ("0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg) @
+    (fun p => match p with | (r,op) => inst op r (Reg_ri ECX) end %% instruction_t).
+ 
+  Definition SHLD_p := shiftdouble_p "01" SHLD.
+  Definition SHR_p := rotate_p "101" SHR.
+  Definition SHRD_p := shiftdouble_p "11" SHRD.
+  Definition SIDT_p := ("0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "001") @ 
+    (fun x => SIDT x %% instruction_t).
+
+  Definition SLDT_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "000" @ 
+    (fun x => SLDT x %% instruction_t).
+
+  Definition SMSW_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm2 "100" @ 
+    (fun x => SMSW x %% instruction_t).
+  Definition STC_p := "1111" $$ bits "1001" @ (fun _ => STC %% instruction_t).
+  Definition STD_p := "1111" $$ bits "1101" @ (fun _ => STD %% instruction_t).
+  Definition STI_p := "1111" $$ bits "1011" @ (fun _ => STI %% instruction_t).
+  Definition STOS_p := "1010" $$ "101" $$ anybit @ 
+    (fun x => STOS x %% instruction_t).
+  Definition STR_p := 
+    "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "001" @ 
+    (fun x => STR x %% instruction_t).
+
+  Definition TEST_p (opsize_override: bool) := 
+    "1111" $$ "0111" $$ ext_op_modrm2 "000" $ imm_op opsize_override @ 
+    (fun p => TEST true (fst p) (snd p) %% instruction_t)
+  |+| 
+    "1111" $$ "0110" $$ ext_op_modrm2 "000" $ byte @ 
+    (fun p => TEST false (fst p) (Imm_op (zero_extend8_32 (snd p))) %% instruction_t)
+  |+|
+    "1000" $$ "010" $$ anybit $ modrm @
+    (fun p => match p with | (w,(op1,op2)) => TEST w op1 op2 end %% instruction_t)
+  |+|
+    "1010" $$ "1001" $$ imm_op opsize_override @ (fun w => TEST true w (Reg_op EAX) %% instruction_t)
+  |+|
+    "1010" $$ "1000" $$ byte @ 
+    (fun b => TEST true (Reg_op EAX) (Imm_op (zero_extend8_32 b)) %% instruction_t).
+  
+  Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ bits "1011" @ 
+    (fun _ => UD2 %% instruction_t).
+
+  Definition VERR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "100" @ 
+    (fun x => VERR x %% instruction_t).
+  Definition VERW_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm2 "101" @ 
+    (fun x => VERW x %% instruction_t).
+  Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ bits "1001" @ 
+    (fun _ => WBINVD %% instruction_t).
+  Definition WRMSR_p := "0000" $$ "1111" $$ "0011" $$ bits "0000" @ 
+    (fun _ => WRMSR %% instruction_t).
+  Definition XADD_p := 
+    "0000" $$ "1111" $$ "1100" $$ "000" $$ anybit $ modrm @ 
+    (fun p => match p with | (w,(op1,op2)) => XADD w op2 op1 end %% instruction_t).
+  Definition XCHG_p := 
+    "1000" $$ "011" $$ anybit $ modrm @ 
+    (fun p => match p with | (w,(op1,op2)) => XCHG w op2 op1 end %% instruction_t)
+  |+|
+    "1001" $$ "0" $$ reg @ (fun r => XCHG false (Reg_op EAX) (Reg_op r) %% instruction_t).
+
+  Definition XLAT_p := "1101" $$ bits "0111" @ (fun _ => XLAT %% instruction_t).
+
+(*Floating-Point grammars, based on tables B.17 and B-39*)
+  Definition F2XM1_p := "11011" $$ "001111" $$ bits "10000" @ (fun _ => F2XM1 %% instruction_t).
+  Definition FABS_p :=  "11011" $$ "001111" $$ bits "00001" @ (fun _ => FABS %% instruction_t). 
+
+  Definition FADD_p := 
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "000" @ 
+      (fun x => FADD true x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "000" @
+      (fun x => FADD true x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "0011000" $$ fpu_reg @ (fun p => let (d,s) := p in FADD d (FPS_op s) %% instruction_t).
+
+  Definition FADDP_p := "11011" $$ "110" $$ "11000" $$ fpu_reg @ (fun x => FADDP (FPS_op x) %% instruction_t).
+  Definition FBLD_p := "11011" $$ "111" $$ ext_op_modrm_FPM64 "100" @
+                          (fun x => FBLD x %% instruction_t).
+  Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_FPM64 "110" @
+                          (fun x => FBSTP x %% instruction_t).
+  Definition FCHS_p := "11011" $$ "001111" $$ bits "00000" @ (fun _ => FCHS %% instruction_t).
+
+  Definition FCMOVcc_p :=
+    ("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg) @
+    (fun p =>
+      match p with 
+        (b2, (b1, (b0, s))) => 
+        let n := bits2int 3 (b2, (b1, (b0, tt))) in
+        FCMOVcc (Z_to_fp_condition_type n) (FPS_op s) %% instruction_t
+      end).
+
+  Definition FCOM_p :=
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "010" @
+        (fun x => FCOM x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "010" @
+        (fun x => FCOM x %% instruction_t) 
+  |+|  
+    "11011" $$ "000" $$ "11010" $$ fpu_reg @ (fun x => FCOM (FPS_op x) %% instruction_t).
+
+  Definition FCOMP_p :=
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "011" @
+       (fun x => FCOMP x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "011" @
+       (fun x => FCOMP x %% instruction_t) 
+  |+|  
+    "11011" $$ "000" $$ "11011" $$ fpu_reg @ (fun x => FCOMP (FPS_op x) %% instruction_t).
+
+  Definition FCOMPP_p := "11011" $$ "110" $$ "11011" $$ bits "001" @ (fun _ => FCOMPP %% instruction_t).
+  Definition FCOMIP_p := "11011" $$ "111" $$ "11110" $$ fpu_reg @ (fun x => FCOMIP (FPS_op x) %% instruction_t).
+  Definition FCOS_p := "11011" $$ "001" $$ "111" $$ bits "11111" @ (fun _ => FCOS %% instruction_t).  
+  Definition FDECSTP_p := "11011" $$ "001" $$ "111" $$ bits "10110" @ (fun _=> FDECSTP %% instruction_t).
+
+  Definition FDIV_p :=
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "110" @ 
+       (fun x => FDIV true x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "110" @
+       (fun x => FDIV true x %% instruction_t)
+  |+|  
+    "11011" $$ "0" $$ "00" $$ "1111" $$ "0" $$ fpu_reg @ 
+    (fun i => FDIV true (FPS_op i) %% instruction_t)
+  |+| 
+    "11011" $$ "1" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
+    (fun i => FDIV false (FPS_op i) %% instruction_t).
+
+  Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg @ (fun x => FDIVP (FPS_op x) %% instruction_t).
+
+  Definition FDIVR_p :=
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "111" @
+       (fun x => FDIVR true x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "111" @
+       (fun x => FDIVR true x  %% instruction_t)
+  |+|  
+    "11011" $$ "0" $$ "00" $$ "111" $$ "1" $$ "1" $$ fpu_reg @ 
+    (fun i => FDIVR true (FPS_op i) %% instruction_t)
+  |+|  
+    "11011" $$ "1" $$ "00" $$ "111" $$ "1" $$ "0" $$ fpu_reg @ 
+    (fun i => FDIVR false (FPS_op i) %% instruction_t).
+
+  Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg @ (fun x => FDIVRP (FPS_op x) %% instruction_t).
+  Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg @ (fun x => FFREE (FPS_op x) %% instruction_t).
+  Definition FIADD_p := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "000" @ (fun x => FIADD x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "000" @ (fun x => FIADD x %% instruction_t).
+  
+  Definition FICOM_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "010" @ (fun x => FICOM x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "010" @ (fun x => FICOM x %% instruction_t).
+
+  Definition FICOMP_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "011" @ (fun x => FICOMP x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "011" @ (fun x => FICOMP x %% instruction_t).
+
+  Definition FIDIV_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "110" @ (fun x => FIDIV x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "110" @ (fun x => FIDIV x %% instruction_t).
+
+  Definition FIDIVR_p  := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "111" @ (fun x => FIDIVR x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "111" @ (fun x => FIDIVR x %% instruction_t).
+
+  Definition FILD_p  := 
+    "11011" $$ "111" $$ ext_op_modrm_FPM16 "000" @ (fun x => FILD x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_FPM32 "000" @ (fun x => FILD x %% instruction_t)
+  |+|
+    "11011" $$ "111" $$ ext_op_modrm_FPM64 "101" @ (fun x => FILD x %% instruction_t).
+  Definition FIMUL_p := 
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "001" @ (fun x => FIMUL x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "001" @ (fun x => FIMUL x %% instruction_t).
+  Definition FINCSTP_p := "11011" $$ "001111" $$ bits "10111" @ (fun _ => FINCSTP %% instruction_t).
+  Definition FIST_p :=
+    "11011" $$ "111" $$ ext_op_modrm_FPM16 "010" @ (fun x => FIST x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_FPM32 "010" @ (fun x => FIST x %% instruction_t).
+
+  Definition FISTP_p :=
+    "11011" $$ "111" $$ ext_op_modrm_FPM16 "011" @ (fun x => FISTP x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_FPM32 "011" @ (fun x => FISTP x %% instruction_t)
+  |+|
+    "11011" $$ "111" $$ ext_op_modrm_FPM64 "111" @ (fun x => FISTP x %% instruction_t).
+
+  Definition FISUB_p :=
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "100" @ (fun x => FISUB x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "100" @ (fun x => FISUB x %% instruction_t).
+
+  Definition FISUBR_p :=
+    "11011" $$ "110" $$ ext_op_modrm_FPM16 "101" @ (fun x => FISUBR x %% instruction_t)
+  |+|
+    "11011" $$ "010" $$ ext_op_modrm_FPM32 "101" @ (fun x => FISUBR x %% instruction_t).
+
+  Definition FLD_p :=
+    "11011" $$ "001" $$ ext_op_modrm_FPM32 "000" @ (fun x => FLD x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_FPM64 "000" @ (fun x => FLD x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_FPM80 "101" @ (fun x => FLD x %% instruction_t)
+  |+|
+    "11011" $$ "001" $$ "11000" $$ fpu_reg @ (fun x => FLD (FPS_op x) %% instruction_t).
+
+  Definition FLD1_p := "11011" $$ "001111" $$ bits "01000" @ (fun _ => FLD1 %% instruction_t).
+  Definition FLDCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "101" @ (fun x => FLDCW x %% instruction_t).
+  Definition FLDENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "100" @ (fun x => FLDENV x %% instruction_t).
+  Definition FLDL2E_p := "11011" $$ "001111" $$ bits "01010" @ (fun _ => FLDL2E %% instruction_t). 
+  Definition FLDL2T_p := "11011" $$ "001111" $$ bits "01001" @ (fun _ => FLDL2T %% instruction_t). 
+  Definition FLDLG2_p := "11011" $$ "001111" $$ bits "01100" @ (fun _ => FLDLG2 %% instruction_t). 
+  Definition FLDLN2_p := "11011" $$ "001111" $$ bits "01101" @ (fun _ => FLDLN2 %% instruction_t). 
+  Definition FLDPI_p := "11011" $$ "001111" $$ bits "01011" @ (fun _ => FLDPI %% instruction_t).
+  Definition FLDZ_p := "11011" $$ "001111" $$ bits "01110" @ (fun _ => FLDZ %% instruction_t).
+
+  Definition FMUL_p := 
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "001" @ (fun x => FMUL true x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "001" @ (fun x => FMUL true x %% instruction_t) 
+  |+|  
+    "11011" $$ anybit $ "00" $$ "11001" $$ fpu_reg @ (fun p => let (d,s) := p in FMUL d (FPS_op s) %% instruction_t).
+
+  Definition FMULP_p := "11011" $$ "110" $$ "11001" $$ fpu_reg @ (fun x => FMULP (FPS_op x) %% instruction_t).
+  Definition FNCLEX_p := "11011" $$ "011111" $$ bits "00010" @ (fun _ => FNCLEX %% instruction_t).
+  Definition FNINIT_p := "11011" $$ "011111" $$ bits "00011" @ (fun _ => FNINIT %% instruction_t).
+  Definition FNOP_p := "11011" $$ "001110" $$ bits "10000" @ (fun _ => FNOP %% instruction_t).
+  Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64 "110" @ (fun x => FNSAVE x %% instruction_t).
+  Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "111" @ (fun x => FNSTCW x %% instruction_t).
+  Definition FNSTSW_p := 
+    "11011" $$ "111" $$ "111" $$ bits "00000" @ (fun _ => FNSTSW None %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_FPM32 "111" @ (fun x => FNSTSW (Some x) %% instruction_t).
+
+  Definition FPATAN_p := "11011" $$ "001111" $$ bits "10011" @ (fun _ => FPATAN %% instruction_t).
+  Definition FPREM_p := "11011" $$ "001111" $$ bits "11000" @ (fun _ => FPREM %% instruction_t).
+  Definition FPREM1_p := "11011" $$ "001111" $$ bits "10101" @ (fun _ => FPREM1 %% instruction_t).
+  Definition FPTAN_p := "11011" $$ "001111" $$ bits "10010" @ (fun _ => FPTAN %% instruction_t).
+  Definition FRNDINT_p := "11011" $$ "001111" $$ bits "11100" @ (fun _ => FRNDINT %% instruction_t).
+
+  Definition FRSTOR_p := "11011" $$ "101" $$ ext_op_modrm_FPM32 "100" @ (fun x => FRSTOR x %% instruction_t).
+
+  Definition FSCALE_p := "11011" $$ "001111" $$ bits "11101" @ (fun _ => FSCALE %% instruction_t).
+  Definition FSIN_p := "11011" $$ "001111" $$ bits "11110" @ (fun _ => FSIN %% instruction_t).
+  Definition FSINCOS_p := "11011" $$ "001111" $$ bits "11011" @ (fun _ => FSINCOS %% instruction_t).
+  Definition FSQRT_p := "11011" $$ "001111" $$ bits "11010" @ (fun _ => FSQRT %% instruction_t).
+
+  Definition FST_p := 
+    "11011" $$ "001" $$ ext_op_modrm_FPM32 "010" @ (fun x => FST x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_FPM64 "010" @ (fun x => FST x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ "11010" $$ fpu_reg @ (fun x => FST (FPS_op x) %% instruction_t).
+
+  (* FSTCW's encoding is the same as FWAIT followed by FNSTCW *)
+  (* Definition FSTCW_p := "10011011" $$ "11011" $$ "001" $$ ext_op_modrm_FPM32 "111" @ (fun x => FSTCW x %% instruction_t). *)
+  Definition FSTENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32 "110" @ (fun x => FSTENV x %% instruction_t).
+  Definition FSTP_p := 
+    "11011" $$ "001" $$ ext_op_modrm_FPM32 "011" @ (fun x => FSTP x %% instruction_t)
+  |+|
+    "11011" $$ "101" $$ ext_op_modrm_FPM64 "011" @ (fun x => FSTP x %% instruction_t)
+  |+|
+    "11011" $$ "011" $$ ext_op_modrm_FPM80 "111" @ (fun x => FSTP x %% instruction_t) 
+  |+|  
+    "11011" $$ "101" $$ "11011" $$ fpu_reg @ (fun x => FSTP (FPS_op x) %% instruction_t). 
+
+  Definition FSUB_p :=
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "100" @ (fun x => FSUB true x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "100" @ (fun x => FSUB true x %% instruction_t) 
+  |+|  
+    "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
+    (fun i => FSUB true (FPS_op i) %% instruction_t)
+  |+|  
+    "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
+    (fun i => FSUB false (FPS_op i) %% instruction_t).
+
+  Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg @ (fun x => FSUBP (FPS_op x) %% instruction_t).
+
+  Definition FSUBR_p := 
+    "11011" $$ "000" $$ ext_op_modrm_FPM32 "101" @ (fun x => FSUBR true x %% instruction_t)
+  |+|
+    "11011" $$ "100" $$ ext_op_modrm_FPM64 "101" @ (fun x => FSUBR true x %% instruction_t)
+  |+|  
+    "11011" $$ "0" $$ "00" $$ "111" $$ "0" $$ "1" $$ fpu_reg @ 
+    (fun i => FSUBR true (FPS_op i) %% instruction_t)
+  |+|  
+    "11011" $$ "1" $$ "00" $$ "111" $$ "0" $$ "0" $$ fpu_reg @ 
+    (fun i => FSUBR false (FPS_op i) %% instruction_t).
+
+  Definition FSUBRP_p := "11011" $$ "110" $$ "11100" $$ fpu_reg @ (fun x => FSUBRP (FPS_op x) %% instruction_t). 
+  Definition FTST_p := "11011" $$ "001111" $$ bits "00100" @ (fun _ => FTST %% instruction_t).
+  Definition FUCOM_p := "11011" $$ "101" $$ "11100" $$ fpu_reg @ (fun x => FUCOM (FPS_op x) %% instruction_t). 
+  Definition FUCOMP_p := "11011" $$ "101" $$ "11101" $$ fpu_reg @ (fun x => FUCOMP (FPS_op x) %% instruction_t). 
+  Definition FUCOMPP_p := "11011" $$ "010111" $$ bits "01001" @ (fun _ => FUCOMPP %% instruction_t).
+  Definition FUCOMI_p := "11011" $$ "011" $$ "11101" $$ fpu_reg @ (fun x => FUCOMI (FPS_op x) %% instruction_t).  
+  Definition FUCOMIP_p := "11011" $$ "111" $$ "11101" $$ fpu_reg @ (fun x => FUCOMIP (FPS_op x) %% instruction_t). 
+  Definition FXAM_p := "11011" $$ "001111" $$ bits "00101" @ (fun _ => FXAM %% instruction_t).
+  Definition FXCH_p := "11011" $$ "001" $$ "11001" $$ fpu_reg @ (fun x => FXCH (FPS_op x) %% instruction_t). 
+
+  Definition FXTRACT_p := "11011" $$ "001" $$ "1111" $$ bits "0100" @ (fun _ => FXTRACT %% instruction_t).
+  Definition FYL2X_p := "11011" $$ "001111" $$ bits "10001" @ (fun _ => FYL2X %% instruction_t).
+  Definition FYL2XP1_p := "11011" $$ "001111" $$ bits "11001" @ (fun _ => FYL2XP1 %% instruction_t).
+  Definition FWAIT_p := bits "10011011" @ (fun _ => FWAIT %% instruction_t).
+(*End of Floating-Point grammars*)
+
+(*MMX Grammars*)
+
+  (* grammar for the mmx granularity bits; the byte granularity is allowed
+     iff when byte is true; same as twob, fourb and eightb *)
+  Definition mmx_gg_p (byte twob fourb eightb : bool) := 
+    let byte_p := if byte then 
+      bits "00" @ (fun _ => MMX_8 %% mmx_granularity_t)
+      else never mmx_granularity_t in
+    let twobytes_p := if twob then 
+      bits "01" @ (fun _ => MMX_16 %% mmx_granularity_t)
+      else never mmx_granularity_t in
+    let fourbytes_p := if fourb then 
+      bits "10" @ (fun _ => MMX_32 %% mmx_granularity_t)
+      else never mmx_granularity_t in
+    let eightbytes_p := if eightb then 
+      bits "11" @ (fun _ => MMX_64 %% mmx_granularity_t)
+      else never mmx_granularity_t in
+    byte_p |+| twobytes_p |+| fourbytes_p |+| eightbytes_p.
+
+  Definition EMMS_p := "0000" $$ "1111" $$ "0111" $$ bits "0111" @ (fun _ => EMMS %% instruction_t).
+  Definition MOVD_p := 
+    "0000" $$ "1111" $$ "0110" $$ "1110" $$ "11" $$ mmx_reg $ reg @ (*reg to mmxreg*)
+    (fun p => let (m, r) := p in MOVD (GP_Reg_op r) (MMX_Reg_op m) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0111" $$ "1110" $$ "11" $$ mmx_reg $ reg @ (*reg from mmxreg*)
+    (fun p => let (m, r) := p in MOVD (GP_Reg_op r) (MMX_Reg_op m) %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0110" $$ "1110" $$ (@modrm_gen_noreg _ mmx_operand_t mmx_reg_op MMX_Addr_op) @ (*mem to mmxreg *)
+    (fun p => let (op1, op2) := p in MOVD op1 op2 %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0111" $$ "1110" $$ (@modrm_gen_noreg _ mmx_operand_t mmx_reg_op MMX_Addr_op) @ (*mem from mmxreg *)
+    (fun p => let (mem, mmx) := p in MOVD mmx mem %% instruction_t).
+
+  Definition MOVQ_p :=
+    "0000" $$ "1111" $$ "0110" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in MOVQ op1 op2 %% instruction_t)
+  |+|
+    "0000" $$ "1111" $$ "0111" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in MOVQ op2 op1 %% instruction_t).
+
+  Definition PACKSSDW_p := 
+    "0000" $$ "1111" $$ "0110" $$ "1011" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PACKSSDW op1 op2 %% instruction_t).
+
+  Definition PACKSSWB_p := 
+    "0000" $$ "1111" $$ "0110" $$ "0011" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PACKSSWB op1 op2 %% instruction_t).
+
+  Definition PACKUSWB_p := 
+  "0000" $$ "1111" $$ "0110" $$ "0111" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PACKUSWB op1 op2 %% instruction_t).
+
+  Definition PADD_p := 
+  "0000" $$ "1111" $$ "1111" $$ "11" $$ mmx_gg_p true true true false $ modrm_mmx @ 
+    (fun p => match p with (gg, (op1, op2)) => PADD gg op1 op2 end %% instruction_t).
+
+  Definition PADDS_p := 
+  "0000" $$ "1111" $$ "1110" $$ "11" $$ mmx_gg_p true true false false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PADDS gg op1 op2 end %% instruction_t).
+
+  Definition PADDUS_p := 
+  "0000" $$ "1111" $$ "1101" $$ "11" $$ mmx_gg_p true true false false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PADDUS gg op1 op2 end %% instruction_t).
+
+  Definition PAND_p := 
+  "0000" $$ "1111" $$ "1101" $$ "1011" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PAND op1 op2 %% instruction_t).
+
+  Definition PANDN_p := 
+  "0000" $$ "1111" $$ "1101" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PANDN op1 op2 %% instruction_t).
+
+  Definition PCMPEQ_p :=
+  "0000" $$ "1111" $$ "0111" $$ "01" $$ mmx_gg_p true true true false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PCMPEQ gg op1 op2 end %% instruction_t).
+
+  Definition PCMPGT_p := 
+  "0000" $$ "1111" $$ "0110" $$ "01" $$ mmx_gg_p true true true false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PCMPGT gg op1 op2 end %% instruction_t).
+
+  Definition PMADDWD_p := 
+  "0000" $$ "1111" $$ "1111" $$ "0101" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PMADDWD op1 op2 %% instruction_t).
+
+  Definition PMULHUW_p := 
+  "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PMULHUW op1 op2 %% instruction_t).
+
+  Definition PMULHW_p := 
+  "0000" $$ "1111" $$ "1110" $$ "0101" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PMULHW op1 op2 %% instruction_t).
+
+  Definition PMULLW_p := 
+  "0000" $$ "1111" $$ "1101" $$ "0101" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PMULLW op1 op2 %% instruction_t).
+
+  Definition POR_p := 
+  "0000" $$ "1111" $$ "1110" $$ "1011" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in POR op1 op2 %% instruction_t).
+
+  Definition PSLL_p := 
+  "0000" $$ "1111" $$ "1111" $$ "00" $$ mmx_gg_p false true true true $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PSLL gg op1 op2 end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "00" $$ mmx_gg_p false true true true 
+    $ "11110" $$ mmx_reg $ byte @ 
+    (fun p => match p with (gg, (r, imm)) => PSLL gg (MMX_Reg_op r) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+
+  Definition PSRA_p :=
+  "0000" $$ "1111" $$ "1110" $$ "00" $$ mmx_gg_p false true true false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PSRA gg op1 op2 end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "00" $$ mmx_gg_p false true true false 
+    $ "11100" $$ mmx_reg $ byte @ 
+    (fun p => match p with (gg, (r, imm)) => PSRA gg (MMX_Reg_op r) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+
+  Definition PSRL_p := 
+  "0000" $$ "1111" $$ "1101" $$ "00" $$ mmx_gg_p false true true true $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PSRL gg op1 op2 end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0111" $$ "00" $$ mmx_gg_p false true true true
+    $ "11010" $$ mmx_reg $ byte @ 
+    (fun p => match p with (gg, (r, imm)) => PSRL gg (MMX_Reg_op r) (MMX_Imm_op (zero_extend8_32 imm)) end %% instruction_t).
+
+  Definition PSUB_p := 
+  "0000" $$ "1111" $$ "1111" $$ "10" $$ mmx_gg_p true true true false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PSUB gg op1 op2 end %% instruction_t).
+
+  Definition PSUBS_p := 
+  "0000" $$ "1111" $$ "1110" $$ "10" $$ mmx_gg_p true true false false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PSUBS gg op1 op2 end %% instruction_t).
+
+  Definition PSUBUS_p := 
+  "0000" $$ "1111" $$ "1101" $$ "10" $$ mmx_gg_p true true false false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PSUBUS gg op1 op2 end %% instruction_t).
+
+  Definition PUNPCKH_p := 
+  "0000" $$ "1111" $$ "0110" $$ "10" $$ mmx_gg_p true true true false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PUNPCKH gg op1 op2 end %% instruction_t).
+
+  Definition PUNPCKL_p := 
+  "0000" $$ "1111" $$ "0110" $$ "00" $$ mmx_gg_p true true true false $ modrm_mmx @
+    (fun p => match p with (gg, (op1, op2)) => PUNPCKL gg op1 op2 end %% instruction_t).
+
+  Definition PXOR_p := 
+  "0000" $$ "1111" $$ "1110" $$ "1111" $$ modrm_mmx @ 
+    (fun p => let (op1, op2) := p in PXOR op1 op2 %% instruction_t).
+(*End of MMX grammars *)
+
+(*SSE grammars*)
+Definition ADDPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in ADDPS op1 op2 %% instruction_t).
+
+Definition ADDSS_p := 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in ADDSS op1 op2 %% instruction_t).
+
+Definition ANDNPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "0101" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in ANDNPS op1 op2 %% instruction_t).
+
+Definition ANDPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "0100" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in ANDPS op1 op2 %% instruction_t).
+
+Definition CMPPS_p := 
+  "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm $ byte @ 
+    (fun p => match p with ((op1, op2), imm)
+                => CMPPS op1 op2 imm end %% instruction_t).
+
+Definition CMPSS_p := 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm $ byte @ 
+    (fun p => match p with ((op1, op2), imm)
+                => CMPSS op1 op2 imm end %% instruction_t).
+
+Definition COMISS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1111" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in COMISS op1 op2 %% instruction_t).
+
+Definition CVTPI2PS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in CVTPI2PS op1 op2 %% instruction_t).
+
+Definition CVTPS2PI_p := 
+  "0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ sse_reg $ mmx_reg @
+    (fun p => let (sr, mr) := p in CVTPS2PI (SSE_XMM_Reg_op sr) (SSE_MM_Reg_op mr) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_noreg @ 
+    (fun p => let (xmm, mem) := p in CVTPS2PI xmm mem %% instruction_t).
+
+Definition CVTSI2SS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1010" $$ "11" $$ sse_reg $ reg @
+    (fun p => let (sr, r) := p in CVTSI2SS (SSE_XMM_Reg_op sr) (SSE_GP_Reg_op r) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm_noreg @ 
+    (fun p => let (xmm, mem) := p in CVTSI2SS xmm mem %% instruction_t).
+
+Definition CVTSS2SI_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ reg $ sse_reg @
+    (fun p => let (r, sr) := p in CVTSS2SI (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_gp_noreg @ 
+    (fun p => let (op1, mem) := p in CVTSS2SI op1 mem %% instruction_t).
+
+Definition CVTTPS2PI_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in CVTTPS2PI op1 op2 %% instruction_t).
+
+Definition CVTTSS2SI_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ "11" $$ reg $ sse_reg @
+    (fun p => let (r, sr) := p in CVTTSS2SI (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm_gp_noreg @ 
+    (fun p => let (op1, mem) := p in CVTTSS2SI op1 mem %% instruction_t).
+
+Definition DIVPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in DIVPS op1 op2 %% instruction_t).
+
+Definition DIVSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in DIVSS op1 op2 %% instruction_t).
+
+Definition LDMXCSR_p := 
+  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse "010" @ (fun x => LDMXCSR x %% instruction_t).
+
+Definition MAXPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MAXPS op1 op2 %% instruction_t).
+
+Definition MAXSS_p := 
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MAXSS op1 op2 %% instruction_t).
+
+Definition MINPS_p := 
+  "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MINPS op1 op2 %% instruction_t).
+
+Definition MINSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MINSS op1 op2 %% instruction_t).
+
+Definition MOVAPS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1000" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MOVAPS op1 op2 %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0010" $$ "1001" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MOVAPS op1 op2 %% instruction_t).
+
+Definition MOVHLPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0010" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (sr1, sr2) := p in MOVHLPS (SSE_XMM_Reg_op sr1) (SSE_XMM_Reg_op sr2) %% instruction_t).
+
+Definition MOVHPS_p := 
+  "0000" $$ "1111" $$ "0001" $$ "0110" $$ modrm_xmm_noreg @ 
+    (fun p => let (op1, mem) := p in MOVHPS op1 mem %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0111" $$ modrm_xmm_noreg @ 
+    (fun p => let (op1, mem) := p in MOVHPS mem op1 %% instruction_t).
+
+Definition MOVLHPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11" $$ sse_reg $ sse_reg @
+    (fun p => let (sr1, sr2) := p in MOVLHPS (SSE_XMM_Reg_op sr1) (SSE_XMM_Reg_op sr2) %% instruction_t).
+
+Definition MOVLPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0010" $$ modrm_xmm_noreg @ 
+    (fun p => let (op1, mem) := p in MOVLPS op1 mem %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0011" $$ modrm_xmm_noreg @ 
+    (fun p => let (op1, mem) := p in MOVLPS mem op1 %% instruction_t).
+
+Definition MOVMSKPS_p := 
+  "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11" $$ reg $ sse_reg @
+    (fun p => let (r, sr) := p in MOVMSKPS (SSE_GP_Reg_op r) (SSE_XMM_Reg_op sr) %% instruction_t).
+
+Definition MOVSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$ "0000" $$  modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MOVSS op1 op2 %% instruction_t)
+  |+|
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0001" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MOVSS op2 op1 %% instruction_t).
+
+Definition MOVUPS_p := 
+  "0000" $$ "1111" $$ "0001" $$ "0000" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MOVUPS op1 op2 %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "0001" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MOVUPS op2 op1 %% instruction_t).
+
+Definition MULPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MULPS op1 op2 %% instruction_t).
+
+Definition MULSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in MULSS op1 op2 %% instruction_t).
+
+Definition ORPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0110" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in ORPS op1 op2 %% instruction_t).
+
+Definition RCPPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in RCPPS op1 op2 %% instruction_t).
+
+Definition RCPSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in RCPSS op1 op2 %% instruction_t).
+
+Definition RSQRTPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in RSQRTPS op1 op2 %% instruction_t).
+
+Definition RSQRTSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in RSQRTSS op1 op2 %% instruction_t).
+
+Definition SHUFPS_p :=
+  "0000" $$ "1111" $$ "1100" $$ "0110" $$ modrm_xmm $ byte @ 
+    (fun p => match p with ((op1, op2), imm)
+                => SHUFPS op1 op2 imm end %% instruction_t).
+
+Definition SQRTPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in SQRTPS op1 op2 %% instruction_t).
+
+Definition SQRTSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in SQRTSS op1 op2 %% instruction_t).
+
+Definition STMXCSR_p := 
+  "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse "011" @ (fun x => STMXCSR x %% instruction_t).
+
+Definition SUBPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in SUBPS op1 op2 %% instruction_t).
+
+Definition SUBSS_p :=
+  "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in SUBSS op1 op2 %% instruction_t).
+
+Definition UCOMISS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1110" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in UCOMISS op1 op2 %% instruction_t).
+
+Definition UNPCKHPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0101" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in UNPCKHPS op1 op2 %% instruction_t).
+
+Definition UNPCKLPS_p :=
+  "0000" $$ "1111" $$ "0001" $$ "0100" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in UNPCKLPS op1 op2 %% instruction_t).
+
+Definition XORPS_p :=
+  "0000" $$ "1111" $$ "0101" $$ "0111" $$ modrm_xmm @ 
+    (fun p => let (op1, op2) := p in XORPS op1 op2 %% instruction_t).
+
+(* todo: this needs to take operand-override prefix into account *)
+Definition PAVGB_p :=
+  "0000" $$ "1111" $$ "1110" $$ "0000" $$ modrm_mm @ 
+    (fun p => let (op1, op2) := p in PAVGB op1 op2 %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0011" $$ modrm_mm @ 
+    (fun p => let (op1, op2) := p in PAVGB op2 op1 %% instruction_t).
+
+Definition PEXTRW_p :=
+  "0000" $$ "1111" $$ "1100" $$ "0101" $$ "11" $$ reg $ mmx_reg $ byte @
+    (fun p => match p with (r32, (mmx, imm))
+                => PEXTRW (SSE_GP_Reg_op r32) (SSE_MM_Reg_op mmx) imm end %% instruction_t).
+
+Definition PINSRW_p :=
+  "0000" $$ "1111" $$ "1100" $$ "0100" $$ "11" $$ mmx_reg $ reg $ byte @
+    (fun p => match p with (mmx, (r32, imm)) => PINSRW (SSE_MM_Reg_op mmx) (SSE_GP_Reg_op r32) imm end %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1100" $$ "0100" $$ modrm_mm_noreg $ byte @ 
+    (fun p => match p with ((op1, mem), imm) => PINSRW op1 mem imm end %% instruction_t).
+
+Definition PMAXSW_p :=
+  "0000" $$ "1111" $$ "1110" $$ "1110" $$ modrm_mm @ 
+    (fun p => let (op1, op2) := p in PMAXSW op1 op2 %% instruction_t).
+
+Definition PMAXUB_p :=
+  "0000" $$ "1111" $$ "1101" $$ "1110" $$ modrm_mm @ 
+    (fun p => let (op1, op2) := p in PMAXUB op1 op2 %% instruction_t).
+
+Definition PMINSW_p :=
+  "0000" $$ "1111" $$ "1110" $$ "1010" $$ modrm_mm @ 
+    (fun p => let (op1, op2) := p in PMINSW op1 op2 %% instruction_t).
+
+Definition PMINUB_p :=
+  "0000" $$ "1111" $$ "1101" $$ "1010" $$ modrm_mm @ 
+    (fun p => let (op1, op2) := p in PMINUB op1 op2 %% instruction_t).
+
+Definition PMOVMSKB_p :=
+  "0000" $$ "1111" $$ "1101" $$ "0111" $$ "11" $$ reg $ mmx_reg @
+    (fun p => let (r, mr) := p in PMOVMSKB (SSE_GP_Reg_op r) (SSE_MM_Reg_op mr) %% instruction_t).
+
+(*
+  Already done in MMX grammar section
+
+ Definition PMULHUW_p :=
+  "0000" $$ "1111" $$ "1110" $$ "0100" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (a, b) := p in PMULHUW (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
+  |+|
+  "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mm @ 
+    (fun p => let (mem, mmx) := p in PMULHUW mem mmx %% instruction_t).
+*)
+Definition PSADBW_p :=
+  "0000" $$ "1111" $$ "1111" $$ "0110" $$ modrm_mm @ 
+    (fun p => let (op1, op2) := p in PSADBW op1 op2 %% instruction_t).
+
+Definition PSHUFW_p :=
+  "0000" $$ "1111" $$ "0111" $$ "0000" $$ modrm_mm $ byte @ 
+    (fun p => match p with ((op1, op2), imm)
+                => PSHUFW op1 op2 imm end %% instruction_t).
+
+Definition MASKMOVQ_p :=
+  "0000" $$ "1111" $$ "1111" $$ "0111" $$ "11" $$ mmx_reg $ mmx_reg @
+    (fun p => let (mr1, mr2) := p in MASKMOVQ (SSE_MM_Reg_op mr1) (SSE_MM_Reg_op mr2) %% instruction_t).
+
+Definition MOVNTPS_p :=
+  "0000" $$ "1111" $$ "0010" $$ "1011" $$ modrm_xmm_noreg @ 
+    (fun p => let (op1, mem) := p in MOVNTPS mem op1 %% instruction_t).
+
+Definition MOVNTQ_p :=
+  "0000" $$ "1111" $$ "1110" $$ "0111" $$ modrm_mm_noreg @ 
+    (fun p => let (op1, mem) := p in MOVNTQ mem op1 %% instruction_t).
+
+Definition PREFETCHT0_p :=
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "001" @ (fun x => PREFETCHT0 x %% instruction_t).
+
+Definition PREFETCHT1_p :=
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "010" @ (fun x => PREFETCHT1 x %% instruction_t).
+
+Definition PREFETCHT2_p := 
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "011" @ (fun x => PREFETCHT2 x %% instruction_t).
+
+Definition PREFETCHNTA_p :=
+  "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse "000" @ (fun x => PREFETCHNTA x %% instruction_t).
+
+Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$ 
+                                   bits "1000" @ (fun _ => SFENCE %% instruction_t).
+
+  (* Now glue all of the individual instruction grammars together into 
+     one big grammar.  *)
+  
+  Fixpoint list2pair_t (l: list type) :=
+    match l with
+      | nil => Unit_t
+      | r::r'::nil => Pair_t r r'
+      | r::l' => Pair_t r (list2pair_t l')
+    end.
+ 
+  Definition lock_p : grammar lock_or_rep_t :=
+    "1111" $$ bits "0000" @ (fun _ => lock %% lock_or_rep_t).
+
+  Definition rep_or_repn_p : grammar lock_or_rep_t :=
+    "1111" $$ bits "0010" @ (fun _ => repn %% lock_or_rep_t)
+  |+|
+    "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
+
+  Definition rep_p : grammar lock_or_rep_t :=
+    "1111" $$ bits "0011" @ (fun _ => rep  %% lock_or_rep_t).
+
+  Definition lock_or_rep_p : grammar lock_or_rep_t :=
+    ("1111" $$ ( bits "0000" @ (fun _ => lock %% lock_or_rep_t)
+                 |+| bits "0010" @ (fun _ => repn %% lock_or_rep_t)
+                 |+| bits "0011" @ (fun _ => rep  %% lock_or_rep_t))).
+
+  Definition segment_override_p : grammar segment_register_t :=
+  ("0010" $$ bits "1110" @ (fun _ => CS %% segment_register_t)
+    |+| "0011" $$ bits "0110" @ (fun _ => SS %% segment_register_t)
+    |+| "0011" $$ bits "1110" @ (fun _ => DS %% segment_register_t)
+    |+| "0010" $$ bits "0110" @ (fun _ => ES %% segment_register_t)
+    |+| "0110" $$ bits "0100" @ (fun _ => FS %% segment_register_t)
+    |+| "0110" $$ bits "0101" @ (fun _ => GS %% segment_register_t)).
+
+  Definition op_override_p : grammar bool_t :=
+    "0110" $$ bits "0110" @ (fun _ => true %% bool_t).
+  Definition addr_override_p : grammar bool_t :=
+    "0110" $$ bits "0111" @ (fun _ => true %% bool_t).
+
+  (* Ok, now I want all permutations of the above four grammars. 
+     I make a little perm2 combinator that takes two grammars and gives you
+     p1 $ p2 |+| p2 $ p1, making sure to swap the results in the second case *)
+  
+  Definition perm2 t1 t2 (p1: grammar t1) (p2: grammar t2) : grammar (Pair_t t1 t2) :=
+      p1 $ p2 |+|
+      p2 $ p1 @ (fun p => match p with (a, b) => (b, a) %% Pair_t t1 t2 end).
+
+  (* Then I build that up into a perm3 and perm4. One could make a recursive
+     function to do this, but I didn't want to bother with the necessary
+     proofs and type-system juggling.*) 
+
+  Definition perm3 t1 t2 t3 (p1: grammar t1) (p2: grammar t2) (p3: grammar t3)
+    : grammar (Pair_t t1 (Pair_t t2 t3)) :=
+    let r_t := Pair_t t1 (Pair_t t2 t3) in
+       p1 $ (perm2 p2 p3)
+   |+| p2 $ (perm2 p1 p3) @ (fun p => match p with (b, (a, c)) => (a, (b, c)) %% r_t end)
+   |+| p3 $ (perm2 p1 p2) @ (fun p => match p with (c, (a, b)) => (a, (b, c)) %% r_t end).
+
+  Definition perm4 t1 t2 t3 t4 (p1: grammar t1) (p2: grammar t2) (p3: grammar t3)
+    (p4: grammar t4) : grammar (Pair_t t1 (Pair_t t2 (Pair_t t3 t4))) :=
+    let r_t := Pair_t t1 (Pair_t t2 (Pair_t t3 t4)) in
+       p1 $ (perm3 p2 p3 p4)
+   |+| p2 $ (perm3 p1 p3 p4) @ 
+         (fun p => match p with (b, (a, (c, d))) => (a, (b, (c, d))) %% r_t end)
+   |+| p3 $ (perm3 p1 p2 p4) @ 
+         (fun p => match p with (c, (a, (b, d))) => (a, (b, (c, d))) %% r_t end)
+   |+| p4 $ (perm3 p1 p2 p3) @ 
+         (fun p => match p with (d, (a, (b, c))) => (a, (b, (c, d))) %% r_t end). 
+
+  (* In this case, prefixes are optional. Before, each of the above
+     parsing rules for the prefixes accepted Eps, and this was how we
+     handled this.  However, if the grammars you join with perm can
+     each accept Eps, then the result is a _highly_ ambiguous grammar.
+
+     Instead we have a different combinator, called option_perm, that 
+     handles this without introducing extra ambiguity *)
+
+  Definition option_perm t1 (p1: grammar t1) 
+     : grammar (Option_t t1) :=
+     let r_t := Option_t t1 in 
+         Eps @ (fun p => None %% r_t)  
+     |+| p1 @ (fun p => (Some p) %% r_t ).
+
+
+  (* This signature is slightly awkward - because there's no result
+     type corresponding to option (and I'm hesitant to add it to
+     Grammar at the moment) we can't just have a signature like grammar
+     t1 -> grammar t2 -> grammar (option_t t1) (option_t t2)) *)
+    
+  Definition option_perm2 t1 t2 (p1: grammar t1) (p2: grammar t2) 
+     : grammar (Pair_t (Option_t t1) (Option_t t2)) :=
+     let r_t := Pair_t (Option_t t1) (Option_t t2) in 
+         Eps @ (fun p => (None, None) %% r_t)  
+     |+| p1 @ (fun p => (Some p, None) %% r_t ) 
+     |+| p2 @ (fun p => (None, Some p) %% r_t) 
+     |+| perm2 p1 p2 @ (fun p => match p with (a, b) => (Some a, Some b) %%r_t end). 
+
+  Definition option_perm3 t1 t2 t3 (p1:grammar t1) (p2:grammar t2)
+    (p3:grammar t3): grammar(Pair_t(Option_t t1)(Pair_t(Option_t t2) (Option_t t3)))
+    :=
+    let r_t := Pair_t(Option_t t1)(Pair_t(Option_t t2) (Option_t t3))  in
+        Eps @ (fun p => (None, (None, None)) %% r_t)
+    |+| p1 @ (fun p => (Some p, (None, None)) %% r_t)
+    |+| p2 @ (fun p => (None, (Some p, None)) %% r_t)
+    |+| p3 @ (fun p => (None, (None, Some p)) %% r_t)
+    |+| perm2 p1 p2 @(fun p => match p with (a, b) => (Some a, (Some b, None)) %%r_t end)
+    |+| perm2 p1 p3 @(fun p => match p with (a, c) => (Some a, (None, Some c)) %%r_t end)
+    |+| perm2 p2 p3 @(fun p => match p with (b, c) => (None, (Some b, Some c)) %%r_t end)
+    |+| perm3 p1 p2 p3 @ (fun p => match p with (a, (b, c))
+                                    => (Some a, (Some b, Some c)) %%r_t end).
+
+  (* t1 is optional, but t2 is a must *)
+  Definition option_perm2_variation t1 t2 (p1: grammar t1)
+    (p2: grammar t2) 
+     : grammar (Pair_t (Option_t t1) t2) :=
+     let r_t := Pair_t (Option_t t1) t2 in 
+         p2 @ (fun p => (None, p) %% r_t) 
+     |+| perm2 p1 p2 @ (fun p => match p with (a, b) => (Some a, b) %%r_t end). 
+
+  (* in this def, t1 and t2 are optional, but t3 is a must *)
+  Definition option_perm3_variation t1 t2 t3 (p1:grammar t1) (p2:grammar t2)
+    (p3:grammar t3): grammar(Pair_t(Option_t t1)(Pair_t(Option_t t2) t3))
+    :=
+    let r_t := Pair_t(Option_t t1)(Pair_t(Option_t t2) t3)  in
+        p3 @ (fun p => (None, (None, p)) %% r_t)
+    |+| perm2 p1 p3 @(fun p => match p with (a, c) => (Some a, (None, c)) %%r_t end)
+    |+| perm2 p2 p3 @(fun p => match p with (b, c) => (None, (Some b, c)) %%r_t end)
+    |+| perm3 p1 p2 p3 @ (fun p => match p with (a, (b, c))
+                                    => (Some a, (Some b, c)) %%r_t end).
+
+  (* This is beginning to get quite nasty. Someone should write a form for arbitrary
+     n and prove it's correct :) *)
+  Definition option_perm4 t1 t2 t3 t4 (p1:grammar t1) (p2: grammar t2)
+    (p3: grammar t3) (p4: grammar t4) :
+      grammar(Pair_t(Option_t t1) (Pair_t(Option_t t2) (Pair_t(Option_t t3) (Option_t t4))))
+      := 
+    let r_t := Pair_t(Option_t t1) (Pair_t(Option_t t2)
+      (Pair_t(Option_t t3)(Option_t t4))) in
+        Eps @ (fun p => (None, (None, (None, None))) %% r_t)
+    |+| p1 @ (fun p => (Some p, (None, (None, None))) %% r_t)
+    |+| p2 @ (fun p => (None, (Some p, (None, None))) %% r_t)
+    |+| p3 @ (fun p => (None, (None, (Some p, None))) %% r_t)
+    |+| p4 @ (fun p => (None, (None, (None, Some p))) %% r_t)
+    |+| perm2 p1 p2 @ (fun p => match p with (a, b)
+                                  => (Some a, (Some b, (None, None))) %% r_t end)
+    |+| perm2 p1 p3 @ (fun p => match p with (a, c)
+                                  => (Some a, (None, (Some c, None))) %% r_t end)
+    |+| perm2 p1 p4 @ (fun p => match p with (a, d)
+                                  => (Some a, (None, (None, Some d))) %% r_t end)
+    |+| perm2 p2 p3 @ (fun p => match p with (b, c)
+                                  => (None, (Some b, (Some c, None))) %% r_t end)
+    |+| perm2 p2 p4 @ (fun p => match p with (b, d)
+                                  => (None, (Some b, (None, Some d))) %% r_t end)
+    |+| perm2 p3 p4 @ (fun p => match p with (c, d)
+                                  => (None, (None, (Some c, Some d))) %% r_t end)
+    |+| perm3 p1 p2 p3 @ (fun p => match p with (a, (b, c))
+                                    => (Some a, (Some b, (Some c, None))) %%r_t end)
+    |+| perm3 p1 p3 p4 @ (fun p => match p with (a, (c, d))
+                                    => (Some a, (None, (Some c, Some d))) %%r_t end)
+    |+| perm3 p1 p2 p4 @ (fun p => match p with (a, (b, d))
+                                    => (Some a, (Some b, (None, Some d))) %%r_t end)
+    |+| perm3 p2 p3 p4 @ (fun p => match p with (b, (c, d))
+                                    => (None, (Some b, (Some c, Some d))) %%r_t end)
+    |+| perm4 p1 p2 p3 p4 @ (fun p => match p with (a, (b, (c, d)))
+                                        => (Some a, (Some b, (Some c, Some d))) %% r_t end).
+                                      
   Definition opt2b (a: option bool) (default: bool) :=
     match a with
       | Some b => b
       | None => default
     end.
 
-  (** In lock_or_rep, only rep can be used; 
-      segment_override and op_override are allowed. *)
-  Definition prefix_grammar_rep : wf_bigrammar prefix_t.
-    refine ((option_perm3 rep_p segment_override_p op_override_p)
-              @ (fun v => match v with (l, (s, op)) =>
-                   mkPrefix l s (opt2b op false) false %% prefix_t end)
-              & (fun u => 
-                   match op_override u, addr_override u with
-                     | true,false => Some (lock_rep u, (seg_override u, Some true))
-                     | false,false => Some (lock_rep u, (seg_override u, None))
-                     | _,_ => None
-                   end)
-              & _); compute [op_override addr_override lock_rep seg_override];
-    ins_invertible_tac.
-    - destruct v as [l [s op]]. 
-      destruct op as [op | ]; [destruct op | ]; compute [opt2b].
-      + ins_printable_tac.
-      + printable_tac.
-        apply option_perm3_rng; sim; auto with ibr_rng_db.
-        clear H.
-         (* don't understand why auto doesn't work even though
-            option_perm_rng2 is in the database *)
-        apply option_perm_rng2.
-      + ins_printable_tac.
-    - destruct w as [l s op addr];
-      destruct op; destruct addr; parsable_tac.
-  Defined.
 
-  (** In lock_or_rep, either rep or repn can be used, but lock is disallowed;
-      segment_override and op_override also allowed.*)
-  Definition prefix_grammar_rep_or_repn : wf_bigrammar prefix_t.
-    refine ((option_perm3 rep_or_repn_p segment_override_p op_override_p)
-              @ (fun v => match v with (l, (s, op)) =>
-                   mkPrefix l s (opt2b op false) false %% prefix_t end)
-              & (fun u => 
-                   match op_override u, addr_override u with
-                     | true,false => Some (lock_rep u, (seg_override u, Some true))
-                     | false,false => Some (lock_rep u, (seg_override u, None))
-                     | _,_ => None
-                   end)
-              & _); compute [op_override addr_override lock_rep seg_override];
-    ins_invertible_tac.
-    - destruct v as [l [s op]]. 
-      destruct op as [op | ]; [destruct op | ]; compute [opt2b].
-      + ins_printable_tac.
-      + printable_tac.
-        apply option_perm3_rng; sim; auto with ibr_rng_db.
-        apply option_perm_rng2.
-      + ins_printable_tac.
-    - destruct w as [l s op addr];
-      destruct op; destruct addr; parsable_tac.
-  Defined.
+  Definition prefix_grammar_rep :=
+    option_perm3 rep_p segment_override_p op_override_p @
+     (fun p => match p with (l, (s, op)) =>
+                 mkPrefix l s (opt2b op false) false %% prefix_t end).
 
-  (** In lock_or_rep, only lock can be used; 
-      segment override is optional; op_override prefix *must* be used *)
-  Definition prefix_grammar_lock_with_op_override : wf_bigrammar prefix_t.
-    refine ((option_perm3_variation lock_p segment_override_p op_override_p)
-              @ (fun v => match v with (l, (s, op)) =>
-                   mkPrefix l s op false %% prefix_t end)
-              & (fun u => 
-                   match addr_override u with
-                     | false => Some (lock_rep u,
-                                      (seg_override u, op_override u))
-                     | _ => None
-                   end)
-              & _); compute [op_override addr_override lock_rep seg_override];
-    ins_invertible_tac.
-    - destruct w as [l s op addr]; destruct addr; parsable_tac.
-  Defined.
+  (** this set of instructions can take prefixes in prefix_grammar_rep;
+      that is, in lock_or_rep, only rep can be used; we put RET in this
+      category because it turns out many binaries use "rep ret" to avoid the
+      branch prediction panelty in AMD processors; intel processor seems to
+      just ignore the rep prefix in "rep ret". *)
+  Definition instr_grammars_rep :=
+    INS_p :: OUTS_p :: MOVS_p :: LODS_p :: STOS_p :: RET_p :: nil.
 
-  (** In lock_or_rep, only lock can be used; segment override is optional;
-      and op_override *must not* be used. *)
-  Definition prefix_grammar_lock_no_op_override : wf_bigrammar prefix_t.
-    refine ((option_perm2 lock_p segment_override_p)
-              @ (fun v => match v with (l, s) =>
-                   mkPrefix l s false false %% prefix_t end)
-              & (fun u => 
-                   match op_override u, addr_override u with
-                     | false,false => Some (lock_rep u, seg_override u)
-                     | _,_ => None
-                   end)
-              & _); compute [op_override addr_override lock_rep seg_override];
-    ins_invertible_tac.
-    - destruct w as [l s op addr]; destruct op; destruct addr; parsable_tac.
-  Defined.
+  Definition prefix_grammar_rep_or_repn :=
+    option_perm3 rep_or_repn_p segment_override_p op_override_p @
+      (fun p => match p with (l, (s, op)) =>
+                  mkPrefix l s (opt2b op false) false %% prefix_t end).
 
-  (** It cannot take a lock_or_rep prefix, must take op_override prefix,
-      can optionally take segment-override prefix. *)
-  Definition prefix_grammar_seg_with_op_override: wf_bigrammar prefix_t. 
-    refine ((option_perm2_variation segment_override_p op_override_p)
-              @ (fun v => match v with (s, op) =>
-                   mkPrefix None s op false %% prefix_t end)
-              & (fun u =>
-                   match addr_override u, lock_rep u with
-                     | false,None => Some (seg_override u, op_override u)
-                     | _,_ => None
-                   end)
-              & _); compute [op_override addr_override lock_rep seg_override];
-      ins_invertible_tac.
-    - destruct w as [l s op addr]; destruct l; destruct addr; parsable_tac.
-  Defined.
+  (** this set of instructions can take prefixes in prefix_grammar_repn;
+      that is, in lock_or_rep, either rep or repn can be used, but not lock *)
+  Definition instr_grammars_rep_or_repn := CMPS_p :: SCAS_p :: nil.
 
-  (** Cannot take a lock_or_rep prefix, but can optionally take segment or
-      op override prefix. *)
-  Definition prefix_grammar_seg_op_override: wf_bigrammar prefix_t. 
-    refine ((option_perm2 segment_override_p op_override_p)
-              @ (fun v => match v with (s, op) =>
-                   mkPrefix None s (opt2b op false) false %% prefix_t end)
-              & (fun u =>
-                   match op_override u, addr_override u, lock_rep u with
-                     | true, false, None => Some (seg_override u, Some true)
-                     | false, false, None => Some (seg_override u, None)
-                     | _,_,_ => None
-                   end)
-              & _); compute [op_override addr_override lock_rep seg_override];
-    ins_invertible_tac.
-    - destruct v as [s op]. 
-      destruct op as [op | ]; [destruct op | ]; compute [opt2b].
-      + ins_printable_tac.
-      + printable_tac.
-        apply option_perm2_rng; sim; auto with ibr_rng_db.
-        apply option_perm_rng2.
-      + ins_printable_tac.
-    - destruct w as [l s op addr];
-      destruct op; destruct addr; destruct l; parsable_tac.
-  Defined.
-
-  (** Only allows seg override prefix. *)
-  Definition prefix_grammar_only_seg_override : wf_bigrammar prefix_t.
-    refine ((option_perm segment_override_p)
-              @ (fun s => mkPrefix None s false false %% prefix_t)
-              & (fun u => 
-                   match op_override u, addr_override u, lock_rep u with
-                     | false, false, None => Some (seg_override u)
-                     | _,_,_ => None
-                   end)
-              & _); compute [op_override addr_override lock_rep seg_override];
-    ins_invertible_tac.
-    - destruct w as [l s op addr];
-      destruct op; destruct addr; destruct l; parsable_tac.
-  Defined.
-
-  Lemma lock_with_op_override_rng_inv pre: 
-    in_bigrammar_rng (` prefix_grammar_lock_with_op_override) pre ->
-    op_override pre = true.
-  Proof. unfold prefix_grammar_lock_with_op_override; intros.
-    ibr_prover.
-    match goal with
-      | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
-        rewrite <- option_perm3_variation_rng in H; destruct H as [_ [_ H]];
-        apply op_override_p_rng_inv in H
-    end.
-    subst pre; trivial.
-  Qed.
-
-  Lemma lock_no_op_override_rng_inv pre:
-    in_bigrammar_rng (` prefix_grammar_lock_no_op_override) pre ->
-    op_override pre = false.
-  Proof. unfold prefix_grammar_lock_no_op_override; intros.
-    ibr_prover. subst pre; trivial. 
-  Qed.
-
-
-  Lemma seg_with_op_override_rng_inv pre: 
-    in_bigrammar_rng (` prefix_grammar_seg_with_op_override) pre ->
-    op_override pre = true.
-  Proof. unfold prefix_grammar_seg_with_op_override; intros.
-    ibr_prover.
-    match goal with
-      | [H:in_bigrammar_rng (` (option_perm2_variation _ _)) (_,_) |- _] =>
-        rewrite <- option_perm2_variation_rng in H; destruct H as [_ H];
-        apply op_override_p_rng_inv in H
-    end.
-    subst pre; trivial.
-  Qed.
-
-  Lemma only_seg_override_rng_inv pre: 
-    in_bigrammar_rng (` prefix_grammar_only_seg_override) pre ->
-    op_override pre = false.
-  Proof. unfold prefix_grammar_only_seg_override; intros.
-    ibr_prover.
-    subst pre; trivial.
-  Qed.
-
-
-  (* Specialized printable and parsable tactics used when combining
-     instruction grammars *)
-
-  Local Ltac ins_com_printable := 
-    repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-             | [v: [| unit_t |] |- _] => destruct v
-             | [v:[|pair_t _ _|] |- _] => destruct v
-           end;
-    try (match goal with
-           | [ |- exists v', ?c = Some v' /\ _] => 
-             match c with
-               | Some ?v =>
-                 exists v; split; trivial
-               | if op_override _ then Some ?v1 else Some ?v2 =>
-                 ibr_prover;
-                 match goal with
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_lock_with_op_override) ?pre |- _] =>
-                     assert (H2: op_override pre = true) by
-                         (apply lock_with_op_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v1; split; ibr_prover
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_lock_no_op_override) ?pre |- _] =>
-                     assert (H2: op_override pre = false) by
-                         (apply lock_no_op_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v2; split; ibr_prover
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_seg_with_op_override) ?pre |- _] =>
-                     assert (H2: op_override pre = true) by
-                         (apply seg_with_op_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v1; split; ibr_prover
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_only_seg_override) ?pre |- _] =>
-                     assert (H2: op_override pre = false) by
-                         (apply only_seg_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v2; split; ibr_prover
-                 end
-             end
-        end).
-
-  Local Ltac ins_com_parsable := 
-    match goal with
-      | [H: ?c = Some _ |- _] => 
-        match c with
-          | None => discriminate H
-          | Some _ => inversion H; clear H; subst; trivial
-          | if op_override ?p then Some _ else Some _ => 
-            destruct (op_override p);
-              inversion H; clear H; subst; trivial
-        end
-    end.
-
-  Definition i_instr1_env : AST_Env i_instr1_t := 
-    {0, AAA_p, (fun v => I_AAA %% i_instr1_t)} :::
-    {1, AAD_p, (fun v => I_AAD %% i_instr1_t)} :::
-    {2, AAM_p, (fun v => I_AAM %% i_instr1_t)} :::
-    {3, AAS_p, (fun v => I_AAS %% i_instr1_t)} :::
-    {4, CLC_p, (fun v => I_CLC %% i_instr1_t)} :::
-    {5, CLD_p, (fun v => I_CLD %% i_instr1_t)} :::
-    {6, CLI_p, (fun v => I_CLI %% i_instr1_t)} :::
-    {7, CLTS_p, (fun v => I_CLTS %% i_instr1_t)} :::
-    {8, CMC_p, (fun v => I_CMC %% i_instr1_t)} :::
-    {9, CPUID_p, (fun v => I_CPUID %% i_instr1_t)} :::
-    {10, DAA_p, (fun v => I_DAA %% i_instr1_t)} :::
-    {11, DAS_p, (fun v => I_DAS %% i_instr1_t)} :::
-    {12, HLT_p, (fun v => I_HLT %% i_instr1_t)} :::
-    {13, INT_p, (fun v => I_INT %% i_instr1_t)} :::
-    {14, INTO_p, (fun v => I_INTO %% i_instr1_t)} :::
-    {15, INVD_p, (fun v => I_INVD %% i_instr1_t)} :::
-    {16, IRET_p, (fun v => I_IRET %% i_instr1_t)} :::
-    {17, LAHF_p, (fun v => I_LAHF %% i_instr1_t)} :::
-    {18, LEAVE_p, (fun v => I_LEAVE %% i_instr1_t)} :::
-    {19, POPA_p, (fun v => I_POPA %% i_instr1_t)} :::
-    {20, POPF_p, (fun v => I_POPF %% i_instr1_t)} :::
-    {21, PUSHA_p, (fun v => I_PUSHA %% i_instr1_t)} :::
-    {22, PUSHF_p, (fun v => I_PUSHF %% i_instr1_t)} :::
-    {23, RDMSR_p, (fun v => I_RDMSR %% i_instr1_t)} :::
-    {24, RDPMC_p, (fun v => I_RDPMC %% i_instr1_t)} :::
-    {25, RDTSC_p, (fun v => I_RDTSC %% i_instr1_t)} :::
-    {26, RDTSCP_p, (fun v => I_RDTSCP %% i_instr1_t)} :::
-    {27, RSM_p, (fun v => I_RSM %% i_instr1_t)} :::
-    {28, SAHF_p, (fun v => I_SAHF %% i_instr1_t)} :::
-    {29, STC_p, (fun v => I_STC %% i_instr1_t)} :::
-    {30, STD_p, (fun v => I_STD %% i_instr1_t)} :::
-    {31, STI_p, (fun v => I_STI %% i_instr1_t)} :::
-    {32, UD2_p, (fun v => I_UD2 %% i_instr1_t)} :::
-    {33, WBINVD_p, (fun v => I_WBINVD %% i_instr1_t)} :::
-    {34, WRMSR_p, (fun v => I_WRMSR %% i_instr1_t)} :::
-    {35, XLAT_p, (fun v => I_XLAT %% i_instr1_t)} :::
-    ast_env_nil.
-  Hint Unfold i_instr1_env: env_unfold_db.
-
-  Definition i_instr1_p : wf_bigrammar i_instr1_t.
-    gen_ast_defs i_instr1_env.
-    refine (gr @ (mp: _ -> [|i_instr1_t|])
-               & (fun u =>
-                    match u with
-                      | I_AAA => case0 ()
-                      | I_AAD => case1 ()
-                      | I_AAM => case2 ()
-                      | I_AAS => case3 ()
-                      | I_CLC => case4 ()
-                      | I_CLD => case5 ()
-                      | I_CLI => case6 ()
-                      | I_CLTS => case7 ()
-                      | I_CMC => case8 ()
-                      | I_CPUID => case9 ()
-                      | I_DAA => case10 ()
-                      | I_DAS => case11 ()
-                      | I_HLT => case12 ()
-                      | I_INT => case13 ()
-                      | I_INTO => case14 ()
-                      | I_INVD => case15 ()
-                      | I_IRET => case16 ()
-                      | I_LAHF => case17 ()
-                      | I_LEAVE => case18 ()
-                      | I_POPA => case19 ()
-                      | I_POPF => case20 ()
-                      | I_PUSHA => case21 ()
-                      | I_PUSHF => case22 ()
-                      | I_RDMSR => case23 ()
-                      | I_RDPMC => case24 ()
-                      | I_RDTSC => case25 ()
-                      | I_RDTSCP => case26 ()
-                      | I_RSM => case27 ()
-                      | I_SAHF => case28 ()
-                      | I_STC => case29 ()
-                      | I_STD => case30 ()
-                      | I_STI => case31 ()
-                      | I_UD2 => case32 ()
-                      | I_WBINVD => case33 ()
-                      | I_WRMSR => case34 ()
-                      | I_XLAT => case35 ()
-                    end)
-               & _); clear_ast_defs; invertible_tac.
-     - abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition i_instr2_env : AST_Env i_instr2_t := 
-    {0, ARPL_p, (fun v => match v with (op1,op2) => I_ARPL op1 op2
-                          end %% i_instr2_t)} :::
-    {1, BOUND_p, (fun v => match v with (op1,op2) => I_BOUND op1 op2
-                          end %% i_instr2_t)} :::
-    {2, BSF_p, (fun v => match v with (op1,op2) => I_BSF op1 op2
-                          end %% i_instr2_t)} :::
-    {3, BSR_p, (fun v => match v with (op1,op2) => I_BSR op1 op2
-                          end %% i_instr2_t)} :::
-    {4, BSWAP_p, (fun r => I_BSWAP r %% i_instr2_t)} :::
-    {5, BT_p, (fun v => match v with (op1,op2) => I_BT op1 op2
-                          end %% i_instr2_t)} :::
-    {6, CALL_p, (fun v => match v with
-                              (near,(abs,(op1,sel))) => I_CALL near abs op1 sel
-                          end %% i_instr2_t)} :::
-    {7, IN_p, (fun v => match v with (w,p) => I_IN w p
-                          end %% i_instr2_t)} :::
-    {8, INTn_p, (fun it => I_INTn it %% i_instr2_t)} :::
-    {9, INVLPG_p, (fun op => I_INVLPG op %% i_instr2_t)} :::
-    {10, Jcc_p, (fun v => match v with (ct,disp) => I_Jcc ct disp
-                          end %% i_instr2_t)} :::
-    {11, JCXZ_p, (fun b => I_JCXZ b %% i_instr2_t)} :::
-    {12, JMP_p, (fun v => match v with
-                              (near,(abs,(op1,sel))) => I_JMP near abs op1 sel
-                          end %% i_instr2_t)} :::
-    {13, LAR_p, (fun v => match v with (op1,op2) => I_LAR op1 op2
-                          end %% i_instr2_t)} :::
-    {14, LDS_p, (fun v => match v with (op1,op2) => I_LDS op1 op2
-                          end %% i_instr2_t)} :::
-    {15, LEA_p, (fun v => match v with (op1,op2) => I_LEA op1 op2
-                          end %% i_instr2_t)} :::
-    {16, LES_p, (fun v => match v with (op1,op2) => I_LES op1 op2
-                          end %% i_instr2_t)} :::
-    {17, LFS_p, (fun v => match v with (op1,op2) => I_LFS op1 op2
-                          end %% i_instr2_t)} :::
-    {18, LGDT_p, (fun op => I_LGDT op %% i_instr2_t)} :::
-    {19, LGS_p, (fun v => match v with (op1,op2) => I_LGS op1 op2
-                          end %% i_instr2_t)} :::
-    {20, LIDT_p, (fun op => I_LIDT op %% i_instr2_t)} :::
-    {21, LLDT_p, (fun op => I_LLDT op %% i_instr2_t)} :::
-    {22, LMSW_p, (fun op => I_LMSW op %% i_instr2_t)} :::
-    {23, LOOP_p, (fun di => I_LOOP di %% i_instr2_t)} :::
-    {24, LOOPZ_p, (fun di => I_LOOPZ di %% i_instr2_t)} :::
-    {25, LOOPNZ_p, (fun di => I_LOOPNZ di %% i_instr2_t)} :::
-    {26, LSL_p, (fun v => match v with (op1,op2) => I_LSL op1 op2
-                          end %% i_instr2_t)} :::
-    {27, LSS_p, (fun v => match v with (op1,op2) => I_LSS op1 op2
-                          end %% i_instr2_t)} :::
-    {28, LTR_p, (fun op => I_LTR op %% i_instr2_t)} :::
-    ast_env_nil.
-  Hint Unfold i_instr2_env: env_unfold_db.
-
-  Definition i_instr2_p : wf_bigrammar i_instr2_t.
-    gen_ast_defs i_instr2_env.
-    refine (gr @ (mp: _ -> [|i_instr2_t|])
-               & (fun u =>
-                    match u with
-                      | I_ARPL op1 op2 => case0 (op1,op2)
-                      | I_BOUND op1 op2 => case1 (op1,op2)
-                      | I_BSF op1 op2 => case2 (op1,op2)
-                      | I_BSR op1 op2 => case3 (op1,op2)
-                      | I_BSWAP r => case4 r
-                      | I_BT op1 op2 => case5 (op1,op2)
-                      | I_CALL near abs op1 sel => case6 (near,(abs,(op1,sel)))
-                      | I_IN w p => case7 (w,p)
-                      | I_INTn it => case8 it
-                      | I_INVLPG op => case9 op
-                      | I_Jcc ct disp => case10 (ct,disp)
-                      | I_JCXZ b => case11 b
-                      | I_JMP near abs op1 sel => case12 (near,(abs,(op1,sel)))
-                      | I_LAR op1 op2 => case13 (op1,op2)
-                      | I_LDS op1 op2 => case14 (op1,op2)
-                      | I_LEA op1 op2 => case15 (op1,op2)
-                      | I_LES op1 op2 => case16 (op1,op2)
-                      | I_LFS op1 op2 => case17 (op1,op2)
-                      | I_LGDT op1 => case18 op1
-                      | I_LGS op1 op2 => case19 (op1,op2)
-                      | I_LIDT op1 => case20 op1
-                      | I_LLDT op1 => case21 op1
-                      | I_LMSW op1 => case22 op1
-                      | I_LOOP disp => case23 disp
-                      | I_LOOPZ disp => case24 disp
-                      | I_LOOPNZ disp => case25 disp
-                      | I_LSL op1 op2 => case26 (op1,op2)
-                      | I_LSS op1 op2 => case27 (op1,op2)
-                      | I_LTR op1 => case28 op1
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition i_instr3_env : AST_Env i_instr3_t := 
-    {0, MOVCR_p, (fun v => match v with (d,(cr,r)) => I_MOVCR d cr r
-                          end %% i_instr3_t)} :::
-    {1, MOVDR_p, (fun v => match v with (d,(cr,r)) => I_MOVDR d cr r
-                          end %% i_instr3_t)} :::
-    {2, MOVSR_p, (fun v => match v with (d,(cr,r)) => I_MOVSR d cr r
-                          end %% i_instr3_t)} :::
-    {3, MOVBE_p, (fun v => match v with (op1,op2) => I_MOVBE op1 op2
-                          end %% i_instr3_t)} :::
-    {4, OUT_p, (fun v => match v with (w,p) => I_OUT w p
-                          end %% i_instr3_t)} :::
-    {5, POP_p, (fun op => I_POP op %% i_instr3_t)} :::
-    {6, POPSR_p, (fun sr => I_POPSR sr %% i_instr3_t)} :::
-    {7, PUSH_p, (fun v => match v with (w,op1) => I_PUSH w op1
-                          end %% i_instr3_t)} :::
-    {8, PUSHSR_p, (fun sr => I_PUSHSR sr %% i_instr3_t)} :::
-    {9, RCL_p, (fun v => match v with (w,(op1,ri)) => I_RCL w op1 ri
-                          end %% i_instr3_t)} :::
-    {10, RCR_p, (fun v => match v with (w,(op1,ri)) => I_RCR w op1 ri
-                          end %% i_instr3_t)} :::
-    {11, SETcc_p, (fun v => match v with (ct,op1) => I_SETcc ct op1
-                          end %% i_instr3_t)} :::
-    {12, SGDT_p, (fun op => I_SGDT op %% i_instr3_t)} :::
-    {13, SIDT_p, (fun op => I_SIDT op %% i_instr3_t)} :::
-    {14, SLDT_p, (fun op => I_SLDT op %% i_instr3_t)} :::
-    {15, SMSW_p, (fun op => I_SMSW op %% i_instr3_t)} :::
-    {16, STR_p, (fun op => I_STR op %% i_instr3_t)} :::
-    {17, VERR_p, (fun op => I_VERR op %% i_instr3_t)} :::
-    {18, VERW_p, (fun op => I_VERW op %% i_instr3_t)} :::
-    ast_env_nil.
-  Hint Unfold i_instr3_env: env_unfold_db.
-
-  Definition i_instr3_p : wf_bigrammar i_instr3_t.
-    gen_ast_defs i_instr3_env.
-    refine (gr @ (mp: _ -> [|i_instr3_t|])
-               & (fun u =>
-                    match u with
-                      | I_MOVCR d cr r => case0 (d,(cr,r))
-                      | I_MOVDR d cr r => case1 (d,(cr,r))
-                      | I_MOVSR d cr r => case2 (d,(cr,r))
-                      | I_MOVBE op1 op2 => case3 (op1,op2)
-                      | I_OUT w p => case4 (w,p)
-                      | I_POP op => case5 op
-                      | I_POPSR sr => case6 sr
-                      | I_PUSH w op1 => case7 (w,op1)
-                      | I_PUSHSR sr => case8 sr
-                      | I_RCL w op1 ri => case9 (w,(op1,ri))
-                      | I_RCR w op1 ri => case10 (w,(op1,ri))
-                      | I_SETcc ct op1 => case11 (ct,op1)
-                      | I_SGDT op => case12 op
-                      | I_SIDT op => case13 op
-                      | I_SLDT op => case14 op
-                      | I_SMSW op => case15 op
-                      | I_STR op => case16 op
-                      | I_VERR op => case17 op 
-                      | I_VERW op => case18 op 
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
-  Defined.
-
-  (** This set of instructions can take prefixes in prefix_grammar_rep we
-      put RET in this category because it turns out many binaries use "rep
-      ret" to avoid the branch prediction panelty in AMD processors; intel
-      processor seems to just ignore the rep prefix in "rep ret". *)
-  Definition prefix_grammar_rep_env : AST_Env i_instr4_t := 
-    {0, INS_p, (fun v => I_INS v %% i_instr4_t)} :::
-    {1, OUTS_p, (fun v => I_OUTS v %% i_instr4_t)} :::
-    {2, MOVS_p, (fun v => I_MOVS v %% i_instr4_t)} :::
-    {3, LODS_p, (fun v => I_LODS v %% i_instr4_t)} :::
-    {4, STOS_p, (fun v => I_STOS v %% i_instr4_t)} :::
-    {5, RET_p, (fun v => I_RET (fst v) (snd v) %% i_instr4_t)} :::
-    ast_env_nil.
-     
-  (** this set of instructions can take prefixes in prefix_grammar_repn *)
-  Definition prefix_grammar_rep_or_repn_env : AST_Env i_instr4_t :=
-    {10, CMPS_p, (fun v => I_CMPS v %% i_instr4_t)} :::
-    {11, SCAS_p, (fun v => I_SCAS v %% i_instr4_t)} :::
-    ast_env_nil.
-
-  Hint Unfold prefix_grammar_rep_env 
-       prefix_grammar_rep_or_repn_env: env_unfold_db.
-
-  Definition i_instr4_grammar_env' := 
-    (ast_env_cat prefix_grammar_rep prefix_grammar_rep_env)
-      +++
-    (ast_env_cat prefix_grammar_rep_or_repn 
-       prefix_grammar_rep_or_repn_env).
-
-  Definition i_instr4_grammar_env : AST_Env (pair_t prefix_t i_instr4_t).
-    let ige := eval cbv beta
-                    delta [i_instr4_grammar_env' prefix_grammar_rep_env
-                           prefix_grammar_rep_or_repn_env
-                           ast_env_app ast_env_cat]
-                    iota zeta 
-               in i_instr4_grammar_env' in
-    exact(ige).
-  Defined.
-
-  Definition i_instr4_grammar_type : type.
-    let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
-    let t:=gen_ast_type ige in exact(t).
-  Defined.
-
-  Definition from_instr4 (u:prefix * i_instr4) : option [|i_instr4_grammar_type|].
-    intro.
-    refine (match snd u with
-              | I_INS a1 => _
-              | I_OUTS a1 => _
-              | I_MOVS a1 => _
-              | I_LODS a1 => _ 
-              | I_STOS a1 => _ 
-              | I_RET a1 a2 => _
-              | I_CMPS a1 => _
-              | I_SCAS a1 => _ 
-            end).
-    Local Ltac gen4 lbl u arg :=
-      let ige := eval unfold i_instr4_grammar_env
-                 in i_instr4_grammar_env in
-      let t := eval unfold i_instr4_grammar_type
-                 in i_instr4_grammar_type in
-      let f:=gen_rev_case_lbl lbl ige t in
-      let f1 := eval simpl in f in
-      exact (Some (f1 (fst u, arg))).
-    * (* I_INS *) gen4 0 u a1.
-    * (* I_OUTS *) gen4 1 u a1.
-    * (* I_MOVS *) gen4 2 u a1.
-    * (* I_LODS *) gen4 3 u a1.
-    * (* I_STOS *) gen4 4 u a1.
-    * (* I_RET *) gen4 5 u (a1,a2).
-    * (* I_CMPS *) gen4 10 u a1.
-    * (* I_SCAS *) gen4 11 u a1.
-  Defined.
-
-  Definition i_instr4_grammar : wf_bigrammar (pair_t prefix_t i_instr4_t).
-    let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
-    let g := gen_ast_grammar ige in pose (gr:=g);
-    let m := gen_ast_map ige in pose (mp:=m).
-    refine (gr @ (mp: _ -> [|pair_t prefix_t i_instr4_t|])
-                 & from_instr4
-                 & _); clear_ast_defs; unfold from_instr4;
-    unfold invertible; split; [unfold printable | unfold parsable];
-    compute [snd fst]; intros.
-    - abstract ins_com_printable.
-    - abstract (destruct w as [p ins]; destruct ins; ins_com_parsable).
-  Defined.
+  Definition prefix_grammar_lock_with_op_override :=
+    option_perm3_variation lock_p segment_override_p op_override_p @
+     (fun p => match p with (l, (s, op)) =>
+                 mkPrefix l s op false %% prefix_t end).
 
   (** Instructions that can take prefixes in
-      prefix_grammar_lock_with_op_override.  NEG, NOT, and XCHG appear in
-      both instr_grammars_lock_with_op_override_env and
-      instr_grammars_lock_no_op_override_env since they allow op_override
-      prefix to be optional. *)
-  Definition prefix_lock_with_op_override_env : AST_Env i_instr5_t :=
-    {0, ADC_p true, (fun v => match v with (b,(op1,op2)) => I_ADC b op1 op2 end
-                          %% i_instr5_t)} :::
-    {1, ADD_p true, (fun v => match v with (b,(op1,op2)) => I_ADD b op1 op2 end
-                          %% i_instr5_t)} :::
-    {2, AND_p true, (fun v => match v with (b,(op1,op2)) => I_AND b op1 op2 end
-                          %% i_instr5_t)} :::
-    {3, NEG_p, (fun v => match v with (b,op) => I_NEG b op end
-                          %% i_instr5_t)} :::
-    {4, NOT_p, (fun v => match v with (b,op) => I_NOT b op end
-                          %% i_instr5_t)} :::
-    {5, OR_p true, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
-                          %% i_instr5_t)} :::
-    {6, SBB_p true, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
-                          %% i_instr5_t)} :::
-    {7, SUB_p true, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
-                          %% i_instr5_t)} :::
-    {8, XCHG_p, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
-                          %% i_instr5_t)} :::
-    {9, XOR_p true, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
-                          %% i_instr5_t)} :::
-    ast_env_nil.
+     prefix_grammar_lock_with_op_override: in lock_or_rep, only lock can be
+     used; segment override is optional; op_override prefix *must* be used
+     *)
+  Definition instr_grammars_lock_with_op_override := 
+    ADD_p true :: ADC_p true :: AND_p true :: NEG_p :: NOT_p :: OR_p true
+    :: SBB_p true :: SUB_p true :: XOR_p true :: XCHG_p :: nil.
+
+  Definition prefix_grammar_lock_no_op_override :=
+    option_perm2 lock_p segment_override_p @
+     (fun p => match p with (l, s) =>
+                 mkPrefix l s false false %% prefix_t end).
 
   (** Instructions that can take prefixes in
-      prefix_grammar_lock_no_op_override *)
-  Definition prefix_lock_no_op_override_env : AST_Env i_instr5_t :=
-    {20, ADC_p false, (fun v => match v with (b,(op1,op2)) => I_ADC b op1 op2 end
-                          %% i_instr5_t)} :::
-    {21, ADD_p false, (fun v => match v with (b,(op1,op2)) => I_ADD b op1 op2 end
-                          %% i_instr5_t)} :::
-    {22, AND_p false, (fun v => match v with (b,(op1,op2)) => I_AND b op1 op2 end
-                          %% i_instr5_t)} :::
-    {23, BTC_p, (fun v => match v with (op1,op2) => I_BTC op1 op2 end
-                          %% i_instr5_t)} :::
-    {24, BTR_p, (fun v => match v with (op1,op2) => I_BTR op1 op2 end
-                          %% i_instr5_t)} :::
-    {25, BTS_p, (fun v => match v with (op1,op2) => I_BTS op1 op2 end
-                          %% i_instr5_t)} :::
-    {26, CMPXCHG_p, (fun v => match v with (b,(op1,op2)) => I_CMPXCHG b op1 op2 end
-                          %% i_instr5_t)} :::
-    {27, DEC_p, (fun v => match v with (b,op) => I_DEC b op end
-                          %% i_instr5_t)} :::
-    {28, INC_p, (fun v => match v with (b,op) => I_INC b op end
-                          %% i_instr5_t)} :::
-    {29, NEG_p, (fun v => match v with (b,op) => I_NEG b op end
-                          %% i_instr5_t)} :::
-    {30, NOT_p, (fun v => match v with (b,op) => I_NOT b op end
-                          %% i_instr5_t)} :::
-    {31, OR_p false, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
-                          %% i_instr5_t)} :::
-    {32, SBB_p false, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
-                          %% i_instr5_t)} :::
-    {33, SUB_p false, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
-                          %% i_instr5_t)} :::
-    {34, XADD_p, (fun v => match v with (b,(op1,op2)) => I_XADD b op1 op2 end
-                          %% i_instr5_t)} :::
-    {35, XCHG_p, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
-                          %% i_instr5_t)} :::
-    {36, XOR_p false, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
-                          %% i_instr5_t)} :::
-    ast_env_nil.
+     prefix_grammar_lock_no_op_override; that is, in lock_or_rep, only lock
+     can be used; segment override is optional; and op_override prefix
+     *must not* be used *)
+  Definition instr_grammars_lock_no_op_override := 
+    ADD_p false :: ADC_p false :: AND_p false :: BTC_p :: BTR_p :: 
+    BTS_p :: CMPXCHG_p :: DEC_p :: INC_p :: NEG_p :: NOT_p :: OR_p false
+    :: SBB_p false :: SUB_p false :: XOR_p false :: XADD_p :: XCHG_p :: nil.
 
-  (** This set of instructions can take prefixes in 
-      prefix_grammar_seg_with_op_override. *)
-  Definition prefix_seg_with_op_override_env : AST_Env i_instr5_t :=
-    {40, CMP_p true, (fun v => match v with (b,(op1,op2)) => I_CMP b op1 op2 end
-                          %% i_instr5_t)} :::
-    {41, IMUL_p true, (fun v => match v with (b,(op1,(opopt,iopt))) =>
-                                   I_IMUL b op1 opopt iopt end
-                          %% i_instr5_t)} :::
-    {42, MOV_p true, (fun v => match v with (b,(op1,op2)) => I_MOV b op1 op2 end
-                          %% i_instr5_t)} :::
-    {43, TEST_p true, (fun v => match v with (b,(op1,op2)) => I_TEST b op1 op2 end
-                          %% i_instr5_t)} :::
-    ast_env_nil.
+  Definition prefix_grammar_seg_with_op_override := 
+    option_perm2_variation segment_override_p op_override_p @
+     (fun p => match p with (s, op) =>
+                 mkPrefix None s op false %% prefix_t end).
 
+  (* this set of instructions can take prefixes in 
+     prefix_grammar_seg_with_op_override;
+     that is, it cannot take a lock_or_rep prefix, must take op_override
+     prefix, can optionally take segment-override prefix *)
+  Definition instr_grammars_seg_with_op_override := 
+    CMP_p true ::  IMUL_p true :: MOV_p true :: TEST_p true :: nil.
 
-  (** This set of instructions can take prefixes in
-      prefix_grammar_seg_with_op_override; there are more instructions in
-      this category. *)
-  Definition prefix_only_seg_override_env : AST_Env i_instr5_t :=
-    {50, CMP_p false, (fun v => match v with (b,(op1,op2)) => I_CMP b op1 op2 end
-                          %% i_instr5_t)} :::
-    {51, IMUL_p false, (fun v => match v with (b,(op1,(opopt,iopt))) =>
-                                   I_IMUL b op1 opopt iopt end
-                          %% i_instr5_t)} :::
-    {52, MOV_p false, (fun v => match v with (b,(op1,op2)) => I_MOV b op1 op2 end
-                          %% i_instr5_t)} :::
-    {53, TEST_p false, (fun v => match v with (b,(op1,op2)) => I_TEST b op1 op2 end
-                          %% i_instr5_t)} :::
-    ast_env_nil.
+  Definition prefix_grammar_seg_op_override :=
+    option_perm2 segment_override_p op_override_p @
+     (fun p => match p with (s, op) =>
+                 mkPrefix None s (opt2b op false) false %% prefix_t end).
 
+  (* this set of instructions can take prefixes in 
+     prefix_grammar_seg_op_override;
+     that is, it cannot take a lock_or_rep prefix, but can
+     optionally take segment or op override prefix *)
+  Definition instr_grammars_seg_op_override := 
+    CDQ_p :: CMOVcc_p :: CWDE_p :: DIV_p :: IDIV_p :: 
+    MOVSX_p :: MOVZX_p :: MUL_p :: NOP_p :: 
+    ROL_p :: ROR_p :: SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p :: nil.
 
-  Hint Unfold prefix_lock_with_op_override_env prefix_lock_no_op_override_env
-       prefix_seg_with_op_override_env prefix_only_seg_override_env : env_unfold_db.
+  Definition prefix_grammar_seg_override :=
+    option_perm segment_override_p @
+     (fun s => mkPrefix None s false false %% prefix_t).
 
-  Definition i_instr5_grammar_env' := 
-    (ast_env_cat prefix_grammar_lock_with_op_override
-       prefix_lock_with_op_override_env)
-      +++
-    (ast_env_cat prefix_grammar_lock_no_op_override
-       prefix_lock_no_op_override_env)
-      +++
-    (ast_env_cat prefix_grammar_seg_with_op_override
-       prefix_seg_with_op_override_env)
-      +++
-    (ast_env_cat prefix_grammar_only_seg_override
-       prefix_only_seg_override_env).
+  (* this set of instructions can take only the seg_override prefix *)
+  Definition instr_grammars_seg_override := 
+    AAA_p :: AAD_p :: AAM_p :: AAS_p :: CMP_p false ::
+    ARPL_p :: BOUND_p :: BSF_p :: BSR_p :: BSWAP_p :: BT_p :: 
+    CALL_p :: CLC_p :: CLD_p :: CLI_p :: CLTS_p :: CMC_p :: CPUID_p :: DAA_p :: DAS_p ::
+    HLT_p :: IMUL_p false :: IN_p :: INTn_p :: INT_p :: INTO_p :: INVD_p :: INVLPG_p :: IRET_p :: Jcc_p :: JCXZ_p :: JMP_p :: 
+    LAHF_p :: LAR_p :: LDS_p :: LEA_p :: LEAVE_p :: LES_p :: LFS_p :: LGDT_p :: LGS_p :: LIDT_p :: LLDT_p :: LMSW_p :: 
+    LOOP_p :: LOOPZ_p :: LOOPNZ_p :: LSL_p :: LSS_p :: LTR_p :: MOV_p false :: MOVCR_p :: MOVDR_p :: 
+    MOVSR_p :: MOVBE_p ::  OUT_p :: POP_p :: POPSR_p :: POPA_p :: POPF_p ::
+    PUSH_p :: PUSHSR_p :: PUSHA_p :: PUSHF_p :: RCL_p :: RCR_p :: RDMSR_p :: RDPMC_p :: RDTSC_p :: RDTSCP_p :: 
+    RSM_p :: SAHF_p :: SETcc_p :: SGDT_p :: SIDT_p :: SLDT_p :: SMSW_p :: STC_p :: STD_p :: STI_p :: 
+    STR_p :: TEST_p false :: UD2_p :: VERR_p :: VERW_p :: WBINVD_p :: WRMSR_p :: XLAT_p :: F2XM1_p ::
+    FABS_p :: FADD_p :: FADDP_p :: FBLD_p :: FBSTP_p :: FCHS_p :: FCMOVcc_p :: FCOM_p :: FCOMP_p :: FCOMPP_p :: FCOMIP_p :: FCOS_p :: FDECSTP_p ::
+    FDIV_p :: FDIVP_p :: FDIVR_p :: FDIVRP_p :: FFREE_p :: FIADD_p :: FICOM_p :: FICOMP_p :: FIDIV_p :: FIDIVR_p :: FILD_p :: FIMUL_p :: FINCSTP_p
+    :: FIST_p :: FISTP_p :: FISUB_p :: FISUBR_p :: FLD_p :: FLD1_p :: FLDCW_p :: FLDENV_p :: FLDL2E_p :: FLDL2T_p :: FLDLG2_p :: FLDLN2_p
+    :: FLDPI_p :: FLDZ_p :: FMUL_p :: FMULP_p :: FNCLEX_p :: FNINIT_p :: FNOP_p :: FNSAVE_p :: FNSTCW_p :: FNSTSW_p :: FPATAN_p :: FPREM_p :: FPREM1_p :: FPTAN_p :: FRNDINT_p :: FRSTOR_p :: (* FSAVE_p :: *) 
+    FSCALE_p :: 
+    FSIN_p :: FSINCOS_p :: FSQRT_p :: FST_p :: (* FSTCW_p :: *) FSTENV_p :: FSTP_p :: FSUB_p :: FSUBP_p :: FSUBR_p :: FSUBRP_p ::FTST_p ::
+    FUCOM_p :: FUCOMP_p :: FUCOMPP_p :: FUCOMI_p :: FUCOMIP_p :: FXAM_p :: FXCH_p :: FXTRACT_p :: FYL2X_p :: FYL2XP1_p :: FWAIT_p :: 
+    EMMS_p :: MOVD_p :: MOVQ_p :: PACKSSDW_p :: PACKSSWB_p :: PACKUSWB_p :: PADD_p :: PADDS_p :: PADDUS_p :: PAND_p :: PANDN_p :: PCMPEQ_p :: PCMPGT_p :: 
+    PMADDWD_p :: PMULHUW_p :: PMULHW_p :: PMULLW_p :: POR_p :: PSLL_p :: PSRA_p :: PSRL_p :: PSUB_p :: PSUBS_p :: PSUBUS_p :: PUNPCKH_p :: PUNPCKL_p :: PXOR_p :: 
+    ADDPS_p :: ADDSS_p :: ANDNPS_p :: ANDPS_p :: CMPPS_p :: CMPSS_p :: COMISS_p :: CVTPI2PS_p :: CVTPS2PI_p :: CVTSI2SS_p :: CVTSS2SI_p :: CVTTPS2PI_p :: CVTTSS2SI_p ::
+    DIVPS_p :: DIVSS_p :: LDMXCSR_p :: MAXPS_p :: MAXSS_p :: MINPS_p :: MINSS_p :: MOVAPS_p :: MOVHLPS_p :: MOVLPS_p :: MOVMSKPS_p :: MOVSS_p :: MOVUPS_p :: MULPS_p ::
+    MULSS_p :: ORPS_p :: RCPPS_p :: RCPSS_p :: RSQRTPS_p :: RSQRTSS_p :: SHUFPS_p :: SQRTPS_p :: SQRTSS_p :: STMXCSR_p :: SUBPS_p :: SUBSS_p :: UCOMISS_p :: UNPCKHPS_p ::
+    UNPCKLPS_p :: XORPS_p :: PAVGB_p :: PEXTRW_p :: PINSRW_p :: PMAXSW_p :: PMAXUB_p :: PMINSW_p :: PMINUB_p :: PMOVMSKB_p :: PSADBW_p :: PSHUFW_p :: MASKMOVQ_p ::
+    MOVNTPS_p :: MOVNTQ_p :: PREFETCHT0_p :: PREFETCHT1_p :: PREFETCHT2_p :: PREFETCHNTA_p :: SFENCE_p :: nil.
 
-  Definition i_instr5_grammar_env : AST_Env (pair_t prefix_t i_instr5_t).
-    let ige := eval cbv beta
-                    delta [i_instr5_grammar_env'
-                           prefix_lock_with_op_override_env
-                           prefix_lock_no_op_override_env
-                           prefix_seg_with_op_override_env
-                           prefix_only_seg_override_env
-                           ast_env_app ast_env_cat]
-                    iota zeta 
-               in i_instr5_grammar_env' in
-    exact(ige).
-  Defined.
+  Local Open Scope list_scope.
 
-  Definition i_instr5_grammar_type : type.
-    let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
-    let t:=gen_ast_type ige in exact(t).
-  Defined.
+  Definition instruction_grammar_list := 
+    (List.map (fun (p:grammar instruction_t) => prefix_grammar_rep $ p)
+      instr_grammars_rep) ++
+    (List.map (fun (p:grammar instruction_t) => prefix_grammar_rep_or_repn $ p)
+      instr_grammars_rep_or_repn) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_lock_with_op_override $ p)
+      instr_grammars_lock_with_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_lock_no_op_override $ p)
+      instr_grammars_lock_no_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_seg_with_op_override $ p)
+      instr_grammars_seg_with_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_seg_op_override $ p)
+      instr_grammars_seg_op_override) ++
+    (List.map (fun (p:grammar instruction_t)
+                => prefix_grammar_seg_override $ p)
+      instr_grammars_seg_override).
 
-  Definition from_instr5 (u:prefix * i_instr5) : option [|i_instr5_grammar_type|].
-    intro.
-    refine (match snd u with
-              | I_ADC a1 a2 a3 => _
-              | I_ADD a1 a2 a3 => _
-              | I_AND a1 a2 a3 => _
-              | I_BTC a1 a2 => _
-              | I_BTR a1 a2 => _
-              | I_BTS a1 a2 => _
-              | I_CMP a1 a2 a3 => _
-              | I_CMPXCHG a1 a2 a3 => _
-              | I_DEC a1 a2 => _
-              | I_IMUL a1 a2 a3 a4 => _
-              | I_INC a1 a2 => _
-              | I_MOV a1 a2 a3 => _
-              | I_NEG a1 a2 => _
-              | I_NOT a1 a2 => _
-              | I_OR a1 a2 a3 => _
-              | I_SBB a1 a2 a3 => _
-              | I_SUB a1 a2 a3 => _
-              | I_TEST a1 a2 a3 => _
-              | I_XADD a1 a2 a3 => _
-              | I_XCHG a1 a2 a3 => _
-              | I_XOR a1 a2 a3 => _
-            end).
-    Local Ltac gen5 lbl u arg :=
-      let ige := eval unfold i_instr5_grammar_env
-                 in i_instr5_grammar_env in
-      let t := eval unfold i_instr5_grammar_type
-                 in i_instr5_grammar_type in
-      let f:=gen_rev_case_lbl lbl ige t in
-      let f1 := eval simpl in f in
-      exact (Some (f1 (fst u, arg))).
-    Local Ltac gen_op_override lbl1 lbl2 u arg := 
-      refine (if (op_override (fst u)) then _ else _);
-      [gen5 lbl1 u arg | gen5 lbl2 u arg].
-    * (* ADC *) gen_op_override 0 20 u (a1,(a2,a3)).
-    * (* ADD *)  gen_op_override 1 21 u (a1,(a2,a3)).
-    * (* AND *)  gen_op_override 2 22 u (a1,(a2,a3)).
-    * (* BTC *) gen5 23 u (a1,a2).
-    * (* BTR *) gen5 24 u (a1,a2).
-    * (* BTS *) gen5 25 u (a1,a2).
-    * (* CMP *)  gen_op_override 40 50 u (a1,(a2,a3)).
-    * (* CMPXCHG *) gen5 26 u (a1,(a2,a3)).
-    * (* DEC *) gen5 27 u (a1,a2).
-    * (* IMUL *)  gen_op_override 41 51 u (a1,(a2,(a3,a4))).
-    * (* INC *) gen5 28 u (a1,a2).
-    * (* MOV *)  gen_op_override 42 52 u (a1,(a2,a3)).
-    * (* NEG *) gen_op_override 3 29 u (a1,a2).
-    * (* NOT *) gen_op_override 4 30 u (a1,a2).
-    * (* OR *)  gen_op_override 5 31 u (a1,(a2,a3)).
-    * (* SBB *)  gen_op_override 6 32 u (a1,(a2,a3)).
-    * (* SUB *)  gen_op_override 7 33 u (a1,(a2,a3)).
-    * (* TEST *)  gen_op_override 43 53 u (a1,(a2,a3)).
-    * (* XADD *) gen5 34 u (a1,(a2,a3)).
-    * (* XCHG *) gen_op_override 8 35 u (a1,(a2,a3)).
-    * (* XOR *)  gen_op_override 9 36 u (a1,(a2,a3)).
-  Defined.
-    
-  Definition i_instr5_grammar : wf_bigrammar (pair_t prefix_t i_instr5_t).
-    let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
-    let g := gen_ast_grammar ige in pose (gr:=g);
-    let m := gen_ast_map ige in pose (mp:=m).
-    refine (gr @ (mp: _ -> [|pair_t prefix_t i_instr5_t|])
-               & from_instr5
-               & _); clear_ast_defs; unfold from_instr5;
-    unfold invertible; split; [unfold printable | unfold parsable];
-    compute [snd fst]; intros.
-    - abstract ins_com_printable.
-    - abstract (destruct w as [p ins]; destruct ins; ins_com_parsable).
-  Defined.
-
-  (** This set of instructions can take prefixes in
-      prefix_grammar_seg_op_override. *)
-  Definition i_instr6_env : AST_Env i_instr6_t := 
-    {0, CDQ_p, (fun v => I_CDQ %% i_instr6_t)} :::
-    {1, CMOVcc_p, (fun v => match v with (ct,(op1,op2)) => I_CMOVcc ct op1 op2
-                          end %% i_instr6_t)} :::
-    {2, CWDE_p, (fun v => I_CWDE %% i_instr6_t)} :::
-    {3, DIV_p, (fun v => match v with (w,op1) => I_DIV w op1
-                          end %% i_instr6_t)} :::
-    {4, IDIV_p, (fun v => match v with (w,op1) => I_IDIV w op1
-                          end %% i_instr6_t)} :::
-    {5, MOVSX_p, (fun v => match v with (w,(op1,op2)) => I_MOVSX w op1 op2
-                          end %% i_instr6_t)} :::
-    {6, MOVZX_p, (fun v => match v with (w,(op1,op2)) => I_MOVZX w op1 op2
-                          end %% i_instr6_t)} :::
-    {7, MUL_p, (fun v => match v with (w,op1) => I_MUL w op1
-                          end %% i_instr6_t)} :::
-    {8, NOP_p, (fun op => I_NOP op %% i_instr6_t)} :::
-    {9, ROL_p, (fun v => match v with (w,(op1,ri)) => I_ROL w op1 ri
-                          end %% i_instr6_t)} :::
-    {10, ROR_p, (fun v => match v with (w,(op1,ri)) => I_ROR w op1 ri
-                          end %% i_instr6_t)} :::
-    {11, SAR_p, (fun v => match v with (w,(op1,ri)) => I_SAR w op1 ri
-                          end %% i_instr6_t)} :::
-    {12, SHL_p, (fun v => match v with (w,(op1,ri)) => I_SHL w op1 ri
-                          end %% i_instr6_t)} :::
-    {13, SHLD_p, (fun v => match v with (op1,(r,ri)) => I_SHLD op1 r ri
-                          end %% i_instr6_t)} :::
-    {14, SHR_p, (fun v => match v with (w,(op1,ri)) => I_SHR w op1 ri
-                          end %% i_instr6_t)} :::
-    {15, SHRD_p, (fun v => match v with (op1,(r,ri)) => I_SHRD op1 r ri
-                          end %% i_instr6_t)} :::
-    ast_env_nil.
-  Hint Unfold i_instr6_env: env_unfold_db.
-
-  Definition i_instr6_p : wf_bigrammar i_instr6_t.
-    gen_ast_defs i_instr6_env.
-    refine (gr @ (mp: _ -> [|i_instr6_t|])
-               & (fun u =>
-                    match u with
-                      | I_CDQ => case0 tt
-                      | I_CMOVcc ct op1 op2 => case1 (ct,(op1,op2))
-                      | I_CWDE => case2 tt
-                      | I_DIV w op1 => case3 (w,op1)
-                      | I_IDIV w op1 => case4 (w,op1)
-                      | I_MOVSX w op1 op2 => case5 (w,(op1,op2))
-                      | I_MOVZX w op1 op2 => case6 (w,(op1,op2))
-                      | I_MUL w op1 => case7 (w,op1)
-                      | I_NOP op => case8 op
-                      | I_ROL w op1 ri => case9 (w,(op1,ri))
-                      | I_ROR w op1 ri => case10 (w,(op1,ri))
-                      | I_SAR w op1 ri => case11 (w,(op1,ri))
-                      | I_SHL w op1 ri => case12 (w,(op1,ri))
-                      | I_SHLD op1 r ri => case13 (op1,(r,ri))
-                      | I_SHR w op1 ri => case14 (w,(op1,ri))
-                      | I_SHRD op1 r ri => case15 (op1,(r,ri))
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition f_instr1_env : AST_Env f_instr1_t := 
-    {0, F2XM1_p, (fun v => F_F2XM1 %% f_instr1_t)} :::
-    {1, FABS_p, (fun v => F_FABS %% f_instr1_t)} :::
-    {2, FADD_p, (fun v => match v with (z,op1) => F_FADD z op1
-                          end %% f_instr1_t)} :::
-    {3, FADDP_p, (fun op => F_FADDP op %% f_instr1_t)} :::
-    {4, FBLD_p, (fun op => F_FBLD op %% f_instr1_t)} :::
-    {5, FBSTP_p, (fun op => F_FBSTP op %% f_instr1_t)} :::
-    {6, FCHS_p, (fun v => F_FCHS %% f_instr1_t)} :::
-    {7, FCMOVcc_p, (fun v => match v with (ct,op1) => F_FCMOVcc ct op1
-                          end %% f_instr1_t)} :::
-    {8, FCOM_p, (fun op => F_FCOM op %% f_instr1_t)} :::
-    {9, FCOMP_p, (fun op => F_FCOMP op %% f_instr1_t)} :::
-    {10, FCOMPP_p, (fun v => F_FCOMPP %% f_instr1_t)} :::
-    {11, FCOMIP_p, (fun op => F_FCOMIP op %% f_instr1_t)} :::
-    {12, FCOS_p, (fun v => F_FCOS %% f_instr1_t)} :::
-    {13, FDECSTP_p, (fun v => F_FDECSTP %% f_instr1_t)} :::
-    {14, FDIV_p, (fun v => match v with (z,op1) => F_FDIV z op1
-                          end %% f_instr1_t)} :::
-    {15, FDIVP_p, (fun op => F_FDIVP op %% f_instr1_t)} :::
-    {16, FDIVR_p, (fun v => match v with (z,op1) => F_FDIVR z op1
-                          end %% f_instr1_t)} :::
-    {17, FDIVRP_p, (fun op => F_FDIVRP op %% f_instr1_t)} :::
-    {18, FFREE_p, (fun op => F_FFREE op %% f_instr1_t)} :::
-    {19, FIADD_p, (fun op => F_FIADD op %% f_instr1_t)} :::
-    {20, FICOM_p, (fun op => F_FICOM op %% f_instr1_t)} :::
-    {21, FICOMP_p, (fun op => F_FICOMP op %% f_instr1_t)} :::
-    {22, FIDIV_p, (fun op => F_FIDIV op %% f_instr1_t)} :::
-    {23, FIDIVR_p, (fun op => F_FIDIVR op %% f_instr1_t)} :::
-    {24, FILD_p, (fun op => F_FILD op %% f_instr1_t)} :::
-    {25, FIMUL_p, (fun op => F_FIMUL op %% f_instr1_t)} :::
-    {26, FINCSTP_p, (fun v => F_FINCSTP %% f_instr1_t)} :::
-    {27, FIST_p, (fun op => F_FIST op %% f_instr1_t)} :::
-    {28, FISTP_p, (fun op => F_FISTP op %% f_instr1_t)} :::
-    {29, FISUB_p, (fun op => F_FISUB op %% f_instr1_t)} :::
-    {30, FISUBR_p, (fun op => F_FISUBR op %% f_instr1_t)} :::
-    {31, FLD_p, (fun op => F_FLD op %% f_instr1_t)} :::
-    {32, FLD1_p, (fun v => F_FLD1 %% f_instr1_t)} :::
-    {33, FLDCW_p, (fun op => F_FLDCW op %% f_instr1_t)} :::
-    {34, FLDENV_p, (fun op => F_FLDENV op %% f_instr1_t)} :::
-    {35, FLDL2E_p, (fun v => F_FLDL2E %% f_instr1_t)} :::
-    {36, FLDL2T_p, (fun v => F_FLDL2T %% f_instr1_t)} :::
-    {37, FLDLG2_p, (fun v => F_FLDLG2 %% f_instr1_t)} :::
-    {38, FLDLN2_p, (fun v => F_FLDLN2 %% f_instr1_t)} :::
-    {39, FLDPI_p, (fun v => F_FLDPI %% f_instr1_t)} :::
-    {40, FLDZ_p, (fun v => F_FLDZ %% f_instr1_t)} :::
-    {41, FMUL_p, (fun v => match v with (z,op1) => F_FMUL z op1
-                          end %% f_instr1_t)} :::
-    {42, FMULP_p, (fun op => F_FMULP op %% f_instr1_t)} :::
-    ast_env_nil.
-  Hint Unfold f_instr1_env: env_unfold_db.
-
-  Definition f_instr1_p : wf_bigrammar f_instr1_t.
-    gen_ast_defs f_instr1_env.
-    refine (gr @ (mp: _ -> [|f_instr1_t|])
-               & (fun u =>
-                    match u with
-                      | F_F2XM1 => case0 tt
-                      | F_FABS => case1 tt
-                      | F_FADD z op1 => case2 (z,op1)
-                      | F_FADDP op => case3 op
-                      | F_FBLD op => case4 op
-                      | F_FBSTP op => case5 op
-                      | F_FCHS => case6 tt
-                      | F_FCMOVcc ct op => case7 (ct,op)
-                      | F_FCOM op => case8 op
-                      | F_FCOMP op => case9 op
-                      | F_FCOMPP => case10 tt
-                      | F_FCOMIP op => case11 op
-                      | F_FCOS => case12 tt
-                      | F_FDECSTP => case13 tt
-                      | F_FDIV z op => case14 (z,op)
-                      | F_FDIVP op => case15 op
-                      | F_FDIVR z op => case16 (z,op)
-                      | F_FDIVRP op => case17 op
-                      | F_FFREE op => case18 op
-                      | F_FIADD op => case19 op
-                      | F_FICOM op => case20 op
-                      | F_FICOMP op => case21 op
-                      | F_FIDIV op => case22 op
-                      | F_FIDIVR op => case23 op
-                      | F_FILD op => case24 op
-                      | F_FIMUL op => case25 op
-                      | F_FINCSTP => case26 tt
-                      | F_FIST op => case27 op
-                      | F_FISTP op => case28 op
-                      | F_FISUB op => case29 op
-                      | F_FISUBR op => case30 op
-                      | F_FLD op => case31 op
-                      | F_FLD1 => case32 tt
-                      | F_FLDCW op => case33 op
-                      | F_FLDENV op => case34 op
-                      | F_FLDL2E => case35 tt
-                      | F_FLDL2T => case36 tt
-                      | F_FLDLG2 => case37 tt
-                      | F_FLDLN2 => case38 tt
-                      | F_FLDPI => case39 tt
-                      | F_FLDZ => case40 tt
-                      | F_FMUL z op => case41 (z,op)
-                      | F_FMULP op => case42 op
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition f_instr2_env : AST_Env f_instr2_t := 
-    {0, FNCLEX_p, (fun v => F_FNCLEX %% f_instr2_t)} :::
-    {1, FNINIT_p, (fun v => F_FNINIT %% f_instr2_t)} :::
-    {2, FNOP_p, (fun v => F_FNOP %% f_instr2_t)} :::
-    {3, FNSAVE_p, (fun op => F_FNSAVE op %% f_instr2_t)} :::
-    {4, FNSTCW_p, (fun op => F_FNSTCW op %% f_instr2_t)} :::
-    {5, FNSTSW_p, (fun op => F_FNSTSW op %% f_instr2_t)} :::
-    {6, FPATAN_p, (fun v => F_FPATAN %% f_instr2_t)} :::
-    {7, FPREM_p, (fun v => F_FPREM %% f_instr2_t)} :::
-    {8, FPREM1_p, (fun v => F_FPREM1 %% f_instr2_t)} :::
-    {9, FPTAN_p, (fun v => F_FPTAN %% f_instr2_t)} :::
-    {10, FRNDINT_p, (fun v => F_FRNDINT %% f_instr2_t)} :::
-    {11, FRSTOR_p, (fun op => F_FRSTOR op %% f_instr2_t)} :::
-    {12, FSCALE_p, (fun v => F_FSCALE %% f_instr2_t)} :::
-    {13, FSIN_p, (fun v => F_FSIN %% f_instr2_t)} :::
-    {14, FSINCOS_p, (fun v => F_FSINCOS %% f_instr2_t)} :::
-    {15, FSQRT_p, (fun v => F_FSQRT %% f_instr2_t)} :::
-    {16, FST_p, (fun op => F_FST op %% f_instr2_t)} :::
-    {17, FSTENV_p, (fun op => F_FSTENV op %% f_instr2_t)} :::
-    {18, FSTP_p, (fun op => F_FSTP op %% f_instr2_t)} :::
-    {19, FSUB_p, (fun v => match v with (z,op) => F_FSUB z op 
-                           end %% f_instr2_t)} :::
-    {20, FSUBP_p, (fun op => F_FSUBP op %% f_instr2_t)} :::
-    {21, FSUBR_p, (fun v => match v with (z,op) => F_FSUBR z op 
-                           end %% f_instr2_t)} :::
-    {22, FSUBRP_p, (fun op => F_FSUBRP op %% f_instr2_t)} :::
-    {23, FTST_p, (fun v => F_FTST %% f_instr2_t)} :::
-    {24, FUCOM_p, (fun op => F_FUCOM op %% f_instr2_t)} :::
-    {25, FUCOMP_p, (fun op => F_FUCOMP op %% f_instr2_t)} :::
-    {26, FUCOMPP_p, (fun v => F_FUCOMPP %% f_instr2_t)} :::
-    {27, FUCOMI_p, (fun op => F_FUCOMI op %% f_instr2_t)} :::
-    {28, FUCOMIP_p, (fun op => F_FUCOMIP op %% f_instr2_t)} :::
-    {29, FXAM_p, (fun v => F_FXAM %% f_instr2_t)} :::
-    {30, FXCH_p, (fun op => F_FXCH op %% f_instr2_t)} :::
-    {31, FXTRACT_p, (fun v => F_FXTRACT %% f_instr2_t)} :::
-    {32, FYL2X_p, (fun v => F_FYL2X %% f_instr2_t)} :::
-    {33, FYL2XP1_p, (fun v => F_FYL2XP1 %% f_instr2_t)} :::
-    {34, FWAIT_p, (fun v => F_FWAIT %% f_instr2_t)} :::
-    ast_env_nil.
-  Hint Unfold f_instr2_env: env_unfold_db.
-
-  Definition f_instr2_p : wf_bigrammar f_instr2_t.
-    gen_ast_defs f_instr2_env.
-    refine (gr @ (mp: _ -> [|f_instr2_t|])
-               & (fun u =>
-                    match u with
-                      | F_FNCLEX => case0 tt
-                      | F_FNINIT => case1 tt
-                      | F_FNOP => case2 tt
-                      | F_FNSAVE op => case3 op
-                      | F_FNSTCW op => case4 op
-                      | F_FNSTSW op => case5 op
-                      | F_FPATAN => case6 tt
-                      | F_FPREM => case7 tt
-                      | F_FPREM1 => case8 tt
-                      | F_FPTAN => case9 tt
-                      | F_FRNDINT => case10 tt
-                      | F_FRSTOR op => case11 op
-                      | F_FSCALE => case12 tt
-                      | F_FSIN => case13 tt
-                      | F_FSINCOS => case14 tt
-                      | F_FSQRT => case15 tt
-                      | F_FST op => case16 op
-                      | F_FSTENV op => case17 op
-                      | F_FSTP op => case18 op
-                      | F_FSUB z op => case19 (z,op)
-                      | F_FSUBP op => case20 op
-                      | F_FSUBR z op => case21 (z,op)
-                      | F_FSUBRP op => case22 op
-                      | F_FTST => case23 tt
-                      | F_FUCOM op => case24 op
-                      | F_FUCOMP op => case25 op
-                      | F_FUCOMPP => case26 tt
-                      | F_FUCOMI op => case27 op
-                      | F_FUCOMIP op => case28 op
-                      | F_FXAM => case29 tt
-                      | F_FXCH op => case30 op
-                      | F_FXTRACT => case31 tt
-                      | F_FYL2X => case32 tt
-                      | F_FYL2XP1 => case33 tt
-                      | F_FWAIT => case34 tt
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition m_instr_env : AST_Env m_instr_t := 
-    {0, EMMS_p, (fun v => M_EMMS %% m_instr_t)} :::
-    {1, MOVD_p, (fun v => match v with (op1,op2) => M_MOVD op1 op2
-                          end %% m_instr_t)} :::
-    {2, MOVQ_p, (fun v => match v with (op1,op2) => M_MOVQ op1 op2
-                          end %% m_instr_t)} :::
-    {3, PACKSSDW_p, (fun v => match v with (op1,op2) => M_PACKSSDW op1 op2
-                          end %% m_instr_t)} :::
-    {4, PACKSSWB_p, (fun v => match v with (op1,op2) => M_PACKSSWB op1 op2
-                          end %% m_instr_t)} :::
-    {5, PACKUSWB_p, (fun v => match v with (op1,op2) => M_PACKUSWB op1 op2
-                          end %% m_instr_t)} :::
-    {6, PADD_p, (fun v => match v with (gg,(op1,op2)) => M_PADD gg op1 op2
-                          end %% m_instr_t)} :::
-    {7, PADDS_p, (fun v => match v with (gg,(op1,op2)) => M_PADDS gg op1 op2
-                          end %% m_instr_t)} :::
-    {8, PADDUS_p, (fun v => match v with (gg,(op1,op2)) => M_PADDUS gg op1 op2
-                          end %% m_instr_t)} :::
-    {9, PAND_p, (fun v => match v with (op1,op2) => M_PAND op1 op2
-                          end %% m_instr_t)} :::
-    {10, PANDN_p, (fun v => match v with (op1,op2) => M_PANDN op1 op2
-                          end %% m_instr_t)} :::
-    {11, PCMPEQ_p, (fun v => match v with (gg,(op1,op2)) => M_PCMPEQ gg op1 op2
-                          end %% m_instr_t)} :::
-    {12, PCMPGT_p, (fun v => match v with (gg,(op1,op2)) => M_PCMPGT gg op1 op2
-                          end %% m_instr_t)} :::
-    {13, PMADDWD_p, (fun v => match v with (op1,op2) => M_PMADDWD op1 op2
-                          end %% m_instr_t)} :::
-    {14, PMULHUW_p, (fun v => match v with (op1,op2) => M_PMULHUW op1 op2
-                          end %% m_instr_t)} :::
-    {15, PMULHW_p, (fun v => match v with (op1,op2) => M_PMULHW op1 op2
-                          end %% m_instr_t)} :::
-    {16, PMULLW_p, (fun v => match v with (op1,op2) => M_PMULLW op1 op2
-                          end %% m_instr_t)} :::
-    {17, POR_p, (fun v => match v with (op1,op2) => M_POR op1 op2
-                          end %% m_instr_t)} :::
-    {18, PSLL_p, (fun v => match v with (gg,(op1,op2)) => M_PSLL gg op1 op2
-                          end %% m_instr_t)} :::
-    {19, PSRA_p, (fun v => match v with (gg,(op1,op2)) => M_PSRA gg op1 op2
-                          end %% m_instr_t)} :::
-    {20, PSRL_p, (fun v => match v with (gg,(op1,op2)) => M_PSRL gg op1 op2
-                          end %% m_instr_t)} :::
-    {20, PSUB_p, (fun v => match v with (gg,(op1,op2)) => M_PSUB gg op1 op2
-                          end %% m_instr_t)} :::
-    {22, PSUBS_p, (fun v => match v with (gg,(op1,op2)) => M_PSUBS gg op1 op2
-                          end %% m_instr_t)} :::
-    {23, PSUBUS_p, (fun v => match v with (gg,(op1,op2)) => M_PSUBUS gg op1 op2
-                          end %% m_instr_t)} :::
-    {24, PUNPCKH_p, (fun v => match v with (gg,(op1,op2)) => M_PUNPCKH gg op1 op2
-                          end %% m_instr_t)} :::
-    {25, PUNPCKL_p, (fun v => match v with (gg,(op1,op2)) => M_PUNPCKL gg op1 op2
-                          end %% m_instr_t)} :::
-    {26, PXOR_p, (fun v => match v with (op1,op2) => M_PXOR op1 op2
-                          end %% m_instr_t)} :::
-    ast_env_nil.
-  Hint Unfold m_instr_env: env_unfold_db.
-
-  Definition m_instr_p : wf_bigrammar m_instr_t.
-    gen_ast_defs m_instr_env.
-    refine (gr @ (mp: _ -> [|m_instr_t|])
-               & (fun u =>
-                    match u with
-                      | M_EMMS => case0 tt
-                      | M_MOVD op1 op2 => case1 (op1,op2)
-                      | M_MOVQ op1 op2 => case2 (op1,op2)
-                      | M_PACKSSDW op1 op2 => case3 (op1,op2)
-                      | M_PACKSSWB op1 op2 => case4 (op1,op2)
-                      | M_PACKUSWB op1 op2 => case5 (op1,op2)
-                      | M_PADD gg op1 op2 => case6 (gg,(op1,op2))
-                      | M_PADDS gg op1 op2 => case7 (gg,(op1,op2))
-                      | M_PADDUS gg op1 op2 => case8 (gg,(op1,op2))
-                      | M_PAND op1 op2 => case9 (op1,op2)
-                      | M_PANDN op1 op2 => case10 (op1,op2)
-                      | M_PCMPEQ gg op1 op2 => case11 (gg,(op1,op2))
-                      | M_PCMPGT gg op1 op2 => case12 (gg,(op1,op2))
-                      | M_PMADDWD op1 op2 => case13 (op1,op2)
-                      | M_PMULHUW op1 op2 => case14 (op1,op2)
-                      | M_PMULHW op1 op2 => case15 (op1,op2)
-                      | M_PMULLW op1 op2 => case16 (op1,op2)
-                      | M_POR op1 op2 => case17 (op1,op2)
-                      | M_PSLL gg op1 op2 => case18 (gg,(op1,op2))
-                      | M_PSRA gg op1 op2 => case19 (gg,(op1,op2))
-                      | M_PSRL gg op1 op2 => case20 (gg,(op1,op2))
-                      | M_PSUB gg op1 op2 => case21 (gg,(op1,op2))
-                      | M_PSUBS gg op1 op2 => case22 (gg,(op1,op2))
-                      | M_PSUBUS gg op1 op2 => case23 (gg,(op1,op2))
-                      | M_PUNPCKH gg op1 op2 => case24 (gg,(op1,op2))
-                      | M_PUNPCKL gg op1 op2 => case25 (gg,(op1,op2))
-                      | M_PXOR op1 op2 => case26 (op1,op2)
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition s_instr1_env : AST_Env s_instr1_t := 
-    {0, ADDPS_p, (fun v => match v with (op1,op2) => S_ADDPS op1 op2
-                          end %% s_instr1_t)} :::
-    {1, ADDSS_p, (fun v => match v with (op1,op2) => S_ADDSS op1 op2
-                          end %% s_instr1_t)} :::
-    {2, ANDNPS_p, (fun v => match v with (op1,op2) => S_ANDNPS op1 op2
-                          end %% s_instr1_t)} :::
-    {3, ANDPS_p, (fun v => match v with (op1,op2) => S_ANDPS op1 op2
-                          end %% s_instr1_t)} :::
-    {4, CMPPS_p, (fun v => match v with (op1,(op2,imm)) => S_CMPPS op1 op2 imm
-                          end %% s_instr1_t)} :::
-    {5, CMPSS_p, (fun v => match v with (op1,(op2,imm)) => S_CMPSS op1 op2 imm
-                          end %% s_instr1_t)} :::
-    {6, COMISS_p, (fun v => match v with (op1,op2) => S_COMISS op1 op2
-                          end %% s_instr1_t)} :::
-    {7, CVTPI2PS_p, (fun v => match v with (op1,op2) => S_CVTPI2PS op1 op2
-                          end %% s_instr1_t)} :::
-    {8, CVTPS2PI_p, (fun v => match v with (op1,op2) => S_CVTPS2PI op1 op2
-                          end %% s_instr1_t)} :::
-    {9, CVTSI2SS_p, (fun v => match v with (op1,op2) => S_CVTSI2SS op1 op2
-                          end %% s_instr1_t)} :::
-    {10, CVTSS2SI_p, (fun v => match v with (op1,op2) => S_CVTSS2SI op1 op2
-                          end %% s_instr1_t)} :::
-    {11, CVTTPS2PI_p, (fun v => match v with (op1,op2) => S_CVTTPS2PI op1 op2
-                          end %% s_instr1_t)} :::
-    {12, CVTTSS2SI_p, (fun v => match v with (op1,op2) => S_CVTTSS2SI op1 op2
-                          end %% s_instr1_t)} :::
-    {13, DIVPS_p, (fun v => match v with (op1,op2) => S_DIVPS op1 op2
-                          end %% s_instr1_t)} :::
-    {14, DIVSS_p, (fun v => match v with (op1,op2) => S_DIVSS op1 op2
-                          end %% s_instr1_t)} :::
-    {15, LDMXCSR_p, (fun op => S_LDMXCSR op %% s_instr1_t)} :::
-    {16, MAXPS_p, (fun v => match v with (op1,op2) => S_MAXPS op1 op2
-                          end %% s_instr1_t)} :::
-    {17, MAXSS_p, (fun v => match v with (op1,op2) => S_MAXSS op1 op2
-                          end %% s_instr1_t)} :::
-    {18, MINPS_p, (fun v => match v with (op1,op2) => S_MINPS op1 op2
-                          end %% s_instr1_t)} :::
-    {19, MINSS_p, (fun v => match v with (op1,op2) => S_MINSS op1 op2
-                          end %% s_instr1_t)} :::
-    {20, MOVAPS_p, (fun v => match v with (op1,op2) => S_MOVAPS op1 op2
-                          end %% s_instr1_t)} :::
-    {21, MOVHLPS_p, (fun v => match v with (op1,op2) => S_MOVHLPS op1 op2
-                          end %% s_instr1_t)} :::
-    {22, MOVHPS_p, (fun v => match v with (op1,op2) => S_MOVHPS op1 op2
-                          end %% s_instr1_t)} :::
-    {23, MOVLHPS_p, (fun v => match v with (op1,op2) => S_MOVLHPS op1 op2
-                          end %% s_instr1_t)} :::
-    {24, MOVLPS_p, (fun v => match v with (op1,op2) => S_MOVLPS op1 op2
-                          end %% s_instr1_t)} :::
-    {25, MOVMSKPS_p, (fun v => match v with (op1,op2) => S_MOVMSKPS op1 op2
-                          end %% s_instr1_t)} :::
-    {26, MOVSS_p, (fun v => match v with (op1,op2) => S_MOVSS op1 op2
-                          end %% s_instr1_t)} :::
-    {27, MOVUPS_p, (fun v => match v with (op1,op2) => S_MOVUPS op1 op2
-                          end %% s_instr1_t)} :::
-    {28, MULPS_p, (fun v => match v with (op1,op2) => S_MULPS op1 op2
-                          end %% s_instr1_t)} :::
-    {29, MULSS_p, (fun v => match v with (op1,op2) => S_MULSS op1 op2
-                          end %% s_instr1_t)} :::
-    {30, ORPS_p, (fun v => match v with (op1,op2) => S_ORPS op1 op2
-                          end %% s_instr1_t)} :::
-    {31, RCPPS_p, (fun v => match v with (op1,op2) => S_RCPPS op1 op2
-                          end %% s_instr1_t)} :::
-    {32, RCPSS_p, (fun v => match v with (op1,op2) => S_RCPSS op1 op2
-                          end %% s_instr1_t)} :::
-    {33, RSQRTPS_p, (fun v => match v with (op1,op2) => S_RSQRTPS op1 op2
-                          end %% s_instr1_t)} :::
-    {34, RSQRTSS_p, (fun v => match v with (op1,op2) => S_RSQRTSS op1 op2
-                          end %% s_instr1_t)} :::
-    ast_env_nil.
-  Hint Unfold s_instr1_env: env_unfold_db.
-
-  Definition s_instr1_p : wf_bigrammar s_instr1_t.
-    gen_ast_defs s_instr1_env.
-    refine (gr @ (mp: _ -> [|s_instr1_t|])
-               & (fun u =>
-                    match u with
-                      | S_ADDPS op1 op2 => case0 (op1,op2)
-                      | S_ADDSS op1 op2 => case1 (op1,op2)
-                      | S_ANDNPS op1 op2 => case2 (op1,op2)
-                      | S_ANDPS op1 op2 => case3 (op1,op2)
-                      | S_CMPPS op1 op2 imm => case4 (op1,(op2,imm))
-                      | S_CMPSS op1 op2 imm => case5 (op1,(op2,imm))
-                      | S_COMISS op1 op2 => case6 (op1,op2)
-                      | S_CVTPI2PS op1 op2 => case7 (op1,op2)
-                      | S_CVTPS2PI op1 op2 => case8 (op1,op2)
-                      | S_CVTSI2SS op1 op2 => case9 (op1,op2)
-                      | S_CVTSS2SI op1 op2 => case10 (op1,op2)
-                      | S_CVTTPS2PI op1 op2 => case11 (op1,op2)
-                      | S_CVTTSS2SI op1 op2 => case12 (op1,op2)
-                      | S_DIVPS op1 op2 => case13 (op1,op2)
-                      | S_DIVSS op1 op2 => case14 (op1,op2)
-                      | S_LDMXCSR op => case15 op
-                      | S_MAXPS op1 op2 => case16 (op1,op2)
-                      | S_MAXSS op1 op2 => case17 (op1,op2)
-                      | S_MINPS op1 op2 => case18 (op1,op2)
-                      | S_MINSS op1 op2 => case19 (op1,op2)
-                      | S_MOVAPS op1 op2 => case20 (op1,op2)
-                      | S_MOVHLPS op1 op2 => case21 (op1,op2)
-                      | S_MOVHPS op1 op2 => case22 (op1,op2)
-                      | S_MOVLHPS op1 op2 => case23 (op1,op2)
-                      | S_MOVLPS op1 op2 => case24 (op1,op2)
-                      | S_MOVMSKPS op1 op2 => case25 (op1,op2)
-                      | S_MOVSS op1 op2 => case26 (op1,op2)
-                      | S_MOVUPS op1 op2 => case27 (op1,op2)
-                      | S_MULPS op1 op2 => case28 (op1,op2)
-                      | S_MULSS op1 op2 => case29 (op1,op2)
-                      | S_ORPS op1 op2 => case30 (op1,op2)
-                      | S_RCPPS op1 op2 => case31 (op1,op2)
-                      | S_RCPSS op1 op2 => case32 (op1,op2)
-                      | S_RSQRTPS op1 op2 => case33 (op1,op2)
-                      | S_RSQRTSS op1 op2 => case34 (op1,op2)
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition s_instr2_env : AST_Env s_instr2_t := 
-    {0, SHUFPS_p, (fun v => match v with (op1,(op2,imm)) => S_SHUFPS op1 op2 imm
-                          end %% s_instr2_t)} :::
-    {1, SQRTPS_p, (fun v => match v with (op1,op2) => S_SQRTPS op1 op2
-                          end %% s_instr2_t)} :::
-    {2, SQRTSS_p, (fun v => match v with (op1,op2) => S_SQRTSS op1 op2
-                          end %% s_instr2_t)} :::
-    {3, STMXCSR_p, (fun op => S_STMXCSR op %% s_instr2_t)} :::
-    {4, SUBPS_p, (fun v => match v with (op1,op2) => S_SUBPS op1 op2
-                          end %% s_instr2_t)} :::
-    {5, SUBSS_p, (fun v => match v with (op1,op2) => S_SUBSS op1 op2
-                          end %% s_instr2_t)} :::
-    {6, UCOMISS_p, (fun v => match v with (op1,op2) => S_UCOMISS op1 op2
-                          end %% s_instr2_t)} :::
-    {7, UNPCKHPS_p, (fun v => match v with (op1,op2) => S_UNPCKHPS op1 op2
-                          end %% s_instr2_t)} :::
-    {8, UNPCKLPS_p, (fun v => match v with (op1,op2) => S_UNPCKLPS op1 op2
-                          end %% s_instr2_t)} :::
-    {9, XORPS_p, (fun v => match v with (op1,op2) => S_XORPS op1 op2
-                          end %% s_instr2_t)} :::
-    {10, PAVGB_p, (fun v => match v with (op1,op2) => S_PAVGB op1 op2
-                          end %% s_instr2_t)} :::
-    {11, PEXTRW_p, (fun v => match v with (op1,(op2,imm)) => S_PEXTRW op1 op2 imm
-                          end %% s_instr2_t)} :::
-    {12, PINSRW_p, (fun v => match v with (op1,(op2,imm)) => S_PINSRW op1 op2 imm
-                          end %% s_instr2_t)} :::
-    {13, PMAXSW_p, (fun v => match v with (op1,op2) => S_PMAXSW op1 op2
-                          end %% s_instr2_t)} :::
-    {14, PMAXUB_p, (fun v => match v with (op1,op2) => S_PMAXUB op1 op2
-                          end %% s_instr2_t)} :::
-    {15, PMINSW_p, (fun v => match v with (op1,op2) => S_PMINSW op1 op2
-                          end %% s_instr2_t)} :::
-    {16, PMINUB_p, (fun v => match v with (op1,op2) => S_PMINUB op1 op2
-                          end %% s_instr2_t)} :::
-    {17, PMOVMSKB_p, (fun v => match v with (op1,op2) => S_PMOVMSKB op1 op2
-                          end %% s_instr2_t)} :::
-    {18, PSADBW_p, (fun v => match v with (op1,op2) => S_PSADBW op1 op2
-                          end %% s_instr2_t)} :::
-    {19, PSHUFW_p, (fun v => match v with (op1,(op2,imm)) => S_PSHUFW op1 op2 imm
-                          end %% s_instr2_t)} :::
-    {20, MASKMOVQ_p, (fun v => match v with (op1,op2) => S_MASKMOVQ op1 op2
-                          end %% s_instr2_t)} :::
-    {21, MOVNTPS_p, (fun v => match v with (op1,op2) => S_MOVNTPS op1 op2
-                          end %% s_instr2_t)} :::
-    {22, MOVNTQ_p, (fun v => match v with (op1,op2) => S_MOVNTQ op1 op2
-                          end %% s_instr2_t)} :::
-    {23, PREFETCHT0_p, (fun op => S_PREFETCHT0 op %% s_instr2_t)} :::
-    {24, PREFETCHT1_p, (fun op => S_PREFETCHT1 op %% s_instr2_t)} :::
-    {25, PREFETCHT2_p, (fun op => S_PREFETCHT2 op %% s_instr2_t)} :::
-    {26, PREFETCHNTA_p, (fun op => S_PREFETCHNTA op %% s_instr2_t)} :::
-    {27, SFENCE_p, (fun v => S_SFENCE %% s_instr2_t)} :::
-    ast_env_nil.
-  Hint Unfold s_instr2_env: env_unfold_db.
-
-  Definition s_instr2_p : wf_bigrammar s_instr2_t.
-    gen_ast_defs s_instr2_env.
-    refine (gr @ (mp: _ -> [|s_instr2_t|])
-               & (fun u =>
-                    match u with
-                      | S_SHUFPS op1 op2 imm => case0 (op1,(op2,imm))
-                      | S_SQRTPS op1 op2 => case1 (op1,op2)
-                      | S_SQRTSS op1 op2 => case2 (op1,op2)
-                      | S_STMXCSR op => case3 op
-                      | S_SUBPS op1 op2 => case4 (op1,op2)
-                      | S_SUBSS op1 op2 => case5 (op1,op2)
-                      | S_UCOMISS op1 op2 => case6 (op1,op2)
-                      | S_UNPCKHPS op1 op2 => case7 (op1,op2)
-                      | S_UNPCKLPS op1 op2 => case8 (op1,op2)
-                      | S_XORPS op1 op2 => case9 (op1,op2)
-                      | S_PAVGB op1 op2 => case10 (op1,op2)
-                      | S_PEXTRW op1 op2 imm => case11 (op1,(op2,imm))
-                      | S_PINSRW op1 op2 imm => case12 (op1,(op2,imm))
-                      | S_PMAXSW op1 op2 => case13 (op1,op2)
-                      | S_PMAXUB op1 op2 => case14 (op1,op2)
-                      | S_PMINSW op1 op2 => case15 (op1,op2)
-                      | S_PMINUB op1 op2 => case16 (op1,op2)
-                      | S_PMOVMSKB op1 op2 => case17 (op1,op2)
-                      | S_PSADBW op1 op2 => case18 (op1,op2)
-                      | S_PSHUFW op1 op2 imm => case19 (op1,(op2,imm))
-                      | S_MASKMOVQ op1 op2 => case20 (op1,op2)
-                      | S_MOVNTPS op1 op2 => case21 (op1,op2)
-                      | S_MOVNTQ op1 op2 => case22 (op1,op2)
-                      | S_PREFETCHT0 op => case23 op
-                      | S_PREFETCHT1 op => case24 op
-                      | S_PREFETCHT2 op => case25 op
-                      | S_PREFETCHNTA op => case26 op
-                      | S_SFENCE => case27 tt
-                    end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
-  Defined.
-
-  Definition instr_grammar_env : AST_Env (pair_t prefix_t instruction_t) :=
-    {0, prefix_grammar_only_seg_override $ i_instr1_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | I_AAA => AAA
-                      | I_AAD => AAD
-                      | I_AAM => AAM
-                      | I_AAS => AAS
-                      | I_CLC => CLC
-                      | I_CLD => CLD
-                      | I_CLI => CLI
-                      | I_CLTS => CLTS
-                      | I_CMC => CMC
-                      | I_CPUID => CPUID
-                      | I_DAA => DAA
-                      | I_DAS => DAS
-                      | I_HLT => HLT
-                      | I_INT => INT
-                      | I_INTO => INTO
-                      | I_INVD => INVD
-                      | I_IRET => IRET
-                      | I_LAHF => LAHF
-                      | I_LEAVE => LEAVE
-                      | I_POPA => POPA
-                      | I_POPF => POPF
-                      | I_PUSHA => PUSHA
-                      | I_PUSHF => PUSHF
-                      | I_RDMSR => RDMSR
-                      | I_RDPMC => RDPMC
-                      | I_RDTSC => RDTSC
-                      | I_RDTSCP => RDTSCP
-                      | I_RSM => RSM
-                      | I_SAHF => SAHF
-                      | I_STC => STC
-                      | I_STD => STD
-                      | I_STI => STI
-                      | I_UD2 => UD2
-                      | I_WBINVD => WBINVD
-                      | I_WRMSR => WRMSR
-                      | I_XLAT => XLAT
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {1, prefix_grammar_only_seg_override $ i_instr2_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | I_ARPL op1 op2 => ARPL op1 op2
-                      | I_BOUND op1 op2 => BOUND op1 op2
-                      | I_BSF op1 op2 => BSF op1 op2
-                      | I_BSR op1 op2 => BSR op1 op2
-                      | I_BSWAP r => BSWAP r
-                      | I_BT op1 op2 => BT op1 op2
-                      | I_CALL near abs op sel => CALL near abs op sel
-                      | I_IN w p => IN w p
-                      | I_INTn it => INTn it
-                      | I_INVLPG op => INVLPG op
-                      | I_Jcc ct disp => Jcc ct disp
-                      | I_JCXZ b => JCXZ b
-                      | I_JMP near abs op sel => JMP near abs op sel
-                      | I_LAR op1 op2 => LAR op1 op2
-                      | I_LDS op1 op2 => LDS op1 op2
-                      | I_LEA op1 op2 => LEA op1 op2
-                      | I_LES op1 op2 => LES op1 op2
-                      | I_LFS op1 op2 => LFS op1 op2
-                      | I_LGDT op => LGDT op
-                      | I_LGS op1 op2 => LGS op1 op2
-                      | I_LIDT op => LIDT op
-                      | I_LLDT op => LLDT op
-                      | I_LMSW op => LMSW op
-                      | I_LOOP disp => LOOP disp
-                      | I_LOOPZ disp => LOOPZ disp
-                      | I_LOOPNZ disp => LOOPNZ disp
-                      | I_LSL op1 op2 => LSL op1 op2
-                      | I_LSS op1 op2 => LSS op1 op2
-                      | I_LTR op => LTR op
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {2, prefix_grammar_only_seg_override $ i_instr3_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | I_MOVCR d cr r => MOVCR d cr r
-                      | I_MOVDR d cr r => MOVDR d cr r
-                      | I_MOVSR d cr r => MOVSR d cr r
-                      | I_MOVBE op1 op2 => MOVBE op1 op2
-                      | I_OUT w p => OUT w p
-                      | I_POP op => POP op
-                      | I_POPSR sr => POPSR sr
-                      | I_PUSH w op => PUSH w op
-                      | I_PUSHSR sr => PUSHSR sr
-                      | I_RCL w op1 ri => RCL w op1 ri
-                      | I_RCR w op1 ri => RCR w op1 ri
-                      | I_SETcc ct op => SETcc ct op
-                      | I_SGDT op => SGDT op
-                      | I_SIDT op => SIDT op
-                      | I_SLDT op => SLDT op
-                      | I_SMSW op => SMSW op
-                      | I_STR op => STR op
-                      | I_VERR op => VERR op
-                      | I_VERW op => VERW op
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {3, i_instr4_grammar,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | I_INS b => INS b
-                      | I_OUTS b => OUTS b
-                      | I_MOVS b => MOVS b
-                      | I_LODS b => LODS b
-                      | I_STOS b => STOS b
-                      | I_RET ss disp => RET ss disp
-                      | I_CMPS b => CMPS b
-                      | I_SCAS b => SCAS b
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {4, i_instr5_grammar,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | I_ADC w op1 op2 => ADC w op1 op2
-                      | I_ADD w op1 op2 => ADD w op1 op2
-                      | I_AND w op1 op2 => AND w op1 op2
-                      | I_BTC op1 op2 => BTC op1 op2
-                      | I_BTR op1 op2 => BTR op1 op2
-                      | I_BTS op1 op2 => BTS op1 op2
-                      | I_CMP w op1 op2 => CMP w op1 op2
-                      | I_CMPXCHG w op1 op2 => CMPXCHG w op1 op2
-                      | I_DEC w op1 => DEC w op1
-                      | I_IMUL w op1 opopt iopt  => IMUL w op1 opopt iopt
-                      | I_INC w op1 => INC w op1
-                      | I_MOV w op1 op2 => MOV w op1 op2
-                      | I_NEG w op => NEG w op
-                      | I_NOT w op => NOT w op
-                      | I_OR w op1 op2 => OR w op1 op2
-                      | I_SBB w op1 op2 => SBB w op1 op2
-                      | I_SUB w op1 op2 => SUB w op1 op2
-                      | I_TEST w op1 op2 => TEST w op1 op2
-                      | I_XADD w op1 op2 => XADD w op1 op2
-                      | I_XCHG w op1 op2 => XCHG w op1 op2
-                      | I_XOR w op1 op2 => XOR w op1 op2
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {5, prefix_grammar_seg_op_override $ i_instr6_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | I_CDQ => CDQ
-                      | I_CMOVcc ct op1 op2 => CMOVcc ct op1 op2
-                      | I_CWDE => CWDE
-                      | I_DIV w op1 => DIV w op1
-                      | I_IDIV w op1 => IDIV w op1
-                      | I_MOVSX w op1 op2 => MOVSX w op1 op2
-                      | I_MOVZX w op1 op2 => MOVZX w op1 op2
-                      | I_MUL w op1 => MUL w op1
-                      | I_NOP op => NOP op
-                      | I_ROL w op1 ri => ROL w op1 ri
-                      | I_ROR w op1 ri => ROR w op1 ri
-                      | I_SAR w op1 ri => SAR w op1 ri
-                      | I_SHL w op1 ri => SHL w op1 ri
-                      | I_SHLD op1 r ri => SHLD op1 r ri
-                      | I_SHR w op1 ri => SHR w op1 ri
-                      | I_SHRD op1 r ri => SHRD op1 r ri
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {6, prefix_grammar_only_seg_override $ f_instr1_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | F_F2XM1 => F2XM1
-                      | F_FABS => FABS
-                      | F_FADD z op1 => FADD z op1
-                      | F_FADDP op => FADDP op
-                      | F_FBLD op => FBLD op
-                      | F_FBSTP op => FBSTP op
-                      | F_FCHS => FCHS
-                      | F_FCMOVcc ct op => FCMOVcc ct op
-                      | F_FCOM op => FCOM op
-                      | F_FCOMP op => FCOMP op
-                      | F_FCOMPP => FCOMPP
-                      | F_FCOMIP op => FCOMIP op
-                      | F_FCOS => FCOS
-                      | F_FDECSTP => FDECSTP
-                      | F_FDIV z op => FDIV z op
-                      | F_FDIVP op => FDIVP op
-                      | F_FDIVR z op => FDIVR z op
-                      | F_FDIVRP op => FDIVRP op
-                      | F_FFREE op => FFREE op
-                      | F_FIADD op => FIADD op
-                      | F_FICOM op => FICOM op
-                      | F_FICOMP op => FICOMP op
-                      | F_FIDIV op => FIDIV op
-                      | F_FIDIVR op => FIDIVR op
-                      | F_FILD op => FILD op
-                      | F_FIMUL op => FIMUL op
-                      | F_FINCSTP => FINCSTP
-                      | F_FIST op => FIST op
-                      | F_FISTP op => FISTP op
-                      | F_FISUB op => FISUB op
-                      | F_FISUBR op => FISUBR op
-                      | F_FLD op => FLD op
-                      | F_FLD1 => FLD1
-                      | F_FLDCW op => FLDCW op
-                      | F_FLDENV op => FLDENV op
-                      | F_FLDL2E => FLDL2E
-                      | F_FLDL2T => FLDL2T
-                      | F_FLDLG2 => FLDLG2
-                      | F_FLDLN2 => FLDLN2
-                      | F_FLDPI => FLDPI
-                      | F_FLDZ => FLDZ
-                      | F_FMUL z op => FMUL z op
-                      | F_FMULP op => FMULP op
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {7, prefix_grammar_only_seg_override $ f_instr2_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | F_FNCLEX => FNCLEX
-                      | F_FNINIT => FNINIT
-                      | F_FNOP => FNOP
-                      | F_FNSAVE op => FNSAVE op
-                      | F_FNSTCW op => FNSTCW op
-                      | F_FNSTSW op => FNSTSW op
-                      | F_FPATAN => FPATAN
-                      | F_FPREM => FPREM
-                      | F_FPREM1 => FPREM1
-                      | F_FPTAN => FPTAN
-                      | F_FRNDINT => FRNDINT
-                      | F_FRSTOR op => FRSTOR op
-                      | F_FSCALE => FSCALE
-                      | F_FSIN => FSIN
-                      | F_FSINCOS => FSINCOS
-                      | F_FSQRT => FSQRT
-                      | F_FST op => FST op
-                      | F_FSTENV op => FSTENV op
-                      | F_FSTP op => FSTP op
-                      | F_FSUB z op => FSUB z op
-                      | F_FSUBP op => FSUBP op
-                      | F_FSUBR z op => FSUBR z op
-                      | F_FSUBRP op => FSUBRP op
-                      | F_FTST => FTST
-                      | F_FUCOM op => FUCOM op
-                      | F_FUCOMP op => FUCOMP op
-                      | F_FUCOMPP => FUCOMPP
-                      | F_FUCOMI op => FUCOMI op
-                      | F_FUCOMIP op => FUCOMIP op
-                      | F_FXAM => FXAM
-                      | F_FXCH op => FXCH op
-                      | F_FXTRACT => FXTRACT
-                      | F_FYL2X => FYL2X
-                      | F_FYL2XP1 => FYL2XP1
-                      | F_FWAIT => FWAIT
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {8, prefix_grammar_only_seg_override $ m_instr_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | M_EMMS => EMMS
-                      | M_MOVD op1 op2 => MOVD op1 op2
-                      | M_MOVQ op1 op2 => MOVQ op1 op2
-                      | M_PACKSSDW op1 op2 => PACKSSDW op1 op2
-                      | M_PACKSSWB op1 op2 => PACKSSWB op1 op2
-                      | M_PACKUSWB op1 op2 => PACKUSWB op1 op2
-                      | M_PADD gg op1 op2 => PADD gg op1 op2
-                      | M_PADDS gg op1 op2 => PADDS gg op1 op2
-                      | M_PADDUS gg op1 op2 => PADDUS gg op1 op2
-                      | M_PAND op1 op2 => PAND op1 op2
-                      | M_PANDN op1 op2 => PANDN op1 op2
-                      | M_PCMPEQ gg op1 op2 => PCMPEQ gg op1 op2
-                      | M_PCMPGT gg op1 op2 => PCMPGT gg op1 op2
-                      | M_PMADDWD op1 op2 => PMADDWD op1 op2
-                      | M_PMULHUW op1 op2 => PMULHUW op1 op2
-                      | M_PMULHW op1 op2 => PMULHW op1 op2
-                      | M_PMULLW op1 op2 => PMULLW op1 op2
-                      | M_POR op1 op2 => POR op1 op2
-                      | M_PSLL gg op1 op2 => PSLL gg op1 op2
-                      | M_PSRA gg op1 op2 => PSRA gg op1 op2
-                      | M_PSRL gg op1 op2 => PSRL gg op1 op2
-                      | M_PSUB gg op1 op2 => PSUB gg op1 op2
-                      | M_PSUBS gg op1 op2 => PSUBS gg op1 op2
-                      | M_PSUBUS gg op1 op2 => PSUBUS gg op1 op2
-                      | M_PUNPCKH gg op1 op2 => PUNPCKH gg op1 op2
-                      | M_PUNPCKL gg op1 op2 => PUNPCKL gg op1 op2
-                      | M_PXOR op1 op2 => PXOR op1 op2
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {9, prefix_grammar_only_seg_override $ s_instr1_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | S_ADDPS op1 op2 => ADDPS op1 op2
-                      | S_ADDSS op1 op2 => ADDSS op1 op2
-                      | S_ANDNPS op1 op2 => ANDNPS op1 op2
-                      | S_ANDPS op1 op2 => ANDPS op1 op2
-                      | S_CMPPS op1 op2 imm => CMPPS op1 op2 imm
-                      | S_CMPSS op1 op2 imm => CMPSS op1 op2 imm
-                      | S_COMISS op1 op2 => COMISS op1 op2
-                      | S_CVTPI2PS op1 op2 => CVTPI2PS op1 op2
-                      | S_CVTPS2PI op1 op2 => CVTPS2PI op1 op2
-                      | S_CVTSI2SS op1 op2 => CVTSI2SS op1 op2
-                      | S_CVTSS2SI op1 op2 => CVTSS2SI op1 op2
-                      | S_CVTTPS2PI op1 op2 => CVTTPS2PI op1 op2
-                      | S_CVTTSS2SI op1 op2 => CVTTSS2SI op1 op2
-                      | S_DIVPS op1 op2 => DIVPS op1 op2
-                      | S_DIVSS op1 op2 => DIVSS op1 op2
-                      | S_LDMXCSR op => LDMXCSR op
-                      | S_MAXPS op1 op2 => MAXPS op1 op2
-                      | S_MAXSS op1 op2 => MAXSS op1 op2
-                      | S_MINPS op1 op2 => MINPS op1 op2
-                      | S_MINSS op1 op2 => MINSS op1 op2
-                      | S_MOVAPS op1 op2 => MOVAPS op1 op2
-                      | S_MOVHLPS op1 op2 => MOVHLPS op1 op2
-                      | S_MOVHPS op1 op2 => MOVHPS op1 op2
-                      | S_MOVLHPS op1 op2 => MOVLHPS op1 op2
-                      | S_MOVLPS op1 op2 => MOVLPS op1 op2
-                      | S_MOVMSKPS op1 op2 => MOVMSKPS op1 op2
-                      | S_MOVSS op1 op2 => MOVSS op1 op2
-                      | S_MOVUPS op1 op2 => MOVUPS op1 op2
-                      | S_MULPS op1 op2 => MULPS op1 op2
-                      | S_MULSS op1 op2 => MULSS op1 op2
-                      | S_ORPS op1 op2 => ORPS op1 op2
-                      | S_RCPPS op1 op2 => RCPPS op1 op2
-                      | S_RCPSS op1 op2 => RCPSS op1 op2
-                      | S_RSQRTPS op1 op2 => RSQRTPS op1 op2
-                      | S_RSQRTSS op1 op2 => RSQRTSS op1 op2
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    {10, prefix_grammar_only_seg_override $ s_instr2_p,
-        (fun v => 
-           let (pre,hi):=v in
-           let i := match hi with
-                      | S_SHUFPS op1 op2 imm => SHUFPS op1 op2 imm
-                      | S_SQRTPS op1 op2 => SQRTPS op1 op2
-                      | S_SQRTSS op1 op2 => SQRTSS op1 op2
-                      | S_STMXCSR op => STMXCSR op
-                      | S_SUBPS op1 op2 => SUBPS op1 op2
-                      | S_SUBSS op1 op2 => SUBSS op1 op2
-                      | S_UCOMISS op1 op2 => UCOMISS op1 op2
-                      | S_UNPCKHPS op1 op2 => UNPCKHPS op1 op2
-                      | S_UNPCKLPS op1 op2 => UNPCKLPS op1 op2
-                      | S_XORPS op1 op2 => XORPS op1 op2
-                      | S_PAVGB op1 op2 => PAVGB op1 op2
-                      | S_PEXTRW op1 op2 imm => PEXTRW op1 op2 imm
-                      | S_PINSRW op1 op2 imm => PINSRW op1 op2 imm
-                      | S_PMAXSW op1 op2 => PMAXSW op1 op2
-                      | S_PMAXUB op1 op2 => PMAXUB op1 op2
-                      | S_PMINSW op1 op2 => PMINSW op1 op2
-                      | S_PMINUB op1 op2 => PMINUB op1 op2
-                      | S_PMOVMSKB op1 op2 => PMOVMSKB op1 op2
-                      | S_PSADBW op1 op2 => PSADBW op1 op2
-                      | S_PSHUFW op1 op2 imm => PSHUFW op1 op2 imm
-                      | S_MASKMOVQ op1 op2 => MASKMOVQ op1 op2
-                      | S_MOVNTPS op1 op2 => MOVNTPS op1 op2
-                      | S_MOVNTQ op1 op2 => MOVNTQ op1 op2
-                      | S_PREFETCHT0 op => PREFETCHT0 op
-                      | S_PREFETCHT1 op => PREFETCHT1 op
-                      | S_PREFETCHT2 op => PREFETCHT2 op
-                      | S_PREFETCHNTA op => PREFETCHNTA op
-                      | S_SFENCE => SFENCE
-                    end
-               in (pre,i) %% pair_t prefix_t instruction_t)} :::
-    ast_env_nil.
-  Hint Unfold instr_grammar_env: env_unfold_db.
-
-  Definition instruction_grammar : wf_bigrammar (pair_t prefix_t instruction_t).
-    gen_ast_defs instr_grammar_env.
-    refine (gr @ (mp: _ -> [|pair_t prefix_t instruction_t|])
-               & (fun u:[|pair_t prefix_t instruction_t|] =>
-                   let (pre,i):=u in
-                   match i with
-                     | AAA => case0 (pre,I_AAA)
-                     | AAD => case0 (pre,I_AAD)
-                     | AAM => case0 (pre,I_AAM)
-                     | AAS => case0 (pre,I_AAS)
-                     | CLC => case0 (pre,I_CLC)
-                     | CLD => case0 (pre,I_CLD)
-                     | CLI => case0 (pre,I_CLI)
-                     | CLTS => case0 (pre,I_CLTS)
-                     | CMC => case0 (pre,I_CMC)
-                     | CPUID => case0 (pre,I_CPUID)
-                     | DAA => case0 (pre,I_DAA)
-                     | DAS => case0 (pre,I_DAS)
-                     | HLT => case0 (pre,I_HLT)
-                     | INT => case0 (pre,I_INT)
-                     | INTO => case0 (pre,I_INTO)
-                     | INVD => case0 (pre,I_INVD)
-                     | IRET => case0 (pre,I_IRET)
-                     | LAHF => case0 (pre,I_LAHF)
-                     | LEAVE => case0 (pre,I_LEAVE)
-                     | POPA => case0 (pre,I_POPA)
-                     | POPF => case0 (pre,I_POPF)
-                     | PUSHA => case0 (pre,I_PUSHA)
-                     | PUSHF => case0 (pre,I_PUSHF)
-                     | RDMSR => case0 (pre,I_RDMSR)
-                     | RDPMC => case0 (pre,I_RDPMC)
-                     | RDTSC => case0 (pre,I_RDTSC)
-                     | RDTSCP => case0 (pre,I_RDTSCP)
-                     | RSM => case0 (pre,I_RSM)
-                     | SAHF => case0 (pre,I_SAHF)
-                     | STC => case0 (pre,I_STC)
-                     | STD => case0 (pre,I_STD)
-                     | STI => case0 (pre,I_STI)
-                     | UD2 => case0 (pre,I_UD2)
-                     | WBINVD => case0 (pre,I_WBINVD)
-                     | WRMSR => case0 (pre,I_WRMSR)
-                     | XLAT => case0 (pre,I_XLAT)
-
-                     | ARPL op1 op2 => case1 (pre,I_ARPL op1 op2)
-                     | BOUND op1 op2 => case1 (pre,I_BOUND op1 op2)
-                     | BSF op1 op2 => case1 (pre,I_BSF op1 op2)
-                     | BSR op1 op2 => case1 (pre,I_BSR op1 op2)
-                     | BSWAP r => case1 (pre,I_BSWAP r)
-                     | BT op1 op2 => case1 (pre,I_BT op1 op2)
-                     | CALL near abs op sel => case1 (pre,I_CALL near abs op sel)
-                     | IN w p => case1 (pre,I_IN w p)
-                     | INTn it => case1 (pre,I_INTn it)
-                     | INVLPG op => case1 (pre,I_INVLPG op)
-                     | Jcc ct disp => case1 (pre,I_Jcc ct disp)
-                     | JCXZ b => case1 (pre,I_JCXZ b)
-                     | JMP near abs op sel => case1 (pre,I_JMP near abs op sel)
-                     | LAR op1 op2 => case1 (pre,I_LAR op1 op2)
-                     | LDS op1 op2 => case1 (pre,I_LDS op1 op2)
-                     | LEA op1 op2 => case1 (pre,I_LEA op1 op2)
-                     | LES op1 op2 => case1 (pre,I_LES op1 op2)
-                     | LFS op1 op2 => case1 (pre,I_LFS op1 op2)
-                     | LGDT op => case1 (pre,I_LGDT op)
-                     | LGS op1 op2 => case1 (pre,I_LGS op1 op2)
-                     | LIDT op => case1 (pre,I_LIDT op)
-                     | LLDT op => case1 (pre,I_LLDT op)
-                     | LMSW op => case1 (pre,I_LMSW op)
-                     | LOOP disp => case1 (pre,I_LOOP disp)
-                     | LOOPZ disp => case1 (pre,I_LOOPZ disp)
-                     | LOOPNZ disp => case1 (pre,I_LOOPNZ disp)
-                     | LSL op1 op2 => case1 (pre,I_LSL op1 op2)
-                     | LSS op1 op2 => case1 (pre,I_LSS op1 op2)
-                     | LTR op => case1 (pre,I_LTR op)
-
-                     | MOVCR d cr r => case2 (pre,I_MOVCR d cr r)
-                     | MOVDR d cr r => case2 (pre,I_MOVDR d cr r)
-                     | MOVSR d cr r => case2 (pre,I_MOVSR d cr r)
-                     | MOVBE op1 op2 => case2 (pre,I_MOVBE op1 op2)
-                     | OUT w p => case2 (pre,I_OUT w p)
-                     | POP op => case2 (pre,I_POP op)
-                     | POPSR sr => case2 (pre,I_POPSR sr)
-                     | PUSH w op => case2 (pre,I_PUSH w op)
-                     | PUSHSR sr => case2 (pre,I_PUSHSR sr)
-                     | RCL w op1 ri => case2 (pre,I_RCL w op1 ri)
-                     | RCR w op1 ri => case2 (pre,I_RCR w op1 ri)
-                     | SETcc ct op => case2 (pre,I_SETcc ct op)
-                     | SGDT op => case2 (pre,I_SGDT op)
-                     | SIDT op => case2 (pre,I_SIDT op)
-                     | SLDT op => case2 (pre,I_SLDT op)
-                     | SMSW op => case2 (pre,I_SMSW op)
-                     | STR op => case2 (pre,I_STR op)
-                     | VERR op => case2 (pre,I_VERR op)
-                     | VERW op => case2 (pre,I_VERW op)
-                                          
-                     | INS b => case3 (pre,I_INS b)
-                     | OUTS b => case3 (pre,I_OUTS b)
-                     | MOVS b => case3 (pre,I_MOVS b)
-                     | LODS b => case3 (pre,I_LODS b)
-                     | STOS b => case3 (pre,I_STOS b)
-                     | RET ss disp => case3 (pre,I_RET ss disp)
-                     | CMPS b => case3 (pre,I_CMPS b)
-                     | SCAS b => case3 (pre,I_SCAS b)
-
-                     | ADC w op1 op2 => case4 (pre, I_ADC w op1 op2)
-                     | ADD w op1 op2 => case4 (pre, I_ADD w op1 op2)
-                     | AND w op1 op2 => case4 (pre, I_AND w op1 op2)
-                     | BTC op1 op2 => case4 (pre, I_BTC op1 op2)
-                     | BTR op1 op2 => case4 (pre, I_BTR op1 op2)
-                     | BTS op1 op2 => case4 (pre, I_BTS op1 op2)
-                     | CMP w op1 op2 => case4 (pre, I_CMP w op1 op2)
-                     | CMPXCHG w op1 op2 => case4 (pre, I_CMPXCHG w op1 op2)
-                     | DEC w op1 => case4 (pre, I_DEC w op1)
-                     | IMUL w op1 opopt iopt  => case4 (pre, I_IMUL w op1 opopt iopt)
-                     | INC w op1 => case4 (pre, I_INC w op1)
-                     | MOV w op1 op2 => case4 (pre, I_MOV w op1 op2)
-                     | NEG w op => case4 (pre, I_NEG w op)
-                     | NOT w op => case4 (pre, I_NOT w op)
-                     | OR w op1 op2 => case4 (pre, I_OR w op1 op2)
-                     | SBB w op1 op2 => case4 (pre, I_SBB w op1 op2)
-                     | SUB w op1 op2 => case4 (pre, I_SUB w op1 op2)
-                     | TEST w op1 op2 => case4 (pre, I_TEST w op1 op2)
-                     | XADD w op1 op2 => case4 (pre, I_XADD w op1 op2)
-                     | XCHG w op1 op2 => case4 (pre, I_XCHG w op1 op2)
-                     | XOR w op1 op2 => case4 (pre, I_XOR w op1 op2)
-
-                     | CDQ => case5 (pre, I_CDQ)
-                     | CMOVcc ct op1 op2 => case5 (pre, I_CMOVcc ct op1 op2)
-                     | CWDE => case5 (pre, I_CWDE)
-                     | DIV w op1 => case5 (pre, I_DIV w op1)
-                     | IDIV w op1 => case5 (pre, I_IDIV w op1)
-                     | MOVSX w op1 op2 => case5 (pre, I_MOVSX w op1 op2)
-                     | MOVZX w op1 op2 => case5 (pre, I_MOVZX w op1 op2)
-                     | MUL w op1 => case5 (pre, I_MUL w op1)
-                     | NOP op => case5 (pre, I_NOP op)
-                     | ROL w op1 ri => case5 (pre, I_ROL w op1 ri)
-                     | ROR w op1 ri => case5 (pre, I_ROR w op1 ri)
-                     | SAR w op1 ri => case5 (pre, I_SAR w op1 ri)
-                     | SHL w op1 ri => case5 (pre, I_SHL w op1 ri)
-                     | SHLD op1 r ri => case5 (pre, I_SHLD op1 r ri)
-                     | SHR w op1 ri => case5 (pre, I_SHR w op1 ri)
-                     | SHRD op1 r ri => case5 (pre, I_SHRD op1 r ri)
-
-                     | F2XM1 => case6 (pre, F_F2XM1)
-                     | FABS => case6 (pre, F_FABS)
-                     | FADD z op1 => case6 (pre, F_FADD z op1)
-                     | FADDP op => case6 (pre, F_FADDP op)
-                     | FBLD op => case6 (pre, F_FBLD op)
-                     | FBSTP op => case6 (pre, F_FBSTP op)
-                     | FCHS => case6 (pre, F_FCHS)
-                     | FCMOVcc ct op => case6 (pre, F_FCMOVcc ct op)
-                     | FCOM op => case6 (pre, F_FCOM op)
-                     | FCOMP op => case6 (pre, F_FCOMP op)
-                     | FCOMPP => case6 (pre, F_FCOMPP)
-                     | FCOMIP op => case6 (pre, F_FCOMIP op)
-                     | FCOS => case6 (pre, F_FCOS)
-                     | FDECSTP => case6 (pre, F_FDECSTP)
-                     | FDIV z op => case6 (pre, F_FDIV z op)
-                     | FDIVP op => case6 (pre, F_FDIVP op)
-                     | FDIVR z op => case6 (pre, F_FDIVR z op)
-                     | FDIVRP op => case6 (pre, F_FDIVRP op)
-                     | FFREE op => case6 (pre, F_FFREE op)
-                     | FIADD op => case6 (pre, F_FIADD op)
-                     | FICOM op => case6 (pre, F_FICOM op)
-                     | FICOMP op => case6 (pre, F_FICOMP op)
-                     | FIDIV op => case6 (pre, F_FIDIV op)
-                     | FIDIVR op => case6 (pre, F_FIDIVR op)
-                     | FILD op => case6 (pre, F_FILD op)
-                     | FIMUL op => case6 (pre, F_FIMUL op)
-                     | FINCSTP => case6 (pre, F_FINCSTP)
-                     | FIST op => case6 (pre, F_FIST op)
-                     | FISTP op => case6 (pre, F_FISTP op)
-                     | FISUB op => case6 (pre, F_FISUB op)
-                     | FISUBR op => case6 (pre, F_FISUBR op)
-                     | FLD op => case6 (pre, F_FLD op)
-                     | FLD1 => case6 (pre, F_FLD1)
-                     | FLDCW op => case6 (pre, F_FLDCW op)
-                     | FLDENV op => case6 (pre, F_FLDENV op)
-                     | FLDL2E => case6 (pre, F_FLDL2E)
-                     | FLDL2T => case6 (pre, F_FLDL2T)
-                     | FLDLG2 => case6 (pre, F_FLDLG2)
-                     | FLDLN2 => case6 (pre, F_FLDLN2)
-                     | FLDPI => case6 (pre, F_FLDPI)
-                     | FLDZ => case6 (pre, F_FLDZ)
-                     | FMUL z op => case6 (pre, F_FMUL z op)
-                     | FMULP op => case6 (pre, F_FMULP op)
-
-                     | FNCLEX => case7 (pre, F_FNCLEX)
-                     | FNINIT => case7 (pre, F_FNINIT)
-                     | FNOP => case7 (pre, F_FNOP)
-                     | FNSAVE op => case7 (pre, F_FNSAVE op)
-                     | FNSTCW op => case7 (pre, F_FNSTCW op)
-                     | FNSTSW op => case7 (pre, F_FNSTSW op)
-                     | FPATAN => case7 (pre, F_FPATAN)
-                     | FPREM => case7 (pre, F_FPREM)
-                     | FPREM1 => case7 (pre, F_FPREM1)
-                     | FPTAN => case7 (pre, F_FPTAN)
-                     | FRNDINT => case7 (pre, F_FRNDINT)
-                     | FRSTOR op => case7 (pre, F_FRSTOR op)
-                     | FSCALE => case7 (pre, F_FSCALE)
-                     | FSIN => case7 (pre, F_FSIN)
-                     | FSINCOS => case7 (pre, F_FSINCOS)
-                     | FSQRT => case7 (pre, F_FSQRT)
-                     | FST op => case7 (pre, F_FST op)
-                     | FSTENV op => case7 (pre, F_FSTENV op)
-                     | FSTP op => case7 (pre, F_FSTP op)
-                     | FSUB z op => case7 (pre, F_FSUB z op)
-                     | FSUBP op => case7 (pre, F_FSUBP op)
-                     | FSUBR z op => case7 (pre, F_FSUBR z op)
-                     | FSUBRP op => case7 (pre, F_FSUBRP op)
-                     | FTST => case7 (pre, F_FTST)
-                     | FUCOM op => case7 (pre, F_FUCOM op)
-                     | FUCOMP op => case7 (pre, F_FUCOMP op)
-                     | FUCOMPP => case7 (pre, F_FUCOMPP)
-                     | FUCOMI op => case7 (pre, F_FUCOMI op)
-                     | FUCOMIP op => case7 (pre, F_FUCOMIP op)
-                     | FXAM => case7 (pre, F_FXAM)
-                     | FXCH op => case7 (pre, F_FXCH op)
-                     | FXTRACT => case7 (pre, F_FXTRACT)
-                     | FYL2X => case7 (pre, F_FYL2X)
-                     | FYL2XP1 => case7 (pre, F_FYL2XP1)
-                     | FWAIT => case7 (pre, F_FWAIT)
-
-                     | EMMS => case8 (pre, M_EMMS)
-                     | MOVD op1 op2 => case8 (pre, M_MOVD op1 op2)
-                     | MOVQ op1 op2 => case8 (pre, M_MOVQ op1 op2)
-                     | PACKSSDW op1 op2 => case8 (pre, M_PACKSSDW op1 op2)
-                     | PACKSSWB op1 op2 => case8 (pre, M_PACKSSWB op1 op2)
-                     | PACKUSWB op1 op2 => case8 (pre, M_PACKUSWB op1 op2)
-                     | PADD gg op1 op2 => case8 (pre, M_PADD gg op1 op2)
-                     | PADDS gg op1 op2 => case8 (pre, M_PADDS gg op1 op2)
-                     | PADDUS gg op1 op2 => case8 (pre, M_PADDUS gg op1 op2)
-                     | PAND op1 op2 => case8 (pre, M_PAND op1 op2)
-                     | PANDN op1 op2 => case8 (pre, M_PANDN op1 op2)
-                     | PCMPEQ gg op1 op2 => case8 (pre, M_PCMPEQ gg op1 op2)
-                     | PCMPGT gg op1 op2 => case8 (pre, M_PCMPGT gg op1 op2)
-                     | PMADDWD op1 op2 => case8 (pre, M_PMADDWD op1 op2)
-                     | PMULHUW op1 op2 => case8 (pre, M_PMULHUW op1 op2)
-                     | PMULHW op1 op2 => case8 (pre, M_PMULHW op1 op2)
-                     | PMULLW op1 op2 => case8 (pre, M_PMULLW op1 op2)
-                     | POR op1 op2 => case8 (pre, M_POR op1 op2)
-                     | PSLL gg op1 op2 => case8 (pre, M_PSLL gg op1 op2)
-                     | PSRA gg op1 op2 => case8 (pre, M_PSRA gg op1 op2)
-                     | PSRL gg op1 op2 => case8 (pre, M_PSRL gg op1 op2)
-                     | PSUB gg op1 op2 => case8 (pre, M_PSUB gg op1 op2)
-                     | PSUBS gg op1 op2 => case8 (pre, M_PSUBS gg op1 op2)
-                     | PSUBUS gg op1 op2 => case8 (pre, M_PSUBUS gg op1 op2)
-                     | PUNPCKH gg op1 op2 => case8 (pre, M_PUNPCKH gg op1 op2)
-                     | PUNPCKL gg op1 op2 => case8 (pre, M_PUNPCKL gg op1 op2)
-                     | PXOR op1 op2 => case8 (pre, M_PXOR op1 op2)
-
-                     | ADDPS op1 op2 => case9 (pre, S_ADDPS op1 op2)
-                     | ADDSS op1 op2 => case9 (pre, S_ADDSS op1 op2)
-                     | ANDNPS op1 op2 => case9 (pre, S_ANDNPS op1 op2)
-                     | ANDPS op1 op2 => case9 (pre, S_ANDPS op1 op2)
-                     | CMPPS op1 op2 imm => case9 (pre, S_CMPPS op1 op2 imm)
-                     | CMPSS op1 op2 imm => case9 (pre, S_CMPSS op1 op2 imm)
-                     | COMISS op1 op2 => case9 (pre, S_COMISS op1 op2)
-                     | CVTPI2PS op1 op2 => case9 (pre, S_CVTPI2PS op1 op2)
-                     | CVTPS2PI op1 op2 => case9 (pre, S_CVTPS2PI op1 op2)
-                     | CVTSI2SS op1 op2 => case9 (pre, S_CVTSI2SS op1 op2)
-                     | CVTSS2SI op1 op2 => case9 (pre, S_CVTSS2SI op1 op2)
-                     | CVTTPS2PI op1 op2 => case9 (pre, S_CVTTPS2PI op1 op2)
-                     | CVTTSS2SI op1 op2 => case9 (pre, S_CVTTSS2SI op1 op2)
-                     | DIVPS op1 op2 => case9 (pre, S_DIVPS op1 op2)
-                     | DIVSS op1 op2 => case9 (pre, S_DIVSS op1 op2)
-                     | LDMXCSR op => case9 (pre, S_LDMXCSR op)
-                     | MAXPS op1 op2 => case9 (pre, S_MAXPS op1 op2)
-                     | MAXSS op1 op2 => case9 (pre, S_MAXSS op1 op2)
-                     | MINPS op1 op2 => case9 (pre, S_MINPS op1 op2)
-                     | MINSS op1 op2 => case9 (pre, S_MINSS op1 op2)
-                     | MOVAPS op1 op2 => case9 (pre, S_MOVAPS op1 op2)
-                     | MOVHLPS op1 op2 => case9 (pre, S_MOVHLPS op1 op2)
-                     | MOVHPS op1 op2 => case9 (pre, S_MOVHPS op1 op2)
-                     | MOVLHPS op1 op2 => case9 (pre, S_MOVLHPS op1 op2)
-                     | MOVLPS op1 op2 => case9 (pre, S_MOVLPS op1 op2)
-                     | MOVMSKPS op1 op2 => case9 (pre, S_MOVMSKPS op1 op2)
-                     | MOVSS op1 op2 => case9 (pre, S_MOVSS op1 op2)
-                     | MOVUPS op1 op2 => case9 (pre, S_MOVUPS op1 op2)
-                     | MULPS op1 op2 => case9 (pre, S_MULPS op1 op2)
-                     | MULSS op1 op2 => case9 (pre, S_MULSS op1 op2)
-                     | ORPS op1 op2 => case9 (pre, S_ORPS op1 op2)
-                     | RCPPS op1 op2 => case9 (pre, S_RCPPS op1 op2)
-                     | RCPSS op1 op2 => case9 (pre, S_RCPSS op1 op2)
-                     | RSQRTPS op1 op2 => case9 (pre, S_RSQRTPS op1 op2)
-                     | RSQRTSS op1 op2 => case9 (pre, S_RSQRTSS op1 op2)
-
-                     | SHUFPS op1 op2 imm => case10 (pre, S_SHUFPS op1 op2 imm)
-                     | SQRTPS op1 op2 => case10 (pre, S_SQRTPS op1 op2)
-                     | SQRTSS op1 op2 => case10 (pre, S_SQRTSS op1 op2)
-                     | STMXCSR op => case10 (pre, S_STMXCSR op)
-                     | SUBPS op1 op2 => case10 (pre, S_SUBPS op1 op2)
-                     | SUBSS op1 op2 => case10 (pre, S_SUBSS op1 op2)
-                     | UCOMISS op1 op2 => case10 (pre, S_UCOMISS op1 op2)
-                     | UNPCKHPS op1 op2 => case10 (pre, S_UNPCKHPS op1 op2)
-                     | UNPCKLPS op1 op2 => case10 (pre, S_UNPCKLPS op1 op2)
-                     | XORPS op1 op2 => case10 (pre, S_XORPS op1 op2)
-                     | PAVGB op1 op2 => case10 (pre, S_PAVGB op1 op2)
-                     | PEXTRW op1 op2 imm => case10 (pre, S_PEXTRW op1 op2 imm)
-                     | PINSRW op1 op2 imm => case10 (pre, S_PINSRW op1 op2 imm)
-                     | PMAXSW op1 op2 => case10 (pre, S_PMAXSW op1 op2)
-                     | PMAXUB op1 op2 => case10 (pre, S_PMAXUB op1 op2)
-                     | PMINSW op1 op2 => case10 (pre, S_PMINSW op1 op2)
-                     | PMINUB op1 op2 => case10 (pre, S_PMINUB op1 op2)
-                     | PMOVMSKB op1 op2 => case10 (pre, S_PMOVMSKB op1 op2)
-                     | PSADBW op1 op2 => case10 (pre, S_PSADBW op1 op2)
-                     | PSHUFW op1 op2 imm => case10 (pre, S_PSHUFW op1 op2 imm)
-                     | MASKMOVQ op1 op2 => case10 (pre, S_MASKMOVQ op1 op2)
-                     | MOVNTPS op1 op2 => case10 (pre, S_MOVNTPS op1 op2)
-                     | MOVNTQ op1 op2 => case10 (pre, S_MOVNTQ op1 op2)
-                     | PREFETCHT0 op => case10 (pre, S_PREFETCHT0 op)
-                     | PREFETCHT1 op => case10 (pre, S_PREFETCHT1 op)
-                     | PREFETCHT2 op => case10 (pre, S_PREFETCHT2 op)
-                     | PREFETCHNTA op => case10 (pre, S_PREFETCHNTA op)
-                     | SFENCE => case10 (pre, S_SFENCE)
-
-                     (* | _ => None *)
-                   end)
-               & _); clear_ast_defs;
-    unfold invertible; split; [unfold printable | unfold parsable]; 
-    compute [snd fst]; intros.
-    - destruct_union; destruct v as [pre hi];
-        abstract (destruct hi; printable_tac).
-    - Time abstract (destruct w as [pre i]; destruct i; parsable_tac).
-  Defined.
-
-  (** Starting constructing the x86 parser *)
-  Require Import Parser.
-
-  Definition instruction_regexp := 
-    projT1 (split_bigrammar (proj1_sig instruction_grammar)).
+  Definition instruction_grammar := alts instruction_grammar_list.
+  Definition instruction_regexp := projT1 (split_grammar (instruction_grammar)).
 
   Definition ini_decoder_state := 
-    initial_parser_state (proj1_sig instruction_grammar).
+    initial_parser_state instruction_grammar.
 
   (* Preventing Coq from expanding the def of ini_decoder_state *)
   Module Type ABSTRACT_INI_DECODER_STATE_SIG.
@@ -2271,5 +2170,25 @@ Require ExtrOcamlNatBigInt.
 
 Extraction Implicit never [t].
 Extraction Implicit always [t].
+Extraction Implicit alt [t].
+Extraction Implicit alts0 [t].
+Extraction Implicit alts' [t].
+Extraction Implicit alts [t].
+Extraction Implicit map [t1 t2].
+Extraction Implicit seq [t1 t2].
+Extraction Implicit cons [t].
+Extraction Implicit seqs [t].
 Extraction Implicit bitsleft [t].
-Extraction Implicit modrm_gen [reg_t].
+Extraction Implicit modrm_gen [res_t].
+Extraction Implicit modrm_gen_noreg [reg_t res_t].
+Extraction Implicit ext_op_modrm_gen [res_t].
+Extraction Implicit ext_op_modrm2_gen [res_t].
+Extraction Implicit perm2 [t1 t2].
+Extraction Implicit perm3 [t1 t2 t3].
+Extraction Implicit perm4 [t1 t2 t3 t4].
+Extraction Implicit option_perm [t1].
+Extraction Implicit option_perm2 [t1 t2].
+Extraction Implicit option_perm3 [t1 t2 t3].
+Extraction Implicit option_perm4 [t1 t2 t3 t4].
+Extraction Implicit option_perm2_variation [t1 t2].
+Extraction Implicit option_perm3_variation [t1 t2 t3].

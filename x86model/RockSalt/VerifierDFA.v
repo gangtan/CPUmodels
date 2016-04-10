@@ -21,7 +21,6 @@ Require Import Ascii.
 (* Require Import String. *)
 Require Import List.
 Require Import Bits.
-Require Import Decode_ins.
 Require Import Decode.
 Require Import Eqdep.
 Require Import Int32.
@@ -59,7 +58,7 @@ Definition nat2bools(n:nat) : list bool :=
   let bs := Word.bits_of_Z 8 (Z_of_nat n) in
     ((bs 7)::(bs 6)::(bs 5)::(bs 4)::(bs 3)::(bs 2)::(bs 1)::(bs 0)::nil)%Z.
 
-Definition make_dfa t (p:bigrammar t) := build_dfa (par2rec p).
+Definition make_dfa t (p:grammar t) := build_dfa (par2rec p).
 Implicit Arguments make_dfa [t].
 
 (** We mirror the definitions in Decode but only for valid, non-control-flow

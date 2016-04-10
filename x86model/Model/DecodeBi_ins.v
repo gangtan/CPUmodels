@@ -1,13 +1,4 @@
-(* Copyright (c) 2011. Greg Morrisett, Gang Tan, Joseph Tassarotti, 
-   Jean-Baptiste Tristan, and Edward Gan.
-
-   This file is part of RockSalt.
-
-   This file is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License as
-   published by the Free Software Foundation; either version 2 of
-   the License, or (at your option) any later version.
-*)
+(** Gang Tan: Bi-directional grammars for both parsing and pretty-printing *)
 
 (** This file provides bit-level bigrammars for parsing and pretty-printing
     individual x86 instructions. *)
@@ -4994,3 +4985,4 @@ Extraction Implicit never [t].
 Extraction Implicit always [t].
 Extraction Implicit bitsleft [t].
 Extraction Implicit modrm_gen [reg_t].
+

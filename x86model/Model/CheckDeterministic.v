@@ -352,36 +352,36 @@ Proof.
 Qed.
 
 (** Convert a [grammar] to an [rexp]. *)
-Fixpoint bigrammar2rexp t (p:bigrammar t) : rexp := 
+Fixpoint grammar2rexp t (p:grammar t) : rexp := 
   match p with 
-    | Eps => Eps_r
-    | Zero t => Zero_r
-    | Char c => Char_r c
     | Any => Any_r
-    | Cat t1 t2 r1 r2 => OptCat_r (bigrammar2rexp r1) (bigrammar2rexp r2)
-    | Alt t1 t2 r1 r2 => OptAlt_r (bigrammar2rexp r1) (bigrammar2rexp r2)
-    | Star t r => Star_r (bigrammar2rexp r)
-    | Map t1 t2 f r => bigrammar2rexp r
+    | Char c => Char_r c
+    | Eps => Eps_r
+    | Cat t1 t2 r1 r2 => OptCat_r (grammar2rexp r1) (grammar2rexp r2)
+    | Zero t => Zero_r
+    | Alt t1 t2 r1 r2 => OptAlt_r (grammar2rexp r1) (grammar2rexp r2)
+    | Star t r => Star_r (grammar2rexp r)
+    | Map t1 t2 f r => grammar2rexp r
     (* | Xform t1 t2 f r => grammar2rexp r *)
   end.
 
 (** If [s] and [v] are in the denotation of [p], then [s] is in the denotation of
-    [bigrammar2rexp p]. *)
-Lemma bigrammar2rexp_corr1 t (p:bigrammar t) s v : 
-  in_bigrammar p s v -> in_rexp (bigrammar2rexp p) s.
+    [grammar2rexp p]. *)
+Lemma grammar2rexp_corr1 t (p:grammar t) s v : 
+  in_grammar p s v -> in_rexp (grammar2rexp p) s.
 Proof.
   induction 1 ; subst ; repeat in_inv ; 
     try (apply opt_alt_r_corr ||apply opt_cat_r_corr) ; eauto.
 Qed.
 
-(** If [s] is in the denotation of [bigrammar2rexp p], then there exists some [v],
+(** If [s] is in the denotation of [grammar2rexp p], then there exists some [v],
     such that [s] and [v] are in the denotation of [p]. *)
-Lemma bigrammar2rexp_corr2 t (p:bigrammar t) s : 
-  in_rexp (bigrammar2rexp p) s -> 
-    exists v, in_bigrammar p s v.
+Lemma grammar2rexp_corr2 t (p:grammar t) s : 
+  in_rexp (grammar2rexp p) s -> 
+    exists v, in_grammar p s v.
 Proof.
   induction p ; repeat in_inv ; try (econstructor ; econstructor ; eauto ; fail).
-   generalize (proj2 (opt_cat_r_corr (bigrammar2rexp p1) (bigrammar2rexp p2) s) H).
+   generalize (proj2 (opt_cat_r_corr (grammar2rexp p1) (grammar2rexp p2) s) H).
    repeat in_inv. generalize (IHp1 _ H3). generalize (IHp2 _ H4). s. 
    repeat econstructor ; eauto.
    generalize (proj2 (opt_alt_r_corr _ _ _) H). repeat in_inv. 
@@ -390,7 +390,7 @@ Proof.
    Focus 2. generalize (IHp _ H). s. econstructor. econstructor. eauto. eauto.
    (* the following line is for the case of Xform *)
    (* Focus 2. generalize (IHp _ H). s. econstructor. econstructor. eauto. eauto. *)
-   generalize s H IHp. clear s H IHp. generalize (bigrammar2rexp p).
+   generalize s H IHp. clear s H IHp. generalize (grammar2rexp p).
    intros r s H. remember (Star_r r) as r'. generalize Heqr'. clear Heqr'.
    induction H ; intros ; try congruence ; injection Heqr' ; intros ; subst ; clear
      Heqr'. exists nil. constructor ; auto. generalize (IHin_rexp2 (eq_refl _) IHp).
@@ -688,18 +688,18 @@ Proof.
 Qed.
 
 (** Lift [ckdisj_r] to operate on grammars. *)
-Definition ckdisj_p (n:nat) t (p1:bigrammar t) (p2:bigrammar t) := 
-  ckdisj_r n (bigrammar2rexp p1) (bigrammar2rexp p2).
+Definition ckdisj_p (n:nat) t (p1:grammar t) (p2:grammar t) := 
+  ckdisj_r n (grammar2rexp p1) (grammar2rexp p2).
 
 (** Correctness of [ckdisj_p] -- here we see that if [p1] and [p2] are disjoint,
     then there is no string [s] and values [v1] and [v2], such that [s] and [v1]
     are in the denotation of [p1], and [s] and [v2] are in the denotation of [p2]. *)
-Lemma ckdisj_p_corr n t (p1 p2:bigrammar t) : 
-  ckdisj_p n p1 p2 = true -> ~(exists s, exists v1, exists v2, in_bigrammar p1 s v1 /\ 
-    in_bigrammar p2 s v2).
+Lemma ckdisj_p_corr n t (p1 p2:grammar t) : 
+  ckdisj_p n p1 p2 = true -> ~(exists s, exists v1, exists v2, in_grammar p1 s v1 /\ 
+    in_grammar p2 s v2).
 Proof.
   unfold ckdisj_p. intros. intro. generalize (ckdisj_r_corr _ H). intros. mysimp.
-  apply H1. exists x. split ; eapply bigrammar2rexp_corr1 ; eauto. 
+  apply H1. exists x. split ; eapply grammar2rexp_corr1 ; eauto. 
 Qed.
 
 (** Multi [OptAlt_r]. *)
@@ -762,8 +762,8 @@ Proof.
 Qed.
 
 (** Lift [check_all_r] up to grammars. *)
-Definition check_all_p m t (ps:list (bigrammar t)) := 
-  check_all_r m (List.map (@bigrammar2rexp _) ps).
+Definition check_all_p m t (ps:list (grammar t)) := 
+  check_all_r m (List.map (@grammar2rexp _) ps).
 
 Fixpoint check_all_r' m (rs:list rexp) := 
   match rs with 
@@ -773,8 +773,8 @@ Fixpoint check_all_r' m (rs:list rexp) :=
       ckzeros m m (OptAnd_r (OptCat_r (alts_r rs) (Star_r Any_r)) (OptCat_r r (Star_r Any_r)))
   end.
 
-Definition check_all_p' m t (ps:list (bigrammar t)) := 
-  check_all_r' m (List.map (@bigrammar2rexp _) ps).
+Definition check_all_p' m t (ps:list (grammar t)) := 
+  check_all_r' m (List.map (@grammar2rexp _) ps).
 
 (*
 Lemma all_instructions_check : 
@@ -783,8 +783,7 @@ Proof.
   Time vm_compute. auto.
 Qed.
 *)
-
-Axiom all_instructions_check :
+Axiom all_instructions_check : 
   check_all_p' 3 instruction_grammar_list = true.
 
 Lemma star_any_all : forall s, in_rexp (Star_r Any_r) s.
@@ -821,7 +820,7 @@ Proof.
 Qed.
 
 (** Lemma for reasoning about [alts]. *)
-Lemma in_half' t (p:bigrammar t) (ps1 ps2 ps3 : list (bigrammar t)) : 
+Lemma in_half' t (p:grammar t) (ps1 ps2 ps3 : list (grammar t)) : 
   (In p (fst (half ps1 ps2 ps3)) \/ In p (snd (half ps1 ps2 ps3))) -> 
   (In p ps1 \/ In p ps2 \/ In p ps3).
 Proof.
@@ -829,19 +828,19 @@ Proof.
   simpl in *. tauto.
 Qed.
 
-Lemma in_left_half t (p:bigrammar t) (ps1:list (bigrammar t)) : 
+Lemma in_left_half t (p:grammar t) (ps1:list (grammar t)) : 
   In p (fst (half ps1 nil nil)) -> In p ps1.
 Proof.
   intros. generalize (in_half' p ps1 nil nil (or_introl H)). simpl. tauto.
 Qed.
 
-Lemma in_right_half t (p:bigrammar t) (ps1:list (bigrammar t)) : 
+Lemma in_right_half t (p:grammar t) (ps1:list (grammar t)) : 
   In p (snd (half ps1 nil nil)) -> In p ps1.
 Proof.
   intros. generalize (in_half' p ps1 nil nil (or_intror H)). simpl. tauto.
 Qed.
 
-Lemma half_in' t (p:bigrammar t) (ps ps1 ps2:list (bigrammar t)) : 
+Lemma half_in' t (p:grammar t) (ps ps1 ps2:list (grammar t)) : 
   In p ps \/ In p ps1 \/ In p ps2 -> (In p (fst (half ps ps1 ps2)) \/ 
                                       In p (snd (half ps ps1 ps2))).
 Proof.
@@ -850,15 +849,15 @@ Proof.
   eapply (IHps ps2 (a::ps1)). right ; right. simpl. right ; auto.
 Qed.
 
-Lemma half_in t (p:bigrammar t) (ps:list (bigrammar t)) : 
+Lemma half_in t (p:grammar t) (ps:list (grammar t)) : 
   In p ps -> (In p (fst (half ps nil nil)) \/ In p (snd (half ps nil nil))).
 Proof.
   intros. apply (half_in' p ps nil nil). left ; auto.
 Qed.
 
 
-Lemma in_alts' n t (ps:list (bigrammar t)) s (v:interp t) :
-  in_bigrammar (alts' n ps) s v -> exists p, In p ps /\ in_bigrammar p s v.
+Lemma in_alts' n t (ps:list (grammar t)) s (v:interp t) : 
+  in_grammar (alts' n ps) s v -> exists p, In p ps /\ in_grammar p s v.
 Proof.
   induction n ; simpl.
   induction ps ; simpl; unfold never ; intros. inversion H.
@@ -878,10 +877,10 @@ Proof.
   specialize (in_right_half p (g::g0::ps)). simpl. rewrite <-Heqe. simpl. auto.
 Qed.
 
-Lemma in_subset t (ps1 ps2:list (bigrammar t)) : 
-  (forall p:bigrammar t, In p ps1 -> In p ps2) -> 
-  forall s v, in_bigrammar (fold_right (@alt t) (@never t) ps1) s v -> 
-              in_bigrammar (fold_right (@alt t) (@never t) ps2) s v.
+Lemma in_subset t (ps1 ps2:list (grammar t)) : 
+  (forall p:grammar t, In p ps1 -> In p ps2) -> 
+  forall s v, in_grammar (fold_right (@alt t) (@never t) ps1) s v -> 
+              in_grammar (fold_right (@alt t) (@never t) ps2) s v.
 Proof.
   induction ps1. simpl. intros. inversion H0. simpl.
   intros. generalize (inv_Map H0) ; clear H0 ; mysimp. subst.
@@ -946,11 +945,11 @@ Proof.
 Qed.
 
 Lemma in_alts t (ps:list (grammar t)) s v: 
-  in_grammar (alts ps) s v -> in_rexp (alts_r (List.map (@bigrammar2rexp _) ps)) s.
+  in_grammar (alts ps) s v -> in_rexp (alts_r (List.map (@grammar2rexp _) ps)) s.
 Proof.
   unfold alts. intros. specialize (in_alts' _ _ H). clear H. generalize s v.
   clear s v. induction ps ; mysimp ; subst ; try contradiction ; apply opt_alt_r_corr.
-  econstructor ; eauto. eapply bigrammar2rexp_corr1 ; eauto.
+  econstructor ; eauto. eapply grammar2rexp_corr1 ; eauto.
   eapply Alt_right_ri. eapply IHps. econstructor ; eauto.
 Qed.
 
@@ -1011,7 +1010,7 @@ Lemma check_all_p_corr m t (ps:list (grammar t)) :
 Proof.
   unfold check_all_p. intros. generalize (check_all_r_corr m _ H). intros.
   specialize (H1 s (in_alts _ H0)). destruct H1. destruct H1. destruct H1.
-  destruct H1. destruct H2. generalize (map_split (@bigrammar2rexp t) x x0 x1 ps H1).
+  destruct H1. destruct H2. generalize (map_split (@grammar2rexp t) x x0 x1 ps H1).
   intros. mysimp. subst. exists x2. exists x3. exists x4. split. auto.
   generalize (in_alts_comm x2 x3 x4 H0). intros.
   assert (~ exists v', in_grammar (alts (x2 ++ x4)) s v'). intro.
@@ -1032,7 +1031,7 @@ Lemma check_all_p'_corr m t (ps:list (grammar t)) :
 Proof.
   unfold check_all_p. intros. generalize (check_all_r'_corr m _ H). intros.
   specialize (H1 s (in_alts _ H0)). destruct H1. destruct H1. destruct H1.
-  destruct H1. destruct H2. generalize (map_split (@bigrammar2rexp t) x x0 x1 ps H1).
+  destruct H1. destruct H2. generalize (map_split (@grammar2rexp t) x x0 x1 ps H1).
   intros. mysimp. subst. exists x2. exists x3. exists x4. split. auto.
   generalize (in_alts_comm x2 x3 x4 H0). intros.
   assert (~ exists s2, exists v', in_grammar (alts (x2 ++ x4)) (s ++ s2) v'). intro.
