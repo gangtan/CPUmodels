@@ -1111,7 +1111,7 @@ End X86_PARSER_ARG.
     "1010" $$ "1001" $$ imm_op opsize_override @ (fun w => TEST true w (Reg_op EAX) %% instruction_t)
   |+|
     "1010" $$ "1000" $$ byte @ 
-    (fun b => TEST true (Reg_op EAX) (Imm_op (zero_extend8_32 b)) %% instruction_t).
+    (fun b => TEST false (Reg_op EAX) (Imm_op (zero_extend8_32 b)) %% instruction_t).
   
   Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ bits "1011" @ 
     (fun _ => UD2 %% instruction_t).
@@ -1409,7 +1409,7 @@ End X86_PARSER_ARG.
     (fun p => let (m, r) := p in MOVD (GP_Reg_op r) (MMX_Reg_op m) %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "0111" $$ "1110" $$ "11" $$ mmx_reg $ reg @ (*reg from mmxreg*)
-    (fun p => let (m, r) := p in MOVD (GP_Reg_op r) (MMX_Reg_op m) %% instruction_t)
+    (fun p => let (m, r) := p in MOVD (MMX_Reg_op m) (GP_Reg_op r) %% instruction_t)
   |+|
     "0000" $$ "1111" $$ "0110" $$ "1110" $$ (@modrm_gen_noreg _ mmx_operand_t mmx_reg_op MMX_Addr_op) @ (*mem to mmxreg *)
     (fun p => let (op1, op2) := p in MOVD op1 op2 %% instruction_t)

@@ -1,4 +1,5 @@
-What you will find in this tarball:
+
+Last checked in Coq 8.4pl6:
 
 MIPSmodel/
 	A Coq formalization of a MIPS processor

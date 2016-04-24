@@ -2222,26 +2222,27 @@ Require ExtrOcamlNatBigInt.
   (** Starting constructing the x86 parser *)
   Require Import Parser.
 
-  Definition instruction_regexp := 
+  Definition instruction_regexp :=
     projT1 (split_bigrammar (proj1_sig instruction_grammar)).
 
-  Definition ini_decoder_state := 
+  Definition ini_decoder_state :=
     initial_parser_state (bigrammar_to_grammar (proj1_sig instruction_grammar)).
 
+  (* G.T.: the following is very slow somehow; commented out for now; *)
   (* Preventing Coq from expanding the def of ini_decoder_state *)
-  Module Type ABSTRACT_INI_DECODER_STATE_SIG.
-    Parameter abs_ini_decoder_state :
-      instParserState
-        (Pair_t prefix_t instruction_t)
-        instruction_regexp.
-    Parameter ini_decoder_state_eq :
-        abs_ini_decoder_state = ini_decoder_state.
-  End ABSTRACT_INI_DECODER_STATE_SIG.
+  (* Module Type ABSTRACT_INI_DECODER_STATE_SIG. *)
+  (*   Parameter abs_ini_decoder_state : *)
+  (*     instParserState *)
+  (*       (Pair_t prefix_t instruction_t) *)
+  (*       instruction_regexp. *)
+  (*   Parameter ini_decoder_state_eq : *)
+  (*       abs_ini_decoder_state = ini_decoder_state. *)
+  (* End ABSTRACT_INI_DECODER_STATE_SIG. *)
 
-  Module ABSTRACT_INI_DECODER_STATE : ABSTRACT_INI_DECODER_STATE_SIG.
-    Definition abs_ini_decoder_state := ini_decoder_state.
-    Definition ini_decoder_state_eq := eq_refl ini_decoder_state.
-  End ABSTRACT_INI_DECODER_STATE.
+  (* Module ABSTRACT_INI_DECODER_STATE : ABSTRACT_INI_DECODER_STATE_SIG. *)
+  (*   Definition abs_ini_decoder_state := ini_decoder_state. *)
+  (*   Definition ini_decoder_state_eq := eq_refl ini_decoder_state. *)
+  (* End ABSTRACT_INI_DECODER_STATE. *)
 
   Lemma byte_less_than_num_tokens (b:int8) :
     (Z.to_nat (Word.intval _ b) < num_tokens)%nat.
