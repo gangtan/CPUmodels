@@ -693,9 +693,9 @@ Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
   refine ((alt g1 g2)
             @ (fun w : interp (Sum_t t t) => match w with inl x => x | inr y => y end)
             & (fun v : interp t => 
-                 match pretty_print (Alt (` g1) (` g2)) (inl _ v) with 
+                 match pretty_print (` g1) v with 
                    | Some _ => Some (inl _ v)
-                   | None => match pretty_print (Alt (` g1)  (` g2)) (inr _ v) with 
+                   | None => match pretty_print (` g2) v with 
                                | Some _ => Some (inr _ v)
                                | None => None
                              end
