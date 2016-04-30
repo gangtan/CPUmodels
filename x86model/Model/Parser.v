@@ -3015,8 +3015,10 @@ Section DFA_PARSE.
             | inleft (exist e Hnr) => 
               let next_i := next_state e in 
               let next_fixup := coerce_dom (parse_token_help1 ps Hnd) (fixup_ps ps) in
+              (* g composes the previous fixup function with the new one *)
               let g:= compose (flat_map next_fixup)
                         ((*xinterp*) (next_xform e)) in
+              (* vs0 is the set of final values when e is an accepting state *)
               let vs0 : list (xt_interp 
                                 (RES.re_set_type 
                                    (dfa_states (dfa_ps ps).[next_state e]))) :=
