@@ -1397,10 +1397,10 @@ Section DFA.
       (** the [next_state] is in bounds with respect to the number of states *)
       next_state_lt : next_state < cardinal_wfs ss ; 
       (** how do we transform ASTs from the next state back to this state *)
-      next_xform : (* RES.re_set_type (ss.[next_state]) ->>
-                   xList_t (RES.re_set_type (ss.[rownum])) *)
-        xt_interp (RES.re_set_type (ss.[next_state]))->  
-        xt_interp (xList_t (RES.re_set_type (ss.[rownum]))) 
+      next_xform : RES.re_set_type (ss.[next_state]) ->>
+                   xList_t (RES.re_set_type (ss.[rownum]))
+        (* xt_interp (RES.re_set_type (ss.[next_state]))->   *)
+        (* xt_interp (xList_t (RES.re_set_type (ss.[rownum])))  *)
     }.
 
   (** Entries for a row in the transition matrix -- an entry for each token *)  
@@ -1420,7 +1420,7 @@ Section DFA.
       | Some e =>
         forall str v, 
           in_re_set (ss.[gpos]) ((token_id_to_chars t) ++ str) v <->
-          in_re_set_interp_xform (ss.[next_state e]) (next_xform e) str v
+          in_re_set_interp_xform (ss.[next_state e]) (xinterp (next_xform e)) str v
       | None => True
     end.
 
@@ -1900,10 +1900,10 @@ Section DFA.
     Definition gen_row_ret_t (ss:wf_states) (n:nat) (tid:token_id) :=
       {ss':wf_states & {entries : entries_t gpos ss' & wfs_ext ss ss'}}.
 
-    Definition fcoerce {t1 t2 t3 t4:xtype} (f:xt_interp t1 -> xt_interp t2) : 
-      t1 = t3 -> t2 = t4 -> xt_interp t3 -> xt_interp t4.
+    Definition fcoerce {t1 t2 t3 t4:xtype} (f: t1 ->> t2) : 
+      t1 = t3 -> t2 = t4 -> (t3 ->> t4).
     Proof.
-      intros. subst. apply (f X).
+      intros. subst. apply f.
     Defined.    
 
     (** This hideous function is basically calculating the derivative
@@ -1932,9 +1932,9 @@ Section DFA.
                           {| next_state := n ;
                              next_state_lt := gen_row_help1 _ Hwfs Hgi;
                              next_xform := 
-                               xinterp (xopt (xcomp f_back
-                                               (xcoerce f1 eq_refl
-                                                 (gen_row_help3 H H1 Hwfs)))) |} in
+                                (xopt (xcomp f_back
+                                        (xcoerce f1 eq_refl
+                                          (gen_row_help3 H H1 Hwfs)))) |} in
                       existT _ ss' (existT _ (e::entries) _)
                   | inright Hgi =>
                       let (ss', r) := gen_row' n' (s1 ::: ss) (1 + tid) _ _ in
@@ -1942,7 +1942,7 @@ Section DFA.
                       let e : entry_t gpos ss' :=
                           {| next_state := cardinal_wfs ss;
                              next_state_lt := _ ;
-                             next_xform := xinterp (xcoerce f1 (gen_row_help2 Hgi Hwfs) 
+                             next_xform := (xcoerce f1 (gen_row_help2 Hgi Hwfs) 
                                              (gen_row_help5 s H H1 Hgi Hwfs)) |} in
                       existT _ ss' (existT _ (e::entries) _)
                 end
@@ -2319,7 +2319,7 @@ Section DFA.
 
   Definition wf_table ss rows := @build_table_inv (List.length rows) ss rows.
 
-  Lemma fcoerce_eq t1 t2 (f : xt_interp t1 -> xt_interp t2) (H1 : t1 = t1) (H2 : t2 = t2) :
+  Lemma fcoerce_eq t1 t2 (f : t1 ->> t2) (H1 : t1 = t1) (H2 : t2 = t2) :
     fcoerce f H1 H2 = f.
   Proof.
     rewrite (@proof_irrelevance _ H1 eq_refl).
@@ -2533,7 +2533,7 @@ Section DFA.
   Definition wf_ventry(gpos:nat)(ss:wf_states)(e:entry_t gpos ss) (t:token_id) :=
     forall str v, 
       in_re_set (ss.[gpos]) ((token_id_to_chars t) ++ str) v <->
-      in_re_set_interp_xform (ss.[next_state e]) (next_xform e) str v.
+      in_re_set_interp_xform (ss.[next_state e]) (xinterp (next_xform e)) str v.
 
   Definition wf_vtable ss (rows:vtransitions_t ss) := 
    1 <= cardinal_wfs ss /\ (Vector.length rows) <= cardinal_wfs ss /\ 
@@ -3017,7 +3017,7 @@ Section DFA_PARSE.
               let next_fixup := coerce_dom (parse_token_help1 ps Hnd) (fixup_ps ps) in
               (* g composes the previous fixup function with the new one *)
               let g:= compose (flat_map next_fixup)
-                        ((*xinterp*) (next_xform e)) in
+                        (xinterp (next_xform e)) in
               (* vs0 is the set of final values when e is an accepting state *)
               let vs0 : list (xt_interp 
                                 (RES.re_set_type 
@@ -3194,7 +3194,7 @@ Section DFA_PARSE.
           apply in_flat_map in H12.
           destruct H12 as [l [H12 H24]].
           assert (H30:in_re_set_interp_xform (dfa_states (dfa_ps ps1).[next_state entries])
-                                             (next_xform entries) str l).
+                                             (xinterp (next_xform entries)) str l).
           econstructor ; eauto. 
           apply H18 in H30.
           exists l. crush.
@@ -3414,8 +3414,7 @@ Section VDFA_PARSE.
         let next_i := next_state e in 
         let next_fixup := coerce_dom (vparse_token_help1 _ eq_refl) (vfixup_ps ps) in 
         (* call a slightly optimized version of compose (flat_map ...) *)
-        let g := (*compose (flat_map next_fixup) (next_xform e) in *)
-                 compose_flat_map next_fixup (next_xform e) in
+        let g := compose_flat_map next_fixup (xinterp (next_xform e)) in
         let row' := Vector.get (vdfa_transition (vdfa_ps ps)) next_i (vparse_token_help2 _ eq_refl _) in
         let vs0 : list (xt_interp (RES.re_set_type 
                                      (vdfa_states (vdfa_ps ps).[next_state e])))
@@ -3506,7 +3505,8 @@ Section VDFA_PARSE.
     destruct ps1 ; destruct row ; destruct entry ; simpl in *.
     destruct row2 ; simpl in *. subst. simpl.
     rewrite compose_flat_map_simp. rewrite flat_map_simp.
-    remember (compose (flat_map vfixup_ps0) next_xform0) as fixup. fold interp in fixup.
+    remember (compose (flat_map vfixup_ps0) (xinterp next_xform0)) as fixup. 
+    fold interp in fixup.
     destruct vdfa_wf0 as [[H6 [H7 H9]] [H4 H5]].
     specialize (H9 _ H1). 
     rewrite <- Heqrow2 in H9. simpl in H9. destruct H9 as [H10 [H11 [H12 H13]]].
