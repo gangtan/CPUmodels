@@ -10,8 +10,7 @@ coq: Makefile.coq
 	$(MAKE) -f Makefile.coq
 
 Makefile.coq: Makefile $(VS:%=%)
-	echo $(VS)
-	coq_makefile $(VS) -o Makefile.coq
+	coq_makefile -R . x86model $(VS) -o Makefile.coq
 
 clean:: Makefile.coq
 	$(MAKE) -f Makefile.coq clean

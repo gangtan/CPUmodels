@@ -231,24 +231,28 @@ Module RawRESet := MSetAVL.Make REOrderedType.
   Proof.
     unfold in_tree.
     induction tr ; simpl. intro ; destruct v.
-    intro. destruct v as [v | [v | v]]. split. intro. 
-    in_regexp_inv. injection H0 ; crush. rewrite in_app. left.
-    eapply in_map. apply (proj1 (IHtr1 x)). auto.
-    rewrite in_app. intros. destruct H. rewrite (in_map_iff) in H.
-    crush. injection H ; crush. generalize (proj2 (IHtr1 v)). crush.
-    rewrite in_app in H. destruct H. rewrite in_map_iff in H.
-    crush. rewrite in_map_iff in H. crush.
-    split. intros. in_regexp_inv. in_regexp_inv. injection H0 ; crush.
-    rewrite in_app. right. rewrite in_app. left. rewrite in_map_iff. 
-    econstructor ; crush. eapply regexp_extract_nil_corr1 ; eauto.
-    rewrite in_app. rewrite in_app. repeat rewrite in_map_iff. crush.
-    inversion H ; crush. eapply InrAlt_r. eapply InrAlt_l. 
-    eapply regexp_extract_nil_corr2. eauto. eauto. auto.
-    repeat rewrite in_app. repeat rewrite in_map_iff. crush.
-    repeat in_regexp_inv. injection H0 ; crush. right ; right. 
-    exists x0. split ; auto. eapply IHtr2. eauto.
-    injection H ; crush. eapply InrAlt_r ; eauto. eapply InrAlt_r ; eauto.
-    eapply IHtr2. auto.
+    intro. destruct v as [v | [v | v]].
+    - split. 
+      + intro.
+        in_regexp_inv. rewrite in_app. left.
+        eapply in_map. apply (proj1 (IHtr1 x)). auto.
+      + rewrite in_app. intros.
+        destruct H. rewrite (in_map_iff) in H.
+        crush. injection H ; crush. generalize (proj2 (IHtr1 v)). crush.
+        rewrite in_app in H. destruct H. rewrite in_map_iff in H.
+        crush. rewrite in_map_iff in H. crush.
+    - split. 
+      + intros. in_regexp_inv. in_regexp_inv. 
+        rewrite in_app. right. rewrite in_app. left. rewrite in_map_iff. 
+        econstructor ; crush. eapply regexp_extract_nil_corr1 ; eauto.
+      + rewrite in_app. rewrite in_app. repeat rewrite in_map_iff. crush.
+        inversion H ; crush. eapply InrAlt_r. eapply InrAlt_l. 
+        eapply regexp_extract_nil_corr2. eauto. eauto. auto.
+    - repeat rewrite in_app. repeat rewrite in_map_iff. crush.
+      + repeat in_regexp_inv. right ; right. 
+        exists x. split ; auto. eapply IHtr2. eauto.
+      + injection H ; crush. eapply InrAlt_r ; eauto. eapply InrAlt_r ; eauto.
+        eapply IHtr2. auto.
   Qed.
 
   Definition re_set_extract_nil (s:t) : list (xt_interp (re_set_type s)).
@@ -298,7 +302,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
   Definition create_xform ty (l:Raw.tree) (fl : tree_type l ->> xList_t ty)
                              (x:regexp) (fx : regexp_type x ->> xList_t ty)                             (r:Raw.tree) (fr : tree_type r ->> xList_t ty) : 
     tree_xf_pair ty := 
-    existT _ (Raw.Node (Int.Z_as_Int.plus (Int.Z_as_Int.max (Raw.height l) 
+    existT _ (Raw.Node (Int.Z_as_Int.add (Int.Z_as_Int.max (Raw.height l) 
                                                             (Raw.height r)) 1)
                        l x r) (xmatch fl (xmatch fx fr)).
   Extraction Implicit create_xform [ty].
@@ -1226,12 +1230,12 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     tree_xf_pair t :=
     let hl := Raw.height l in 
     let hr := Raw.height r in 
-    if Int.Z_as_Int.gt_le_dec hl (Int.Z_as_Int.plus hr 2) then
+    if Int.Z_as_Int.ltb (Int.Z_as_Int.add hr 2) hl then
       match l return tree_type l ->> xList_t t -> {s:Raw.tree & tree_type s ->> xList_t t}
       with 
         | Raw.Leaf => fun _ => assert_false_xform l fl x fx r fr
         | Raw.Node i ll lx lr => 
-          if Int.Z_as_Int.ge_lt_dec (Raw.height ll) (Raw.height lr) then
+          if Int.Z_as_Int.leb (Raw.height lr) (Raw.height ll) then
             fun fl0 =>  
               let (r',fr') := (create_xform lr (xcomp (xcomp xinr xinr) fl0) x fx r fr) in 
               create_xform ll (xcomp xinl fl0) lx (xcomp (xcomp xinl xinr) fl0) r' fr'
@@ -1255,12 +1259,12 @@ Module RawRESet := MSetAVL.Make REOrderedType.
                                r' fr'
             end 
       end fl
-    else if Int.Z_as_Int.gt_le_dec hr (Int.Z_as_Int.plus hl 2) then 
+    else if Int.Z_as_Int.ltb (Int.Z_as_Int.add hl 2) hr then 
       match r return tree_type r ->> xList_t t -> {rs:Raw.tree & tree_type rs ->> xList_t t}
       with 
         | Raw.Leaf => fun _ => assert_false_xform l fl x fx r fr
         | Raw.Node i rl rx rr => 
-          if Int.Z_as_Int.ge_lt_dec (Raw.height rr) (Raw.height rl) then 
+          if Int.Z_as_Int.leb (Raw.height rl) (Raw.height rr) then 
             fun fr0 => 
               let (l',f') := create_xform l fl x fx rl (xcomp xinl fr0) in 
               create_xform l' f' rx (xcomp (xcomp xinl xinr) fr0) 
@@ -1290,47 +1294,52 @@ Module RawRESet := MSetAVL.Make REOrderedType.
   Proof.
     intros. unfold bal_xform, Raw.bal.
     replace 2 with (Int.Z_as_Int._2) ; auto.
-    destruct (Int.Z_as_Int.gt_le_dec (Raw.height l) (Int.Z_as_Int.plus (Raw.height r) Int.Z_as_Int._2)).
-    destruct l. apply assert_false_xform_erase.
-    destruct (Int.Z_as_Int.ge_lt_dec (Raw.height l1) (Raw.height l2)).
-    remember (create_xform l2 (xcomp (xcomp xinr xinr) fl) x fx r fr) as e.
-    destruct e as [r' fr']. rewrite (create_xform_erase). 
-    replace (Raw.create l2 x r) with r' ; auto.
-    assert (r' = projT1 (existT (fun s:Raw.tree => tree_type s ->> xList_t t0) r' fr')).
-    auto.
-    rewrite Heqe in H. rewrite (create_xform_erase) in H. auto.
-    destruct l2. apply assert_false_xform_erase.
-    remember (create_xform l1 (xcomp xinl fl) t2 (xcomp (xcomp xinl xinr) fl)
-                           l2_1 (xcomp (xcomp xinl (xcomp xinr xinr)) fl)) as e1.
-    remember (create_xform l2_2 (xcomp (xcomp xinr (xcomp xinr (xcomp xinr xinr))) fl) 
-                           x fx r fr) as e2.
-    destruct e1 as [l' fl']. destruct e2 as [r' fr'].
-    rewrite create_xform_erase.
-    replace (l') with (projT1 (existT (fun s => tree_type s->>xList_t t0) l' fl')) ; auto.
-    rewrite Heqe1. rewrite create_xform_erase.
-    replace (r') with (projT1 (existT (fun s => tree_type s ->> xList_t t0) r' fr')) ; auto.
-    rewrite Heqe2. rewrite create_xform_erase. auto.
-    destruct (Int.Z_as_Int.gt_le_dec (Raw.height r) 
-                                     (Int.Z_as_Int.plus (Raw.height l) Int.Z_as_Int._2)).
-    destruct r. apply assert_false_xform_erase.
-    destruct (Int.Z_as_Int.ge_lt_dec (Raw.height r2) (Raw.height r1)).
-    remember (create_xform l fl x fx r1 (xcomp xinl fr)) as e.
-    destruct e. rewrite create_xform_erase.
-    replace x0 with (projT1 (existT (fun s => tree_type s ->>xList_t t0) x0 x1)) ; auto.
-    rewrite Heqe. rewrite create_xform_erase. auto.
-    destruct r1. apply assert_false_xform_erase.
-    remember (create_xform l fl x fx r1_1 (xcomp (xcomp xinl xinl) fr)) as e1.
-    remember (create_xform r1_2 
+    destruct_head.
+    - destruct l.
+      + apply assert_false_xform_erase.
+      + destruct_head.
+        * remember (create_xform l2 (xcomp (xcomp xinr xinr) fl) x fx r fr) as e.
+          destruct e as [r' fr']. rewrite (create_xform_erase). 
+          replace (Raw.create l2 x r) with r' ; auto.
+          assert (r' = projT1 (existT
+                                 (fun s:Raw.tree => tree_type s ->> xList_t t0) r' fr')).
+            auto.
+          rewrite Heqe in H. rewrite (create_xform_erase) in H. auto.
+        * destruct l2. 
+          { apply assert_false_xform_erase. }
+          { remember (create_xform l1 (xcomp xinl fl) t2 (xcomp (xcomp xinl xinr) fl)
+                                   l2_1 (xcomp (xcomp xinl (xcomp xinr xinr)) fl)) as e1.
+            remember (create_xform l2_2
+                        (xcomp (xcomp xinr (xcomp xinr (xcomp xinr xinr))) fl) 
+                        x fx r fr) as e2.
+            destruct e1 as [l' fl']. destruct e2 as [r' fr'].
+            rewrite create_xform_erase.
+            replace (l') with 
+              (projT1 (existT (fun s => tree_type s->>xList_t t0) l' fl')) ; auto.
+            rewrite Heqe1. rewrite create_xform_erase.
+            replace (r') with
+              (projT1 (existT (fun s => tree_type s ->> xList_t t0) r' fr')) ; auto.
+            rewrite Heqe2. rewrite create_xform_erase. auto. }
+    - destruct_head.
+      destruct r. apply assert_false_xform_erase.
+      destruct_head.
+      remember (create_xform l fl x fx r1 (xcomp xinl fr)) as e.
+      destruct e. rewrite create_xform_erase.
+      replace x0 with (projT1 (existT (fun s => tree_type s ->>xList_t t0) x0 x1)) ; auto.
+      rewrite Heqe. rewrite create_xform_erase. auto.
+      destruct r1. apply assert_false_xform_erase.
+      remember (create_xform l fl x fx r1_1 (xcomp (xcomp xinl xinl) fr)) as e1.
+      remember (create_xform r1_2 
                            (xcomp (xcomp xinr (xcomp xinr xinl)) fr) t2
                            (xcomp (xcomp xinl xinr) fr) r2 
                            (xcomp (xcomp xinr xinr) fr)) as e2.
-    destruct e1 as [l' fl']. destruct e2 as [r' fr'].
-    rewrite create_xform_erase. 
-    replace l' with (projT1 (existT (fun s => tree_type s ->> xList_t t0) l' fl')) ; auto.
-    rewrite Heqe1. rewrite create_xform_erase.
-    replace r' with (projT1 (existT (fun s => tree_type s ->> xList_t t0) r' fr')) ; auto.
-    rewrite Heqe2. rewrite create_xform_erase. auto.
-    apply create_xform_erase.
+      destruct e1 as [l' fl']. destruct e2 as [r' fr'].
+      rewrite create_xform_erase. 
+      replace l' with (projT1 (existT (fun s => tree_type s ->> xList_t t0) l' fl')) ; auto.
+      rewrite Heqe1. rewrite create_xform_erase.
+      replace r' with (projT1 (existT (fun s => tree_type s ->> xList_t t0) r' fr')) ; auto.
+      rewrite Heqe2. rewrite create_xform_erase. auto.
+      apply create_xform_erase.
   Qed.
 
   Lemma bal_xform_corr1 ty l fl x fx r fr str v : 
@@ -1432,13 +1441,13 @@ Module RawRESet := MSetAVL.Make REOrderedType.
                                  (xcomp (xcomp xinr xinr) f2)))
             | Lt => fun H f2 => 
                       match add_xform_tree x f1 l (xcomp xinl f2) with
-                        | existT l' f' => 
+                        | existT _ l' f' => 
                           bal_xform l' f' y (xcomp (xcomp xinl xinr) f2) r 
                                     (xcomp (xcomp xinr xinr) f2)
                       end
             | Gt => fun H f2 => 
                       match add_xform_tree x f1 r (xcomp (xcomp xinr xinr) f2) with
-                        | existT r' f' => 
+                        | existT _ r' f' => 
                           bal_xform l (xcomp xinl f2) y (xcomp (xcomp xinl xinr) f2) r' f'
                       end
           end eq_refl
@@ -1455,18 +1464,17 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     destruct (REOrderedTypeAlt.compare x t2) ; auto ; intros.
     specialize (IHs1 x f1 (xcomp xinl f)).
     match goal with 
-        | [ |- projT1 (match ?e with | existT _ _ => _ end) = _ ] => remember e as e1
+        | [ |- projT1 (match ?e with | existT _ _ _ => _ end) = _ ] => remember e as e1
     end.
     destruct e1. rewrite bal_xform_erase. 
-    fold tree_type in IHs1. 
-    fold regexp_type in IHs1. fold tree_to_regexp in IHs1.
     unfold tree_type in IHs1, Heqe1. 
+    simpl regexp_type in IHs1.
     rewrite <- Heqe1 in IHs1. rewrite <- IHs1. auto.
     specialize (IHs2 x f1 (xcomp (xcomp xinr xinr) f)).
     fold regexp_type in IHs2. fold tree_to_regexp in IHs2. 
     unfold tree_type in *.
     match goal with 
-      | [ |- projT1 (match ?e with | existT _ _ => _ end) = _ ] => remember e as e1
+      | [ |- projT1 (match ?e with | existT _ _ _ => _ end) = _ ] => remember e as e1
     end.
     destruct e1. rewrite bal_xform_erase. rewrite <- IHs2. auto.
   Qed.
@@ -1486,10 +1494,10 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     generalize (in_app_or _ _ _ H0). crush. right ; econstructor ; crush.
     right ; econstructor ; crush. intros.
     specialize (IHtr1 (xcomp xinl ftr) x fx str v) ; clear IHtr2.
-    fold regexp_type in IHtr1. fold tree_to_regexp in IHtr1.
     unfold tree_type in H.
+    simpl regexp_type in IHtr1.
     match goal with 
-      | [ H : in_tree_xform (match ?exp with existT _ _ => _ end) _ _ |- _ ] => 
+      | [ H : in_tree_xform (match ?exp with existT _ _ _ => _ end) _ _ |- _ ] => 
         remember exp as e1
     end.
     destruct e1. generalize (bal_xform_corr1 _ _ _ _ _ _ _ _ H). intros.
@@ -1499,7 +1507,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     intros. specialize (IHtr2 (xcomp (xcomp xinr xinr) ftr) x fx str v). clear IHtr1.
     fold regexp_type in IHtr2. fold tree_to_regexp in IHtr2. unfold tree_type in H.
     match goal with 
-      | [ H : in_tree_xform (match ?exp with existT _ _ => _ end) _ _ |- _ ] => 
+      | [ H : in_tree_xform (match ?exp with existT _ _ _ => _ end) _ _ |- _ ] => 
         remember exp as e1
     end.
     destruct e1. generalize (bal_xform_corr1 _ _ _ _ _ _ _ _ H) ; intros.
@@ -1511,16 +1519,16 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     destruct c ; intro. generalize (e eq_refl) ; intro ; subst. simpl. 
     unfold in_tree. econstructor ; crush. xinterp_simpl. apply in_or_app.
     right ; auto. specialize (IHtr1 (xcomp xinl ftr) x fx str v). clear IHtr2.
-    fold regexp_type in IHtr1. fold tree_to_regexp in IHtr1. unfold tree_type.
+    unfold tree_type. simpl regexp_type in IHtr1.
     match goal with 
-      | [ |- in_tree_xform (match ?exp with existT _ _ => _ end) _ _ ] => 
+      | [ |- in_tree_xform (match ?exp with existT _ _ _ => _ end) _ _ ] => 
         remember exp as e1
     end.
     destruct e1. apply bal_xform_corr2. left. apply IHtr1. left. crush.
     clear IHtr1. specialize (IHtr2 (xcomp (xcomp xinr xinr) ftr) x fx str v).
-    fold regexp_type in IHtr2. fold tree_to_regexp in IHtr2. unfold tree_type.
+    unfold tree_type. simpl regexp_type in IHtr2.
     match goal with 
-      | [ |- in_tree_xform (match ?exp with existT _ _ => _ end) _ _ ] => 
+      | [ |- in_tree_xform (match ?exp with existT _ _ _ => _ end) _ _ ] => 
         remember exp as e1
     end.
     destruct e1. apply bal_xform_corr2. right. right. apply IHtr2. left ; crush.
@@ -1530,9 +1538,9 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     xinterp_simpl. destruct s. xinterp_simpl. apply in_or_app. left ; auto.
     xinterp_simpl ; auto.
     specialize (IHtr1 (xcomp xinl ftr) x fx str v). clear IHtr2.
-    fold regexp_type in IHtr1. fold tree_to_regexp in IHtr1. unfold tree_type.
+    unfold tree_type. simpl regexp_type in IHtr1.
     match goal with 
-      | [ |- in_tree_xform (match ?exp with existT _ _ => _ end) _ _ ] => 
+      | [ |- in_tree_xform (match ?exp with existT _ _ _ => _ end) _ _ ] => 
         remember exp as e1
     end.
     destruct e1. apply bal_xform_corr2. unfold in_tree in H. simpl in H.
@@ -1545,9 +1553,9 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     destruct H as [v3 [H1 H2]]. subst. right ; right. simpl. unfold in_tree.
     econstructor ; split ; eauto ; xinterp_simpl ; auto.
     clear IHtr1. specialize (IHtr2 (xcomp (xcomp xinr xinr) ftr) x fx str v).
-    fold regexp_type in IHtr2. fold tree_to_regexp in IHtr2. unfold tree_type.
+    unfold tree_type. simpl regexp_type in IHtr2.
     match goal with 
-      | [ |- in_tree_xform (match ?exp with existT _ _ => _ end) _ _ ] => 
+      | [ |- in_tree_xform (match ?exp with existT _ _ _ => _ end) _ _ ] => 
         remember exp as e1
     end.
     destruct e1. apply bal_xform_corr2. simpl in *. unfold in_tree in *. simpl in *.
@@ -1581,14 +1589,12 @@ Module RawRESet := MSetAVL.Make REOrderedType.
             | Raw.Leaf => fun _ => add_xform_tree x fx (Raw.Node lh ll lx lr) fl
             | Raw.Node rh rl rx rr => 
               fun fr => 
-                if Int.Z_as_Int.gt_le_dec lh 
-                                          (Int.Z_as_Int.plus rh Int.Z_as_Int._2) then
+                if Int.Z_as_Int.ltb (Int.Z_as_Int.add rh Int.Z_as_Int._2) lh then
                   let (r',fr') := (join_xform lr (xcomp (xcomp xinr xinr) fl) x fx 
                                               (Raw.Node rh rl rx rr) fr) in
                   bal_xform ll (xcomp xinl fl) lx (xcomp (xcomp xinl xinr) fl) r' fr'
                 else 
-                  if Int.Z_as_Int.gt_le_dec rh 
-                                            (Int.Z_as_Int.plus lh Int.Z_as_Int._2) then
+                  if Int.Z_as_Int.ltb (Int.Z_as_Int.add lh Int.Z_as_Int._2) rh then
                     let (l',fl') := join_aux rl (xcomp xinl fr) in
                     bal_xform l' fl' rx (xcomp (xcomp xinl xinr) fr) 
                               rr (xcomp (xcomp xinr xinr) fr)
@@ -1614,13 +1620,13 @@ Module RawRESet := MSetAVL.Make REOrderedType.
       rewrite add_xform_tree_erase ; auto.
     rewrite Heqjoin_aux. rewrite <- Heqjoin_aux.
     rewrite Heqjoin_aux_xform. rewrite <- Heqjoin_aux_xform.
-    destruct (Int.Z_as_Int.gt_le_dec t1 (Int.Z_as_Int.plus t3 Int.Z_as_Int._2)).
+    destruct_head.
     specialize (IHl2 (xcomp (xcomp xinr xinr) fl) x fx (Raw.Node t3 r1 t4 r2) fr).
     remember (join_xform l2 (xcomp (xcomp xinr xinr) fl) x fx (Raw.Node t3 r1 t4 r2) fr)
              as e.
     destruct e.
     rewrite bal_xform_erase. rewrite <- IHl2. auto.
-    destruct (Int.Z_as_Int.gt_le_dec t3 (Int.Z_as_Int.plus t1 Int.Z_as_Int._2)).
+    destruct_head.
     specialize (IHr1 (xcomp xinl fr)). 
     remember (join_aux_xform r1 (xcomp xinl fr)) as e. 
     destruct e. rewrite bal_xform_erase. rewrite <- IHr1. auto.
@@ -1646,7 +1652,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     intros. apply add_xform_tree_corr. crush. destruct x0.
     rewrite Heqjoin_aux_xform. intros. 
     split ; intro.
-    destruct (Int.Z_as_Int.gt_le_dec t0 (Int.Z_as_Int.plus t2 Int.Z_as_Int._2)).
+    destruct (Int.Z_as_Int.ltb (Int.Z_as_Int.add t2 Int.Z_as_Int._2) t0).
     clear IHl1 IHr1 IHr2. specialize (IHl2 (xcomp (xcomp xinr xinr) fl) x fx
                                            (Raw.Node t2 r1 t3 r2) fr str v).
     remember (join_xform l2 (xcomp (xcomp xinr xinr) fl) x fx
@@ -1656,7 +1662,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     econstructor ; crush. specialize (H0 (@ex_intro _ _ x2 (conj H H2))).
     crush. xinterp_simpl. left ; econstructor ; crush.
     rewrite <- Heqjoin_aux_xform in H.
-    destruct (Int.Z_as_Int.gt_le_dec t2 (Int.Z_as_Int.plus t0 Int.Z_as_Int._2)).
+    destruct (Int.Z_as_Int.ltb (Int.Z_as_Int.add t0 Int.Z_as_Int._2) t2).
     specialize (IHr1 (xcomp xinl fr) str v). clear IHl1 IHl2 Heqjoin_aux_xform IHr2.
     remember (join_aux_xform r1 (xcomp xinl fr)) as e. destruct e.
     generalize (bal_xform_corr1 _ _ _ _ _ _ _ _ H). clear H. 
@@ -1672,7 +1678,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     xinterp_simpl ; right ; right ; econstructor ; crush.
     xinterp_simpl ; right ; right ; econstructor ; crush.
     rewrite <- Heqjoin_aux_xform.
-    destruct (Int.Z_as_Int.gt_le_dec t0 (Int.Z_as_Int.plus t2 Int.Z_as_Int._2)).
+    destruct (Int.Z_as_Int.ltb (Int.Z_as_Int.add t2 Int.Z_as_Int._2) t0).
     specialize (IHl2 (xcomp (xcomp xinr xinr) fl) x fx (Raw.Node t2 r1 t3 r2) fr str v).
     clear IHl1 Heqjoin_aux_xform IHr1 IHr2.
     remember (join_xform l2 (xcomp (xcomp xinr xinr) fl) x fx (Raw.Node t2 r1 t3 r2) fr)
@@ -1685,7 +1691,7 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     right ; right. apply H1. right ; right. econstructor ; crush.
     right ; right ; apply H1. right ; right ; econstructor ; crush.
     right ; right ; apply H1. right ; right ; econstructor ; crush.
-    destruct (Int.Z_as_Int.gt_le_dec t2 (Int.Z_as_Int.plus t0 Int.Z_as_Int._2)).
+    destruct (Int.Z_as_Int.ltb (Int.Z_as_Int.add t0 Int.Z_as_Int._2) t2).
     clear Heqjoin_aux_xform IHl1 IHl2 IHr2. specialize (IHr1 (xcomp xinl fr) str v).
     remember (join_aux_xform r1 (xcomp xinl fr)) as e. destruct e.
     apply bal_xform_corr. crush. unfold in_tree in *. simpl in *.
@@ -1746,8 +1752,8 @@ Module RawRESet := MSetAVL.Make REOrderedType.
   Lemma split_xform_erase : forall t x s fs, 
       Raw.split x s = 
       match @split_xform t x s fs with
-        | mkTX l _ None r _ => Raw.mktriple l false r
-        | mkTX l _ _ r _ => Raw.mktriple l true r
+        | mkTX _ l _ None r _ => Raw.mktriple l false r
+        | mkTX _ l _ _ r _ => Raw.mktriple l true r
       end.
   Proof.
     induction s ; intros ; auto. unfold Raw.split. fold Raw.split.
@@ -1790,7 +1796,11 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     generalize (e eq_refl). intros ; subst. unfold in_tree. 
     unfold in_triple_xform in H. crush ; xinterp_simpl ; crush. 
     intros. specialize (IHs1 (xcomp xinl f) str v).
-    remember (split_xform x s1 (xcomp xinl f)) as e1. destruct e1.
+    simpl regexp_type in IHs1.
+    match goal with
+      [ H: in_triple_xform ?exp _ _ <-> _ |- _] => 
+      remember exp as e1; destruct e1
+    end.
     generalize (join_xform_corr t_right0 t_right_xform0 t1 
                                 (xcomp (xcomp xinl xinr) f) s2 
                                 (xcomp (xcomp xinr xinr) f) str v). intro.
@@ -1813,8 +1823,11 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     remember (split_xform x s2 (xcomp (xcomp xinr xinr) f)) as e1. destruct e1.
     generalize (proj1 (join_xform_corr s1 (xcomp xinl f) t1 (xcomp (xcomp xinl xinr) f)
                                        t_left0 t_left_xform0 str v)). intros.
-    remember (join_xform s1 (xcomp xinl f) t1 (xcomp (xcomp xinl xinr) f)
-                         t_left0 t_left_xform0) as e1 ; destruct e1.
+    simpl regexp_type in H, H0.
+    match goal with
+      | [H: in_tree_xform ?exp _ _ -> _ |- _] => 
+        remember exp as e1; destruct e1
+    end.
     unfold in_triple_xform in * ; simpl in *. destruct H.
     generalize (H0 H). clear H0. intro. destruct H0. 
     unfold in_tree in * ; xinterp_simpl ; crush. xinterp_simpl ; econstructor ; crush.
@@ -1834,7 +1847,12 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     right ; left ; econstructor ; split ; eauto ; xinterp_simpl ; auto.
     intros. crush. unfold in_tree in H ; simpl in H.
     specialize (proj2 (IHs1 (xcomp xinl f) str v)). clear IHs1 IHs2. 
-    intros. remember (split_xform x s1 (xcomp xinl f)) as e1. destruct e1.
+    intros. 
+    simpl regexp_type in H1.
+    match goal with
+      | [ H: _ -> in_triple_xform ?exp _ _ |- _] => 
+        remember exp as e1; destruct e1
+    end.
     specialize (proj2 (join_xform_corr t_right0 t_right_xform0 t1 
                                        (xcomp (xcomp xinl xinr) f)
                                        s2 (xcomp (xcomp xinr xinr) f) str v)). 
@@ -1850,13 +1868,18 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     xinterp_simpl. auto. right ; left. apply H2. right ; right. econstructor ; 
     split ; eauto. xinterp_simpl. auto.
     intros. specialize (proj2 (IHs2 (xcomp (xcomp xinr xinr) f) str v)).
-    clear IHs1 IHs2. intros. remember (split_xform x s2 (xcomp (xcomp xinr xinr) f)) as e1.
-    destruct e1. specialize (proj2 (join_xform_corr s1 (xcomp xinl f) t1
-                                                    (xcomp (xcomp xinl xinr) f)
-                                                    t_left0 t_left_xform0 str v)). intro.
-    remember (join_xform s1 (xcomp xinl f) t1 (xcomp (xcomp xinl xinr) f) t_left0
-                         t_left_xform0) as e2.
-    destruct e2. unfold in_triple_xform. simpl. unfold in_tree in H. crush.
+    clear IHs1 IHs2. intros. 
+    remember (split_xform x s2 (xcomp (xcomp xinr xinr) f)) as e1.
+    destruct e1. 
+    specialize (proj2 (join_xform_corr s1 (xcomp xinl f) t1
+                                       (xcomp (xcomp xinl xinr) f)
+                                       t_left0 t_left_xform0 str v)). intro.
+    simpl regexp_type in H1.
+    match goal with
+      | [H: _ \/ _ \/ _ -> in_tree_xform ?exp _ _ |- _ ] => 
+        remember exp as e2; destruct e2
+    end.
+    unfold in_triple_xform. simpl. unfold in_tree in H. crush.
     repeat in_regexp_inv. left. apply H1. left ; econstructor ; split ; eauto.
     xinterp_simpl ; auto. left ; apply H1. right ; left ; econstructor ; split ; eauto ; 
     xinterp_simpl ; auto. 
@@ -1903,11 +1926,11 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     remember (Raw.split t1 (Raw.Node t2 s2_1 t3 s2_2)) as e2.
     destruct e2.
     match goal with 
-      | [ |- projT1 (match ?exp with | existT _ _ => _ end) = _ ] => 
+      | [ |- projT1 (match ?exp with | existT _ _ _ => _ end) = _ ] => 
         remember exp as e3 ; destruct e3
     end.
     match goal with 
-      | [ |- projT1 (match ?exp with | existT _ _ => _ end) = _ ] => 
+      | [ |- projT1 (match ?exp with | existT _ _ _ => _ end) = _ ] => 
         remember exp as e4 ; destruct e4
     end.
     rewrite join_xform_erase.
@@ -2129,11 +2152,11 @@ Module RawRESet := MSetAVL.Make REOrderedType.
     Qed.
   End FOLD_TREE_XFORM_ERASE.
 
-  Definition fold_xform ty (A:Type) (comb : re_xf_pair ty -> A -> A) 
+  Definition fold_xform ty (A:Type) (comb : re_xf_pair ty -> A -> A)
              (rx : rs_xf_pair ty) (a:A) : A :=
     let (s1, f1) := rx in
     match s1 as s1' return (re_set_type s1' ->> xList_t ty -> A) with
-      | {| this := t1; is_ok := okt1 |} =>
+      | @Mkt t1 okt1=>
         fun f2 : re_set_type {| this := t1; is_ok := okt1 |} ->> xList_t ty =>
           fold_tree_xform comb t1 f2 a
     end f1.

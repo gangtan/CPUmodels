@@ -393,7 +393,7 @@ Module Type POWERSET (M:WSets).
     forall s s', MM.In s' (powerset s) <-> M.Subset s' s.
 
   Parameter powerset_cardinal: 
-    forall s, MM.cardinal (powerset s) = NPeano.pow 2 (M.cardinal s).
+    forall s, MM.cardinal (powerset s) = Nat.pow 2 (M.cardinal s).
 
 End POWERSET.
 
@@ -563,7 +563,7 @@ Module ListPowerSet (M:WSets) <: POWERSET M.
   Qed.
 
   Theorem powerset_cardinal: 
-    forall s, MM.cardinal (powerset s) = NPeano.pow 2 (M.cardinal s).
+    forall s, MM.cardinal (powerset s) = Nat.pow 2 (M.cardinal s).
   Proof. induction s using P.set_induction.
     Case "empty(s)".
       rewrite powerset_base by assumption.

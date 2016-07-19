@@ -438,18 +438,18 @@ Fixpoint nullable (r:regexp) :
     | rChar _ | rAny => existT _ false xzero
     | rCat r1 r2 => 
       match nullable r1, nullable r2 with
-        | existT true f1, existT true f2 => 
+        | existT _ true f1, existT _ true f2 => 
           existT _ true (xcomp (xpair f1 f2) xcross)
         | _, _ => existT _ false xzero
       end
     | rAlt r1 r2 => 
       match nullable r1, nullable r2 with
-        | existT true f1, existT true f2 => 
+        | existT _ true f1, existT _ true f2 => 
           existT _ true
             (xcomp (xpair (xcomp f1 (xmap xinl)) (xcomp f2 (xmap xinr))) xapp)
-        | existT true f1, existT false f2 => 
+        | existT _ true f1, existT _ false f2 => 
           existT _ true (xcomp f1 (xmap xinl))
-        | existT false f1, existT true f2 => 
+        | existT _ false f1, existT _ true f2 => 
           existT _ true (xcomp f2 (xmap xinr))
         | _, _ => existT _ false xzero
       end
@@ -487,11 +487,11 @@ Fixpoint pdrv (a:char_p) (r:regexp): rs_xf_pair (regexp_type r) :=
     | rCat r1 r2 => 
       let rxc := RES.cat_re_xform (pdrv a r1) r2 in
       match nullable r1 with
-        | existT true fnull => 
+        | existT _ true fnull => 
           let (rs2, f2) := pdrv a r2 in
           RES.union_xform rxc
             (existT _ rs2 (xcomp f2 (xcomp (xpair (xcomp xunit fnull) xid) xcross)))
-        | existT false _ => rxc
+        | existT _ false _ => rxc
       end
     | rStar r1 => 
       let (rsc, fc) := RES.cat_re_xform (pdrv a r1) (rStar r1) in
@@ -592,11 +592,11 @@ Section PDRV_CORRECT.
 
   Lemma nullable_corr: forall r,
     match nullable r with
-      | existT true f => 
+      | existT _ true f => 
         (exists v, in_regexp r nil v) /\
         (forall v, in_regexp r nil v -> In v (xinterp f tt)) /\
         (forall v, In v (xinterp f tt) -> in_regexp r nil v)
-      | existT false f => forall v, ~ in_regexp r nil v
+      | existT _ false f => forall v, ~ in_regexp r nil v
     end.
   Proof. induction r; fold interp in *.
     Case "Eps". crush.
@@ -641,8 +641,8 @@ Section PDRV_CORRECT.
   Lemma nullable_corr2: forall r v,
     in_regexp r nil v -> 
     match nullable r with
-      | existT true f => In v ((xinterp f) tt)
-      | existT false f => False
+      | existT _ true f => In v ((xinterp f) tt)
+      | existT _ false f => False
     end.
   Proof. intros. generalize (nullable_corr r); intro.
     destruct (nullable r) as [x f].
@@ -934,10 +934,12 @@ Qed.
 
 Module POW := ListPowerSet RES.
 
+Module WMP_POW := WMoreProperties POW.MM.
+
 (** A set of regexp sets *)
 Module RESetSet.
   Include POW.MM.
-  Include WMoreProperties POW.MM.
+  Include WMP_POW.
 
   (** The following operations assume the set is implemented by a list. *)
 
@@ -1101,7 +1103,7 @@ Module RESetSet.
   Lemma get_index_spec: forall e s n,
     get_index e s = Some n <-> Coqlib.first_occur E.eq e (elements s) n.
   Proof. unfold get_index; intros.
-    apply Coqlib.find_index_spec. apply E.eq_equiv.
+    apply Coqlib.find_index_spec.
   Qed.
 
   Lemma get_index_none: forall e s,
@@ -1527,11 +1529,11 @@ Section DFA.
       if Compare_dec.le_gt_dec n 9 then
         digit2string n
       else
-        let n' := NPeano.div n 10 in
+        let n' := Nat.div n 10 in
         (@nat_show n' _) ++ (digit2string (n - 10 * n')).
     Next Obligation.
-      assert (NPeano.div n 10 < n) ; eauto.
-      eapply NPeano.Nat.div_lt ; omega.
+      assert (Nat.div n 10 < n) ; eauto.
+      eapply Nat.div_lt ; omega.
     Defined.
 
     Definition nl := String (Ascii.ascii_of_nat 10) EmptyString.
@@ -1918,13 +1920,13 @@ Section DFA.
     Fixpoint gen_row'
       (n:nat) (ss:wf_states) (tid:token_id) (H:ss.[gpos] = proj1_sig s)
       (H1:gpos < cardinal_wfs ss) : gen_row_ret_t ss n tid.
-      refine (match n with
+      simple refine (match n with
           | 0 => existT _ ss (existT _ nil _)
           | S n' => 
             match wpdrv_wf (token_id_to_chars tid) s with
-              | existT s1 f1 =>
+              | existT _ s1 f1 =>
                 match get_index_wfs2 s1 ss with
-                  | inleft (exist n Hgi) =>
+                  | inleft (exist _ n Hgi) =>
                       let (ss', r) := gen_row' n' ss (1 + tid) H H1 in
                       let (entries, Hwfs) := r in
                       let f_back := gen_backward_xform _ Hwfs Hgi in
@@ -1974,7 +1976,7 @@ Section DFA.
           (H1:gpos < cardinal_wfs ss),
       n <= num_tokens -> tid = num_tokens-n ->
       match gen_row' n ss tid H H1 with 
-        | existT ss1 (existT entries1 Hwfs) => 
+        | existT _ ss1 (existT _ entries1 Hwfs) => 
           List.length entries1 = n /\
           forall tid', tid' >= tid -> wf_entries entries1 (tid'-tid) tid'
       end.
@@ -2026,7 +2028,7 @@ Section DFA.
             split; intros; trivial. 
         SCase "s1 notin ss".
           remember (gen_row_help4 s s1 ss e H1 H) as H4.
-          remember (gen_row'_subproof (S n) ss tid H H1 n s1 f1 e) as H6.
+          remember (gen_row'_subproof (S n) ss tid H H1 n f1 e) as H6.
           remember_rev (gen_row' n (s1 ::: ss) (1 + tid) H4 H6) as grr.
           destruct grr as [ss' rr].
           destruct rr as [entries Hwfs1].
@@ -2070,7 +2072,7 @@ Section DFA.
     Lemma gen_row_prop: forall ss (H:ss.[gpos] = proj1_sig s) 
           (H1:gpos < cardinal_wfs ss),
       match gen_row ss H H1 with 
-        | existT ss1 (existT entries1 Hwfs) => 
+        | existT _ ss1 (existT _ entries1 Hwfs) => 
           List.length entries1 = num_tokens /\
           forall tid, wf_entries entries1 tid tid
       end.
@@ -2154,7 +2156,7 @@ Section DFA.
   Defined.
 
   (* max number of partial derivatives of r *)
-  Definition max_pdrv := NPeano.pow 2 (1 + num_of_syms r).
+  Definition max_pdrv := Nat.pow 2 (1 + num_of_syms r).
     (* Pos.add 1 (shift_nat (1 + num_of_syms r) 1). *)
 
   (** The termination metric for function [build_table'] *)
@@ -2171,9 +2173,9 @@ Section DFA.
       rewrite H2. apply wpdrv_subset_pdset.
     apply RESSP.subset_cardinal in H2.
     rewrite POW.powerset_cardinal in H2.
-    assert (NPeano.pow 2 (RESet.cardinal (pdset r)) <= 
-            NPeano.pow 2 (1 + num_of_syms r)).
-      apply NPeano.Nat.pow_le_mono_r. omega.
+    assert (Nat.pow 2 (RESet.cardinal (pdset r)) <= 
+            Nat.pow 2 (1 + num_of_syms r)).
+      apply Nat.pow_le_mono_r. omega.
       apply pdset_upper_bound.
     unfold max_pdrv.
     unfold cardinal_wfs. simpl in *.
@@ -2187,8 +2189,8 @@ Section DFA.
     assert (S n <= max_pdrv). 
      generalize (states_upper_bound ss).
       omega.
-    repeat rewrite NPeano.Nat.add_sub_assoc by omega.
-    repeat rewrite NPeano.Nat.add_sub_swap by omega.
+    repeat rewrite Nat.add_sub_assoc by omega.
+    repeat rewrite Nat.add_sub_swap by omega.
     omega.
   Qed.
   
@@ -2234,7 +2236,7 @@ Section DFA.
            let (s, Hge) := s0 in
            match (gen_row s ss (build_table_help1 _ _ _ Hge)
                     (build_table_help2 _ _ _ Hge)) with
-             | existT ss' (existT entries Hwfs) =>
+             | existT _ ss' (existT _ entries Hwfs) =>
                  build_table ss' 
                    (coerce_transitions Hwfs rows ++ 
                      cons_transition entries 
@@ -2243,6 +2245,7 @@ Section DFA.
     end.
   Next Obligation.
     destruct Heq_anonymous.
+    clear Heq_anonymous0.
     apply RESS.get_element_some_lt in H.
     eauto using build_table_metric_dec.
   Defined.
@@ -2260,7 +2263,7 @@ Section DFA.
            let (s, Hge) := s0 in
            match (gen_row s ss (build_table_help1 _ _ _ Hge)
                     (build_table_help2 _ _ _ Hge)) with
-             | existT ss' (existT entries Hwfs) =>
+             | existT _ ss' (existT _ entries Hwfs) =>
                  build_table ss' 
                    (coerce_transitions Hwfs rows ++ 
                      cons_transition entries 
@@ -2436,7 +2439,7 @@ Section DFA.
   Lemma build_table_prop: forall n ss rows,
      n = List.length rows -> build_table_inv n rows ->
      match build_table ss rows n with 
-       | existT ss' rows' => 
+       | existT _ ss' rows' => 
          List.length rows' = cardinal_wfs ss' /\ 
          wf_table rows' /\ wfs_ext ss ss'
          (* /\ exists rows1, rows' = rows ++ rows1 *)
@@ -2476,7 +2479,7 @@ Section DFA.
 
   Lemma build_transition_table_prop: 
     match build_transition_table with
-      | existT ss rows =>
+      | existT _ ss rows =>
         List.length rows = cardinal_wfs ss /\ wf_table rows /\
         wfs_ext ini_states ss
     end.
@@ -2518,7 +2521,7 @@ Section DFA.
   Definition build_dfa : DFA :=
     (match build_transition_table as bt
            return build_transition_table = bt -> _ with
-       | existT ss table => fun Hbt =>
+       | existT _ ss table => fun Hbt =>
           {| dfa_num_states := cardinal_wfs ss ; 
              dfa_states := ss ; 
              dfa_states_len := eq_refl _ ;
@@ -2797,7 +2800,7 @@ Section NAIVE_PARSE.
   Definition initial_naive_parser_state t (g:grammar t) : 
     naiveParserState (regexp_type (projT1 (split_grammar g))) t.
     refine (match split_grammar g as sr return split_grammar g = sr -> _ with
-              | existT r f => fun Hsr =>
+              | existT _ r f => fun Hsr =>
                  @mkNPS _ _ (coerce_rx (inps_help1 g Hsr) (RES.singleton_xform r))
                         (coerce_dom (inps_help1 g Hsr) f)
             end eq_refl).
@@ -2880,7 +2883,7 @@ Section DFA_PARSE.
     instParserState t (projT1 (split_grammar g)).
     refine (
       match split_grammar g as sr return split_grammar g = sr -> _ with
-        | existT r f => fun Hsr =>
+        | existT _ r f => fun Hsr =>
           match build_dfa r with
             | d => 
                 let f1 := projT2 (RES.singleton_xform r) in
@@ -3008,11 +3011,11 @@ Section DFA_PARSE.
     refine(
       match nth_error2 (dfa_transition (dfa_ps ps)) (row_ps ps) with
         | inright Hnd => match parse_token_help4 ps Hnd with end (*impossible*)
-        | inleft (exist row Hnd) =>
+        | inleft (exist _ row Hnd) =>
           match nth_error2 (row_entries row) tk with 
             | inright Hnr =>
               match parse_token_help3 ps tk_lt Hnd Hnr with end (*impossible*)
-            | inleft (exist e Hnr) => 
+            | inleft (exist _ e Hnr) => 
               let next_i := next_state e in 
               let next_fixup := coerce_dom (parse_token_help1 ps Hnd) (fixup_ps ps) in
               (* g composes the previous fixup function with the new one *)
@@ -3024,7 +3027,7 @@ Section DFA_PARSE.
                                    (dfa_states (dfa_ps ps).[next_state e]))) :=
                   match nth_error2 (dfa_transition (dfa_ps ps)) next_i with
                     | inright H => nil (* impossible but not worth proving? *)
-                    | inleft (exist row' H) =>
+                    | inleft (exist _ row' H) =>
                       @coerce _ _ (parse_token_help6 (dfa_ps ps) row e H)
                               (row_nils row')
                   end in
@@ -3327,7 +3330,7 @@ Section VDFA_PARSE.
     vinstParserState t (projT1 (split_grammar g)).
     refine (
       match split_grammar g as sr return split_grammar g = sr -> _ with
-        | existT r f => fun Hsr => 
+        | existT _ r f => fun Hsr => 
           match build_vdfa r with 
             | d =>
               let f1 := projT2 (RES.singleton_xform r) in 
@@ -3483,7 +3486,7 @@ Section VDFA_PARSE.
   Lemma vparse_token_corr1 t r (ps1:vinstParserState t r) tk 
         (H:tk<num_tokens) : 
     match vparse_token ps1 H with
-        | existT ps2 vs2 => 
+        | existT _ ps2 vs2 => 
           (forall v, In v (flat_map' (vfixup_ps ps2) vs2) <-> in_vps ps2 nil v)
     end.
   Proof.
@@ -3520,7 +3523,7 @@ Section VDFA_PARSE.
 
   Lemma vparse_token_corr2 t r (ps1:vinstParserState t r) tk (H:tk < num_tokens) : 
     match vparse_token ps1 H with 
-      | existT ps2 vs2 => 
+      | existT _ ps2 vs2 => 
         forall str v, in_vps ps1 ((token_id_to_chars tk) ++ str) v <->
                       in_vps ps2 str v
     end.

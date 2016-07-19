@@ -1,0 +1,114 @@
+FILES = \
+	Flocq_version.v \
+	Core/Fcore_Raux.v \
+	Core/Fcore_Zaux.v \
+	Core/Fcore_defs.v \
+	Core/Fcore_digits.v \
+	Core/Fcore_float_prop.v \
+	Core/Fcore_FIX.v \
+	Core/Fcore_FLT.v \
+	Core/Fcore_FLX.v \
+	Core/Fcore_FTZ.v \
+	Core/Fcore_generic_fmt.v \
+	Core/Fcore_rnd.v \
+	Core/Fcore_rnd_ne.v \
+	Core/Fcore_ulp.v \
+	Core/Fcore.v \
+	Calc/Fcalc_bracket.v \
+	Calc/Fcalc_digits.v \
+	Calc/Fcalc_div.v \
+	Calc/Fcalc_ops.v \
+	Calc/Fcalc_round.v \
+	Calc/Fcalc_sqrt.v \
+	Prop/Fprop_div_sqrt_error.v \
+	Prop/Fprop_mult_error.v \
+	Prop/Fprop_plus_error.v \
+	Prop/Fprop_relative.v \
+	Prop/Fprop_Sterbenz.v \
+	Appli/Fappli_rnd_odd.v \
+	Appli/Fappli_IEEE.v \
+	Appli/Fappli_IEEE_bits.v \
+	Appli/Fappli_double_round.v
+
+OBJS = $(addprefix src/,$(addsuffix o,$(FILES)))
+
+EXAMPLES = \
+	Average.v \
+	Compute.v \
+	Double_round_beta_odd.v
+
+MORE_EXAMPLES = \
+	Cody_Waite.v \
+	Division_u16.v \
+	Sqrt_sqr.v \
+	Triangle.v
+
+EOBJS = $(addprefix examples/,$(addsuffix o,$(EXAMPLES)))
+MOBJS = $(addprefix examples/,$(addsuffix o,$(MORE_EXAMPLES)))
+
+.PHONY: all check check-more clean dist doc install
+
+all: $(OBJS)
+
+check: $(EOBJS)
+
+check-more: $(MOBJS)
+
+Remakefile: Remakefile.in config.status
+	./config.status Remakefile
+
+src/Flocq_version.v: src/Flocq_version.v.in config.status
+	./config.status src/Flocq_version.v
+
+configure config.status: configure.in
+	autoconf
+	./config.status --recheck
+
+%.vo: %.v
+	/usr/local/bin/coqdep -R src Flocq $< | ./remake -r $@
+	/usr/local/bin/coqc -R src Flocq $<
+
+clean:
+	rm -f $(OBJS) $(EOBJS) $(MOBJS) src/*.glob examples/*.glob
+	for d in src src/Core src/Calc src/Prop src/Appli examples; do \
+	  rm -f $d/.coq-native/*.o $d/.coq-native/*.cm*; done
+	find . -type d -name ".coq-native" -empty -prune -exec rmdir "{}" \;
+
+html/index.html: $(OBJS)
+	rm -rf html
+	mkdir -p html
+	/usr/local/bin/coqdoc -toc -interpolate -utf8 -html -g -R src Flocq -d html \
+	  --coqlib http://coq.inria.fr/distrib/current/stdlib/ \
+	  $(addprefix src/,$(FILES))
+
+doc: html/index.html
+
+install:
+	prefix=/usr/local
+	exec_prefix=${prefix}
+	mkdir -p /usr/local/lib/coq/user-contrib/Flocq
+	for d in Core Calc Prop Appli; do mkdir -p /usr/local/lib/coq/user-contrib/Flocq/$d; done
+	for f in $(OBJS); do cp $f /usr/local/lib/coq/user-contrib/Flocq/${f#src/}; done
+	( cd src && find . -type d -name ".coq-native" -exec cp -RT "{}" "/usr/local/lib/coq/user-contrib/Flocq/{}" \; )
+
+EXTRA_DIST = \
+	configure
+
+REMOVE_FROM_DIST = \
+	src/Appli/Fappli_Axpy.v \
+	src/Translate/
+
+dist: $(EXTRA_DIST)
+	PACK=flocq-2.5.1
+	DIRS=`git ls-tree -d -r --name-only HEAD`
+	FILES=`git ls-tree -r --name-only HEAD`
+	rm -rf $PACK.tar.gz $PACK
+	mkdir $PACK
+	for d in $DIRS; do mkdir $PACK/$d; done
+	for f in $FILES $(EXTRA_DIST); do cp $f $PACK/$f; done
+	for f in $(REMOVE_FROM_DIST) ; do rm -rf $PACK/$f; done
+	git log --pretty="format:%ad %s" --date=short > $PACK/ChangeLog
+	cat /dev/null > $PACK/ChangeLog
+	rm `find $PACK -name .gitignore`
+	tar czf $PACK.tar.gz $PACK
+	rm -rf $PACK

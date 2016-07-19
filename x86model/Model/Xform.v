@@ -79,24 +79,24 @@ Extraction Implicit Xfoldr [t1 t2 t3].
  *)      
 Fixpoint xinterp {t1 t2} (x: t1 ->> t2) : xt_interp t1 -> xt_interp t2 := 
   match x in t1 ->> t2 return xt_interp t1 -> xt_interp t2 with 
-    | Xid t => fun (x:xt_interp t) => x
-    | Xzero t => fun (x:xt_interp xVoid_t) => match x with end
-    | Xcomp ta tb tc f1 f2 => 
+    | Xid => fun x => x
+    | Xzero => fun (x:xt_interp xVoid_t) => match x with end
+    | Xcomp f1 f2 => 
       let f1' := xinterp f1 in 
       let f2' := xinterp f2 in 
       fun x => f2' (f1' x)
-    | Xchar t c => fun (x:xt_interp t) => c
-    | Xunit t => fun (x:xt_interp t) => tt
-    | Xempty ta tb => fun (x:xt_interp ta) => (@nil (xt_interp tb))
-    | Xpair ta tb tc f1 f2 => 
+    | Xchar c => fun _ => c
+    | Xunit => fun _ => tt
+    | Xempty => fun x => nil
+    | Xpair f1 f2 => 
       let f1' := xinterp f1 in 
       let f2' := xinterp f2 in 
       fun x => (f1' x, f2' x)
-    | Xfst ta tb => @fst _ _
-    | Xsnd ta tb => @snd _ _
-    | Xinl ta tb => @inl _ (xt_interp tb)
-    | Xinr ta tb => @inr (xt_interp ta) _
-    | Xmatch ta tb tc f1 f2 => 
+    | Xfst => fst
+    | Xsnd => snd
+    | Xinl => inl
+    | Xinr => inr
+    | Xmatch f1 f2 => 
       let f1' := xinterp f1 in 
       let f2' := xinterp f2 in 
       fun x => 
@@ -104,11 +104,11 @@ Fixpoint xinterp {t1 t2} (x: t1 ->> t2) : xt_interp t1 -> xt_interp t2 :=
           | inl x1 => f1' x1 
           | inr x2 => f2' x2 
         end
-    | Xcons ta tb f1 f2 => 
+    | Xcons f1 f2 => 
       let f1' := xinterp f1 in 
       let f2' := xinterp f2 in 
-      fun (x:xt_interp ta) => (f1' x)::(f2' x)
-    | Xfoldr ta tb tc f1 f2 f3 =>
+      fun x => (f1' x)::(f2' x)
+    | Xfoldr f1 f2 f3 =>
       let f1' := xinterp f1 in 
       let f2' := xinterp f2 in 
       let f3' := xinterp f3 in
@@ -237,23 +237,23 @@ Extraction Implicit xsnd [t1 t2].
 Definition xpair_fst ta tc (x2:ta->>tc):forall t1 t2, 
   (ta = xPair_t t1 t2) -> ta ->>(xPair_t t1 tc) := 
   match x2 in ta->>tc return forall t1 t2,ta=xPair_t t1 t2 -> ta->>(xPair_t t1 tc) with
-    | Xsnd t3 t4 => fun t1 t2 H => xcoerce Xid (eq_sym H) (pair_eq_snd H)
-    | Xzero _ => fun t1 t2 H => Xzero
+    | @Xsnd t3 t4 => fun t1 t2 H => xcoerce Xid (eq_sym H) (pair_eq_snd H)
+    | Xzero => fun t1 t2 H => Xzero
     | x2 => fun t1 t2 H => Xpair (xcoerce Xfst (eq_sym H) (eq_refl _)) x2
   end.
 Extraction Implicit xpair_fst [ta tc t1 t2].
 
 Definition xpair_r ta tb tc (x2:ta ->> tc) : (ta ->> tb) -> ta ->> (xPair_t tb tc) := 
   match x2 in ta ->> tc return ta->>tb -> ta->>(xPair_t tb tc) with
-    | Xzero _ => fun x1 => Xzero
+    | @Xzero _ => fun x1 => Xzero
     | x2 => fun x1 => Xpair x1 x2
   end.
 Extraction Implicit xpair_r [ta tb tc].
 
 Definition xpair ta tb tc (x1:ta ->> tb) (x2:ta ->> tc) : ta ->> (xPair_t tb tc) := 
  match x1 in ta ->> tb return ta->>tc -> ta->>(xPair_t tb tc) with
-   | Xfst t1 t2 => fun x2 => xpair_fst x2 (eq_refl _)
-   | Xzero t => fun x2 => Xzero
+   | Xfst => fun x2 => xpair_fst x2 (eq_refl _)
+   | Xzero => fun x2 => Xzero
    | x1 => fun x2 => xpair_r x2 x1 
   end x2.
 Extraction Implicit xpair [ta tb tc].
@@ -279,7 +279,7 @@ Definition xmatch_inl :forall t1 t2 tb tc (x2:tb->>tc),
   (tc=xSum_t t1 t2) -> xSum_t t1 tb ->> xSum_t t1 t2.
 refine (fun t1 t2 tb tc x2 => 
   match x2 in tb->>tc return (tc=xSum_t t1 t2) -> xSum_t t1 tb ->> xSum_t t1 t2 with
-    | Xinr t1' t2' => fun H => xcoerce Xid _ H
+    | Xinr => fun H => xcoerce Xid _ H
     | x2' => fun H => Xmatch Xinl (xcoerce x2' (eq_refl _) H)
   end
 ). injection H ; intros ; subst. auto.
@@ -290,7 +290,7 @@ Definition xmatch_empty {tb t} (x2:tb->>t) :
   forall {t1 t2}, (t = xList_t t2) -> xSum_t t1 tb ->> xList_t t2 := 
   match x2 in tb->>t return forall {t1 t2}, (t = xList_t t2) -> xSum_t t1 tb ->> xList_t t2
   with 
-    | Xempty td te => fun t1 t2 H => Xempty
+    | Xempty => fun t1 t2 H => Xempty
     | x2' => fun t1 t2 H => (Xmatch Xempty (xcoerce x2' eq_refl H))
   end.
 Extraction Implicit xmatch_empty [tb t t1 t2].
@@ -299,8 +299,8 @@ Extraction Implicit xmatch_empty [tb t t1 t2].
     [match x with inl a => inl a | inr b => inr b end = id]. *)
 Definition xmatch ta tb tc (x1:ta->>tc) (x2:tb->>tc) : xSum_t ta tb ->> tc := 
   match x1 in ta->>tc return tb->>tc -> xSum_t ta tb ->> tc with
-    | Xinl t1 t2 => fun x2' => xmatch_inl x2' (eq_refl _)
-    | Xempty t1 t2 => fun x2' => xmatch_empty x2' (eq_refl _)
+    | Xinl => fun x2' => xmatch_inl x2' (eq_refl _)
+    | Xempty => fun x2' => xmatch_empty x2' (eq_refl _)
     | x1' => Xmatch x1'
   end x2.
 Extraction Implicit xmatch [ta tb tc].
@@ -328,15 +328,15 @@ Fixpoint xcomp_pair t21 t22 (x2:t21 ->> t22) :
   forall ta tb tc (x11:ta->>tb) (x12:ta->>tc), (xPair_t tb tc = t21) -> ta ->> t22 := 
     match x2 in t21 ->> t22 return
       forall ta tb tc (x11:ta->>tb) (x12:ta->>tc), (xPair_t tb tc = t21) -> ta ->> t22 with
-      | Xid t => fun ta tb tc x11 x12 H => xcoerce (Xpair x11 x12) (eq_refl _) H
-      | Xchar t c => fun ta tb tc x11 x12 H => Xchar c
-      | Xunit t => fun ta tb tc x11 x12 H => Xunit 
-      | Xempty t1 t2 => fun ta tb tc x11 x12 H => Xempty 
-      | Xfst te tf =>
+      | Xid => fun ta tb tc x11 x12 H => xcoerce (Xpair x11 x12) (eq_refl _) H
+      | Xchar c => fun ta tb tc x11 x12 H => Xchar c
+      | Xunit => fun ta tb tc x11 x12 H => Xunit 
+      | Xempty => fun ta tb tc x11 x12 H => Xempty 
+      | Xfst =>
         fun ta tb tc x11 x12 H => xcoerce x11 (eq_refl _) (eq_pair_fst (eq_sym H))
-      | Xsnd te tf => 
+      | Xsnd => 
         fun ta tb tc x11 x12 H => xcoerce x12 (eq_refl _) (eq_pair_snd (eq_sym H))
-      | Xpair u1 u2 u3 x21 x22 => 
+      | Xpair x21 x22 => 
         fun ta tb tc x11 x12 H => 
           xpair (xcomp_pair x21 x11 x12 H) (xcomp_pair x22 x11 x12 H)
       | x2' => 
@@ -367,11 +367,11 @@ Definition xcomp_inl t21 t22 (x2:t21 ->> t22) :
   forall ta tb, (xSum_t ta tb = t21) -> ta ->> t22 :=
     match x2 in t21->>t22 return 
       forall ta tb, (xSum_t ta tb = t21) -> ta ->> t22 with
-      | Xid t => fun ta tb H => xcoerce Xinl (eq_refl _) H 
-      | Xchar t c => fun ta tb H => Xchar c
-      | Xunit t => fun ta tb H => Xunit 
-      | Xempty t1 t2 => fun ta tb H => Xempty 
-      | Xmatch td te tf x21 x22 => 
+      | Xid => fun ta tb H => xcoerce Xinl (eq_refl _) H 
+      | Xchar c => fun ta tb H => Xchar c
+      | Xunit => fun ta tb H => Xunit 
+      | Xempty => fun ta tb H => Xempty 
+      | Xmatch x21 x22 => 
         fun ta tb H => xcoerce x21 (eq_sum_fst H) (eq_refl _)
       | x2' => 
         fun ta tb H => Xcomp Xinl (xcoerce x2' (eq_sym H) (eq_refl _))
@@ -397,11 +397,11 @@ Definition xcomp_inr t21 t22 (x2:t21 ->> t22) :
   forall ta tb, (xSum_t ta tb = t21) -> tb ->> t22 :=
     match x2 in t21->>t22 return 
       forall ta tb, (xSum_t ta tb = t21) -> tb ->> t22 with
-      | Xid t => fun ta tb H => xcoerce Xinr (eq_refl _) H 
-      | Xchar t c => fun ta tb H => Xchar c
-      | Xunit t => fun ta tb H => Xunit 
-      | Xempty t1 t2 => fun ta tb H => Xempty 
-      | Xmatch td te tf x21 x22 => 
+      | Xid => fun ta tb H => xcoerce Xinr (eq_refl _) H 
+      | Xchar c => fun ta tb H => Xchar c
+      | Xunit => fun ta tb H => Xunit 
+      | Xempty => fun ta tb H => Xempty 
+      | Xmatch x21 x22 => 
         fun ta tb H => xcoerce x22 (eq_sum_snd H) (eq_refl _)
       | x2' => 
         fun ta tb H => Xcomp Xinr (xcoerce x2' (eq_sym H) (eq_refl _))
@@ -426,10 +426,10 @@ Qed.
 Definition xcomp_empty t21 t22 (x2:t21 ->> t22) : 
   forall ta tb, (xList_t tb = t21) -> ta ->> t22 := 
     match x2 in t21 ->> t22 return forall ta tb, (xList_t tb = t21) -> ta ->> t22 with
-      | Xid t => fun ta tb H => xcoerce Xempty (eq_refl _) H
-      | Xchar t c => fun ta tb H => Xchar c
-      | Xunit t => fun ta tb H => Xunit 
-      | Xempty t1 t2 => fun ta tb H => Xempty
+      | Xid => fun ta tb H => xcoerce Xempty (eq_refl _) H
+      | Xchar c => fun ta tb H => Xchar c
+      | Xunit => fun ta tb H => Xunit 
+      | Xempty => fun ta tb H => Xempty
       | x2' => fun ta tb H => Xcomp Xempty (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
 Extraction Implicit xcomp_empty [t21 t22 ta tb].
@@ -446,7 +446,7 @@ Definition xcons' t1 t (x2:t1->>t) :
   forall t2, (t = xList_t t2) -> (t1->>t2) -> (t1 ->> xList_t t2) := 
   match x2 in t1->>t return forall t2, (t = xList_t t2) -> (t1->>t2) -> (t1 ->> xList_t t2)
   with
-    | Xzero _ => fun t2 H x1 => Xzero 
+    | Xzero => fun t2 H x1 => Xzero 
     | x2' => fun t2 H x1 => Xcons x1 (xcoerce x2' eq_refl H)
   end.
 Extraction Implicit xcons' [t1 t t2].
@@ -460,7 +460,7 @@ Qed.
 
 Definition xcons t1 t2 (x1:t1->>t2) : (t1 ->> xList_t t2) -> (t1 ->> xList_t t2) := 
   match x1 in t1->>t2 return (t1 ->> xList_t t2) -> (t1 ->> xList_t t2) with
-    | Xzero _ => fun _ => Xzero
+    | Xzero => fun _ => Xzero
     | x1' => fun x2 => xcons' x2 eq_refl x1'
   end.
 Extraction Implicit xcons [t1 t2].
@@ -481,10 +481,10 @@ Definition xcomp_cons t21 t22 (x2:t21 ->> t22) :
   forall ta tb (x11:ta->>tb) (x12:ta->>xList_t tb), (xList_t tb = t21) -> ta ->> t22 := 
     match x2 in t21 ->> t22 return
       forall ta tb (x11:ta->>tb) (x12:ta->>xList_t tb), (xList_t tb = t21) -> ta ->> t22 with
-      | Xid t => fun ta tb x11 x12 H => xcoerce (Xcons x11 x12) (eq_refl _) H
-      | Xchar t c => fun ta tb x11 x12 H => Xchar c
-      | Xunit t => fun ta tb x11 x12 H => Xunit 
-      | Xempty tc td => fun ta tb x11 x12 H => Xempty
+      | Xid => fun ta tb x11 x12 H => xcoerce (Xcons x11 x12) (eq_refl _) H
+      | Xchar c => fun ta tb x11 x12 H => Xchar c
+      | Xunit => fun ta tb x11 x12 H => Xunit 
+      | Xempty => fun ta tb x11 x12 H => Xempty
       | x2' => fun ta tb x11 x21 H => 
         Xcomp (xcons x11 x21) (xcoerce x2' (eq_sym H) (eq_refl _))
     end.
@@ -506,15 +506,15 @@ Fixpoint xfoldr' {t3 u} (x3:t3->>u) {struct x3} :
   match x3 in t3->>u return 
         forall {t1 t2}, (u = xList_t t1) -> (xPair_t t1 t2 ->> t2) -> (t3 ->> t2) -> t3 ->> t2
   with 
-    | Xempty ta tb => fun t1 t2 H x1 x2 => x2
-    | Xcons ta tb x31 x32 => 
+    | Xempty => fun t1 t2 H x1 x2 => x2
+    | Xcons x31 x32 => 
       fun t1 t2 H x1 x2 => 
         (Xcomp (xpair (xcoerce x31 eq_refl (list_t_eq (eq_sym H))) 
                             (xfoldr' x32 eq_refl 
                                      (xcoerce x1 (pair_eq_fst _ (list_t_eq H)) eq_refl) x2))
                      x1)
-    | Xzero _ => fun t1 t2 H x1 x2 => Xzero 
-    | Xmatch ta tb tc x31 x32 => 
+    | Xzero => fun t1 t2 H x1 x2 => Xzero 
+    | Xmatch x31 x32 => 
       fun t1 t2 H x1 x2 => Xmatch (xfoldr' x31 H x1 (Xcomp Xinl x2)) 
                                   (xfoldr' x32 H x1 (Xcomp Xinr x2))
     (* still missing the "eta" rule for xfoldr *)                                          
@@ -555,13 +555,13 @@ Extraction Implicit xfoldr [t1 t2 t3].
 *)
 Fixpoint xcomp_r t21 t22 (x2:t21 ->> t22) : forall t11, t11 ->> t21 -> t11 ->> t22 :=
   match x2 in t21 ->> t22 return forall t11, t11 ->> t21 -> t11 ->> t22 with
-    | Xid t => fun t1 x1 => x1
-    | Xchar t c => fun t1 x1 => Xchar c
-    | Xunit t => fun t1 x1 => Xunit
-    | Xempty t1 t2 => fun t1 x1 => Xempty
-    | Xpair t t21 t22 x21 x22 => fun t1 x1 => xpair (xcomp_r x21 x1) (xcomp_r x22 x1)
-    | Xcons t1 t2 x21 x22 => fun t1 x1 => xcons (xcomp_r x21 x1) (xcomp_r x22 x1)
-    | Xfoldr t2 t3 t4 x21 x22 x23 => fun t1 x1 => xfoldr x21 (xcomp_r x22 x1) (xcomp_r x23 x1)
+    | Xid => fun t1 x1 => x1
+    | Xchar c => fun t1 x1 => Xchar c
+    | Xunit => fun t1 x1 => Xunit
+    | Xempty => fun t1 x1 => Xempty
+    | Xpair x21 x22 => fun t1 x1 => xpair (xcomp_r x21 x1) (xcomp_r x22 x1)
+    | Xcons x21 x22 => fun t1 x1 => xcons (xcomp_r x21 x1) (xcomp_r x22 x1)
+    | Xfoldr x21 x22 x23 => fun t1 x1 => xfoldr x21 (xcomp_r x22 x1) (xcomp_r x23 x1)
     | x2' => fun t1 x1 => Xcomp x1 x2'
   end.
 Extraction Implicit xcomp_r [t21 t22 t11].
@@ -586,17 +586,17 @@ Qed.
 *)
 Fixpoint xcomp t11 t12 (x1:t11 ->> t12) : forall t22, t12 ->> t22 -> t11 ->> t22 := 
     match x1 in t11 ->> t12 return forall t22, t12 ->> t22 -> t11 ->> t22 with
-      | Xid _ => fun t22 x2 => x2
-      | Xzero _ => fun t22 x2 => Xzero
-      | Xcomp ta tb tc x11 x12 => 
+      | Xid => fun t22 x2 => x2
+      | Xzero => fun t22 x2 => Xzero
+      | Xcomp x11 x12 => 
         fun t22 x2 => xcomp x11 (xcomp x12 x2)
-      | Xpair ta tb tc x11 x12 => 
+      | Xpair x11 x12 => 
         fun t22 x2 => xcomp_pair x2 x11 x12 (eq_refl _)
-      | Xinl ta tb => fun t22 x2 => xcomp_inl x2 (eq_refl _)
-      | Xinr ta tb => fun t22 x2 => xcomp_inr x2 (eq_refl _)
-      | Xempty ta tb => fun t22 x2 => xcomp_empty x2 _ (eq_refl _)
-      | Xcons ta tb x11 x12 => fun t22 x2 => xcomp_cons x2 x11 x12 (eq_refl _)
-      | Xmatch ta tb tc x11 x12 => fun t22 x2 => xmatch (xcomp x11 x2) (xcomp x12 x2)
+      | Xinl => fun t22 x2 => xcomp_inl x2 (eq_refl _)
+      | Xinr => fun t22 x2 => xcomp_inr x2 (eq_refl _)
+      | Xempty => fun t22 x2 => xcomp_empty x2 _ (eq_refl _)
+      | Xcons x11 x12 => fun t22 x2 => xcomp_cons x2 x11 x12 (eq_refl _)
+      | Xmatch x11 x12 => fun t22 x2 => xmatch (xcomp x11 x2) (xcomp x12 x2)
       | x1' => fun t22 x2 => xcomp_r x2 x1'
     end.
 Extraction Implicit xcomp [t11 t12 t22].
@@ -622,10 +622,10 @@ Qed.
     to fire. *)
 Fixpoint xcomp' tb tc (x2:tb->>tc) : forall ta, ta->>tb -> ta->>tc := 
   match x2 in tb->>tc return forall ta, ta->>tb -> ta->>tc with 
-    | Xcomp td te tf x21 x22 => fun ta x1 => xcomp' x22 (xcomp' x21 x1)
-    | Xpair td te tf x21 x22 => fun ta x1 => xpair (xcomp' x21 x1) (xcomp' x22 x1)
-    | Xcons td te x21 x22 => fun ta x1 => xcons (xcomp' x21 x1) (xcomp' x22 x1)
-    | Xfoldr td te tf x21 x22 x23 => fun ta x1 => xfoldr x21 (xcomp' x22 x1) (xcomp' x23 x1)
+    | Xcomp x21 x22 => fun ta x1 => xcomp' x22 (xcomp' x21 x1)
+    | Xpair x21 x22 => fun ta x1 => xpair (xcomp' x21 x1) (xcomp' x22 x1)
+    | Xcons x21 x22 => fun ta x1 => xcons (xcomp' x21 x1) (xcomp' x22 x1)
+    | Xfoldr x21 x22 x23 => fun ta x1 => xfoldr x21 (xcomp' x22 x1) (xcomp' x23 x1)
     | x2' => fun ta x1 => xcomp x1 x2'
   end.
 Extraction Implicit xcomp' [tb tc ta].
@@ -645,11 +645,11 @@ Qed.
     eta reductions for [Xpair] and [Xmatch] respectively. *)
 Fixpoint xopt t1 t2 (x:t1 ->> t2) : t1 ->> t2 := 
   match x with
-    | Xpair ta tb tc x1 x2 => xpair (xopt x1) (xopt x2)
-    | Xmatch ta tb tc x1 x2 => xmatch (xopt x1) (xopt x2)
-    | Xcomp ta tb tc x1 x2 => xcomp' (xopt x2) (xopt x1) 
-    | Xcons ta tb x1 x2 => xcons (xopt x1) (xopt x2)
-    | Xfoldr ta tb tc x1 x2 x3 => xfoldr (xopt x1) (xopt x2) (xopt x3)
+    | Xpair x1 x2 => xpair (xopt x1) (xopt x2)
+    | Xmatch x1 x2 => xmatch (xopt x1) (xopt x2)
+    | Xcomp x1 x2 => xcomp' (xopt x2) (xopt x1) 
+    | Xcons x1 x2 => xcons (xopt x1) (xopt x2)
+    | Xfoldr x1 x2 x3 => xfoldr (xopt x1) (xopt x2) (xopt x3)
     | x' => x'
   end.
 Extraction Implicit xopt [t1 t2].
@@ -700,57 +700,31 @@ Extraction Implicit xmapenv [t1 t2 t3].
 Lemma xmapenv_corr {t1 t2 t3} (f:xPair_t t1 t2->>t3) v : 
   xinterp (xmapenv f) v = List.map (fun x => xinterp f (fst v,x)) (snd v).
 Proof.
-  assert (xinterp (xmapenv f) v = 
+  assert (H: xinterp (xmapenv f) v = 
           xinterp (Xcomp (Xfoldr (Xpair (Xcomp Xsnd Xfst)
                                         (Xcons (Xcomp (xpair (Xcomp Xsnd Xfst) Xfst) f)
                                                (Xcomp Xsnd Xsnd))) (Xpair Xfst Xempty) Xsnd)
                          Xsnd) v).
-  unfold xmapenv. rewrite xopt_corr. rewrite xcomp_corr. 
-  replace (xinterp
-     (Xcomp
-        (xfoldr
-           (xpair (xcomp xsnd xfst)
-              (xcons (xcomp (xpair (xcomp xsnd xfst) xfst) f)
-                 (xcomp xsnd xsnd))) (xpair xfst xempty) xsnd) xsnd) v) with
-  (snd ((xinterp (xfoldr (xpair (xcomp xsnd xfst)
-              (xcons (xcomp (xpair (xcomp xsnd xfst) xfst) f)
-                 (xcomp xsnd xsnd))) (xpair xfst xempty) xsnd) v))) ; auto.
-  rewrite xfoldr_corr. 
-  replace (xinterp
-        (Xfoldr
-           (xpair (xcomp xsnd xfst)
-              (xcons (xcomp (xpair (xcomp xsnd xfst) xfst) f)
-                 (xcomp xsnd xsnd))) (xpair xfst xempty) xsnd) v) with
-  (List.fold_right 
-     (fun a b => 
-     (xinterp (xpair (xcomp xsnd xfst)
-              (xcons (xcomp (xpair (xcomp xsnd xfst) xfst) f)
-                 (xcomp xsnd xsnd)))) (a,b))
-                   (xinterp (xpair xfst xempty) v) (xinterp xsnd v)) ; 
-  auto ; fold xt_interp. 
-  rewrite xpair_corr. unfold xsnd, xfst.
-  replace  (fun (a : xt_interp t2) (b : xt_interp t1 * list (xt_interp t3)) =>
-         xinterp
-           (xpair (xcomp Xsnd Xfst)
-              (xcons (xcomp (xpair (xcomp Xsnd Xfst) Xfst) f)
-                 (xcomp Xsnd Xsnd))) (a, b))
-  with (fun a b => 
-          xinterp
-           (Xpair (Xcomp Xsnd Xfst)
-              (Xcons (Xcomp (Xpair (Xcomp Xsnd Xfst) Xfst) f)
-                 (Xcomp Xsnd Xsnd))) (a, b)) ; fold xt_interp.
-  Focus 2. eapply extensionality. intro. eapply extensionality. intro.
-  simpl. rewrite xpair_r_corr. simpl. rewrite xcons_corr. simpl. 
-  rewrite xcomp_pair_corr. simpl. auto. auto.
-  rewrite H. clear H. fold xt_interp.
+    unfold xmapenv. rewrite xopt_corr. rewrite xcomp_corr.
+    simpl. repeat f_equal.
+    eapply extensionality; intros.
+    eapply extensionality; intros.
+    rewrite xpair_r_corr.
+    simpl.
+    rewrite xcons_corr.
+    f_equal.
+    simpl.
+    rewrite xcomp_pair_corr.
+    auto.
+  rewrite H. clear H.
   destruct v. induction x0. auto.
-  simpl in *. fold xt_interp in *. rewrite IHx0.
+  simpl in *. rewrite IHx0.
   replace (fst
-        (fold_right
-           (fun (a0 : xt_interp t2) (b : xt_interp t1 * list (xt_interp t3)) =>
-            (fst b, xinterp f (fst b, a0) :: snd b)) 
-           (x, nil) x0)) with x ; auto.
-  clear IHx0. induction x0 ; auto.
+             (fold_right
+                (fun (a0 : xt_interp t2) (b : xt_interp t1 * list (xt_interp t3)) =>
+                   (fst b, xinterp f (fst b, a0) :: snd b)) 
+                (x, nil) x0)) with x ; auto.
+  clear IHx0. induction x0 ; auto.  
 Qed.
 
 (** Flatten a list of lists. *)
@@ -862,24 +836,24 @@ Notation "c1 ;; c2" := (seq c1 c2) (right associativity, at level 84).
 
 Fixpoint show_xform' t1 t2 (x:t1->>t2) : list string -> list string := 
   match x with
-    | Xid _ => emit "id"
-    | Xzero _ => emit "Z"
-    | Xcomp _ _ _ x1 x2 => 
+    | Xid => emit "id"
+    | Xzero => emit "Z"
+    | Xcomp x1 x2 => 
       emit "(" ;; (show_xform' x1) ;; emit ";" ;; (show_xform' x2) ;; emit ")"
-    | Xchar _ c => emit (show_char c)
-    | Xunit _ => emit "U" 
-    | Xempty _ _ => emit "[]"
-    | Xpair _ _ _ x1 x2 => 
+    | Xchar c => emit (show_char c)
+    | Xunit => emit "U" 
+    | Xempty => emit "[]"
+    | Xpair x1 x2 => 
       emit "(" ;; (show_xform' x1) ;; emit "," ;; (show_xform' x2) ;; emit ")"
-    | Xfst _ _ => emit "fst"
-    | Xsnd _ _ => emit "snd"
-    | Xinl _ _ => emit "inl"
-    | Xinr _ _ => emit "inr"
-    | Xmatch _ _ _  x1 x2 =>
+    | Xfst => emit "fst"
+    | Xsnd => emit "snd"
+    | Xinl => emit "inl"
+    | Xinr => emit "inr"
+    | Xmatch x1 x2 =>
       emit "[" ;; (show_xform' x1) ;; emit "|" ;; (show_xform' x2) ;; emit "]"
-    | Xcons _ _ x1 x2 => 
+    | Xcons x1 x2 => 
       emit "(" ;; (show_xform' x1) ;; emit "::" ;; (show_xform' x2) ;; emit ")"
-    | Xfoldr _ _ _ x1 x2 x3 => 
+    | Xfoldr x1 x2 x3 => 
       emit "fold(" ;; (show_xform' x1) ;; emit "," ;; (show_xform' x2) ;; 
            emit "," ;; (show_xform' x3) ;; emit ")"
   end.
@@ -894,21 +868,21 @@ Definition inc (n:nat) : nat := plus 1 n.
 
 Fixpoint xform_count' t1 t2 (x:t1->>t2) : nat->nat := 
   match x with 
-    | Xid _ => inc
-    | Xzero _ => inc
-    | Xcomp _ _ _ x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
-    | Xchar _ true => inc
-    | Xchar _ false => inc
-    | Xunit _ => inc
-    | Xempty _ _ => inc
-    | Xpair _ _ _ x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
-    | Xfst _ _ => inc
-    | Xsnd _ _ => inc
-    | Xinl _ _ => inc
-    | Xinr _ _ => inc
-    | Xmatch _ _ _ x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
-    | Xcons _ _ x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
-    | Xfoldr _ _ _ x1 x2 x3 => 
+    | Xid => inc
+    | Xzero => inc
+    | Xcomp x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
+    | Xchar true => inc
+    | Xchar false => inc
+    | Xunit => inc
+    | Xempty => inc
+    | Xpair x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
+    | Xfst => inc
+    | Xsnd => inc
+    | Xinl => inc
+    | Xinr => inc
+    | Xmatch x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
+    | Xcons x1 x2 => inc ;; (xform_count' x1) ;; (xform_count' x2)
+    | Xfoldr x1 x2 x3 => 
       inc ;; (xform_count' x1) ;; (xform_count' x2) ;; (xform_count' x3)
   end.
 Extraction Implicit xform_count' [t1 t2].

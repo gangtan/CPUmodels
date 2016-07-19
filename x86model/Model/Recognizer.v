@@ -764,10 +764,12 @@ Qed.
 
 Module POW := ListPowerSet RESet.
 
+Module WMP_POW := WMoreProperties POW.MM.
+
 (** A set of regexp sets *)
 Module RESetSet.
   Include POW.MM.
-  Include WMoreProperties POW.MM.
+  Include WMP_POW.
 
   (** The following operations assume the set is implemented by a list. *)
 
@@ -928,7 +930,7 @@ Module RESetSet.
   Lemma get_index_spec: forall e s n,
     get_index e s = Some n <-> Coqlib.first_occur E.eq e (elements s) n.
   Proof. unfold get_index; intros.
-    apply Coqlib.find_index_spec. apply E.eq_equiv.
+    apply Coqlib.find_index_spec. 
   Qed.
 
   Lemma get_index_none: forall e s,
@@ -1249,7 +1251,7 @@ Section DFA.
   Defined.
 
   (* max number of partial derivatives of r *)
-  Definition max_pdrv := NPeano.pow 2 (1 + num_of_syms r).
+  Definition max_pdrv := Nat.pow 2 (1 + num_of_syms r).
     (* Pos.add 1 (shift_nat (1 + num_of_syms r) 1). *)
 
   (** The termination metric for function [build_table'] *)
@@ -1266,9 +1268,9 @@ Section DFA.
       rewrite H2. apply wpdrv_subset_pdset.
     apply RESSP.subset_cardinal in H2.
     rewrite POW.powerset_cardinal in H2.
-    assert (NPeano.pow 2 (RESet.cardinal (pdset r)) <= 
-            NPeano.pow 2 (1 + num_of_syms r)).
-      apply NPeano.Nat.pow_le_mono_r. omega.
+    assert (Nat.pow 2 (RESet.cardinal (pdset r)) <= 
+            Nat.pow 2 (1 + num_of_syms r)).
+      apply Nat.pow_le_mono_r. omega.
       apply pdset_upper_bound.
     unfold max_pdrv.
     unfold cardinal_wfs. simpl in *.
@@ -1282,8 +1284,8 @@ Section DFA.
     assert (S n <= max_pdrv). 
      generalize (states_upper_bound ss).
       omega.
-    repeat rewrite NPeano.Nat.add_sub_assoc by omega.
-    repeat rewrite NPeano.Nat.add_sub_swap by omega.
+    repeat rewrite Nat.add_sub_assoc by omega.
+    repeat rewrite Nat.add_sub_swap by omega.
     omega.
   Qed.
 
@@ -1765,7 +1767,7 @@ Section DFA_RECOGNIZE.
       rewrite app_nil_r.
       assert (st < dfa_num_states (build_dfa r)).
         use_lemma RESS.get_element_some_lt by eassumption. 
-        rewrite H0. congruence.
+        rewrite H0, H. trivial.
       use_lemma (H5 st) by eassumption.
       rewrite H in H10. rewrite H6 in H10. sim.
       remember_destruct_head as nn.
@@ -1784,7 +1786,7 @@ Section DFA_RECOGNIZE.
       remember (nth a (nth st (dfa_transition d) nil) num_tokens) as st'.
       assert (st < dfa_num_states (build_dfa r)).
         use_lemma RESS.get_element_some_lt by eassumption. 
-        rewrite H0. congruence.
+        rewrite H0, H. trivial.
       use_lemma (H5 st) by eassumption.
       rewrite H in H10. rewrite H6 in H10. sim.
       use_lemma Forall_inv by eassumption.

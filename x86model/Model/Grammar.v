@@ -109,7 +109,7 @@ Extraction Implicit OptCat [t1 t2].
 *)
 Definition OptStar t (g:grammar t) : grammar (List_t t) := 
   match g in grammar t' return grammar (List_t t') with
-    | Star u g' => Map (List_t _) (fun x => x::nil) (Star g')
+    | Star g' => Map (List_t _) (fun x => x::nil) (Star g')
     | Eps => Map (List_t _) (fun x => nil) Eps
     | Zero t => Map (List_t _) (fun x => nil) Eps
     | g' => Star g'
@@ -123,7 +123,7 @@ Definition OptMap' t1 (g:grammar t1) :
   forall t2, (interp t1 -> interp t2) -> grammar t2 := 
   match g in grammar t1' return forall t2, (interp t1' -> interp t2) -> grammar t2 with
     | Zero t => fun t2 f => Zero t2
-    | Map u1 u2 f' g' => fun t2 f => @Map u1 t2 (fun x => f (f' x)) g'
+    | Map u2 f' g' => fun t2 f => Map t2 (fun x => f (f' x)) g'
     | g' => fun t2 f => @Map _ t2 f g'
   end.
 Extraction Implicit OptMap' [t1 t2].
@@ -310,12 +310,12 @@ Fixpoint split_grammar t (g:grammar t) : { ag : regexp & fixfn ag t} :=
     | Zero t => @re_and_fn _ rZero (fun x => match x with end)
     | Char c => @re_and_fn Char_t (rChar c) (fun x => x)
     | Any => @re_and_fn Char_t rAny (fun x => x)
-    | Cat t1 t2 g1 g2 => 
+    | @Cat t1 t2 g1 g2 => 
       let (ag1, f1) := split_grammar g1 in 
         let (ag2, f2) := split_grammar g2 in 
           @re_and_fn _ (rCat ag1 ag2) 
           (fun p => (f1 (fst p), f2 (snd p)) : interp (Pair_t t1 t2))
-    | Alt t1 t2 g1 g2 => 
+    | @Alt t1 t2 g1 g2 => 
       let (ag1, f1) := split_grammar g1 in 
         let (ag2, f2) := split_grammar g2 in 
           @re_and_fn _ (rAlt ag1 ag2)
@@ -323,10 +323,10 @@ Fixpoint split_grammar t (g:grammar t) : { ag : regexp & fixfn ag t} :=
                       | inl x => inl _ (f1 x)
                       | inr y => inr _ (f2 y)
                     end : interp (Sum_t t1 t2))
-    | Star t g => 
+    | @Star t g => 
       let (ag, f) := split_grammar g in 
         @re_and_fn _ (rStar ag) (fun xs => (List.map f xs) : interp (List_t t))
-    | Map t1 t2 f1 g => 
+    | @Map t1 t2 f1 g => 
       let (ag, f2) := split_grammar g in 
         @re_and_fn _ ag (fun x => f1 (f2 x))
     (* | Xform t1 t2 f g =>  *)
@@ -342,7 +342,7 @@ Extraction Implicit par2rec [t].
 Local Ltac break_split_grammar := 
   repeat 
     match goal with
-      | [ H : match split_grammar ?g with | existT _ _ => _ end |- _ ] =>  
+      | [ H : match split_grammar ?g with | existT _ _ _ => _ end |- _ ] =>  
         let p := fresh "p" in
         remember (split_grammar g) as p ; destruct p ; simpl in *
     end. 

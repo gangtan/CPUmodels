@@ -751,7 +751,7 @@ Proof. induction l1.
       (* x = a *)
       rewrite H1 in H8.
       assert (InA eqA a (l1 ++ l2)).
-        apply InA_app_iff. assumption. right; assumption.
+        apply InA_app_iff; right; assumption. 
       congruence.
       (* x in l1 *)
       apply IHl1 with (x:=x) in H5.
@@ -1159,9 +1159,9 @@ Section FIND_INDEX.
         rewrite app_length. simpl. omega.
       assert (~ InA eqA x (l1 ++ a :: nil)).
         intro H4.
-        apply (InA_app_iff eq_equiv) in H4.
+        apply InA_app_iff in H4.
         destruct H4. auto.
-          apply (InA_singleton eq_equiv) in H0. congruence.
+          apply (InA_singleton) in H0. congruence.
       assert (H6: l1 ++ a :: l2 = (l1 ++ a :: nil) ++ l2).
         rewrite <- app_assoc.
         rewrite <- app_comm_cons.

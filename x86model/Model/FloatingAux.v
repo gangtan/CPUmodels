@@ -84,12 +84,33 @@ Qed.
 Definition binary64_normalize := 
   binary_normalize 53 1024 H64prec H64prec_emax.
 
+Definition nan_pl_mono (prec1 prec2:Z) (nan: nan_pl prec1)
+  (pf: Z.lt prec1 prec2): nan_pl prec2.
+  refine (match nan with
+          | exist _ pl pf => exist _ pl _
+          end).
+  rewrite Z.ltb_lt in *. omega.
+Defined. 
+
+Definition nan_pl_24_to_53 (nan:nan_pl 24) : nan_pl 53.
+  refine (nan_pl_mono _ _ nan _). omega.
+Defined. 
+
+Definition nan_pl_24_to_64 (nan:nan_pl 24) : nan_pl 64.
+  refine (nan_pl_mono _ _ nan _). omega.
+Defined. 
+
+Definition nan_pl_53_to_64 (nan:nan_pl 53) : nan_pl 64.
+  refine (nan_pl_mono _ _ nan _). omega.
+Defined. 
+
+
 Definition b64_of_b32 (b:binary32) : binary64 := 
   match b with
-    | B754_nan => B754_nan _ _
-    | B754_zero boole => B754_zero _ _ boole
-    | B754_infinity boole => B754_infinity _ _ boole
-    | B754_finite sign mant ep _  =>
+    | B754_nan _ _ b n => B754_nan 53 _ b (nan_pl_24_to_53 n)
+    | B754_zero _ _ boole => B754_zero _ _ boole
+    | B754_infinity _ _ boole => B754_infinity _ _ boole
+    | B754_finite _ _ sign mant ep _  =>
       binary64_normalize mode_NE (cond_Zopp sign (Zpos mant)) ep true
   end.
 
@@ -106,57 +127,61 @@ Definition b64_of_b32 (b:binary32) : binary64 :=
 
 Definition b32_of_b64 (b: binary64) : binary32 :=
    match b with
-   | B754_nan => B754_nan _ _
-   | B754_zero boole => B754_zero _ _ boole
-   | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant ep _  =>
+   | B754_nan _ _ b n => 
+     (* using the default nan below; the real processor may behave differently *)
+     let (b1,n1) := default_nan_pl32 in B754_nan _ _ b1 n1
+   | B754_zero _ _ boole => B754_zero _ _ boole
+   | B754_infinity _ _ boole => B754_infinity _ _ boole
+   | B754_finite _ _ sign mant ep _  =>
       binary32_normalize mode_NE 
       (cond_Zopp sign (Zpos mant)) ep true
    end.
 
 Definition de_float_of_b32 (b:binary32) : de_float := 
    match b with
-   | B754_nan => B754_nan _ _
-   | B754_zero boole => B754_zero _ _ boole
-   | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant ep _  =>
+   | B754_nan _ _ b n => B754_nan _ _ b (nan_pl_24_to_64 n)
+   | B754_zero _ _ boole => B754_zero _ _ boole
+   | B754_infinity _ _ boole => B754_infinity _ _ boole
+   | B754_finite _ _ sign mant ep _  =>
       binary79_normalize mode_NE 
       (cond_Zopp sign (Zpos mant)) ep true
    end.
 
 Definition b32_of_de_float (b:de_float) : binary32 := 
    match b with
-   | B754_nan => B754_nan _ _
-   | B754_zero boole => B754_zero _ _ boole
-   | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant ep _  =>
+   | B754_nan _ _ b n =>
+     (* using the default nan below; the real processor may behave differently *)
+     let (b1,n1) := default_nan_pl32 in B754_nan _ _ b1 n1
+   | B754_zero _ _ boole => B754_zero _ _ boole
+   | B754_infinity _ _ boole => B754_infinity _ _ boole
+   | B754_finite _ _ sign mant ep _  =>
       binary32_normalize mode_NE 
       (cond_Zopp sign (Zpos mant)) ep true
    end.
 
 Definition de_float_of_b64 (b:binary64) : de_float := 
    match b with
-   | B754_nan => B754_nan _ _
-   | B754_zero boole => B754_zero _ _ boole
-   | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant ep _  =>
+   | B754_nan _ _ b n => B754_nan _ _ b (nan_pl_53_to_64 n)
+   | B754_zero _ _ boole => B754_zero _ _ boole
+   | B754_infinity _ _ boole => B754_infinity _ _ boole
+   | B754_finite _ _ sign mant ep _  =>
       binary79_normalize mode_NE 
       (cond_Zopp sign (Zpos mant)) ep true
    end.
 
 Definition b64_of_de_float (b:de_float) : binary64 := 
    match b with
-   | B754_nan => B754_nan _ _
-   | B754_zero boole => B754_zero _ _ boole
-   | B754_infinity boole => B754_infinity _ _ boole
-   | B754_finite sign mant ep _  =>
+   | B754_nan _ _ b n =>
+     (* using the default nan below; the real processor may behave differently *)
+     let (b1,n1) := default_nan_pl64 in B754_nan _ _ b1 n1
+   | B754_zero _ _ boole => B754_zero _ _ boole
+   | B754_infinity _ _ boole => B754_infinity _ _ boole
+   | B754_finite _ _ sign mant ep _  =>
       binary64_normalize mode_NE 
       (cond_Zopp sign (Zpos mant)) ep true
    end.
 
 End Float_conv.
-
-
 
 Section Comp_Tests.
 

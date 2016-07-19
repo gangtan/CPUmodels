@@ -337,15 +337,15 @@ Definition non_empty t (g: bigrammar t) :=
 (* well-formedness of grammars *)
 Fixpoint wf_grammar t (g:bigrammar t) : Prop := 
   match g with 
-      | Cat t1 t2 g1 g2 => wf_grammar g1 /\ wf_grammar g2
-      | Alt t1 t2 g1 g2 => wf_grammar g1 /\ wf_grammar g2
-      | Star t g => 
+      | Cat g1 g2 => wf_grammar g1 /\ wf_grammar g2
+      | Alt g1 g2 => wf_grammar g1 /\ wf_grammar g2
+      | Star g => 
         (* the non_empty restriction is necessary to push the corretness
            proof of pretty_print to go through; 
            it's reasonable to ask g to be non-empty in g*, which can 
            already accept empty input *)
         wf_grammar g /\ non_empty g
-      | Map t1 t2 fi g => 
+      | Map fi g => 
         wf_grammar g /\ invertible fi g
       | g' => True
   end.
@@ -535,17 +535,17 @@ Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
     | Char c => fun c' => if char_dec c c' then Some (c::nil) else None
     | Any => fun c => Some (c::nil)
     | Zero t => fun impos => None
-    | Cat t1 t2 g1 g2 =>
+    | Cat g1 g2 =>
       fun p =>
         s1 <- pretty_print g1 (fst p);
         s2 <- pretty_print g2 (snd p);
         ret (s1 ++ s2)
-    | Alt t1 t2 g1 g2 =>
+    | Alt g1 g2 =>
       fun v => match v with
                  | inl x1 => pretty_print g1 x1
                  | inr x2 => pretty_print g2 x2
                end
-    | Star t g =>
+    | @Star t g =>
       (* this is a non-tail-recusive version, which is easier for proofs *)
       fix loop (v:interp (List_t t)) : option (list char_p) :=
          match v with
@@ -567,7 +567,7 @@ Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
     (*   (*          | _ => loop (s ++ s') tl *) *)
     (*   (*        end *) *)
     (*   (*    end) nil *) *)
-    | Map t1 t2 fi g =>
+    | Map fi g =>
       fun v => x <- snd fi v; pretty_print g x
   end.
 
@@ -776,12 +776,13 @@ Ltac ibr_sim :=
              unfold proj1_sig at 1, seq at 1
            | [ |- in_bigrammar_rng (` (map _ _ _)) _ ] =>
              unfold proj1_sig at 1, map
-           | [ |- in_bigrammar_rng (Alt _ _) (inl _)] =>
-             apply in_bigrammar_rng_alt_inl
-           | [ |- in_bigrammar_rng (Alt _ _) (inr _)] =>
-             apply in_bigrammar_rng_alt_inr
-           | [ |- in_bigrammar_rng (Cat _ _) (_,_) ] =>
-             apply in_bigrammar_rng_cat; split
+           | [ |- @in_bigrammar_rng (Pair_t ?t1 _) (Cat _ _) (_,_) ] =>
+             (* somehow, "apply in_bigrammar_rng_cat" doesn't unify in Coq 8.5 *)
+             apply (@in_bigrammar_rng_cat t1); split
+           | [ |- @in_bigrammar_rng (Sum_t ?t1 ?t2) (Alt _ _) (inl _)] =>
+             apply (@in_bigrammar_rng_alt_inl t1 t2)
+           | [ |- @in_bigrammar_rng (Sum_t ?t1 ?t2) (Alt _ _) (inr _)] =>
+             apply (@in_bigrammar_rng_alt_inr t1 t2)
            | _ => auto with ibr_rng_db
          end.
 
@@ -1364,12 +1365,12 @@ Fixpoint split_bigrammar t (g:bigrammar t) : { ag : regexp & fixfn ag t} :=
     | Zero t => @re_and_fn _ rZero (fun x => match x with end)
     | Char c => @re_and_fn Char_t (rChar c) (fun x => x)
     | Any => @re_and_fn Char_t rAny (fun x => x)
-    | Cat t1 t2 g1 g2 => 
+    | @Cat t1 t2 g1 g2 => 
       let (ag1, f1) := split_bigrammar g1 in 
         let (ag2, f2) := split_bigrammar g2 in 
           @re_and_fn _ (rCat ag1 ag2) 
           (fun p => (f1 (fst p), f2 (snd p)) : interp (Pair_t t1 t2))
-    | Alt t1 t2 g1 g2 => 
+    | @Alt t1 t2 g1 g2 => 
       let (ag1, f1) := split_bigrammar g1 in 
         let (ag2, f2) := split_bigrammar g2 in 
           @re_and_fn _ (rAlt ag1 ag2)
@@ -1377,10 +1378,10 @@ Fixpoint split_bigrammar t (g:bigrammar t) : { ag : regexp & fixfn ag t} :=
                       | inl x => inl _ (f1 x)
                       | inr y => inr _ (f2 y)
                     end : interp (Sum_t t1 t2))
-    | Star t g => 
+    | @Star t g => 
       let (ag, f) := split_bigrammar g in 
         @re_and_fn _ (rStar ag) (fun xs => (List.map f xs) : interp (List_t t))
-    | Map t1 t2 fi g => 
+    | Map fi g => 
       let (ag, f2) := split_bigrammar g in 
         @re_and_fn _ ag (fun x => (fst fi) (f2 x))
     (* | Xform t1 t2 f g =>  *)
@@ -1396,7 +1397,7 @@ Extraction Implicit par2rec [t].
 Local Ltac break_split_bigrammar := 
   repeat 
     match goal with
-      | [ H : match split_bigrammar ?g with | existT _ _ => _ end |- _ ] =>  
+      | [ H : match split_bigrammar ?g with | existT _ _ _ => _ end |- _ ] =>  
         let p := fresh "p" in
         remember (split_bigrammar g) as p ; destruct p ; simpl in *
     end. 
@@ -1446,12 +1447,12 @@ Fixpoint bigrammar_to_grammar t (g:bigrammar t): G.grammar t :=
     | Zero t => G.Zero t
     | Char c => G.Char c
     | Any => G.Any
-    | Cat t1 t2 g1 g2 => G.Cat (bigrammar_to_grammar g1)
+    | Cat g1 g2 => G.Cat (bigrammar_to_grammar g1)
                                (bigrammar_to_grammar g2)
-    | Alt t1 t2 g1 g2 => G.Alt (bigrammar_to_grammar g1)
+    | Alt g1 g2 => G.Alt (bigrammar_to_grammar g1)
                                (bigrammar_to_grammar g2)
-    | Star t g => G.Star (bigrammar_to_grammar g)
-    | Map t1 t2 fi g => G.Map t2 (fst fi) (bigrammar_to_grammar g)
+    | Star g => G.Star (bigrammar_to_grammar g)
+    | @Map t1 t2 fi g => G.Map t2 (fst fi) (bigrammar_to_grammar g)
   end.
 
 Lemma b2g_corr1 t (g:bigrammar t) s v : 

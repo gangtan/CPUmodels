@@ -731,7 +731,7 @@ End X86_PARSER_ARG.
   Fixpoint env_length t (ae:AST_Env t) :=
     match ae with
       | ast_env_nil => O
-      | ast_env_cons _ _ _ _ ae' => S (env_length ae')
+      | ast_env_cons _ _ _ ae' => S (env_length ae')
     end.
 
   (** Cat p1 to every grammar inside the ast env *)
@@ -739,7 +739,7 @@ End X86_PARSER_ARG.
     AST_Env (pair_t t1 t2) := 
     match ae with
       | ast_env_nil => ast_env_nil
-      | ast_env_cons l pt p2 f ae' => 
+      | ast_env_cons l p2 f ae' => 
         ast_env_cons l (p1 $ p2) (fun v => (fst v, f (snd v)) %% pair_t t1 t2)
                      (ast_env_cat p1 ae')
     end.
@@ -750,7 +750,7 @@ End X86_PARSER_ARG.
   Fixpoint ast_env_app t (ae1 ae2: AST_Env t) : AST_Env t := 
     match ae1 with
       | ast_env_nil => ae2
-      | ast_env_cons l pt p f ae1' =>
+      | ast_env_cons l p f ae1' =>
         ast_env_cons l p f (ast_env_app ae1' ae2)
     end.
 
@@ -778,7 +778,7 @@ End X86_PARSER_ARG.
           | true => k (ast_env_nil, l)
           | false =>
             match l with
-              | ast_env_cons n _ g f ae' =>
+              | ast_env_cons n g f ae' =>
                 splitHelper (S i) ae'
                   (fun v => k (ast_env_cons n g (f: _ -> [|t|]) (fst v), snd v))
               | _ => (ast_env_nil, ast_env_nil) (* this case should never happen *)
@@ -889,7 +889,7 @@ End X86_PARSER_ARG.
           | true => constr:(fun v: interp t => v)
           | false =>
             let n1 := (eval compute in (divide_by_two n)) in
-            let b := (eval compute in (NPeano.ltb i n1)) in
+            let b := (eval compute in (Nat.ltb i n1)) in
             match t with
               | sum_t ?t1 ?t2 =>
                 match b with
@@ -941,7 +941,7 @@ End X86_PARSER_ARG.
             | ast_env_cons ?l2 _ _ ?aer1 =>
               match t with
                 | sum_t ?t1 ?t2 =>
-                  let b := (eval compute in (NPeano.ltb l l2)) in
+                  let b := (eval compute in (Nat.ltb l l2)) in
                   match b with
                     | true => 
                       let f := gen_rev_case_lbl l ael t1 in 
@@ -2414,6 +2414,13 @@ End X86_PARSER_ARG.
     ast_env_nil.
   Hint Unfold logic_or_arith_env : env_unfold_db.
 
+Lemma in_bigrammar_rng_cat2
+      t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) (v1:[|t1|]) (v2:[|t2|]) :
+  in_bigrammar_rng g1 v1 /\ in_bigrammar_rng g2 v2 ->
+  in_bigrammar_rng (Cat g1 g2) (v1, v2).
+Proof. localsimpl. Qed.
+
+
   (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
   Definition logic_or_arith_p (opsize_override: bool)
     (opcode1 : string) (* first 5 bits for most cases *)
@@ -2707,6 +2714,7 @@ End X86_PARSER_ARG.
               & _); ins_invertible_tac.
   Defined.
 
+
   Definition IMUL_p (opsize_override:bool): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t (pair_t (option_t operand_t)
                                                      (option_t word_t)))).
@@ -2767,14 +2775,13 @@ End X86_PARSER_ARG.
         destruct v as [[r1 op2] imm].
         destruct opsize_override; compute [negb];
         ins_printable_tac.
-    - Time abstract
-        (destruct w as [bl [op1 [w1 w2]]];
+    -  abstract (destruct w as [bl [op1 [w1 w2]]];
          destruct op1; destruct bl;
          destruct w1 as [op2 | ];
          destruct w2; try parsable_tac;
          destruct op2; destruct opsize_override;
          ins_pf_sim; parsable_tac).
-  Defined.
+  Qed.
 
   Definition IN_p: wf_bigrammar (pair_t char_t (option_t byte_t)).
     refine (("1110" $$ "010" $$ anybit $ byte |+| 

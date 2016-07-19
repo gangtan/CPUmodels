@@ -1,0 +1,41 @@
+Remakefile : Remakefile.in config.status
+all : src/Appli/Fappli_IEEE.vo src/Appli/Fappli_IEEE_bits.vo src/Appli/Fappli_double_round.vo src/Appli/Fappli_rnd_odd.vo src/Calc/Fcalc_bracket.vo src/Calc/Fcalc_digits.vo src/Calc/Fcalc_div.vo src/Calc/Fcalc_ops.vo src/Calc/Fcalc_round.vo src/Calc/Fcalc_sqrt.vo src/Core/Fcore.vo src/Core/Fcore_FIX.vo src/Core/Fcore_FLT.vo src/Core/Fcore_FLX.vo src/Core/Fcore_FTZ.vo src/Core/Fcore_Raux.vo src/Core/Fcore_Zaux.vo src/Core/Fcore_defs.vo src/Core/Fcore_digits.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_rnd_ne.vo src/Core/Fcore_ulp.vo src/Flocq_version.vo src/Prop/Fprop_Sterbenz.vo src/Prop/Fprop_div_sqrt_error.vo src/Prop/Fprop_mult_error.vo src/Prop/Fprop_plus_error.vo src/Prop/Fprop_relative.vo
+check : examples/Average.vo examples/Compute.vo examples/Double_round_beta_odd.vo
+check-more : examples/Cody_Waite.vo examples/Division_u16.vo examples/Sqrt_sqr.vo examples/Triangle.vo
+clean :
+configure config.status : configure.in
+dist : configure
+doc : html/index.html
+html/index.html : src/Appli/Fappli_IEEE.vo src/Appli/Fappli_IEEE_bits.vo src/Appli/Fappli_double_round.vo src/Appli/Fappli_rnd_odd.vo src/Calc/Fcalc_bracket.vo src/Calc/Fcalc_digits.vo src/Calc/Fcalc_div.vo src/Calc/Fcalc_ops.vo src/Calc/Fcalc_round.vo src/Calc/Fcalc_sqrt.vo src/Core/Fcore.vo src/Core/Fcore_FIX.vo src/Core/Fcore_FLT.vo src/Core/Fcore_FLX.vo src/Core/Fcore_FTZ.vo src/Core/Fcore_Raux.vo src/Core/Fcore_Zaux.vo src/Core/Fcore_defs.vo src/Core/Fcore_digits.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_rnd_ne.vo src/Core/Fcore_ulp.vo src/Flocq_version.vo src/Prop/Fprop_Sterbenz.vo src/Prop/Fprop_div_sqrt_error.vo src/Prop/Fprop_mult_error.vo src/Prop/Fprop_plus_error.vo src/Prop/Fprop_relative.vo
+install :
+src/Appli/Fappli_IEEE.vo : src/Appli/Fappli_IEEE.v src/Calc/Fcalc_bracket.vo src/Calc/Fcalc_digits.vo src/Calc/Fcalc_div.vo src/Calc/Fcalc_ops.vo src/Calc/Fcalc_round.vo src/Calc/Fcalc_sqrt.vo src/Core/Fcore.vo src/Core/Fcore_digits.vo src/Prop/Fprop_relative.vo
+src/Appli/Fappli_IEEE_bits.vo : src/Appli/Fappli_IEEE.vo src/Appli/Fappli_IEEE_bits.v src/Calc/Fcalc_digits.vo src/Core/Fcore.vo src/Core/Fcore_digits.vo
+src/Appli/Fappli_double_round.vo : src/Appli/Fappli_double_round.v src/Calc/Fcalc_ops.vo src/Core/Fcore_FLT.vo src/Core/Fcore_FLX.vo src/Core/Fcore_FTZ.vo src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_ulp.vo
+src/Appli/Fappli_rnd_odd.vo : src/Appli/Fappli_rnd_odd.v src/Calc/Fcalc_ops.vo src/Core/Fcore.vo
+src/Calc/Fcalc_bracket.vo : src/Calc/Fcalc_bracket.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo
+src/Calc/Fcalc_digits.vo : src/Calc/Fcalc_digits.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_digits.vo src/Core/Fcore_float_prop.vo
+src/Calc/Fcalc_div.vo : src/Calc/Fcalc_bracket.vo src/Calc/Fcalc_digits.vo src/Calc/Fcalc_div.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_digits.vo src/Core/Fcore_float_prop.vo
+src/Calc/Fcalc_ops.vo : src/Calc/Fcalc_ops.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo
+src/Calc/Fcalc_round.vo : src/Calc/Fcalc_bracket.vo src/Calc/Fcalc_digits.vo src/Calc/Fcalc_round.v src/Core/Fcore.vo src/Core/Fcore_digits.vo
+src/Calc/Fcalc_sqrt.vo : src/Calc/Fcalc_bracket.vo src/Calc/Fcalc_digits.vo src/Calc/Fcalc_sqrt.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_digits.vo src/Core/Fcore_float_prop.vo
+src/Core/Fcore.vo : src/Core/Fcore.v src/Core/Fcore_FIX.vo src/Core/Fcore_FLT.vo src/Core/Fcore_FLX.vo src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_rnd_ne.vo src/Core/Fcore_ulp.vo
+src/Core/Fcore_FIX.vo : src/Core/Fcore_FIX.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_rnd_ne.vo src/Core/Fcore_ulp.vo
+src/Core/Fcore_FLT.vo : src/Core/Fcore_FIX.vo src/Core/Fcore_FLT.v src/Core/Fcore_FLX.vo src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_rnd_ne.vo src/Core/Fcore_ulp.vo
+src/Core/Fcore_FLX.vo : src/Core/Fcore_FIX.vo src/Core/Fcore_FLX.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_rnd_ne.vo src/Core/Fcore_ulp.vo
+src/Core/Fcore_FTZ.vo : src/Core/Fcore_FLX.vo src/Core/Fcore_FTZ.v src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_ulp.vo
+src/Core/Fcore_Raux.vo : src/Core/Fcore_Raux.v src/Core/Fcore_Zaux.vo
+src/Core/Fcore_Zaux.vo : src/Core/Fcore_Zaux.v
+src/Core/Fcore_defs.vo : src/Core/Fcore_Raux.vo src/Core/Fcore_defs.v
+src/Core/Fcore_digits.vo : src/Core/Fcore_Zaux.vo src/Core/Fcore_digits.v
+src/Core/Fcore_float_prop.vo : src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.v
+src/Core/Fcore_generic_fmt.vo : src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.v src/Core/Fcore_rnd.vo
+src/Core/Fcore_rnd.vo : src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_rnd.v
+src/Core/Fcore_rnd_ne.vo : src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_rnd_ne.v src/Core/Fcore_ulp.vo
+src/Core/Fcore_ulp.vo : src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Core/Fcore_rnd.vo src/Core/Fcore_ulp.v
+src/Flocq_version.v : config.status src/Flocq_version.v.in
+src/Flocq_version.vo : src/Flocq_version.v
+src/Prop/Fprop_Sterbenz.vo : src/Calc/Fcalc_ops.vo src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_generic_fmt.vo src/Prop/Fprop_Sterbenz.v
+src/Prop/Fprop_div_sqrt_error.vo : src/Calc/Fcalc_ops.vo src/Core/Fcore.vo src/Prop/Fprop_div_sqrt_error.v src/Prop/Fprop_relative.vo
+src/Prop/Fprop_mult_error.vo : src/Calc/Fcalc_ops.vo src/Core/Fcore.vo src/Prop/Fprop_mult_error.v
+src/Prop/Fprop_plus_error.vo : src/Calc/Fcalc_ops.vo src/Core/Fcore_FIX.vo src/Core/Fcore_FLT.vo src/Core/Fcore_FLX.vo src/Core/Fcore_Raux.vo src/Core/Fcore_defs.vo src/Core/Fcore_float_prop.vo src/Core/Fcore_generic_fmt.vo src/Prop/Fprop_plus_error.v
+src/Prop/Fprop_relative.vo : src/Core/Fcore.vo src/Prop/Fprop_relative.v

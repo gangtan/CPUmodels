@@ -65,19 +65,20 @@ End MACHINE_SIG.
 
 (** Generic register-transfer language *)    
 Module RTL(M : MACHINE_SIG).
+  (* somehow in coq 8.5, the import command has no effect *)
   Import M.
   Local Open Scope Z_scope.
   Module AddrIndexed.
-    Definition t := int size_addr.
-    Definition index(i:int size_addr) : positive := ZIndexed.index (Word.unsigned i).
-    Lemma index_inj : forall (x y : int size_addr), index x = index y -> x = y.
+    Definition t := int M.size_addr.
+    Definition index(i:int M.size_addr) : positive := ZIndexed.index (Word.unsigned i).
+    Lemma index_inj : forall (x y : int M.size_addr), index x = index y -> x = y.
     Proof.
       unfold index. destruct x; destruct y ; simpl ; intros.
       generalize intrange intrange0. clear intrange intrange0.
       rewrite (ZIndexed.index_inj intval intval0 H). intros.
       rewrite (Coqlib.proof_irrelevance _ intrange intrange0). auto.
     Qed.
-    Definition eq := @Word.eq_dec size_addr.
+    Definition eq := @Word.eq_dec M.size_addr.
   End AddrIndexed.
   Module AddrMap := IMap(AddrIndexed).
 
@@ -99,11 +100,12 @@ Module RTL(M : MACHINE_SIG).
   Inductive test_op : Set := eq_op | lt_op | ltu_op.
 
   (* Constraints on mantissa and exponent widths of floating-point numbers *)
-  Definition float_width_hyp (ew mw: positive) :=
-    Zpos mw + 1 < 2 ^ (Zpos ew - 1).
+  Definition valid_float (ew mw: positive) :=
+    Zpos mw + 1 < 2 ^ (Zpos ew - 1) /\ (mw > 1)%positive.
 
   Definition rounding_mode := Flocq.Appli.Fappli_IEEE.mode.
 
+  (** An RTL expression indexed by size s produces a bitvector of size s+1 *)
   Inductive rtl_exp : nat -> Type := 
   | arith_rtl_exp : forall s (b:bit_vector_op)(e1 e2:rtl_exp s), rtl_exp s
   | test_rtl_exp : forall s (top:test_op)(e1 e2:rtl_exp s), rtl_exp size1
@@ -111,35 +113,33 @@ Module RTL(M : MACHINE_SIG).
   | cast_s_rtl_exp : forall s1 s2 (e:rtl_exp s1), rtl_exp s2
   | cast_u_rtl_exp : forall s1 s2 (e:rtl_exp s1), rtl_exp s2
   | imm_rtl_exp : forall s, int s -> rtl_exp s
-  | get_loc_rtl_exp : forall s (l:location s), rtl_exp s
-  | get_array_rtl_exp : forall l s, array l s -> rtl_exp l -> rtl_exp s
-  | get_byte_rtl_exp : forall (addr:rtl_exp size_addr),  rtl_exp size8
+  | get_loc_rtl_exp : forall s (l:M.location s), rtl_exp s
+  | get_array_rtl_exp : forall l s, M.array l s -> rtl_exp l -> rtl_exp s
+  | get_byte_rtl_exp : forall (addr:rtl_exp M.size_addr),  rtl_exp size8
   | get_random_rtl_exp : forall s, rtl_exp s
     (* a float has one sign bit, ew bit of exponent, and mw bits of mantissa *)
   | farith_rtl_exp : (* floating-point arithmetics *)
-    forall (ew mw: positive) (hyp: float_width_hyp ew mw)
+    forall (ew mw: positive) (hyp: valid_float ew mw)
       (fop: float_arith_op) (rounding: rtl_exp size2),
       let len := (nat_of_P ew + nat_of_P mw)%nat in
         rtl_exp len -> rtl_exp len -> rtl_exp len
   | fcast_rtl_exp : (* cast between floats of different precisions *)
     forall (ew1 mw1 ew2 mw2:positive)
-      (hyp1: float_width_hyp ew1 mw1) (hyp2: float_width_hyp ew2 mw2)
+      (hyp1: valid_float ew1 mw1) (hyp2: valid_float ew2 mw2)
       (rounding: rtl_exp size2),
       rtl_exp (nat_of_P ew1 + nat_of_P mw1)%nat ->
       rtl_exp (nat_of_P ew2 + nat_of_P mw2)%nat.
 
-
   Inductive rtl_instr : Type :=
-  | set_loc_rtl : forall s (e:rtl_exp s) (l:location s), rtl_instr
-  | set_array_rtl : forall l s, array l s -> rtl_exp l -> rtl_exp s -> rtl_instr
-  | set_byte_rtl: forall (e:rtl_exp size8)(addr:rtl_exp size_addr), rtl_instr
+  | set_loc_rtl : forall s (e:rtl_exp s) (l:M.location s), rtl_instr
+  | set_array_rtl : forall l s, M.array l s -> rtl_exp l -> rtl_exp s -> rtl_instr
+  | set_byte_rtl: forall (e:rtl_exp size8)(addr:rtl_exp M.size_addr), rtl_instr
   (** advance the clock of the oracle so that the next get_random_rtl_exp returns
       a new random bitvalue *)
   | advance_oracle_rtl : rtl_instr 
   | if_rtl : rtl_exp size1 -> rtl_instr -> rtl_instr
   | error_rtl : rtl_instr
   | trap_rtl : rtl_instr.
-
 
   (** Next, we give meaning to RTL instructions as transformers over a machine state *)
 
@@ -150,24 +150,24 @@ Module RTL(M : MACHINE_SIG).
 
   Record rtl_state := { 
     rtl_oracle : oracle ; 
-    rtl_mach_state : mach_state ; 
+    rtl_mach_state : M.mach_state ; 
     rtl_memory : AddrMap.t int8
   }. 
 
-  Inductive RTL_ans(A:Type) : Type := 
-  | Fail_ans : RTL_ans A
-  | Trap_ans : RTL_ans A
-  | Okay_ans : A -> RTL_ans A.
+  Inductive RTL_ans {A:Type} : Type := 
+  | Fail_ans : RTL_ans
+  | Trap_ans : RTL_ans
+  | Okay_ans : A -> RTL_ans.
 
-  Definition RTL(T:Type) := rtl_state -> (RTL_ans T * rtl_state).
+  Definition RTL(T:Type) := rtl_state -> (@RTL_ans T * rtl_state).
 
   Instance RTL_monad : Monad RTL := { 
     Return := fun A (x:A) (rs:rtl_state) => (Okay_ans x, rs) ;
     Bind := fun A B (c:RTL A) (f:A -> RTL B) (rs:rtl_state) => 
       match c rs with
         | (Okay_ans v, rs') => f v rs'
-        | (Fail_ans, rs') => (Fail_ans _, rs')
-        | (Trap_ans, rs') => (Trap_ans _, rs')
+        | (Fail_ans, rs') => (Fail_ans, rs')
+        | (Trap_ans, rs') => (Trap_ans, rs')
       end
   }.
   intros ; apply Coqlib.extensionality. auto.
@@ -176,18 +176,18 @@ Module RTL(M : MACHINE_SIG).
     destruct r ; auto.
   Defined.
 
-  Definition Fail T : RTL T := fun rs => (Fail_ans T,rs).
-  Definition Trap T : RTL T := fun rs => (Trap_ans T,rs).
+  Definition Fail T : RTL T := fun rs => (Fail_ans,rs).
+  Definition Trap T : RTL T := fun rs => (Trap_ans,rs).
 
-  Definition set_loc s (l:location s) (v:int s) : RTL unit := 
+  Definition set_loc s (l:M.location s) (v:int s) : RTL unit := 
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_mach_state := set_location l v (rtl_mach_state rs) ; 
+                           rtl_mach_state := M.set_location l v (rtl_mach_state rs) ; 
                            rtl_memory := rtl_memory rs |}).
-  Definition set_array l s (a:array l s) (i:int l) (v:int s) : RTL unit := 
+  Definition set_array l s (a:M.array l s) (i:int l) (v:int s) : RTL unit := 
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_mach_state := array_upd a i v (rtl_mach_state rs) ; 
+                           rtl_mach_state := M.array_upd a i v (rtl_mach_state rs) ; 
                            rtl_memory := rtl_memory rs |}).
-  Definition set_byte (addr:int size_addr) (v:int size8) : RTL unit := 
+  Definition set_byte (addr:int M.size_addr) (v:int size8) : RTL unit := 
     fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
                            rtl_mach_state := rtl_mach_state rs ;
                            rtl_memory := AddrMap.set addr v (rtl_memory rs) |}).
@@ -235,82 +235,154 @@ Module RTL(M : MACHINE_SIG).
     else if (Word.eq rm (Word.repr 2)) then mode_UP
     else mode_ZR.
 
-  Definition interp_farith (ew mw: positive) (hyp: float_width_hyp ew mw)
+  Lemma valid_float_hyp1 ew mw : valid_float ew mw -> Zpos mw + 1 < Zpower 2 (Zpos ew - 1).
+  Proof. unfold valid_float. intros. destruct H; trivial. Qed.
+
+  Lemma valid_float_hyp2 ew mw : valid_float ew mw -> (mw > 1)%positive.
+  Proof. unfold valid_float. intros. destruct H; trivial. Qed.
+
+
+  (* Flocq's binary_float is parameterized by prec and emax, which is
+     inconvenit to use. Define rtl_float to be paremetrized by ew
+     (exponent width) and mw (mantissa width). Then prec= mw+1 and
+     emax=2^(ew-1) *)
+  Definition rtl_float (ew mw: positive) := 
+    binary_float (Z.pos mw + 1) (Zpower 2 (Z.pos ew - 1)).
+
+  Lemma iter_nat_length n p:
+    Fcore_digits.digits2_pos (Fcore_Zaux.iter_nat xO n p) = 
+    Pos.of_nat (Pos.to_nat (Fcore_digits.digits2_pos p) + n).
+  Proof. induction n; intro.
+    - simpl. rewrite Nat.add_0_r. rewrite Pos2Nat.id. trivial.
+    - simpl. rewrite IHn. simpl. f_equal.
+      rewrite Pos2Nat.inj_succ.
+      omega.
+  Qed.
+
+  (* mw is the width of the mantissa part; the bool it returns is the sign bit;
+     in the constructor B754_nan, both a sign bit and a nan_pl is needed *)
+  Definition default_nan_pl (mw:positive) (gt:(mw > 1)%positive) :
+    bool * (nan_pl (Zpos mw + 1)).
+    intros.
+    refine ((false, exist _ (Flocq.Core.Fcore_Zaux.iter_nat xO (Pos.to_nat (mw - 1)) xH) _)).
+    rewrite iter_nat_length.
+    rewrite <- Pos2Nat.inj_add.
+    rewrite Pos2Nat.id. 
+    cbv [Fcore_digits.digits2_pos].
+    rewrite Pplus_minus by trivial.
+    apply Z.ltb_lt. omega.
+  Defined.
+
+  Definition nan_pl_conv (ew1 mw1 ew2 mw2:positive) 
+           (hyp1: valid_float ew1 mw1) (hyp2: valid_float ew2 mw2) 
+           (nan: nan_pl (Zpos mw1 + 1))
+    : nan_pl (Zpos mw2 +1).
+    intros.
+    (* default_nan is used when mw1 > mw2; this may not be accurate *)
+    refine (if (Z_le_dec (Z.pos mw1) (Z.pos mw2)) then
+              match nan with
+              | exist _ pl pf => exist _ pl _
+              end
+            else let (_, pl2) := default_nan_pl (valid_float_hyp2 hyp2) in pl2).
+    rewrite Z.ltb_lt in *. omega.
+  Defined.
+
+  Definition unop_nan_pl (ew mw:positive) (h:valid_float ew mw)
+    (f: rtl_float ew mw) : 
+    bool * nan_pl (Z.pos mw + 1) :=
+    match f with
+      | B754_nan _ _ s pl => (s, pl)
+      | _ => @default_nan_pl mw (valid_float_hyp2 h)
+    end.
+
+  Definition binop_nan_pl (ew mw:positive) (h: valid_float ew mw)
+    (f1 f2 : rtl_float ew mw) : bool * nan_pl (Z.pos mw + 1) :=
+    match f1, f2 with
+      | B754_nan _ _ s1 pl1, _ => (s1, pl1)
+      | _, B754_nan _ _ s2 pl2 => (s2, pl2)
+      | _, _ => @default_nan_pl mw (valid_float_hyp2 h)
+    end.
+
+  Definition interp_farith (ew mw: positive) (hyp: valid_float ew mw)
     (fop:float_arith_op) (rm: int size2)
-    (v1 v2: int (nat_of_P ew + nat_of_P mw)) :
+    (v1 v2: int (nat_of_P ew + nat_of_P mw)) : 
     int (nat_of_P ew + nat_of_P mw) :=
     let prec := Zpos mw + 1 in
     let emax := Zpower 2 (Zpos ew - 1) in
     let bf_of_bits := binary_float_of_bits (Zpos mw) (Zpos ew) 
-      (Pos2Z.is_pos mw) (Pos2Z.is_pos ew) hyp in
+      (Pos2Z.is_pos mw) (Pos2Z.is_pos ew) (valid_float_hyp1 hyp) in
     let bf1 := bf_of_bits (Word.unsigned v1) in
     let bf2 := bf_of_bits (Word.unsigned v2) in
     let md := dec_rounding_mode rm in 
+    let hyp1 := valid_float_hyp1 hyp in
+    let pl_op := (binop_nan_pl hyp) in
     let res := 
       match fop with
-        | fadd_op => Bplus prec emax (prec_gt_0 mw) hyp md bf1 bf2 
-        | fsub_op => Bminus prec emax (prec_gt_0 mw) hyp md bf1 bf2 
-        | fmul_op => Bmult prec emax (prec_gt_0 mw) hyp md bf1 bf2 
-        | fdiv_op => Bdiv prec emax (prec_gt_0 mw) hyp md bf1 bf2 
+        | fadd_op => Bplus prec emax (prec_gt_0 mw) hyp1 pl_op md bf1 bf2 
+        | fsub_op => Bminus prec emax (prec_gt_0 mw) hyp1 pl_op md bf1 bf2 
+        | fmul_op => Bmult prec emax (prec_gt_0 mw) hyp1 pl_op md bf1 bf2 
+        | fdiv_op => Bdiv prec emax (prec_gt_0 mw) hyp1 pl_op md bf1 bf2 
       end
     in
     Word.repr (bits_of_binary_float (Zpos mw) (Zpos ew) res).
 
   Definition cond_Zopp (b : bool) m := if b then Zopp m else m.
 
-  Definition binary_float_cast (prec1 emax1 prec2 emax2:Z) 
-    (H1: 0 < prec2)  (H2: prec2 < emax2)
+  Definition binary_float_cast (ew1 mw1 ew2 mw2:positive) 
+             (hyp1: valid_float ew1 mw1) (hyp2: valid_float ew2 mw2) 
     (rm: int size2)
-    (bf: binary_float prec1 emax1)
-        : binary_float prec2 emax2 :=
+    (bf: rtl_float ew1 mw1) : rtl_float ew2 mw2 :=
     let md := dec_rounding_mode rm in
     match bf with
-      | B754_nan => B754_nan _ _
-      | B754_zero sign => B754_zero _ _ sign
-      | B754_infinity sign => B754_infinity _ _ sign
-      | B754_finite sign mant ep _  => 
-        binary_normalize prec2 emax2 H1 H2 md (cond_Zopp sign (Zpos mant)) ep true
+      | B754_nan _ _ s pl => B754_nan _ _ s (nan_pl_conv hyp1 hyp2 pl)
+      | B754_zero _ _ sign => B754_zero _ _ sign
+      | B754_infinity _ _ sign => B754_infinity _ _ sign
+      | B754_finite _ _ sign mant ep _  => 
+        let prec2 := Z.pos mw2 + 1 in
+        let emax2 := 2 ^ (Z.pos ew2 - 1) in
+        binary_normalize prec2 emax2 (prec_gt_0 mw2) (valid_float_hyp1 hyp2)
+          md (cond_Zopp sign (Zpos mant)) ep true
     end.
 
   Definition interp_fcast (ew1 mw1 ew2 mw2:positive)
-     (hyp1: float_width_hyp ew1 mw1) (hyp2: float_width_hyp ew2 mw2)
+     (hyp1: valid_float ew1 mw1) (hyp2: valid_float ew2 mw2)
      (rm: int size2) (v: int (nat_of_P ew1 + nat_of_P mw1)) :
      int (nat_of_P ew2 + nat_of_P mw2) :=
      let bf_of_bits := binary_float_of_bits (Zpos mw1) (Zpos ew1)
-       (Pos2Z.is_pos mw1) (Pos2Z.is_pos ew1) hyp1 in
+       (Pos2Z.is_pos mw1) (Pos2Z.is_pos ew1) (valid_float_hyp1 hyp1) in
      let bf := bf_of_bits (Word.unsigned v) in
-     let bf' := binary_float_cast (prec_gt_0 mw2) hyp2 rm bf in
+     let bf' := binary_float_cast hyp1 hyp2 rm bf in
        Word.repr (bits_of_binary_float (Zpos mw2) (Zpos ew2) bf').
 
   Local Open Scope monad_scope.
 
   Fixpoint interp_rtl_exp s (e:rtl_exp s) (rs:rtl_state) : int s := 
     match e with 
-      | arith_rtl_exp _ b e1 e2 =>
+      | arith_rtl_exp b e1 e2 =>
         let v1 := interp_rtl_exp e1 rs in 
         let v2 := interp_rtl_exp e2 rs in interp_arith b v1 v2
-      | test_rtl_exp _ t e1 e2 => 
+      | test_rtl_exp t e1 e2 => 
         let v1 := interp_rtl_exp e1 rs in
         let v2 := interp_rtl_exp e2 rs in interp_test t v1 v2
-      | if_rtl_exp _ cd e1 e2 =>
+      | if_rtl_exp cd e1 e2 =>
         let v := interp_rtl_exp cd rs in
         if (Word.eq v Word.one) then interp_rtl_exp e1 rs
         else interp_rtl_exp e2 rs
-      | cast_s_rtl_exp _ _ e =>
+      | cast_s_rtl_exp _ e =>
         let v := interp_rtl_exp e rs in Word.repr (Word.signed v)
-      | cast_u_rtl_exp _ _ e => 
+      | cast_u_rtl_exp _ e => 
         let v := interp_rtl_exp e rs in Word.repr (Word.unsigned v)
-      | imm_rtl_exp _ v => v
-      | get_loc_rtl_exp _ l => get_location l (rtl_mach_state rs)
-      | get_array_rtl_exp _ _ a e => 
-        let i := interp_rtl_exp e rs in array_sub a i (rtl_mach_state rs)
+      | imm_rtl_exp v => v
+      | get_loc_rtl_exp l => M.get_location l (rtl_mach_state rs)
+      | get_array_rtl_exp a e => 
+        let i := interp_rtl_exp e rs in M.array_sub a i (rtl_mach_state rs)
       | get_byte_rtl_exp addr => 
         let v := interp_rtl_exp addr rs in AddrMap.get v (rtl_memory rs)
-      | farith_rtl_exp _ _ hyp fop rm e1 e2 =>
+      | farith_rtl_exp hyp fop rm e1 e2 =>
         let v1 := interp_rtl_exp e1 rs in let v2 := interp_rtl_exp e2 rs in
         let vrm := interp_rtl_exp rm rs in
         interp_farith hyp fop vrm v1 v2
-      | fcast_rtl_exp _ _ _ _ hyp1 hyp2 rm e =>
+      | fcast_rtl_exp hyp1 hyp2 rm e =>
         let v := interp_rtl_exp e rs in
         let vrm := interp_rtl_exp rm rs in
         interp_fcast hyp1 hyp2 vrm v
@@ -322,20 +394,20 @@ Module RTL(M : MACHINE_SIG).
   Definition interp_rtl_exp_comp s (e:rtl_exp s): RTL (int s) := 
     fun rs => (Okay_ans (interp_rtl_exp e rs), rs).
 
-  Definition get_loc s (l:location s) : RTL (int s) :=
+  Definition get_loc s (l:M.location s) : RTL (int s) :=
     interp_rtl_exp_comp (get_loc_rtl_exp l).
-  Definition get_array l s (a:array l s) (i:int l) : RTL (int s) :=
+  Definition get_array l s (a:M.array l s) (i:int l) : RTL (int s) :=
     interp_rtl_exp_comp (get_array_rtl_exp a (imm_rtl_exp i)).
-  Definition get_byte (addr:int size_addr) : RTL (int size8) := 
+  Definition get_byte (addr:int M.size_addr) : RTL (int size8) := 
     interp_rtl_exp_comp (get_byte_rtl_exp (imm_rtl_exp addr)).
   Definition get_random (s:nat) : RTL (int s) := 
     interp_rtl_exp_comp (get_random_rtl_exp s). 
 
   Fixpoint interp_rtl (instr:rtl_instr) : RTL unit := 
     match instr with 
-      | set_loc_rtl _ e l => 
+      | set_loc_rtl e l => 
         v <- interp_rtl_exp_comp e; set_loc l v
-      | set_array_rtl _ _ a e1 e2 =>
+      | set_array_rtl a e1 e2 =>
         i <- interp_rtl_exp_comp e1; v <- interp_rtl_exp_comp e2; 
         set_array a i v
       | set_byte_rtl e addr => 
