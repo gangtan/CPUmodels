@@ -15,13 +15,13 @@
     [disjoint_p p1 p2] which when it returns true, ensures that there is no
     string of tokens (i.e., bytes) that is accepted by both [p1] and [p2].
     This is achieved by computing the intersection of the two [regexps] 
-    corresponding to [p1] and [p2] and trying to show that that intersection
+    corresponding to [p1] and [p2] and trying to show that the intersection
     is equivalent to [Zero].  
 
     I coded a new version of regexps, here called [rexp] to avoid conflicts
-    with the definition in [Parser.v], which includes intersection ([And_r]).
+    with the definition in [Regexp.v], which includes intersection ([And_r]).
     To determine if an [rexp] is equivalent to [Zero], we (a) check to see
-    if the [rexp] is nullable (if so, then it accepts [nil] so it's not
+    if the [rexp] is nullable (if so, then it accepts the empty string so it's not
     equivalent to [Zero]), and otherwise, calculate the derivative of the
     [rexp] with respect to each possible input token, and then recursively
     see if the derivatives are zero.  If all of the derivatives are zero,
@@ -357,11 +357,11 @@ Fixpoint grammar2rexp t (p:grammar t) : rexp :=
     | Any => Any_r
     | Char c => Char_r c
     | Eps => Eps_r
-    | Cat t1 t2 r1 r2 => OptCat_r (grammar2rexp r1) (grammar2rexp r2)
+    | Cat r1 r2 => OptCat_r (grammar2rexp r1) (grammar2rexp r2)
     | Zero t => Zero_r
-    | Alt t1 t2 r1 r2 => OptAlt_r (grammar2rexp r1) (grammar2rexp r2)
-    | Star t r => Star_r (grammar2rexp r)
-    | Map t1 t2 f r => grammar2rexp r
+    | Alt r1 r2 => OptAlt_r (grammar2rexp r1) (grammar2rexp r2)
+    | Star r => Star_r (grammar2rexp r)
+    | Map _ f r => grammar2rexp r
     (* | Xform t1 t2 f r => grammar2rexp r *)
   end.
 

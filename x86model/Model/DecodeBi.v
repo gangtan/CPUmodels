@@ -470,7 +470,7 @@ Require ExtrOcamlNatBigInt.
                       | I_WRMSR => case34 ()
                       | I_XLAT => case35 ()
                     end)
-               & _); clear_ast_defs; invertible_tac.
+               & _). clear_ast_defs. invertible_tac.
      - abstract (destruct w; parsable_tac).
   Defined.
 
@@ -683,6 +683,15 @@ Require ExtrOcamlNatBigInt.
     let t:=gen_ast_type ige in exact(t).
   Defined.
 
+  Local Ltac gen4 lbl u arg :=
+      let ige := eval unfold i_instr4_grammar_env
+                 in i_instr4_grammar_env in
+      let t := eval unfold i_instr4_grammar_type
+                 in i_instr4_grammar_type in
+      let f:=gen_rev_case_lbl lbl ige t in
+      let f1 := eval simpl in f in
+      exact (Some (f1 (fst u, arg))).
+
   Definition from_instr4 (u:prefix * i_instr4) : option [|i_instr4_grammar_type|].
     intro.
     refine (match snd u with
@@ -695,14 +704,6 @@ Require ExtrOcamlNatBigInt.
               | I_CMPS a1 => _
               | I_SCAS a1 => _ 
             end).
-    Local Ltac gen4 lbl u arg :=
-      let ige := eval unfold i_instr4_grammar_env
-                 in i_instr4_grammar_env in
-      let t := eval unfold i_instr4_grammar_type
-                 in i_instr4_grammar_type in
-      let f:=gen_rev_case_lbl lbl ige t in
-      let f1 := eval simpl in f in
-      exact (Some (f1 (fst u, arg))).
     * (* I_INS *) gen4 0 u a1.
     * (* I_OUTS *) gen4 1 u a1.
     * (* I_MOVS *) gen4 2 u a1.
@@ -858,6 +859,19 @@ Require ExtrOcamlNatBigInt.
     let t:=gen_ast_type ige in exact(t).
   Defined.
 
+  Local Ltac gen5 lbl u arg :=
+      let ige := eval unfold i_instr5_grammar_env
+                 in i_instr5_grammar_env in
+      let t := eval unfold i_instr5_grammar_type
+                 in i_instr5_grammar_type in
+      let f:=gen_rev_case_lbl lbl ige t in
+      let f1 := eval simpl in f in
+      exact (Some (f1 (fst u, arg))).
+
+  Local Ltac gen_op_override lbl1 lbl2 u arg := 
+      refine (if (op_override (fst u)) then _ else _);
+      [gen5 lbl1 u arg | gen5 lbl2 u arg].
+
   Definition from_instr5 (u:prefix * i_instr5) : option [|i_instr5_grammar_type|].
     intro.
     refine (match snd u with
@@ -883,17 +897,6 @@ Require ExtrOcamlNatBigInt.
               | I_XCHG a1 a2 a3 => _
               | I_XOR a1 a2 a3 => _
             end).
-    Local Ltac gen5 lbl u arg :=
-      let ige := eval unfold i_instr5_grammar_env
-                 in i_instr5_grammar_env in
-      let t := eval unfold i_instr5_grammar_type
-                 in i_instr5_grammar_type in
-      let f:=gen_rev_case_lbl lbl ige t in
-      let f1 := eval simpl in f in
-      exact (Some (f1 (fst u, arg))).
-    Local Ltac gen_op_override lbl1 lbl2 u arg := 
-      refine (if (op_override (fst u)) then _ else _);
-      [gen5 lbl1 u arg | gen5 lbl2 u arg].
     * (* ADC *) gen_op_override 0 20 u (a1,(a2,a3)).
     * (* ADD *)  gen_op_override 1 21 u (a1,(a2,a3)).
     * (* AND *)  gen_op_override 2 22 u (a1,(a2,a3)).
@@ -926,8 +929,8 @@ Require ExtrOcamlNatBigInt.
                & _); clear_ast_defs; unfold from_instr5;
     unfold invertible; split; [unfold printable | unfold parsable];
     compute [snd fst]; intros.
-    - abstract ins_com_printable.
-    - abstract (destruct w as [p ins]; destruct ins; ins_com_parsable).
+    - ins_com_printable.
+    - destruct w as [p ins]; destruct ins; ins_com_parsable.
   Defined.
 
   (** This set of instructions can take prefixes in

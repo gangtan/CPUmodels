@@ -71,18 +71,18 @@ Section REIFY_RTL_COMP.
 
   Definition  rtl_comp_denote T (c: rtl_comp T) : RTL T := 
     match c with
-      | rc_ret _ a => ret a
+      | rc_ret a => ret a
       | rc_fail _ => Fail _
       | rc_trap _ => Trap _
-      | rc_get_loc _ l => get_loc l
-      | rc_set_loc _ l v => set_loc l v
-      | rc_get_array _ _ a i => get_array a i
-      | rc_set_array _ _ a i v => set_array a i v
+      | rc_get_loc l => get_loc l
+      | rc_set_loc l v => set_loc l v
+      | rc_get_array a i => get_array a i
+      | rc_set_array a i v => set_array a i v
       | rc_get_byte addr => get_byte addr
       | rc_set_byte addr v => set_byte addr v
       | rc_get_random n => get_random n
       | rc_advance_oracle => advance_oracle
-      | rc_interp_rtl_exp _ e => interp_rtl_exp_comp e
+      | rc_interp_rtl_exp e => interp_rtl_exp_comp e
     end.
 
 End REIFY_RTL_COMP.
@@ -125,16 +125,16 @@ Proof. intros. unfold Bind, RTL_monad. rewrite H. trivial. Qed.
 Lemma rtl_bind_trap_intro1 :
   forall (A B:Type) (c1:RTL A) (f: A -> RTL B) (s1 s2 s1':rtl_state)
     (v':A),
-    c1 s1 = (Okay_ans v', s1') -> f v' s1' = (Trap_ans _, s2)
-      -> Bind _ c1 f s1 = (Trap_ans _, s2).
+    c1 s1 = (Okay_ans v', s1') -> f v' s1' = (Trap_ans, s2)
+      -> Bind _ c1 f s1 = (Trap_ans, s2).
 Proof. intros. unfold Bind, RTL_monad. rewrite H. trivial. Qed.
 
 Lemma rtl_bind_fail_elim :
   forall (A B:Type) (c1:RTL A) (f: A -> RTL B) (s1 s2:rtl_state),
-    Bind _ c1 f s1 = (Fail_ans _, s2)
-      -> (c1 s1) = (Fail_ans _, s2) \/
+    Bind _ c1 f s1 = (Fail_ans, s2)
+      -> (c1 s1) = (Fail_ans, s2) \/
          (exists s1': rtl_state, exists v':A,
-            c1 s1 = (Okay_ans v', s1') /\ f v' s1' = (Fail_ans _, s2)).
+            c1 s1 = (Okay_ans v', s1') /\ f v' s1' = (Fail_ans, s2)).
 Proof. intros. unfold Bind, RTL_monad in H.
   destruct (c1 s1) as [r s1']. destruct r as [ | | v']; try discriminate.
     crush. right. crush.
@@ -155,7 +155,7 @@ Ltac rtl_okay_break :=
     it using rtl_bind_fail_elim to destruct the goal into two cases *)
 Ltac rtl_fail_break := 
   match goal with
-    | [H: Bind _ _ _ ?s = (Fail_ans _, _) |- _]  => 
+    | [H: Bind _ _ _ ?s = (Fail_ans, _) |- _]  => 
       apply rtl_bind_fail_elim in H;
       destruct H as [H|H];
       [idtac|
@@ -481,7 +481,7 @@ Notation same_rtl_state := Same_RTL_State.rtl_prop.
 Hint Unfold same_rtl_state Same_RTL_State_Rel.brel : rtl_prop_unfold_db.
 
 Local Ltac rtl_prop_prover :=
-  autounfold with rtl_prop_unfold_db ; simpl;
+  repeat autounfold with rtl_prop_unfold_db; simpl;
   unfold set_byte, get_byte, set_loc, get_loc, set_array, get_array, 
     get_random, advance_oracle, interp_rtl_exp_comp, Fail, Trap;
   crush.
@@ -499,10 +499,10 @@ Ltac same_rtl_state_tac :=
     change the rtl state *)
 Definition check_same_rtl_state T (rc:rtl_comp T) : bool := 
   match rc with
-    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
-    | rc_get_array _ _ _ _ 
+    | rc_ret _ | rc_fail _ | rc_trap _ | rc_get_loc _
+    | rc_get_array _ _
     | rc_get_byte _ | rc_get_random _  
-    | rc_interp_rtl_exp _ _ => true
+    | rc_interp_rtl_exp _ => true
     | _ => false
   end.
 
@@ -547,11 +547,11 @@ Ltac same_mach_state_tac :=
 
 Definition check_same_mach_state T (rc:rtl_comp T) : bool := 
   match rc with
-    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
-    | rc_get_array _ _ _ _ 
+    | rc_ret _ | rc_fail _ | rc_trap _ | rc_get_loc _
+    | rc_get_array _ _
     | rc_get_byte _ | rc_set_byte _ _ | rc_get_random _ 
     | rc_advance_oracle
-    | rc_interp_rtl_exp _ _ => true
+    | rc_interp_rtl_exp _ => true
     | _ => false
   end.
 
@@ -600,11 +600,11 @@ Ltac same_core_state_tac :=
 
 Definition check_same_core_state T (rc:rtl_comp T) : bool := 
   match rc with
-    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
-    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_ret _ | rc_fail _ | rc_trap _ | rc_get_loc _
+    | rc_get_array _ _ | rc_set_array _ _ _
     | rc_get_byte _ | rc_set_byte _ _
     | rc_get_random _ | rc_advance_oracle
-    | rc_interp_rtl_exp _ _ => true
+    | rc_interp_rtl_exp _ => true
     | _ => false
   end.
 
@@ -615,7 +615,8 @@ Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
 Lemma check_same_core_state_sound : forall T (rc: rtl_comp T),
   check_same_core_state rc = true -> same_core_state (rtl_comp_denote rc).
 Proof. 
-  intros; destruct rc; simpl; try (discriminate H || rtl_prop_prover; fail). 
+  intros; destruct rc; simpl; 
+  try (discriminate H || rtl_prop_prover; fail).
   destruct a; rtl_prop_prover.  
 Qed.
 
@@ -657,16 +658,16 @@ Ltac same_seg_regs_tac :=
 
 Lemma same_core_state_same_seg_regs : forall (A:Type) (c:RTL A),
   same_core_state c -> same_seg_regs c.
-Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
+Proof. repeat autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
 
 Lemma same_mach_state_same_seg_regs : forall (A:Type) (c:RTL A),
   same_mach_state c -> same_seg_regs c.
-Proof. autounfold with rtl_prop_unfold_db. crush_hyp.
+Proof. repeat autounfold with rtl_prop_unfold_db. crush_hyp.
 Qed.
 
 Lemma same_rtl_state_same_seg_regs : forall (A:Type) (c:RTL A),
   same_rtl_state c -> same_seg_regs c.
-Proof. autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
+Proof. repeat autounfold with rtl_prop_unfold_db. crush_hyp. Qed.
 
 Definition is_seg_reg_loc (s:nat) (l:loc s) :=
   match l with
@@ -677,18 +678,18 @@ Definition is_seg_reg_loc (s:nat) (l:loc s) :=
 
 Lemma set_loc_same_seg_regs : forall s (l:location s) v,
   is_seg_reg_loc l = false -> same_seg_regs (set_loc l v).
-Proof. autounfold with rtl_prop_unfold_db.  unfold set_loc.
+Proof. repeat autounfold with rtl_prop_unfold_db.  unfold set_loc.
   intros; destruct l; crush.
 Qed.
 
 Definition check_same_seg_regs T (rc:rtl_comp T) : bool := 
   match rc with
-    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
-    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_ret _ | rc_fail _ | rc_trap _ | rc_get_loc _
+    | rc_get_array _ _ | rc_set_array _ _ _
     | rc_get_byte _ | rc_set_byte _ _
     | rc_get_random _ | rc_advance_oracle
-    | rc_interp_rtl_exp _ _ => true
-    | rc_set_loc _ l _ => negb (is_seg_reg_loc l)
+    | rc_interp_rtl_exp _ => true
+    | rc_set_loc l _ => negb (is_seg_reg_loc l)
   end.
 
 Lemma check_same_seg_regs_sound : forall T (rc: rtl_comp T),
@@ -739,12 +740,12 @@ Definition is_pc_loc (s:nat) (l:loc s) :=
 
 Definition check_same_pc T (rc:rtl_comp T) : bool := 
   match rc with
-    | rc_ret _ _ | rc_fail _ | rc_trap _ | rc_get_loc _ _ 
-    | rc_get_array _ _ _ _ 
+    | rc_ret _ | rc_fail _ | rc_trap _ | rc_get_loc _
+    | rc_get_array _ _
     | rc_get_byte _ | rc_set_byte _ _
     | rc_get_random _ | rc_advance_oracle
-    | rc_interp_rtl_exp _ _ => true
-    | rc_set_loc _ l _ => negb (is_pc_loc l)
+    | rc_interp_rtl_exp _ => true
+    | rc_set_loc l _ => negb (is_pc_loc l)
     | _ => false
   end.
 
@@ -784,7 +785,8 @@ End Same_Mem_Rel.
 Module Same_Mem := RTL_Prop Same_Mem_Rel.
 Notation same_mem := Same_Mem.rtl_prop.
 
-Hint Unfold same_mem Same_Mem_Rel.brel : rtl_prop_unfold_db.
+Hint Unfold same_mem : rtl_prop_unfold_db.
+Hint Unfold Same_Mem_Rel.brel : rtl_prop_unfold_db.
 
 Ltac same_mem_tac := 
   compute [interp_rtl]; fold interp_rtl;
@@ -797,25 +799,26 @@ Ltac same_mem_tac :=
 
 Definition check_same_mem T (rc:rtl_comp T) : bool := 
   match rc with
-    | rc_ret _ _ | rc_fail _ | rc_trap _
-    | rc_get_loc _ _  | rc_set_loc _ _ _
-    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_ret _ | rc_fail _ | rc_trap _
+    | rc_get_loc _  | rc_set_loc _ _
+    | rc_get_array _ _ | rc_set_array _ _ _
     | rc_get_byte _ 
     | rc_get_random _ | rc_advance_oracle
-    | rc_interp_rtl_exp _ _ => true
+    | rc_interp_rtl_exp _ => true
     | _ => false
   end.
 
 Lemma same_rtl_state_same_mem : forall (A:Type) (c:RTL A), 
   same_rtl_state c -> same_mem c.
-Proof. autounfold with rtl_prop_unfold_db.
+Proof. repeat autounfold with rtl_prop_unfold_db.
   intros. apply H in H0. subst s'. trivial. 
 Qed.
 
 Lemma check_same_mem_sound : forall T (rc: rtl_comp T),
   check_same_mem rc = true -> same_mem (rtl_comp_denote rc).
 Proof. 
-  intros; destruct rc; try (discriminate H || rtl_prop_prover; fail). 
+  intros; destruct rc; 
+  try (discriminate H || rtl_prop_prover; fail). 
 Qed.
 
 Hint Extern 2 (same_mem ?C) =>
@@ -1145,7 +1148,7 @@ Proof. unfold step_logical_op; intros. same_regs_but_tac. Qed.
 (** ** Property that an RTL computation does not raise an error *)
 
 Definition no_fail (A:Type) (c:RTL A) := 
-  forall s s', c s <> (Fail_ans _, s').
+  forall s s', c s <> (Fail_ans, s').
 
 Lemma bind_no_fail: forall (A B:Type) (c1:RTL A) (f:A -> RTL B), 
   no_fail c1 -> (forall a:A, no_fail (f a)) -> no_fail (Bind _ c1 f).
@@ -1169,12 +1172,12 @@ Ltac no_fail_tac :=
 
 Definition check_no_fail T (rc:rtl_comp T) : bool := 
   match rc with
-    | rc_ret _ _ | rc_trap _
-    | rc_get_loc _ _  | rc_set_loc _ _ _
-    | rc_get_array _ _ _ _ | rc_set_array _ _ _ _ _
+    | rc_ret _ | rc_trap _
+    | rc_get_loc _  | rc_set_loc _ _
+    | rc_get_array _ _ | rc_set_array _ _ _
     | rc_get_byte _ | rc_set_byte _ _ 
     | rc_get_random _ | rc_advance_oracle
-    | rc_interp_rtl_exp _ _  => true
+    | rc_interp_rtl_exp _  => true
     | _ => false
   end.
 
@@ -1193,7 +1196,7 @@ Definition inBoundCodeAddr (pc:int32) (s:rtl_state) :=
   pc <=32 CLimit s.
 
 Lemma step_fail_pc_inBound : forall s s',
-  step s = (Fail_ans unit, s') -> inBoundCodeAddr (PC s) s.
+  step s = (Fail_ans, s') -> inBoundCodeAddr (PC s) s.
 Proof. unfold step. intros.
   repeat rtl_comp_elim.
   remember_destruct_head in H as irng.
@@ -1304,15 +1307,13 @@ Ltac conv_same_seg_regs_tac :=
        conv_same_seg_regs (conv_DIV ...) would be an order of magnitiude more.
  *)
 
-Lemma load_mem_n_same_seg_regs : forall seg addr n,
-  conv_same_seg_regs (load_mem_n seg addr n).
-Proof. unfold load_mem_n, lmem, add_and_check_segment, if_trap.
-  induction n. 
-    conv_same_seg_regs_tac.
-    fold load_mem_n in *. conv_same_seg_regs_tac.
+Lemma load_mem_n_same_seg_regs : forall seg sz n addr,
+  conv_same_seg_regs (load_mem_n seg addr sz n).
+Proof.  unfold load_mem_n, lmem, add_and_check_segment, if_trap.
+  induction n; intro; conv_same_seg_regs_tac.
 Qed.
 
-Hint Extern 1 (conv_same_seg_regs (load_mem_n _ _ ?X))
+Hint Extern 1 (conv_same_seg_regs (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_same_seg_regs with (n:=X)
   : conv_same_seg_regs_db.
 
@@ -1401,15 +1402,13 @@ Hint Extern 1 (conv_same_mem (emit _)) =>
 Hint Resolve Conv_Same_Mem.ret_sat_conv_prop 
   : conv_same_mem_db.
 
-Lemma load_mem_n_same_mem : forall seg addr n,
-  conv_same_mem (load_mem_n seg addr n).
+Lemma load_mem_n_same_mem : forall seg sz n addr,
+  conv_same_mem (load_mem_n seg addr sz n).
 Proof. unfold load_mem_n, lmem, add_and_check_segment.
-  induction n.
-    conv_same_mem_tac.
-    fold load_mem_n in *. conv_same_mem_tac.
+  induction n; intro; conv_same_mem_tac.
 Qed.
 
-Hint Extern 1 (conv_same_mem (load_mem_n _ _ ?X))
+Hint Extern 1 (conv_same_mem (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_same_mem with (n:=X) : conv_same_mem_db.
 
 Lemma iload_op32_same_mem : forall seg op,
@@ -1626,16 +1625,14 @@ Qed.
 
 Hint Resolve set_op_reg_op_aos : conv_agree_outside_seg_db.
 
-Lemma load_mem_n_aos : forall seg1 seg2 addr n,
-  conv_agree_outside_seg seg1 (load_mem_n seg2 addr n).
+Lemma load_mem_n_aos : forall seg1 seg2 sz n addr,
+  conv_agree_outside_seg seg1 (load_mem_n seg2 addr sz n).
 Proof. unfold load_mem_n, lmem, add_and_check_segment.
-  induction n. 
-    conv_agree_outside_seg_tac.
-    fold load_mem_n in *. conv_agree_outside_seg_tac.
+  induction n; intro; conv_agree_outside_seg_tac.
 Qed.
 
 (* I have to do the following seems because of dependent types *)
-Hint Extern 1 (conv_agree_outside_seg _ (load_mem_n _ _ ?X))
+Hint Extern 1 (conv_agree_outside_seg _ (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_aos with (n:=X)
   : conv_agree_outside_seg_db.
 
@@ -1730,13 +1727,13 @@ Ltac conv_backward_same_pc :=
        [eassumption | conv_same_pc_tac | idtac]
   end.
 
-Lemma load_mem_n_same_pc : forall seg addr n,
-  conv_same_pc (load_mem_n seg addr n).
+Lemma load_mem_n_same_pc : forall seg sz n addr,
+  conv_same_pc (load_mem_n seg addr sz n).
 Proof. unfold load_mem_n, lmem, add_and_check_segment.
-  induction n; conv_same_pc_tac.
+  induction n; intro; conv_same_pc_tac.
 Qed.
 
-Hint Extern 1 (conv_same_pc (load_mem_n _ _ ?X))
+Hint Extern 1 (conv_same_pc (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_same_pc with (n:=X) : conv_same_pc_db.
 
 Lemma set_mem_n_same_pc : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
@@ -1911,15 +1908,13 @@ Ltac conv_no_fail_tac :=
           end).
 
 
-Lemma load_mem_n_no_fail : forall seg addr n,
-  conv_no_fail (load_mem_n seg addr n).
+Lemma load_mem_n_no_fail : forall seg sz n addr,
+  conv_no_fail (load_mem_n seg addr sz n).
 Proof. unfold load_mem_n, lmem, add_and_check_segment.
-  induction n. 
-    conv_no_fail_tac.
-    fold load_mem_n in *. conv_no_fail_tac.
+  induction n; intro; conv_no_fail_tac.
 Qed.
 
-Hint Extern 1 (conv_no_fail (load_mem_n _ _ ?X))
+Hint Extern 1 (conv_no_fail (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_no_fail with (n:=X) : conv_no_fail_db.
 
 Lemma set_mem_n_no_fail : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
@@ -2307,8 +2302,6 @@ Proof. intros.
       discriminate.
 Qed.
 
-
-
 (** * Reification of RTL conversions 
 
    It converts rtl conversions in higher-order syntax to first-order terms
@@ -2316,7 +2309,7 @@ Qed.
    coq functions on rtl conversions. Unfortunately, this mechanism is not
    used in the following code because it turns of this reflection-based
    proof is slower than the tacticis-based approach. I left the code
-   here as an interesting example of how to reify high-order Coq terms
+   here as an interesting example of how to reify higher-order Coq terms
    to first-order syntax.
 *)
 Section REIFIED_RTL_CONV.
@@ -2334,31 +2327,32 @@ Section REIFIED_RTL_CONV.
       | ct_rtl_exp s => rtl_exp s
     end.
 
-  (** The reified syntax of rtl conversions is parameterized by a type
-   environment, which remembers tye types of free varialbes. Types of
-   variables are of the form "rtl_exp n"; we remember only those natural
-   numbers. *)
-  Definition tyenv := list nat.
+  (** The reified syntax of rtl conversions is parameterized by an
+   environment, which remembers the rtl expressions for free
+   variables. Types of environments remember the types of those rtl
+   expressions, which are of the form "rtl_exp n"; we remember only
+   n. *)
+  Definition env_ty := list nat.
 
-  Fixpoint tyenv_denote (te: tyenv) := 
-    match te with
+  Fixpoint env_ty_denote (et: env_ty) := 
+    match et with
       | nil => unit
-      | n :: te' => (rtl_exp n * tyenv_denote te')%type
+      | n :: et' => (rtl_exp n * env_ty_denote et')%type
     end.
 
-  Inductive member (n:nat) : tyenv -> Type := 
-  | lfirst : forall te, member n (n :: te)
-  | lnext : forall te n', member n te -> member n (n' :: te).
+  Inductive member (n:nat) : env_ty -> Type := 
+  | lfirst : forall et, member n (n :: et)
+  | lnext : forall et n', member n et -> member n (n' :: et).
 
   Section REIFIED_RTL_EXP.
 
-    Variable te: tyenv.
+    Variable et: env_ty.
 
-    (** RTL expressions with unbound variables, indexed by the type of the
-        expression. *)
+    (** RTL expressions with unbound variables, indexed by the size of
+        the rtl expression. *)
     Inductive open_rtl_exp : nat -> Type := 
     (* variables *)
-    | ore_var n (m: member n te) :  open_rtl_exp n
+    | ore_var n (m: member n et) :  open_rtl_exp n
     | ore_arith n (b:bit_vector_op) (oe1 oe2:open_rtl_exp n) : open_rtl_exp n
     | ore_test n (top:test_op) (oe1 oe2:open_rtl_exp n) : open_rtl_exp size1
     | ore_if n (cond: open_rtl_exp size1) (oe1 oe2: open_rtl_exp n) :
@@ -2370,12 +2364,12 @@ Section REIFIED_RTL_CONV.
     | ore_get_array l n (a:array l n) (idx: open_rtl_exp l) : open_rtl_exp n
     | ore_get_byte (addr: open_rtl_exp size_addr) : open_rtl_exp size8
     | ore_get_random n : open_rtl_exp n
-    | ore_farith (ew mw: positive) (hyp: float_width_hyp ew mw)
+    | ore_farith (ew mw: positive) (hyp: valid_float ew mw)
                  (fop: float_arith_op) (rounding: open_rtl_exp size2) :
           let len := (nat_of_P ew + nat_of_P mw)%nat in
           open_rtl_exp len -> open_rtl_exp len -> open_rtl_exp len
     | ore_fcast (ew1 mw1 ew2 mw2:positive) 
-          (hyp1: float_width_hyp ew1 mw1) (hyp2: float_width_hyp ew2 mw2)
+          (hyp1: valid_float ew1 mw1) (hyp2: valid_float ew2 mw2)
           (rounding: open_rtl_exp size2) :
           open_rtl_exp (nat_of_P ew1 + nat_of_P mw1)%nat ->
           open_rtl_exp (nat_of_P ew2 + nat_of_P mw2)%nat.
@@ -2384,129 +2378,129 @@ Section REIFIED_RTL_CONV.
 
   (* Tricky to get this right, fighting the type checker all the time;
      illustrate all the pain of doing dependent types in Coq:( *)
-  Fixpoint get_from_env te n : 
-    tyenv_denote te -> member n te -> ty_denote (ct_rtl_exp n) :=
-    match te return tyenv_denote te -> member n te
+  Fixpoint get_from_env et n : 
+    env_ty_denote et -> member n et -> ty_denote (ct_rtl_exp n) :=
+    match et return env_ty_denote et -> member n et
                     -> ty_denote (ct_rtl_exp n) with
       | nil => fun env mem => 
-        match mem in member _ te' return (match te' with
+        match mem in member _ et' return (match et' with
                                             | nil => ty_denote (ct_rtl_exp n)
                                             | _ => unit
                                           end) with
-          | lfirst _ => tt
-          | lnext _ _ _ => tt
+          | lfirst _ _ => tt
+          | lnext _ _ => tt
         end
-      | n' :: te' => 
+      | n' :: et' => 
         fun env mem =>
-          match mem in member _ te1 return (match te1 with
+          match mem in member _ et1 return (match et1 with
                                               | nil => Empty_set
-                                              | n'' :: te'' =>
-                                                tyenv_denote (n'' :: te'')
-                                                -> (tyenv_denote te''
-                                                    -> member n te''
+                                              | n'' :: et'' =>
+                                                env_ty_denote (n'' :: et'')
+                                                -> (env_ty_denote et''
+                                                    -> member n et''
                                                     -> ty_denote 
                                                          (ct_rtl_exp n))
                                                 -> ty_denote (ct_rtl_exp n)
                                             end) with
-          | lfirst _ => fun env _ => fst env
-          | lnext x ts2 mem' => fun env get_ty' => 
+          | lfirst _ _ => fun env _ => fst env
+          | lnext ts2 mem' => fun env get_ty' => 
                                 get_ty' (snd env) mem'
-        end env (@get_from_env te' n)
+        end env (@get_from_env et' n)
     end.
 
   (** Denotation of [open_rtl_exp] *)
-  Fixpoint ore_denote (te: tyenv) n (env: tyenv_denote te)
-             (oe: open_rtl_exp te n) : ty_denote (ct_rtl_exp n) :=
+  Fixpoint ore_denote (et: env_ty) n (env: env_ty_denote et)
+             (oe: open_rtl_exp et n) : ty_denote (ct_rtl_exp n) :=
     match oe with
-      | ore_var n mem => get_from_env env mem
-      | ore_arith _ b oe1 oe2 => 
+      | ore_var mem => get_from_env env mem
+      | ore_arith b oe1 oe2 => 
         arith_rtl_exp b (ore_denote env oe1) (ore_denote env oe2)
-      | ore_test _ top oe1 oe2 =>
+      | ore_test top oe1 oe2 =>
         test_rtl_exp top (ore_denote env oe1) (ore_denote env oe2)
-      | ore_if _ cond oe1 oe2 =>
+      | ore_if cond oe1 oe2 =>
         if_rtl_exp (ore_denote env cond)
                    (ore_denote env oe1) (ore_denote env oe2)
-      | ore_cast_s _ n2 oe =>
+      | ore_cast_s n2 oe =>
         cast_s_rtl_exp n2 (ore_denote env oe)
-      | ore_cast_u _ n2 oe =>
+      | ore_cast_u n2 oe =>
         cast_u_rtl_exp n2 (ore_denote env oe)
       | ore_imm _ i => imm_rtl_exp i
       | ore_get_loc _ l => get_loc_rtl_exp l
-      | ore_get_array _ _ a idx => get_array_rtl_exp a (ore_denote env idx)
+      | ore_get_array a idx => get_array_rtl_exp a (ore_denote env idx)
       | ore_get_byte addr => get_byte_rtl_exp (ore_denote env addr)
-      | ore_get_random n => get_random_rtl_exp n
-      | ore_farith _ _ hyp fop rounding oe1 oe2 =>
+      | ore_get_random _ n => get_random_rtl_exp n
+      | ore_farith hyp fop rounding oe1 oe2 =>
         farith_rtl_exp hyp fop (ore_denote env rounding)
                        (ore_denote env oe1) (ore_denote env oe2)
-      | ore_fcast _ _ _ _ hyp1 hyp2 rounding oe1 => 
+      | ore_fcast hyp1 hyp2 rounding oe1 => 
         fcast_rtl_exp hyp1 hyp2 (ore_denote env rounding)
                        (ore_denote env oe1)
     end.
 
   (** Reified syntax of rtl conversions, indexed by the types of
-     free variables and the return type *)
-  Inductive open_conv (te: tyenv) : ty -> Type := 
+      free variables and the return type. *)
+  Inductive open_conv (et: env_ty) : ty -> Type := 
     (* oc_seq is a special kind of bind in which oc1 returns unit *)
-  | oc_seq t (oc1: open_conv te ct_unit) (oc2: open_conv te t) :
-      open_conv te t
-  | oc_bind_exp n t (oc:open_conv te (ct_rtl_exp n)) 
-                (f:open_conv (n::te) t) : open_conv te t
-  | oc_ret n (oe: open_rtl_exp te n) : open_conv te (ct_rtl_exp n)
-  | oc_no_op : open_conv te ct_unit
-  | oc_write_loc n (oe: open_rtl_exp te n) (l:loc n) : open_conv te ct_unit
-  | oc_write_array l n (a:array l n) (idx: open_rtl_exp te l)
-      (v: open_rtl_exp te n) : open_conv te ct_unit
-  | oc_write_byte (v: open_rtl_exp te size8) (a: open_rtl_exp te size32) :
-    open_conv te ct_unit
-  | oc_if_trap (g: open_rtl_exp te size1) : open_conv te ct_unit
-  | oc_if_set_loc (cond: open_rtl_exp te size1) n (oe: open_rtl_exp te n)
-                  (l:loc n) : open_conv te ct_unit
-  | oc_error : open_conv te ct_unit
-  | oc_trap : open_conv te ct_unit
+  | oc_seq t (oc1: open_conv et ct_unit) (oc2: open_conv et t) :
+      open_conv et t
+  | oc_bind_exp n t (oc:open_conv et (ct_rtl_exp n)) 
+                (f:open_conv (n::et) t) : open_conv et t
+  | oc_ret n (oe: open_rtl_exp et n) : open_conv et (ct_rtl_exp n)
+  | oc_no_op : open_conv et ct_unit
+  | oc_write_loc n (oe: open_rtl_exp et n) (l:loc n) : open_conv et ct_unit
+  | oc_write_array l n (a:array l n) (idx: open_rtl_exp et l)
+      (v: open_rtl_exp et n) : open_conv et ct_unit
+  | oc_write_byte (v: open_rtl_exp et size8) (a: open_rtl_exp et size32) :
+    open_conv et ct_unit
+  | oc_if_trap (g: open_rtl_exp et size1) : open_conv et ct_unit
+  | oc_if_set_loc (cond: open_rtl_exp et size1) n (oe: open_rtl_exp et n)
+                  (l:loc n) : open_conv et ct_unit
+  | oc_error : open_conv et ct_unit
+  | oc_trap : open_conv et ct_unit
   | oc_load_op (pre:prefix) (w:bool) (seg:segment_register) (op:operand) :
-      open_conv te (ct_rtl_exp (opsize (op_override pre) w))
+      open_conv et (ct_rtl_exp (opsize (op_override pre) w))
   | oc_set_op (pre:prefix) (w:bool) (seg:segment_register) 
-              (v: open_rtl_exp te (opsize (op_override pre) w))
-              (op:operand) : open_conv te ct_unit
+              (v: open_rtl_exp et (opsize (op_override pre) w))
+              (op:operand) : open_conv et ct_unit
   | oc_iload_op8 (seg:segment_register) (op:operand) : 
-      open_conv te (ct_rtl_exp size8)
-  | oc_iset_op8 (seg:segment_register) (p: open_rtl_exp te size8)
-                (op:operand) : open_conv te ct_unit
+      open_conv et (ct_rtl_exp size8)
+  | oc_iset_op8 (seg:segment_register) (p: open_rtl_exp et size8)
+                (op:operand) : open_conv et ct_unit
   (* compute_parity_aux *)
-  | oc_cp_aux s (oe1: open_rtl_exp te s) (oe2: open_rtl_exp te size1) 
-              (n:nat) : open_conv te (ct_rtl_exp size1)
+  | oc_cp_aux s (oe1: open_rtl_exp et s) (oe2: open_rtl_exp et size1) 
+              (n:nat) : open_conv et (ct_rtl_exp size1)
   (* a catch-call clause; for debugging *)
-  | oc_any t (c:tyenv_denote te -> Conv (ty_denote t)) : open_conv te t.
-   
+  | oc_any t (c:env_ty_denote et -> Conv (ty_denote t)) : open_conv et t.
+
   (** Denotation of open_conv_denote *)
-  Fixpoint oc_denote (te:tyenv) (t:ty) (env:tyenv_denote te)
-           (oc:open_conv te t) : Conv (ty_denote t) := 
+  Fixpoint oc_denote (et:env_ty) (t:ty) (env:env_ty_denote et)
+           (oc:open_conv et t) : Conv (ty_denote t) := 
     match oc in open_conv _ t' return Conv (ty_denote t') with
-      | oc_seq _ oc1 oc2 => 
+      | oc_seq oc1 oc2 => 
         Bind _ (oc_denote env oc1) (fun _ => oc_denote env oc2)
-      | oc_bind_exp n _ oc1 ocf =>
+      | @oc_bind_exp _ n _ oc1 ocf =>
         Bind _ (oc_denote env oc1) 
-             (fun x => @oc_denote (n::te) _ (x,env) ocf)
-      | oc_ret _ oe => ret (ore_denote env oe)
-      | oc_no_op => ret tt
-      | oc_write_loc n oe l => write_loc (ore_denote env oe) l
-      | oc_write_array _ _ arr idx v => 
+             (fun x => @oc_denote (n::et) _ (x,env) ocf)
+      | oc_ret oe => ret (ore_denote env oe)
+      | oc_no_op _ => ret tt
+      | oc_write_loc oe l => write_loc (ore_denote env oe) l
+      | oc_write_array arr idx v => 
         write_array arr (ore_denote env idx) (ore_denote env v)
       | oc_write_byte v addr => 
         write_byte (ore_denote env v) (ore_denote env addr)
       | oc_if_trap g => if_trap (ore_denote env g)
-      | oc_if_set_loc cond _ oe l => 
+      | oc_if_set_loc cond oe l => 
         if_set_loc (ore_denote env cond) (ore_denote env oe) l
-      | oc_error => raise_error
-      | oc_trap => raise_trap
-      | oc_load_op pre w seg op => load_op pre w seg op
+      | oc_error _ => raise_error
+      | oc_trap _ => raise_trap
+      | oc_load_op _ pre w seg op => load_op pre w seg op
       | oc_set_op pre w seg ov op => 
         set_op pre w seg (ore_denote env ov) op
-      | oc_iload_op8 seg op => iload_op8 seg op
+      | oc_iload_op8 _ seg op => iload_op8 seg op
       | oc_iset_op8 seg p op => iset_op8 seg (ore_denote env p) op
-      | oc_cp_aux _ oe1 oe2 n => 
+      | oc_cp_aux oe1 oe2 n => 
         compute_parity_aux (ore_denote env oe1) (ore_denote env oe2) n
-      | oc_any _ c => c env
+      | oc_any _ _ c => c env
     end.
 
 End REIFIED_RTL_CONV.
@@ -2535,7 +2529,7 @@ Ltac member_pf ts fe :=
 
 (** Reify higher-order rtl expressions to first-order syntax. All
    expressions of the form [fun env => ...], where env is the value
-   environment and of type [tyenv_denote te]. [fst env] is converted
+   environment and of type [env_ty_denote te]. [fst env] is converted
    [ore_var lfirst]; [fst (snd env)] is converted to [ore_var (lnext
    lfirst)]; [fst (snd (snd env))] is converted to [ore_var (lnext (lnext
    lfirst))] *)
@@ -2591,61 +2585,61 @@ Ltac reify_rtl_exp te e :=
 (*              arith_rtl_exp and_op (fst env) (fst (snd env))) *)
 (* in pose s. *)
 
-(** Reify higher-order rtl conversions to first-order syntax; te is the type
+(** Reify higher-order rtl conversions to first-order syntax; et is the type
    enviroment (list of types of free variables in conversion cv) *)
-Ltac reify_rtl_conv te cv := 
+Ltac reify_rtl_conv et cv := 
   match eval cbv beta iota zeta in cv with
     | fun (env: ?T) => Bind _ (@?C env) (fun (y:?S) => @?F env y) =>
-      let oc := reify_rtl_conv te C in
+      let oc := reify_rtl_conv et C in
       let t:= ty_reify S in
       match t with
         | ct_unit =>
-          let of := reify_rtl_conv te (fun p:T => F p tt) in
+          let of := reify_rtl_conv et (fun p:T => F p tt) in
           constr:(oc_seq oc of)
         | ct_rtl_exp ?N=> 
           let of := 
-              reify_rtl_conv (N::te) (fun p:S*T => F (snd p) (fst p)) in
+              reify_rtl_conv (N::et) (fun p:S*T => F (snd p) (fst p)) in
           constr:(oc_bind_exp oc of)
       end
         
     | fun (env: ?T) => Return (@?E env) =>
-      let oe := reify_rtl_exp te E in
+      let oe := reify_rtl_exp et E in
       constr:(oc_ret oe)
 
     | fun (env: ?T) => no_op =>
-      constr:(oc_no_op te)
+      constr:(oc_no_op et)
 
     | fun (env: ?T) => write_loc (@?E env) ?L =>
-      let oe := reify_rtl_exp te E in
+      let oe := reify_rtl_exp et E in
       constr:(oc_write_loc oe L)
 
     | fun (env: ?T) => raise_error =>
-      constr:(oc_error te)
+      constr:(oc_error et)
 
     | fun (env: ?T) => load_op ?Pre ?W ?Seg ?Op =>
-      constr:(oc_load_op te Pre W Seg Op)
+      constr:(oc_load_op et Pre W Seg Op)
 
     | fun (env: ?T) => set_op ?Pre ?W ?Seg (@?V env) ?Op =>
-      let ov := reify_rtl_exp te V in
+      let ov := reify_rtl_exp et V in
       constr:(oc_set_op Pre W Seg ov Op)
 
     | fun (env: ?T) => iload_op8 ?Seg ?Op =>
-      constr:(oc_iload_op8 te Seg Op)
+      constr:(oc_iload_op8 et Seg Op)
 
     | fun (env: ?T) => iset_op8 ?Seg (@?P env) ?Op =>
-      let p := reify_rtl_exp te P in
+      let p := reify_rtl_exp et P in
       constr:(oc_iset_op8 Seg p Op)
 
     | fun (env: ?T) => compute_parity_aux (@?E1 env) (@?E2 env) ?N =>
-      let oe1 := reify_rtl_exp te E1 in
-      let oe2 := reify_rtl_exp te E2 in
+      let oe1 := reify_rtl_exp et E1 in
+      let oe2 := reify_rtl_exp et E2 in
       constr:(oc_cp_aux oe1 oe2 N)
 
     | fun (env: ?T) => @?C env =>
       match type of C with
         | _ -> Conv ?T' =>
           let t' := ty_reify T' in
-          constr:(oc_any te t' C)
+          constr:(oc_any et t' C)
       end
   end.
 
@@ -2665,6 +2659,7 @@ Ltac reify_rtl_conv te cv :=
 (*             change (@oc_denote (@nil nat) _ tt l= *)
 (*                     @oc_denote (@nil nat) _ tt r) *)
 (*        end. *)
+
 
 (* Goal False. *)
 (* Unset Ltac Debug. *)

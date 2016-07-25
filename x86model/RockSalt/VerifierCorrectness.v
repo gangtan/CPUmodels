@@ -447,7 +447,7 @@ Section VERIFIER_CORR.
 
   (** State s does not step to a failed state *)
   Definition nextStepNoFail (s: rtl_state) := 
-    forall s', step s <> (Fail_ans _, s').
+    forall s', step s <> (Fail_ans, s').
 
   (** The initial state can reach a safe state within k steps; the
      definition does not assume the step relation is
@@ -1835,7 +1835,7 @@ Section VERIFIER_CORR.
             unfold run_rep, check_rep_instr in *;
             contradict Hc;
             (match goal with
-               | [|-?c _ <> (Fail_ans _, _)] => 
+               | [|-?c _ <> (Fail_ans, _)] => 
                  let H:= fresh "H" in
                    cut (no_fail c); [intro H; apply H | idtac]
              end);
@@ -1852,7 +1852,7 @@ Section VERIFIER_CORR.
           | _ =>
             contradict Hc;
             (match goal with
-               | [|-?c _ <> (Fail_ans _, _)] => 
+               | [|-?c _ <> (Fail_ans, _)] => 
                  let H:= fresh "H" in
                    cut (no_fail c); [intro H; apply H | idtac]
              end);
@@ -2088,7 +2088,7 @@ Section VERIFIER_CORR.
         by (eauto using dci_no_fail).
     contradict Hc.
     (match goal with
-       | [|-?c _ <> (Fail_ans _, _)] => 
+       | [|-?c _ <> (Fail_ans, _)] => 
          cut (no_fail c)
      end).
     intro H10. apply H10.
@@ -2437,7 +2437,7 @@ Section VERIFIER_CORR.
         by (eauto using nacljmp_snd_no_fail).
       contradict Hc.
       (match goal with
-         | [|-?c _ <> (Fail_ans _, _)] => 
+         | [|-?c _ <> (Fail_ans, _)] => 
            cut (no_fail c)
          end).
       intro H10. apply H10.
@@ -3150,7 +3150,7 @@ Section VERIFIER_CORR.
       assert (unsigned (PC s) + Zpos pos <= unsigned (CLimit s) + 1).
         use_lemma dfa_recognize_inv by eassumption. break_hyp.
         unfold codeLoaded in *. break_hyp.
-        int32_simplify. omega.
+        clean. int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
       exists pre. exists ins. exists pos.
       split. assumption.
@@ -3183,7 +3183,7 @@ Section VERIFIER_CORR.
 
       assert (unsigned (PC s) + Zpos pos1 <= unsigned (CLimit s) + 1).
         use_lemma dfa_recognize_inv by eassumption. break_hyp.
-        unfold codeLoaded in *. break_hyp.
+        unfold codeLoaded in *. break_hyp. clean.
         int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
 
@@ -3218,12 +3218,12 @@ Section VERIFIER_CORR.
       unfold codeLoaded in *. break_hyp.
       generalize (Zgt_pos_0 pos1) (Zgt_pos_0 pos2). intros.
       assert (Z_of_nat (length bytes1) < w32modulus). 
-        int32_simplify. omega.
+        clean. int32_simplify. omega.
       assert (noOverflow (PC s :: int32_of_nat (length bytes1) :: nil)).
-        int32_simplify.  omega.
+        clean. int32_simplify.  omega.
       assert (unsigned (PC s +32 (int32_of_nat (length bytes1)))
                 + Zpos pos2 <= unsigned (CLimit s) + 1).
-        int32_simplify. omega.
+        clean. int32_simplify. omega.
       use_lemma parse_instr_imp_fetch_instr by eassumption.
       exists pre1. exists ins1. exists pos1. 
       exists pre2. exists ins2. exists pos2.
@@ -3250,7 +3250,7 @@ Section VERIFIER_CORR.
   Lemma fetch_instruction_dichotomy : forall pc s pre ins len,
     parse_instr pc s = (Okay_ans (pre, ins, len), s)
       -> fetch_instruction pc s = (Okay_ans (pre, ins, len), s) \/
-         fetch_instruction pc s = (Trap_ans _, s).
+         fetch_instruction pc s = (Trap_ans, s).
   Proof. intros.
     remember_rev (andb (int32_lequ_bool pc (pc +32 repr (Zpos len - 1)))
                     (int32_lequ_bool (pc +32 repr (Zpos len - 1)) (CLimit s)))
@@ -3343,11 +3343,12 @@ Section VERIFIER_CORR.
   Qed.
   Transparent Decode.parse_byte.
 
+
   (* The proof of this theorem needs to perform case analysis over
      the current pseudo instruction *)
   Theorem safeState_safeInK: 
     forall s inv, safeState s inv -> safeInSomeK s inv.
-  Proof. intros. clean. dupHyp H.
+  Proof. intros. dupHyp H.
     safestate_unfold_tac.
     remember (snd (checkProgram code)) as startAddrs.
     destruct H2.
@@ -3355,7 +3356,7 @@ Section VERIFIER_CORR.
       assert (checkProgram code = (true, startAddrs)).
         destruct (checkProgram code); crush.
       use_lemma safeState_next_instr by eassumption.
-      destruct H7. 
+      destruct H7; clean.
       SCase "Next: non_cflow_instr".
         destruct H7 as [pre [ins [len [H20 [H22 H24]]]]].
         eapply nci_safeInSomeK; eassumption.
@@ -3391,7 +3392,7 @@ Section VERIFIER_CORR.
 
   Theorem safeState_appropState : forall s s' inv,
     safeState s inv -> s ==>* s' -> appropState s' inv.
-  Proof. intros. clean.
+  Proof. intros.
     use_lemma safeState_safeInK by eassumption.
     use_lemma safeInSomeK_preservation by eassumption.
     unfold safeInSomeK in H2.

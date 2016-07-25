@@ -3891,11 +3891,35 @@ Qed.
 (** * Tactics for int *)
 
 (** Convert operations on int32 to operations on Z *)
-Hint Rewrite Word.int_eq_true_iff Word.int_eq_false_iff Word.int_eq_unsigned 
+Hint Rewrite Word.int_eq_true_iff Word.int_eq_false_iff Word.int_eq_unsigned
   Word.int_ltu_true_iff Word.int_ltu_false_iff
   Word.int_lequ_true_iff Word.int_lequ_false_iff : int_to_Z.
 Ltac int_to_Z_tac :=  autorewrite with int_to_Z in *.
 
+(* Ltac int_to_Z_tac := *)
+(*   repeat match goal with *)
+(*    | [H: Word.eq _ _ = true |- _] => apply Word.int_eq_true_iff in H *)
+(*    | [H: Word.eq _ _ = false |- _] => apply Word.int_eq_false_iff in H *)
+(*    | [H: ?A = _ |- _] => *)
+(*      match type of A with *)
+(*        | Word.int _ => apply Word.int_eq_unsigned in H *)
+(*      end *)
+(*    | [H: Word.ltu _ _ = true |- _] => apply Word.int_ltu_true_iff in H *)
+(*    | [H: Word.ltu _ _ = false |- _] => apply Word.int_ltu_false_iff in H *)
+(*    | [H: Word.lequ _ _ = true |- _] => apply Word.int_lequ_true_iff in H *)
+(*    | [H: Word.lequ _ _ = false |- _] => apply Word.int_lequ_false_iff in H *)
+
+(*    | [|- Word.eq _ _ = true] => apply Word.int_eq_true_iff *)
+(*    | [|- Word.eq _ _ = false] => apply Word.int_eq_false_iff *)
+(*    | [|- ?A = _ ] => *)
+(*      match type of A with *)
+(*        | Word.int _ => apply Word.int_eq_unsigned *)
+(*      end *)
+(*    | [|- Word.ltu _ _ = true] => apply Word.int_ltu_true_iff *)
+(*    | [|- Word.ltu _ _ = false] => apply Word.int_ltu_false_iff *)
+(*    | [|- Word.lequ _ _ = true] => apply Word.int_lequ_true_iff *)
+(*    | [|- Word.lequ _ _ = false] => apply Word.int_lequ_false_iff *)
+(*   end. *)
 
 (** * Showing int32 is an ordered type *)
 

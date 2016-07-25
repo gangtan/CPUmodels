@@ -567,19 +567,19 @@ Module X86_Compile.
     ret (@get_random_rtl_exp s).
 
   Definition fcast ew1 mw1 ew2 mw2
-    (hyp1: float_width_hyp ew1 mw1)
-    (hyp2: float_width_hyp ew2 mw2)
+    (hyp1: valid_float ew1 mw1)
+    (hyp2: valid_float ew2 mw2)
     (rm: rtl_exp size2)
     (e : rtl_exp (nat_of_P ew1 + nat_of_P mw1))
     : Conv (rtl_exp  (nat_of_P ew2 + nat_of_P mw2)) :=
     ret (@fcast_rtl_exp ew1 mw1 ew2 mw2 hyp1 hyp2 rm e).
 
-  Lemma fw_hyp_float32 : float_width_hyp 8 23.
-  Proof. reflexivity. Qed.
-  Lemma fw_hyp_float64 : float_width_hyp 11 52.
-  Proof. reflexivity. Qed.
-  Lemma fw_hyp_float79 : float_width_hyp 15 63.
-  Proof. reflexivity. Qed.
+  Lemma fw_hyp_float32 : valid_float 8 23.
+  Proof. unfold valid_float. split; reflexivity. Qed.
+  Lemma fw_hyp_float64 : valid_float 11 52.
+  Proof. unfold valid_float. split; reflexivity. Qed.
+  Lemma fw_hyp_float79 : valid_float 15 63.
+  Proof. unfold valid_float. split; reflexivity. Qed.
   
   Definition farith_float79 (op: float_arith_op) (rm:rtl_exp size2)
     (e1 e2: rtl_exp size79) := 
@@ -687,21 +687,23 @@ Module X86_Compile.
     p <- add_and_check_segment seg a ; 
     write_byte v p.
 
-  (* load an n-byte vector from memory -- takes into account the segment *)
-  Program Fixpoint load_mem_n (seg:segment_register) (addr:rtl_exp size32)
-    (nbytes_minus_one:nat) : Conv (rtl_exp ((nbytes_minus_one+1) * 8 -1)%nat) :=
+  (** load an n-byte vector from memory -- takes into account the segment;
+     sz is the size of the final expression. *)
+  Fixpoint load_mem_n (seg:segment_register) (addr:rtl_exp size32) (sz:nat)
+    (nbytes_minus_one:nat) : Conv (rtl_exp sz) :=
     match nbytes_minus_one with
-      | 0 => lmem seg addr
+      | 0 => 
+        b <- lmem seg addr;
+        cast_u sz b
       | S n =>
-        rec <- load_mem_n seg addr n ;
-        count <- load_Z size32 (Z_of_nat (S n)) ;
-        p3 <- arith add_op addr count ;
-        nb <- lmem seg p3 ;
-        p5 <- cast_u ((nbytes_minus_one + 1)*8-1)%nat rec ;
-        p6 <- cast_u ((nbytes_minus_one + 1)*8-1)%nat nb ;
-        p7 <- load_Z _ (Z_of_nat (S n) * 8) ;
-        p8 <- arith shl_op p6 p7 ;
-        arith or_op p5 p8
+        b0 <- lmem seg addr;
+        b0' <- cast_u sz b0;
+        one <- load_Z size32 1;
+        newaddr <- arith add_op addr one;
+        rec <- load_mem_n seg newaddr sz n;
+        eight <- load_Z sz 8;
+        rec' <- arith shl_op rec eight;
+        arith or_op b0' rec'
     end.
 
   (* Definition load_mem32 (seg: segment_register) (addr: rtl_exp size32) := *)
@@ -727,19 +729,19 @@ Module X86_Compile.
   (*   arith or_op r4 w0. *)
 
   Definition load_mem80 (seg : segment_register)(addr:rtl_exp size32) := 
-    load_mem_n seg addr 9.
+    load_mem_n seg addr size80 9.
 
   Definition load_mem64 (seg : segment_register) (addr: rtl_exp size32) := 
-    load_mem_n seg addr 7.
+    load_mem_n seg addr size64 7.
 
   Definition load_mem32 (seg:segment_register) (addr:rtl_exp size32) := 
-    load_mem_n seg addr 3.
+    load_mem_n seg addr size32 3.
 
   Definition load_mem16 (seg:segment_register) (addr:rtl_exp size32) := 
-    load_mem_n seg addr 1.
+    load_mem_n seg addr size16 1.
 
   Definition load_mem8 (seg:segment_register) (addr:rtl_exp size32) := 
-    load_mem_n seg addr 0.
+    load_mem_n seg addr size8 0.
 
   (* given a prefix and w bit, return the size of the operand *)
   Definition opsize override w :=
@@ -809,6 +811,41 @@ Module X86_Compile.
     end.
 
   (* set memory with an n-byte vector *)
+
+(* todo: fix the following
+Fixpoint set_mem_n (seg:segment_register) (addr:rtl_exp size32)
+    sz (v: rtl_exp sz) (nbytes_minus_one:nat) : Conv unit := 
+    match nbytes_minus_one with 
+      | 0 => 
+        b0 <- cast_u size8 v;
+        smem seg b0 addr
+      | S n => 
+        b0 <- cast_u size8 v;
+        smem seg b0 addr;
+        one <- load_Z size32 1;
+        newaddr <- arith add_op addr one;
+        newv <- arith shru_op v eight;
+        set_mem_n seg newaddr sz newv n
+    end.
+
+  Definition set_mem80 (seg: segment_register) (v: rtl_exp size80) (a: rtl_exp size32) : Conv unit :=
+    @set_mem_n seg a v 9. 
+
+  Definition set_mem64 (seg : segment_register) (v: rtl_exp size64) (a: rtl_exp size32) : Conv unit := 
+    @set_mem_n seg a v 7.
+
+  Definition set_mem32 (seg:segment_register) (v a:rtl_exp size32) : Conv unit :=
+    @set_mem_n seg a v 3.
+
+  Definition set_mem16 (seg:segment_register) (v: rtl_exp size16)
+    (a:rtl_exp size32) : Conv unit :=
+      @set_mem_n seg a v 1.
+
+  Definition set_mem8 (seg:segment_register) (v: rtl_exp size8) 
+    (a:rtl_exp size32) : Conv unit :=
+      @set_mem_n seg a v 0.
+*)
+
   Program Fixpoint set_mem_n {t} (seg:segment_register)
     (v: rtl_exp (8*(t+1)-1)%nat) (addr : rtl_exp size32) : Conv unit := 
     match t with 
@@ -2930,18 +2967,16 @@ Section X86FloatSemantics.
   Definition integer_to_de_float (i : Word.int size80) : de_float := 
      let bin := int_to_de_float i in
      match bin with 
-     | B754_zero s => B754_zero _ _ s
-     | B754_infinity s => B754_infinity _ _ s
-     | B754_nan => B754_nan _ _
-     | B754_finite s m e _ => 
+     | B754_zero _ _ s => B754_zero _ _ s
+     | B754_infinity _ _ s => B754_infinity _ _ s
+     | B754_nan _ _ s pl => B754_nan _ _ s pl
+     | B754_finite _ _ s m e _ => 
          let mant_val := Word.intval size80 i in
          let (rec, shifted_m) := shr (Build_shr_record mant_val false false) mant_val 1 in
          let exp_val := Z_of_nat size80 in  (*This probably needs to be replaced with the number of significant bits of i *)
          let joined := join_bits 64 16384 s (shifted_m - 1) exp_val in
          de_float_of_bits joined 
      end.
-
-
 
   Definition enc_rounding_mode (rm: rounding_mode) : Z := 
     (match rm with
