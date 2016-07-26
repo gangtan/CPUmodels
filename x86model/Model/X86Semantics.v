@@ -811,9 +811,7 @@ Module X86_Compile.
     end.
 
   (* set memory with an n-byte vector *)
-
-(* todo: fix the following
-Fixpoint set_mem_n (seg:segment_register) (addr:rtl_exp size32)
+  Fixpoint set_mem_n (seg:segment_register) (addr:rtl_exp size32)
     sz (v: rtl_exp sz) (nbytes_minus_one:nat) : Conv unit := 
     match nbytes_minus_one with 
       | 0 => 
@@ -821,55 +819,32 @@ Fixpoint set_mem_n (seg:segment_register) (addr:rtl_exp size32)
         smem seg b0 addr
       | S n => 
         b0 <- cast_u size8 v;
-        smem seg b0 addr;
+        smem seg b0 addr;;
         one <- load_Z size32 1;
         newaddr <- arith add_op addr one;
+        eight <- load_Z sz 8;
         newv <- arith shru_op v eight;
-        set_mem_n seg newaddr sz newv n
+        set_mem_n seg newaddr newv n
     end.
 
-  Definition set_mem80 (seg: segment_register) (v: rtl_exp size80) (a: rtl_exp size32) : Conv unit :=
-    @set_mem_n seg a v 9. 
+  Definition set_mem80 (seg: segment_register) (v: rtl_exp size80) (a: rtl_exp size32) :
+    Conv unit :=
+    @set_mem_n seg a size80 v 9. 
 
-  Definition set_mem64 (seg : segment_register) (v: rtl_exp size64) (a: rtl_exp size32) : Conv unit := 
-    @set_mem_n seg a v 7.
+  Definition set_mem64 (seg : segment_register) (v: rtl_exp size64) (a: rtl_exp size32) :
+    Conv unit := 
+    @set_mem_n seg a size64 v 7.
 
   Definition set_mem32 (seg:segment_register) (v a:rtl_exp size32) : Conv unit :=
-    @set_mem_n seg a v 3.
+    @set_mem_n seg a size32 v 3.
 
   Definition set_mem16 (seg:segment_register) (v: rtl_exp size16)
     (a:rtl_exp size32) : Conv unit :=
-      @set_mem_n seg a v 1.
+      @set_mem_n seg a size16 v 1.
 
   Definition set_mem8 (seg:segment_register) (v: rtl_exp size8) 
     (a:rtl_exp size32) : Conv unit :=
-      @set_mem_n seg a v 0.
-*)
-
-  Program Fixpoint set_mem_n {t} (seg:segment_register)
-    (v: rtl_exp (8*(t+1)-1)%nat) (addr : rtl_exp size32) : Conv unit := 
-    match t with 
-      | 0 => smem seg v addr
-      | S u => 
-        p1 <- cast_u (8*(u+1)-1)%nat v ; 
-        set_mem_n seg p1 addr ;; 
-        p2 <- load_Z (8*(t+1)-1)%nat (Z_of_nat  ((S u) * 8)) ; 
-        p3 <- arith shru_op v p2 ;
-        p4 <- cast_u size8 p3 ; 
-        p5 <- load_Z size32 (Z_of_nat (S u)) ; 
-        p6 <- arith add_op p5 addr ;
-        smem seg p4 p6
-    end.
-
-
-  Definition set_mem80 (seg: segment_register) (v: rtl_exp size80) (a: rtl_exp size32) : Conv unit :=
-    @set_mem_n 9 seg v a.  
-
-  Definition set_mem64 (seg : segment_register) (v: rtl_exp size64) (a: rtl_exp size32) : Conv unit := 
-    @set_mem_n 7 seg v a.
-
-  Definition set_mem32 (seg:segment_register) (v a:rtl_exp size32) : Conv unit :=
-    @set_mem_n 3 seg v a.
+      @set_mem_n seg a size8 v 0.
 
   (*Definition set_mem32 (seg: segment_register) (v a: pseudo_reg size32) : Conv unit := 
     b0 <- cast_u size8 v;
@@ -889,15 +864,6 @@ Fixpoint set_mem_n (seg:segment_register) (addr:rtl_exp size32)
     addr3 <- arith add_op addr2 one;
     smem seg b3 addr3.*)
     
-
-  Definition set_mem16 (seg:segment_register) (v: rtl_exp size16)
-    (a:rtl_exp size32) : Conv unit :=
-      @set_mem_n 1 seg v a.
-
-  Definition set_mem8 (seg:segment_register) (v: rtl_exp size8) 
-    (a:rtl_exp size32) : Conv unit :=
-      @set_mem_n 0 seg v a.
-
  Definition set_mem p w (seg:segment_register) : rtl_exp (opsize (op_override p) w) ->
     rtl_exp size32 -> 
     Conv unit :=

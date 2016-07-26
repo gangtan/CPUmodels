@@ -1317,12 +1317,10 @@ Hint Extern 1 (conv_same_seg_regs (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_same_seg_regs with (n:=X)
   : conv_same_seg_regs_db.
 
-Lemma set_mem_n_same_seg_regs : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
-  conv_same_seg_regs (set_mem_n seg v addr).
+Lemma set_mem_n_same_seg_regs : forall n seg sz (v:rtl_exp sz) addr,
+  conv_same_seg_regs (set_mem_n seg addr v n).
 Proof. unfold set_mem_n, smem, add_and_check_segment, if_trap.
-  induction n; intros. 
-    conv_same_seg_regs_tac.
-    fold (@set_mem_n n) in *. conv_same_seg_regs_tac.
+  induction n; intros; conv_same_seg_regs_tac. 
 Qed.
 
 Hint Immediate set_mem_n_same_seg_regs : conv_same_seg_regs_db.
@@ -1547,11 +1545,11 @@ Ltac conv_backward_aos :=
   end.
 
 Lemma set_mem_n_aos :
-  forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
-    conv_agree_outside_seg seg (@set_mem_n n seg v addr).
+  forall n seg sz (v:rtl_exp sz) addr,
+    conv_agree_outside_seg seg (@set_mem_n seg addr sz v n).
 Proof. induction n; intros.
   Case "n=0". simpl. conv_agree_outside_seg_tac.
-  Case "S n". unfold set_mem_n. fold (@ set_mem_n n).
+  Case "S n". unfold set_mem_n.
     conv_agree_outside_seg_tac.
 Qed.
 Hint Resolve set_mem_n_aos : conv_agree_outside_seg_db.
@@ -1578,7 +1576,7 @@ Qed.
 
 Lemma iset_op8_aos : forall seg1 seg2 pre op,
   seg_eq seg1 seg2 -> conv_agree_outside_seg seg1 (iset_op8 seg2 pre op).
-Proof. unfold seg_eq, iset_op8, compute_addr. intros. subst.
+Proof. unfold seg_eq, iset_op8, compute_addr, set_mem8. intros. subst.
   destruct op; conv_agree_outside_seg_tac.
 Qed.
 
@@ -1736,12 +1734,10 @@ Qed.
 Hint Extern 1 (conv_same_pc (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_same_pc with (n:=X) : conv_same_pc_db.
 
-Lemma set_mem_n_same_pc : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
-  conv_same_pc (set_mem_n seg v addr).
+Lemma set_mem_n_same_pc : forall n seg sz (v:rtl_exp sz) addr,
+  conv_same_pc (set_mem_n seg addr v n).
 Proof. unfold set_mem_n, smem, add_and_check_segment.
-  induction n; intros. 
-    conv_same_pc_tac.
-    fold (@set_mem_n n) in *. conv_same_pc_tac.
+  induction n; intros; conv_same_pc_tac.
 Qed.
 
 Hint Immediate set_mem_n_same_pc : conv_same_pc_db.
@@ -1845,12 +1841,10 @@ Ltac conv_backward_sms :=
         [eassumption | conv_same_mach_state_tac | idtac]
   end.
 
-Lemma set_mem_n_same_mach_state : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
-  conv_same_mach_state (set_mem_n seg v addr).
+Lemma set_mem_n_same_mach_state : forall n seg sz (v:rtl_exp sz) addr,
+  conv_same_mach_state (set_mem_n seg addr v n).
 Proof. unfold set_mem_n, smem, add_and_check_segment.
-  induction n; intros. 
-    conv_same_mach_state_tac.
-    fold (@set_mem_n n) in *. conv_same_mach_state_tac.
+  induction n; intros; conv_same_mach_state_tac.
 Qed.
 
 Hint Immediate set_mem_n_same_mach_state : conv_same_mach_state_db.
@@ -1917,12 +1911,10 @@ Qed.
 Hint Extern 1 (conv_no_fail (load_mem_n _ _ _ ?X))
   =>  apply load_mem_n_no_fail with (n:=X) : conv_no_fail_db.
 
-Lemma set_mem_n_no_fail : forall n seg (v:rtl_exp (8*(n+1)-1)) addr,
-  conv_no_fail (set_mem_n seg v addr).
+Lemma set_mem_n_no_fail : forall n seg sz (v:rtl_exp sz) addr,
+  conv_no_fail (set_mem_n seg addr v n).
 Proof. unfold set_mem_n, smem, add_and_check_segment.
-  induction n; intros. 
-    conv_no_fail_tac.
-    fold (@set_mem_n n) in *. conv_no_fail_tac.
+  induction n; intros; conv_no_fail_tac.
 Qed.
 
 Hint Immediate set_mem_n_no_fail : conv_no_fail_db.
