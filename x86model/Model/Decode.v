@@ -1862,8 +1862,35 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     |+| "0110" $$ bits "0100" @ (fun _ => FS %% segment_register_t)
     |+| "0110" $$ bits "0101" @ (fun _ => GS %% segment_register_t)).
 
+  (** allow up-to-eight operand override prefixes; compilers often
+      put multiple operand override prefixes before no-ops *)
+  Definition op_s := "01100110".
   Definition op_override_p : grammar bool_t :=
-    "0110" $$ bits "0110" @ (fun _ => true %% bool_t).
+      bits op_s @ (fun _ => true %% bool_t)
+  |+| bits (op_s ++ op_s) @ (fun _ => true %% bool_t)
+  |+| bits (op_s ++ op_s ++ op_s) @ (fun _ => true %% bool_t)
+  |+| bits (op_s ++ op_s ++ op_s ++ op_s) @ (fun _ => true %% bool_t)
+  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s) @ (fun _ => true %% bool_t)
+  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s)
+        @ (fun _ => true %% bool_t)
+  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s)
+        @ (fun _ => true %% bool_t)
+  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s)
+        @ (fun _ => true %% bool_t).
+
+  (* The most natural way of defining op_override_p is using the star operator;
+     however, checkdeterministic doesn't allow the star operator. Another choice
+     is to ditch checkdeterministic *)
+  (* Definition op_override_p : grammar bool_t := *)
+  (*   Star ("0110" $$ bits "0110")  *)
+  (*        @ (fun l =>  *)
+  (*             match l with  *)
+  (*               | nil => false *)
+  (*               | _ => true  *)
+  (*             end %% bool_t). *)
+  (* Definition op_override_p : grammar bool_t := *)
+  (*   "0110" $$ bits "0110" @ (fun _ => true %% bool_t). *)
+
   Definition addr_override_p : grammar bool_t :=
     "0110" $$ bits "0111" @ (fun _ => true %% bool_t).
 
@@ -2032,8 +2059,10 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      prefix_grammar_lock_with_op_override: in lock_or_rep, only lock can be
      used; segment override is optional; op_override prefix *must* be used
      *)
+  (* note: added INC and DEC to this group; experiments suggest that these
+     instrs can take operand-overrde prefix *)
   Definition instr_grammars_lock_with_op_override := 
-    ADD_p true :: ADC_p true :: AND_p true :: NEG_p :: NOT_p :: OR_p true
+    ADD_p true :: ADC_p true :: AND_p true :: DEC_p :: INC_p ::NEG_p :: NOT_p :: OR_p true
     :: SBB_p true :: SUB_p true :: XOR_p true :: XCHG_p :: nil.
 
   Definition prefix_grammar_lock_no_op_override :=
@@ -2075,7 +2104,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     CDQ_p :: CMOVcc_p :: CWDE_p :: DIV_p :: IDIV_p :: 
     MOVSX_p :: MOVZX_p :: MUL_p :: NOP_p :: 
     ROL_p :: ROR_p :: SAR_p :: SHL_p :: SHLD_p :: SHR_p :: SHRD_p ::
-   (* it turns out that MOVD can take the op_override prefix; not sure about
+   (* it turns out that MOVD can take the op_override prefix; need to not sure about
       other MMX instrs *)
     MOVD_p
     :: nil.

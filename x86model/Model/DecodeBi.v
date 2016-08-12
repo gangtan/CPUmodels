@@ -114,16 +114,41 @@ Require ExtrOcamlNatBigInt.
                & _); clear_ast_defs; ins_invertible_tac.
   Defined.
 
+  Definition op_s := "01100110".
+
+  Definition op_override_env : AST_Env bool_t :=
+    {0, ! op_s, (fun _ => true %% bool_t)} :::
+    {1, ! (op_s ++ op_s), (fun _ => true %% bool_t)} :::
+    {2, ! (op_s ++ op_s ++ op_s), (fun _ => true %% bool_t)} :::
+    {3, ! (op_s ++ op_s ++ op_s ++ op_s), (fun _ => true %% bool_t)} :::
+    {4, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s), 
+        (fun _ => true %% bool_t)} :::
+    {5, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s),
+        (fun _ => true %% bool_t)} :::
+    {6, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s),
+        (fun _ => true %% bool_t)} :::
+    {7, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s),
+       (fun _ => true %% bool_t)} :::
+    ast_env_nil.
+  Hint Unfold op_override_env : env_unfold_db.
+
   Definition op_override_p : wf_bigrammar bool_t.
-    refine ("0110" $$ ! "0110"
-              @ (fun v => true %% bool_t)
-              & (fun u =>
-                   match u with
-                     | true => Some ()
-                     | false => None
-                   end)
-              & _); ins_invertible_tac.
+    gen_ast_defs op_override_env.
+    refine (gr @ (mp: _ -> [|bool_t|])
+               & (fun b:bool => if b then case0 () else None)
+               & _); clear_ast_defs; ins_invertible_tac.
   Defined.
+
+  (* Definition op_override_p : wf_bigrammar bool_t. *)
+  (*   refine ("0110" $$ ! "0110" *)
+  (*             @ (fun v => true %% bool_t) *)
+  (*             & (fun u => *)
+  (*                  match u with *)
+  (*                    | true => Some () *)
+  (*                    | false => None *)
+  (*                  end) *)
+  (*             & _); ins_invertible_tac. *)
+  (* Defined. *)
 
   Definition addr_override_p : wf_bigrammar bool_t.
     refine ("0110" $$ ! "0111"
@@ -138,7 +163,13 @@ Require ExtrOcamlNatBigInt.
 
   Lemma op_override_p_rng_inv op :
     in_bigrammar_rng (` op_override_p) op -> op = true.
-  Proof. unfold op_override_p; intros; ins_ibr_sim. Qed.
+  Proof. unfold op_override_p; intros; ins_ibr_sim. 
+    destruct_union; trivial.
+  Qed.
+
+  (* Lemma op_override_p_rng_inv op : *)
+  (*   in_bigrammar_rng (` op_override_p) op -> op = true. *)
+  (* Proof. unfold op_override_p; intros; ins_ibr_sim. Qed. *)
 
   Definition opt2b (a: option bool) (default: bool) :=
     match a with
@@ -739,19 +770,23 @@ Require ExtrOcamlNatBigInt.
                           %% i_instr5_t)} :::
     {2, AND_p true, (fun v => match v with (b,(op1,op2)) => I_AND b op1 op2 end
                           %% i_instr5_t)} :::
-    {3, NEG_p, (fun v => match v with (b,op) => I_NEG b op end
+    {3, DEC_p, (fun v => match v with (b,op) => I_DEC b op end
                           %% i_instr5_t)} :::
-    {4, NOT_p, (fun v => match v with (b,op) => I_NOT b op end
+    {4, INC_p, (fun v => match v with (b,op) => I_INC b op end
                           %% i_instr5_t)} :::
-    {5, OR_p true, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
+    {5, NEG_p, (fun v => match v with (b,op) => I_NEG b op end
                           %% i_instr5_t)} :::
-    {6, SBB_p true, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
+    {6, NOT_p, (fun v => match v with (b,op) => I_NOT b op end
                           %% i_instr5_t)} :::
-    {7, SUB_p true, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
+    {7, OR_p true, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
                           %% i_instr5_t)} :::
-    {8, XCHG_p, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
+    {8, SBB_p true, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
                           %% i_instr5_t)} :::
-    {9, XOR_p true, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
+    {9, SUB_p true, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
+                          %% i_instr5_t)} :::
+    {10, XCHG_p, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
+                          %% i_instr5_t)} :::
+    {11, XOR_p true, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
                           %% i_instr5_t)} :::
     ast_env_nil.
 
