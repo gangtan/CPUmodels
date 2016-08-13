@@ -940,19 +940,19 @@ Require ExtrOcamlNatBigInt.
     * (* BTS *) gen5 25 u (a1,a2).
     * (* CMP *)  gen_op_override 40 50 u (a1,(a2,a3)).
     * (* CMPXCHG *) gen5 26 u (a1,(a2,a3)).
-    * (* DEC *) gen5 27 u (a1,a2).
+    * (* DEC *) gen_op_override 3 27 u (a1,a2).
     * (* IMUL *)  gen_op_override 41 51 u (a1,(a2,(a3,a4))).
-    * (* INC *) gen5 28 u (a1,a2).
+    * (* INC *) gen_op_override 4 28 u (a1,a2).
     * (* MOV *)  gen_op_override 42 52 u (a1,(a2,a3)).
-    * (* NEG *) gen_op_override 3 29 u (a1,a2).
-    * (* NOT *) gen_op_override 4 30 u (a1,a2).
-    * (* OR *)  gen_op_override 5 31 u (a1,(a2,a3)).
-    * (* SBB *)  gen_op_override 6 32 u (a1,(a2,a3)).
-    * (* SUB *)  gen_op_override 7 33 u (a1,(a2,a3)).
+    * (* NEG *) gen_op_override 5 29 u (a1,a2).
+    * (* NOT *) gen_op_override 6 30 u (a1,a2).
+    * (* OR *)  gen_op_override 7 31 u (a1,(a2,a3)).
+    * (* SBB *)  gen_op_override 8 32 u (a1,(a2,a3)).
+    * (* SUB *)  gen_op_override 9 33 u (a1,(a2,a3)).
     * (* TEST *)  gen_op_override 43 53 u (a1,(a2,a3)).
     * (* XADD *) gen5 34 u (a1,(a2,a3)).
-    * (* XCHG *) gen_op_override 8 35 u (a1,(a2,a3)).
-    * (* XOR *)  gen_op_override 9 36 u (a1,(a2,a3)).
+    * (* XCHG *) gen_op_override 10 35 u (a1,(a2,a3)).
+    * (* XOR *)  gen_op_override 11 36 u (a1,(a2,a3)).
   Defined.
     
   Definition i_instr5_grammar : wf_bigrammar (pair_t prefix_t i_instr5_t).
