@@ -47,10 +47,10 @@ Ltac predSpec pred predspec x y :=
   generalize (predspec x y); case (pred x y); intro.
 
 Ltac caseEq name :=
-  generalize (refl_equal name); pattern name at -1 in |- *; case name.
+  generalize (eq_refl name); pattern name at -1 in |- *; case name.
 
 Ltac destructEq name :=
-  generalize (refl_equal name); pattern name at -1 in |- *; destruct name; intro.
+  generalize (eq_refl name); pattern name at -1 in |- *; destruct name; intro.
 
 Ltac decEq :=
   match goal with
