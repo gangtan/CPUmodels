@@ -270,8 +270,24 @@ End X86_PARSER_ARG.
   Definition sse_reg := field_intn 2.
 
   Definition byte : grammar byte_t := int_n 7.
-  Definition halfword : grammar half_t := int_n 15.
-  Definition word : grammar word_t := int_n 31.
+
+  (* because of little endianness, cannot define halfword to be int_n 15 *)
+  Definition halfword := (byte $ byte) @ ((fun p =>
+      let b0 := Word.repr (Word.unsigned (fst p)) in
+      let b1 := Word.repr (Word.unsigned (snd p)) in
+        Word.or (Word.shl b1 (Word.repr 8)) b0): _ -> interp half_t).
+
+  Definition word := (byte $ byte $ byte $ byte) @
+    ((fun p => 
+        let b0 := zero_extend8_32 (fst p) in
+        let b1 := zero_extend8_32 (fst (snd p)) in
+        let b2 := zero_extend8_32 (fst (snd (snd p))) in
+        let b3 := zero_extend8_32 (snd (snd (snd p))) in
+         let w1 := Word.shl b1 (Word.repr 8) in
+         let w2 := Word.shl b2 (Word.repr 16) in
+         let w3 := Word.shl b3 (Word.repr 24) in
+          Word.or w3 (Word.or w2 (Word.or w1 b0)))
+    : _ -> interp word_t).
 
   Definition scale_p := (field 2) @ (Z_to_scale : _ -> interp scale_t).
   Definition tttn := (field 4) @ (Z_to_condition_type : _ -> interp condition_t).
