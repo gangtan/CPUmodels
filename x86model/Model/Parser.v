@@ -2303,7 +2303,7 @@ Section DFA.
   Definition build_transition_table := build_table ini_states nil 0.
 
   (** This is the main invariant for the [build_table] routine. *)
-  Definition build_table_inv n (ss:wf_states) (rows:transitions_t ss) := 
+  Definition table_inv n (ss:wf_states) (rows:transitions_t ss) := 
      1 <= cardinal_wfs ss /\ n <= cardinal_wfs ss /\
      forall i, i < n -> 
        match nth_error rows i with 
@@ -2320,7 +2320,7 @@ Section DFA.
          | _ => False
        end.
 
-  Definition wf_table ss rows := @build_table_inv (List.length rows) ss rows.
+  Definition wf_table ss rows := @table_inv (List.length rows) ss rows.
 
   Lemma fcoerce_eq t1 t2 (f : t1 ->> t2) (H1 : t1 = t1) (H2 : t2 = t2) :
     fcoerce f H1 H2 = f.
@@ -2365,11 +2365,11 @@ Section DFA.
     apply Coqlib.list_map_identity.
   Qed.
 
-  Lemma build_table_inv_imp n ss (rows:transitions_t ss) :
-    build_table_inv n rows -> 
+  Lemma table_inv_imp n ss (rows:transitions_t ss) :
+    table_inv n rows -> 
     1 <= cardinal_wfs ss /\ n <= cardinal_wfs ss /\ n <= List.length rows.
   Proof.
-    unfold build_table_inv ; destruct n.
+    unfold table_inv ; destruct n.
       intros; repeat split; [crush | crush | auto with arith].
       intros. assert (n < S n) by omega.
         destruct H as [H [H2 H4]].
@@ -2382,7 +2382,7 @@ Section DFA.
 
   Hint Rewrite Coqlib.list_length_map.
 
-  Lemma gen_row_build_table_inv n ss rows :
+  Lemma gen_row_table_inv n ss rows :
     n = List.length rows ->
     match get_element_wfs2 n ss with
       | inleft s0 =>
@@ -2390,8 +2390,8 @@ Section DFA.
         forall ss1 entries (Hwfs:wfs_ext ss ss1),
          gen_row s ss (build_table_help1 _ _ _ Hge) (build_table_help2 _ _ _ Hge)
            = existT _ ss1 (existT _ entries Hwfs)
-         -> build_table_inv n rows
-         -> build_table_inv (1+n) 
+         -> table_inv n rows
+         -> table_inv (1+n) 
               (coerce_transitions Hwfs rows ++ 
                  cons_transition entries 
                  (wfs_ext_gew_cardinal_leq _ Hwfs Hge)::nil)
@@ -2406,7 +2406,7 @@ Section DFA.
       unfold coerce_transitions. crush.
     generalize (gen_row_prop _ _ H2 H4).
     rewrite H0. intros. sim.
-    unfold build_table_inv in *.
+    unfold table_inv in *.
     use_lemma wfs_ext_cardinal_leq by eassumption.
     destruct H1 as [H14 [H16 H18]].
     repeat split; [crush | crush | idtac].
@@ -2435,9 +2435,9 @@ Section DFA.
   Qed.
 
   (** This lemma establishes that the [build_table] loop maintains the
-      [build_table_inv] and only adds to the states and rows of the table. *)
+      [table_inv] and only adds to the states and rows of the table. *)
   Lemma build_table_prop: forall n ss rows,
-     n = List.length rows -> build_table_inv n rows ->
+     n = List.length rows -> table_inv n rows ->
      match build_table ss rows n with 
        | existT _ ss' rows' => 
          List.length rows' = cardinal_wfs ss' /\ 
@@ -2448,7 +2448,7 @@ Section DFA.
     intros. remember_head as gw.
     destruct gw as [ss' rows'].
     rewrite build_table_unfold in Hgw.
-    use_lemma (@gen_row_build_table_inv n ss rows) by eassumption.
+    use_lemma (@gen_row_table_inv n ss rows) by eassumption.
     destruct (get_element_wfs2 n ss).
     Case "ss[n] exists".
       destruct s as [s ge].
@@ -2464,18 +2464,18 @@ Section DFA.
       use_lemma build_table_metric_dec by eassumption. 
       assert (S n = List.length rows1). 
         unfold coerce_transitions in Heqrows1. crush.
-      assert (build_table_inv (1+n) rows1) by crush.
+      assert (table_inv (1+n) rows1) by crush.
       use_lemma H by eassumption. clear H.
       simpl in Hgw.
       rewrite Hgw in *.
       crush. reflexivity.
     Case "ss[n] not exists".
-      use_lemma build_table_inv_imp by eassumption.
+      use_lemma table_inv_imp by eassumption.
       crush. reflexivity.
   Qed.
 
-  Lemma build_table_inv_ini: @build_table_inv 0 ini_states nil.
-  Proof. unfold build_table_inv. crush. Qed.
+  Lemma table_inv_ini: @table_inv 0 ini_states nil.
+  Proof. unfold table_inv. crush. Qed.
 
   Lemma build_transition_table_prop: 
     match build_transition_table with
@@ -2484,7 +2484,7 @@ Section DFA.
         wfs_ext ini_states ss
     end.
   Proof. unfold build_transition_table.
-    use_lemma build_table_inv_ini by assumption.
+    use_lemma table_inv_ini by assumption.
     generalize (@build_table_prop 0 ini_states nil). intro.
     use_lemma H0 by trivial. 
     remember (build_table ini_states nil 0) as bt.
@@ -2508,7 +2508,7 @@ Section DFA.
               end.
   Proof. intros. generalize build_transition_table_prop.
     rewrite H.
-    unfold wf_table, build_table_inv. intros. sim.
+    unfold wf_table, table_inv. intros. sim.
     remember_destruct_head as nt; [idtac | trivial].
     use_lemma Coqlib.nth_error_some_lt by eassumption.
     specialize (H4 i). rewrite Hnt in H4. crush.
@@ -2547,64 +2547,6 @@ Section DFA.
      (forall tid (H' : tid < Vector.length (vrow_entries ts)),
         wf_ventry (Vector.get (vrow_entries ts) tid H') tid) /\ 
      vrow_nils ts = RES.re_set_extract_nil (ss.[vrow_num ts]).
-
-(* todo: remove *)
-
-  (* Definition wf_dfa (d:DFA) := *)
-  (*   wf_table (dfa_transition d) /\ *)
-  (*   d = build_dfa /\ *)
-  (*   (dfa_states d).[0] = RES.singleton r. *)
- 
-  (* Definition wf_vdfa (d: vDFA) := *)
-  (*   wf_vtable (vdfa_transition d) /\ *)
-  (*   d = dfa_to_vdfa build_dfa /\ *)
-  (*   (vdfa_states d).[0] = RES.singleton r. *)
-
-
-  (* Lemma build_dfa_prop: wf_dfa build_dfa. *)
-  (* Proof. unfold wf_dfa, build_dfa. *)
-  (*   generalize build_transition_table_prop; intro H. *)
-  (*   generalize build_dfa_help1, build_dfa_help2. *)
-  (*   remember build_transition_table as bt. *)
-  (*   destruct bt as [ss rows]. intros. *)
-  (*   split; [crush | idtac]. *)
-  (*   subst. simpl. *)
-  (*   assert (H6: 0 < cardinal_wfs ini_states). *)
-  (*     unfold ini_states, cardinal_wfs. simpl. *)
-  (*     rewrite RESSP.singleton_cardinal. omega. *)
-  (*   destruct H as [H [H2 H4]]. *)
-  (*   erewrite get_state_wfs_ext by eassumption. *)
-  (*   unfold get_state, ini_states. simpl. crush. *)
-  (* Qed. *)
-
-  (* Lemma build_vdfa_prop : wf_vdfa build_vdfa. *)
-  (* Proof. generalize build_dfa_prop. unfold wf_dfa, wf_vdfa. *)
-  (*   unfold build_vdfa. intros [H1 [H2 H3]]. split ; *)
-  (*   [idtac | split ; auto]. unfold dfa_to_vdfa. simpl. *)
-  (*   unfold wf_vtable. destruct H1 as [H4 [H5 H6]]. *)
-  (*   split ; auto. split. *)
-  (*   - rewrite Vector.length_of_list. *)
-  (*     rewrite map_length. auto. *)
-  (*   - intros. *)
-  (*     assert (i < Datatypes.length (dfa_transition build_dfa)). *)
-  (*       rewrite Vector.length_of_list in H. rewrite map_length in H. *)
-  (*       auto. *)
-  (*     specialize (H6 _ H0). *)
-  (*     specialize (Vector.get_of_list _ _ _ H). intro. *)
-  (*     rewrite Coqlib.list_map_nth in H1. *)
-  (*     remember (nth_error (dfa_transition build_dfa) i) as e. *)
-  (*     destruct e ; try contradiction. simpl in H1. *)
-  (*     injection H1; intros ; clear H1. rewrite <- H7. *)
-  (*     destruct H6 as [H8 [H9 [H10 H11]]]. *)
-  (*     unfold transition_to_vtransition ; simpl. *)
-  (*     split. *)
-  (*     + rewrite Vector.length_of_list. auto. *)
-  (*     + split ; auto. *)
-  (*       split ; auto. intros. specialize (H10 tid). *)
-  (*       unfold wf_entries in H10. *)
-  (*       generalize (Vector.get_of_list _ _ _ H'). intros. *)
-  (*       rewrite H1 in H10. intros str v. specialize (H10 str v). auto. *)
-  (* Qed. *)
 
   Definition wf_dfa (d:DFA) := 
     wf_table (dfa_transition d) /\
@@ -2898,146 +2840,85 @@ Section DFA_PARSE.
   Definition wf_dfa_builder := 
     {dfa_builder:dfa_builder_tp | forall r, wf_dfa (dfa_builder r)}.
 
+  Notation get_builder := proj1_sig.
+
   Definition build_dfa_wf_builder: wf_dfa_builder.
     refine (exist _ build_dfa _).                                     
     apply build_dfa_prop.
   Defined.
 
-(* todo: rename build_table_inv to table_inv *)
+  Section INI_PARSER_STATE.
+    Variable db: wf_dfa_builder.
 
-  (** A DFA has at least one state. *)
-  Lemma dfa_at_least_one (db:wf_dfa_builder) r : 
-    0 < dfa_num_states (proj1_sig db r).
-  Proof. intros. generalize (proj2_sig db r).
-    unfold wf_dfa at 1; unfold wf_table at 1; unfold build_table_inv at 1.
-    intros; sim.
-    generalize (dfa_states_len (proj1_sig db r)). 
-    intros. rewrite <- H3.
-    omega.
-  Qed.
+    (** A DFA has at least one state. *)
+    Lemma dfa_at_least_one r : 
+      0 < dfa_num_states (get_builder db r).
+    Proof. intros. generalize (proj2_sig db r).
+      unfold wf_dfa at 1; unfold wf_table at 1; unfold table_inv at 1.
+      intros; sim.
+      generalize (dfa_states_len (get_builder db r)). 
+      intros. rewrite <- H3.
+      omega.
+    Qed.
 
-  (* todo: remove *)
-  (* Lemma dfa_at_least_one: 0 < dfa_num_states build_dfa. *)
-  (* Proof. intros. *)
-  (*   use_lemma build_dfa_prop by eassumption. *)
-  (*   unfold wf_dfa, wf_table, build_table_inv in H. *)
-  (*   sim. generalize (dfa_states_len build_dfa). omega. *)
-  (* Qed. *)
+    (** Build the initial [instParserState].  The initial fix-up
+        function is obtained by taking the grammar and splitting it
+        into an [regexp] and a fix-up function.  We then generate the
+        [DFA] from this [regexp].  Finally, we start off in the
+        initial state of the [DFA], which is 0. *)
+    Definition coerce_dfa r1 r2: r1 = r2 -> DFA r1 -> DFA r2.
+      intros. rewrite <- H. trivial.
+    Defined.
 
-  (* todo: move *)
-  (* Lemma vdfa_at_least_one : 0 < vdfa_num_states build_vdfa. *)
-  (* Proof.  *)
-  (*   unfold build_vdfa, dfa_to_vdfa. simpl. apply dfa_at_least_one. *)
-  (* Qed. *)
+    Lemma ips_help1 t (g:grammar t) r r2 (H:r=r2):
+      dfa_states (coerce_dfa H (get_builder db r)).[0] =
+      projT1 (RES.singleton_xform r2).
+    Proof. rewrite RES.singleton_xform_erase.
+      rewrite H. simpl.
+      generalize (proj2_sig db r2); unfold wf_dfa.
+      intros; sim. trivial.
+    Qed.
 
+    Lemma ips_help2 t (g:grammar t) r r2 (H:r=r2):
+      RES.re_set_type (projT1 (RES.singleton_xform r)) =
+      RES.re_set_type (dfa_states (coerce_dfa H (get_builder db r)).[0]).
+    Proof. f_equal. rewrite (ips_help1 g). rewrite H. trivial. Qed.
 
-  (** Build the initial [instParserState].  The initial fix-up function is
-      obtained by taking the grammar and splitting it into an [regexp] and
-      a fix-up function.  We then generate the [DFA] from this [regexp].
-      Finally, we start off in the initial state of the [DFA], which is
-      0. *)
+    Lemma ips_help3 t (g:grammar t) r r2 (H:r=r2):
+      wf_dfa (coerce_dfa H (get_builder db r)).
+    Proof. rewrite H. simpl. apply (proj2_sig db r2). Qed.
 
-  Definition coerce_dfa r1 r2: r1 = r2 -> DFA r1 -> DFA r2.
-    intros. rewrite <- H. trivial.
-  Defined.
+    Lemma ips_help4 t (g:grammar t) r r2 (H:r=r2):
+      0 < dfa_num_states (coerce_dfa H (get_builder db r)).
+    Proof. rewrite H. simpl. apply dfa_at_least_one. Qed.
 
-  Lemma ips_help1 (db:wf_dfa_builder) t (g:grammar t) r r2 (H:r=r2):
-    dfa_states (coerce_dfa H (proj1_sig db r)).[0] =
-    projT1 (RES.singleton_xform r2).
-  Proof. rewrite RES.singleton_xform_erase.
-    rewrite H. simpl.
-    generalize (proj2_sig db r2); unfold wf_dfa.
-    intros; sim. trivial.
-  Qed.
+    Lemma ips_help5 t (g:grammar t) r f:
+      split_grammar g = existT _ r f -> r = projT1 (split_grammar g).
+    Proof. crush. Qed.
 
-  Lemma ips_help2 (db:wf_dfa_builder) t (g:grammar t) r r2 (H:r=r2):
-    RES.re_set_type (projT1 (RES.singleton_xform r)) =
-    RES.re_set_type (dfa_states (coerce_dfa H (proj1_sig db r)).[0]).
-  Proof. f_equal. rewrite (ips_help1 db g). rewrite H. trivial. Qed.
-
-  Lemma ips_help3 (db:wf_dfa_builder) t (g:grammar t) r r2 (H:r=r2):
-    wf_dfa (coerce_dfa H (proj1_sig db r)).
-  Proof. rewrite H. simpl. apply (proj2_sig db r2). Qed.
-
-  Lemma ips_help4 (db:wf_dfa_builder)t (g:grammar t) r r2 (H:r=r2):
-    0 < dfa_num_states (coerce_dfa H (proj1_sig db r)).
-  Proof. rewrite H. simpl. apply dfa_at_least_one. Qed.
-
-  Lemma ips_help5 t (g:grammar t) r f:
-    split_grammar g = existT _ r f -> r = projT1 (split_grammar g).
-  Proof. crush. Qed.
-
-  (* todo: remove *)
-
-  (* Lemma ips_help1 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   dfa_states (coerce_dfa H (build_dfa r)).[0] = projT1 (RES.singleton_xform r2). *)
-  (* Proof. rewrite RES.singleton_xform_erase. *)
-  (*   rewrite H. simpl. *)
-  (*   generalize (@build_dfa_prop r2). unfold wf_dfa.  *)
-  (*   intros. intros; sim. *)
-  (*   auto. *)
-  (* Qed. *)
-
-  (* Lemma ips_help2 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   RES.re_set_type (projT1 (RES.singleton_xform r)) = *)
-  (*   RES.re_set_type (dfa_states (coerce_dfa H (build_dfa r)).[0]). *)
-  (* Proof. f_equal. rewrite (ips_help1 g). rewrite H. trivial. Qed. *)
-
-  (* Lemma ips_help3 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   wf_dfa (coerce_dfa H (build_dfa r)). *)
-  (* Proof. rewrite H. simpl. apply build_dfa_prop. Qed. *)
-
-  (* Lemma ips_help4 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   0 < dfa_num_states (coerce_dfa H (build_dfa r)). *)
-  (* Proof. rewrite H. simpl. apply dfa_at_least_one. Qed. *)
-
-  (* Lemma ips_help5 t (g:grammar t) r f: *)
-  (*   split_grammar g = existT _ r f -> r = projT1 (split_grammar g). *)
-  (* Proof. crush. Qed. *)
-
-  (* this definition is parameterized by a well-formed dfa builder *)
-  Definition initial_parser_state' (db: wf_dfa_builder)
-             t (g:grammar t) :
-    instParserState t (projT1 (split_grammar g)).
-    refine (
-      match split_grammar g as sr return split_grammar g = sr -> _ with
-        | existT _ r f => fun Hsr =>
-          match proj1_sig db r with
-            | d => 
-                let f1 := projT2 (RES.singleton_xform r) in
-                let H := (ips_help5 g Hsr) in
-                @mkPS _ _ (coerce_dfa H d) _ 0 _
-                   (coerce_dom (ips_help2 db g H)
-                     (compose (map f) (xinterp f1)))
+    (* this definition is parameterized by a well-formed dfa builder *)
+    Definition initial_parser_state' t (g:grammar t) :
+      instParserState t (projT1 (split_grammar g)).
+      refine (
+        match split_grammar g as sr return split_grammar g = sr -> _ with
+          | existT _ r f => fun Hsr =>
+            match get_builder db r with
+              | d => 
+                  let f1 := projT2 (RES.singleton_xform r) in
+                  let H := (ips_help5 g Hsr) in
+                  @mkPS _ _ (coerce_dfa H d) _ 0 _
+                     (coerce_dom (ips_help2 g H)
+                       (compose (map f) (xinterp f1)))
           end
       end eq_refl).
-    apply (ips_help3 db g).
-    apply (ips_help4 db g).
-  Defined.
+      apply (ips_help3 g).
+      apply (ips_help4 g).
+    Defined.
+
+  End INI_PARSER_STATE.
 
   Definition initial_parser_state := 
     initial_parser_state' build_dfa_wf_builder.
-
-  (* todo: remove *)
-
-  (* Definition initial_parser_state t (g:grammar t) : *)
-  (*   instParserState t (projT1 (split_grammar g)). *)
-  (*   refine ( *)
-  (*     match split_grammar g as sr return split_grammar g = sr -> _ with *)
-  (*       | existT _ r f => fun Hsr => *)
-  (*         match build_dfa r with *)
-  (*           | d =>  *)
-  (*               let f1 := projT2 (RES.singleton_xform r) in *)
-  (*               let H := (ips_help5 g Hsr) in *)
-  (*               @mkPS _ _ (coerce_dfa H d) _ 0 _ *)
-  (*                  (coerce_dom (ips_help2 g H) *)
-  (*                    (compose (map f) (xinterp f1))) *)
-  (*         end *)
-  (*     end eq_refl). *)
-  (*   apply (ips_help3 g). *)
-  (*   apply (ips_help4 g). *)
-  (* Defined. *)
-
 
   (** Given an [instParserState] and a token, advance the parser.  We first
       lookup the transition row of the current state ([row_ps ps]), and then
@@ -3096,7 +2977,7 @@ Section DFA_PARSE.
              (H:nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row)
              (H':nth_error (row_entries row) tk = None) : void.
   Proof. intros. generalize (Coqlib.nth_error_none _ _ H').
-    generalize (dfa_wf ps). unfold wf_dfa, wf_table, build_table_inv.
+    generalize (dfa_wf ps). unfold wf_dfa, wf_table, table_inv.
     intro H2. destruct H2 as [[H3 [H4 H5]] H6].
     assert (H10:row_ps ps < List.length (dfa_transition (dfa_ps ps))).
       eapply Coqlib.nth_error_some_lt. eassumption.
@@ -3283,7 +3164,7 @@ Section DFA_PARSE.
     destruct s as [row Hnd].
     destruct (nth_error2 (row_entries row) tk); [idtac | match_emp_contra].
     destruct s as [entries Hne].
-    unfold wf_table, build_table_inv in H0.
+    unfold wf_table, table_inv in H0.
     destruct H0 as [_ [_ H3]].
     generalize (H3 (row_ps ps1) H2). intro H14.
     rewrite Hnd in H14.
@@ -3450,111 +3331,72 @@ Section VDFA_PARSE.
   Definition wf_vdfa_builder := 
     {vdfa_builder:vdfa_builder_tp | forall r, wf_vdfa (vdfa_builder r)}.
 
+  Notation get_vbuilder := proj1_sig.
+
   Definition build_vdfa_wf_builder: wf_vdfa_builder.
     refine (exist _ build_vdfa _).                                     
     apply build_vdfa_prop.
   Defined.
 
-  Lemma vdfa_at_least_one (db:wf_vdfa_builder) r :
-    0 < vdfa_num_states (proj1_sig db r).
-  Proof. intros. generalize (proj2_sig db r).
-    unfold wf_vdfa at 1. unfold wf_vtable at 1. 
-    intros; sim.
-    generalize (vdfa_states_len (proj1_sig db r)). 
-    intros. rewrite <- H3.
-    omega.
-  Qed.
+  Section VINI_PARSER_STATE.  
+    Variable db: wf_vdfa_builder.
 
-  Lemma vips_help1 (db:wf_vdfa_builder) t (g:grammar t) r r2 (H:r=r2):
-    vdfa_states (coerce_vdfa H (proj1_sig db r)).[0] = projT1 (RES.singleton_xform r2).
-  Proof. rewrite RES.singleton_xform_erase.
-    rewrite H. simpl.
-    generalize (proj2_sig db r). unfold wf_vdfa. intros; sim.
-    crush.
-  Qed.
+    Lemma vdfa_at_least_one r :
+      0 < vdfa_num_states (get_vbuilder db r).
+    Proof. intros. generalize (proj2_sig db r).
+      unfold wf_vdfa at 1. unfold wf_vtable at 1. 
+      intros; sim.
+      generalize (vdfa_states_len (get_vbuilder db r)). 
+      intros. rewrite <- H3.
+      omega.
+    Qed.
 
-  Definition vips_help2 (db:wf_vdfa_builder) t (g:grammar t) r r2 (H:r=r2):
-    RES.re_set_type (projT1 (RES.singleton_xform r)) =
-    RES.re_set_type (vdfa_states (coerce_vdfa H (proj1_sig db r)).[0]).
-  Proof. f_equal. rewrite (vips_help1 db g). rewrite H. trivial. Qed.
+    Lemma vips_help1 t (g:grammar t) r r2 (H:r=r2):
+    vdfa_states (coerce_vdfa H (get_vbuilder db r)).[0] = projT1 (RES.singleton_xform r2).
+    Proof. rewrite RES.singleton_xform_erase.
+      rewrite H. simpl.
+      generalize (proj2_sig db r). unfold wf_vdfa. intros; sim.
+      crush.
+    Qed.
 
-  Lemma vips_help3 (db:wf_vdfa_builder) t (g:grammar t) r r2 (H:r=r2):
-    wf_vdfa (coerce_vdfa H (proj1_sig db r)).
-  Proof. rewrite H. simpl. generalize (proj2_sig db r). crush. Qed.
+    Definition vips_help2 t (g:grammar t) r r2 (H:r=r2):
+      RES.re_set_type (projT1 (RES.singleton_xform r)) =
+      RES.re_set_type (vdfa_states (coerce_vdfa H (get_vbuilder db r)).[0]).
+    Proof. f_equal. rewrite (vips_help1 g). rewrite H. trivial. Qed.
 
-  Lemma vips_help4 (db:wf_vdfa_builder) t (g:grammar t) r r2 (H:r=r2):
-    0 < Vector.length (vdfa_transition (coerce_vdfa H (proj1_sig db r))).
-  Proof. rewrite H. 
-         generalize (vdfa_transition_len (proj1_sig db r2)).
-         simpl. intros. rewrite H0. apply vdfa_at_least_one. 
-  Qed.
+    Lemma vips_help3 t (g:grammar t) r r2 (H:r=r2):
+      wf_vdfa (coerce_vdfa H (get_vbuilder db r)).
+    Proof. rewrite H. simpl. generalize (proj2_sig db r). crush. Qed.
 
+    Lemma vips_help4 t (g:grammar t) r r2 (H:r=r2):
+      0 < Vector.length (vdfa_transition (coerce_vdfa H (get_vbuilder db r))).
+    Proof. rewrite H. 
+      generalize (vdfa_transition_len (get_vbuilder db r2)).
+      simpl. intros. rewrite H0. apply vdfa_at_least_one. 
+    Qed.
 
-  (* todo: remove *)
-  (* Lemma vips_help1 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   vdfa_states (coerce_vdfa H (build_vdfa r)).[0] = projT1 (RES.singleton_xform r2). *)
-  (* Proof. rewrite RES.singleton_xform_erase. *)
-  (*   rewrite H. simpl. *)
-  (*   generalize (@build_vdfa_prop r2). unfold wf_vdfa. intros; sim. *)
-  (*   auto. *)
-  (* Qed. *)
-  
-  (* Definition vips_help2 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   RES.re_set_type (projT1 (RES.singleton_xform r)) = *)
-  (*   RES.re_set_type (vdfa_states (coerce_vdfa H (build_vdfa r)).[0]). *)
-  (* Proof. f_equal. rewrite (vips_help1 g). rewrite H. trivial. Qed. *)
-
-  (* Lemma vips_help3 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   wf_vdfa (coerce_vdfa H (build_vdfa r)). *)
-  (* Proof. rewrite H. simpl. apply build_vdfa_prop. Qed. *)
-
-  (* Lemma vips_help4 t (g:grammar t) r r2 (H:r=r2): *)
-  (*   0 < Vector.length (vdfa_transition (coerce_vdfa H (build_vdfa r))). *)
-  (* Proof. rewrite H.  *)
-  (*        generalize (vdfa_transition_len (build_vdfa r2)). *)
-  (*        simpl. intros. rewrite H0. apply vdfa_at_least_one.  *)
-  (* Qed. *)
-
-  Definition vinitial_parser_state' (db: wf_vdfa_builder) t (g:grammar t) : 
-    vinstParserState t (projT1 (split_grammar g)).
-    refine (
+    Definition vinitial_parser_state' t (g:grammar t) : 
+      vinstParserState t (projT1 (split_grammar g)).
+     refine (
       match split_grammar g as sr return split_grammar g = sr -> _ with
         | existT _ r f => fun Hsr => 
-          match proj1_sig db r with 
+          match get_vbuilder db r with 
             | d =>
               let f1 := projT2 (RES.singleton_xform r) in 
               let H := ips_help5 g Hsr in 
               @mkvPS _ _ (coerce_vdfa H d) _ 0 _ 
-                     (coerce_dom (vips_help2 db g H)
+                     (coerce_dom (vips_help2 g H)
                                  (compose (map f) (xinterp f1)))
           end
-      end eq_refl).
-    apply (vips_help3 db g).
-    apply (vips_help4 db g).
-  Defined.
+       end eq_refl).
+     apply (vips_help3 g).
+     apply (vips_help4 g).
+    Defined.
+  
+  End VINI_PARSER_STATE.
 
   Definition vinitial_parser_state :=
     vinitial_parser_state' build_vdfa_wf_builder.
-
-
-  (* todo: remove *)
-  (* Definition vinitial_parser_state t (g:grammar t) :  *)
-  (*   vinstParserState t (projT1 (split_grammar g)). *)
-  (*   refine ( *)
-  (*     match split_grammar g as sr return split_grammar g = sr -> _ with *)
-  (*       | existT _ r f => fun Hsr =>  *)
-  (*         match build_vdfa r with  *)
-  (*           | d => *)
-  (*             let f1 := projT2 (RES.singleton_xform r) in  *)
-  (*             let H := ips_help5 g Hsr in  *)
-  (*             @mkvPS _ _ (coerce_vdfa H d) _ 0 _  *)
-  (*                    (coerce_dom (vips_help2 g H) *)
-  (*                                (compose (map f) (xinterp f1))) *)
-  (*         end *)
-  (*     end eq_refl). *)
-  (*   apply (vips_help3 g). *)
-  (*   apply (vips_help4 g). *)
-  (* Defined. *)
 
   Lemma wf_vdfa_imp_tk_lt {r} {d:vDFA r} : 
     wf_vdfa d -> 
@@ -3813,7 +3655,9 @@ Section VDFA_PARSE.
 End VDFA_PARSE.
 
 Extraction Implicit instParserState [t r].
+Extraction Implicit initial_parser_state' [t].
 Extraction Implicit initial_parser_state [t].
+Extraction Implicit vinitial_parser_state' [t].
 Extraction Implicit vinitial_parser_state [t].
 Extraction Implicit coerce_dfa [r1 r2].
 Extraction Implicit coerce_dom [t1 t2].
