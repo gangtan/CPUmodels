@@ -27,6 +27,11 @@
     see if the derivatives are zero.  If all of the derivatives are zero,
     then the original expression is equivalent to zero.
 *)
+
+(* 8/20/2016 checkdeterministic works only if the grammar is
+   star-operator free. Since the new operand_override prefix grammar
+   uses the star operator, this file has been disabled. *)
+
 Require Import Coqlib.
 Require Import Parser.
 Require Import Ascii.
@@ -1041,6 +1046,7 @@ Proof.
   generalize (inv_Alt H4) ; clear H4 ; mysimp ; subst ; auto.
   contradiction H5. exists nil. rewrite <- app_nil_end. exists x0. auto.
 Qed.
+
 
 (** Check that all of the instruction grammars are mutually disjoint -- if you
     pass in a number like 3 this should evaluate to true -- but it takes a

@@ -1862,32 +1862,14 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
     |+| "0110" $$ bits "0100" @ (fun _ => FS %% segment_register_t)
     |+| "0110" $$ bits "0101" @ (fun _ => GS %% segment_register_t)).
 
-  (** allow up-to-eight operand override prefixes; compilers often
-      put multiple operand override prefixes before no-ops *)
   Definition op_s := "01100110".
-  Definition op_override_p : grammar bool_t :=
-      bits op_s @ (fun _ => true %% bool_t)
-  |+| bits (op_s ++ op_s) @ (fun _ => true %% bool_t)
-  |+| bits (op_s ++ op_s ++ op_s) @ (fun _ => true %% bool_t)
-  |+| bits (op_s ++ op_s ++ op_s ++ op_s) @ (fun _ => true %% bool_t)
-  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s) @ (fun _ => true %% bool_t)
-  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s)
-        @ (fun _ => true %% bool_t)
-  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s)
-        @ (fun _ => true %% bool_t)
-  |+| bits (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s)
-        @ (fun _ => true %% bool_t).
 
-  (* The most natural way of defining op_override_p is using the star operator;
-     however, checkdeterministic doesn't allow the star operator. Another choice
-     is to ditch checkdeterministic *)
-  (* Definition op_override_p : grammar bool_t := *)
-  (*   Star ("0110" $$ bits "0110")  *)
-  (*        @ (fun l =>  *)
-  (*             match l with  *)
-  (*               | nil => false *)
-  (*               | _ => true  *)
-  (*             end %% bool_t). *)
+  (** allow 1 or more 0x66 bytes for the operand override prefix; at least before
+      the no-op instruction, this is allowed. *)
+  Definition op_override_p : grammar bool_t :=
+    op_s $$ Star (bits op_s)
+      @ (fun _ => true %% bool_t).
+
   (* Definition op_override_p : grammar bool_t := *)
   (*   "0110" $$ bits "0110" @ (fun _ => true %% bool_t). *)
 
