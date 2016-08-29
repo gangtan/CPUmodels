@@ -389,9 +389,16 @@ Ltac destruct_pr_var :=
   in
   let rec focus_on v :=
       match v with
+        (* fail early so that dpv_helper v is not called *)
+        | ()  => fail 1
+        | inl _ => fail 1 
+        | inr _ => fail 1
         | Some ?v1 => focus_on v1 || fail 1
         | (?v1,?v2) => focus_on v1 || focus_on v2 || fail 1
-        | _ => dpv_helper v
+        | _ => 
+          (* really wanted to make sure v here is a variable, but don't
+             know how to do that in Coq *)
+          dpv_helper v
       end in
   simpl_grammar_ty;
   match goal with
@@ -1462,6 +1469,3 @@ Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
 Lemma b2g_corr2 t (g:bigrammar t) s v : 
   G.in_grammar (bigrammar_to_grammar g) s v -> in_bigrammar g s v.
 Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
-
-
-

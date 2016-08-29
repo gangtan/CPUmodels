@@ -22,87 +22,6 @@ Set Implicit Arguments.
 Require ExtrOcamlString.
 Require ExtrOcamlNatBigInt.
 
-
-(* This is now defined in ParserArg.v because of the bug with Extraction 
-   Implicit.  
-
-(* a module for generating the parser for x86 instructions *)
-Module X86_PARSER_ARG.
-  Require Import X86Syntax.
-  Require Import Bits.
-  
-  Definition char_p : Set := bool.
-  Definition char_eq : forall (c1 c2:char_p), {c1=c2}+{c1<>c2} := bool_dec.
-  Inductive type : Set := 
-  | Int_t : type
-  | Register_t : type
-  | Byte_t : type
-  | Half_t : type
-  | Word_t : type
-  | Double_Word_t : type
-  | Ten_Byte_t : type
-  | Scale_t : type
-  | Condition_t : type
-  | Address_t : type
-  | Operand_t : type
-  | Fpu_Register_t : type
-  | Fp_Debug_Register_t : type
-  | Fp_Operand_t : type 
-  | MMX_Granularity_t : type
-  | MMX_Register_t : type
-  | MMX_Operand_t : type
-  | SSE_Register_t : type
-  | SSE_Operand_t : type
-  | Instruction_t : type
-  | Control_Register_t : type
-  | Debug_Register_t : type
-  | Segment_Register_t : type
-  | Lock_or_Rep_t : type
-  | Bool_t : type
-  | Prefix_t : type
-  | Option_t (t: type) : type
-  (* Need pairs at this level if I want to have options of pairs*)
-  | Pair_t (t1 t2: type) : type. 
-
-  Definition tipe := type.
-  Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
-    intros ; decide equality.
-  Defined.
-
-  Fixpoint tipe_m (t:tipe) := 
-    match t with 
-      | Int_t => Z
-      | Register_t => register
-      | Byte_t => int8
-      | Half_t => int16
-      | Word_t => int32
-      | Double_Word_t => int64
-      | Ten_Byte_t => int80
-      | Scale_t => scale
-      | Condition_t => condition_type
-      | Address_t => address
-      | Operand_t => operand
-      | Fpu_Register_t => int3
-      | Fp_Debug_Register_t => fp_debug_register
-      | Fp_Operand_t => fp_operand  
-      | MMX_Granularity_t => mmx_granularity
-      | MMX_Register_t => mmx_register
-      | MMX_Operand_t => mmx_operand
-      | SSE_Register_t => sse_register
-      | SSE_Operand_t => sse_operand
-      | Instruction_t => instr
-      | Control_Register_t => control_register
-      | Debug_Register_t => debug_register
-      | Segment_Register_t => segment_register
-      | Lock_or_Rep_t => lock_or_rep
-      | Bool_t => bool
-      | Prefix_t => prefix
-      | Option_t t => option (tipe_m t)
-      | Pair_t t1 t2 => ((tipe_m t1) * (tipe_m t2))%type
-    end.
-End X86_PARSER_ARG.
-*)
-
 (* Module X86_PARSER. *)
   (* Commented out because the Parser is no longer a functor, due to the
      bug with Extraction Implicit. 
@@ -685,12 +604,12 @@ End X86_PARSER_ARG.
       to combine them into a single grammar that produces semantic values of
       type t. One easy way of combining them is to do "(g_1 @ f_1) |\/|
       ... (g_n @ f_n)", where f_i is of type [|pt_i|] -> [|t|]. However,
-      this leads to a reverse function which tries all cases and
+      this leads to an inverse function that tries all cases and is
       inefficient.
 
       Oftentimes, t is an inductive type and each g_i injects into one (or a
       few) case of the inductive type of t. The following definitions and
-      tactics take advantage of this to get more efficient reverse
+      tactics take advantage of this to get more efficient inverse
       functions. Here are the general steps:
 
       - combine g_i using balanced alts to get "g_1 |+| ... |+| g_n". This
@@ -707,6 +626,7 @@ End X86_PARSER_ARG.
        
      See the def of control_reg_p for a typical definition.
   *)
+
    
   (** The type for environments that include a list of grammars and
       semantic functions going from AST values to semantic values of type
@@ -994,6 +914,7 @@ End X86_PARSER_ARG.
 
   (* let l := env_split ae in *)
   (* pose l. *)
+
 
   Ltac clear_ast_defs :=
     repeat match goal with
@@ -1283,6 +1204,64 @@ End X86_PARSER_ARG.
       crush.
     - generalize Z_to_condition_type_inv. crush.
   Defined.
+
+  (* speed tests *)
+  (* Section SpeedTest. *)
+
+  (* Definition control_reg_env: AST_Env control_register_t := *)
+  (*   {0, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {1, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {2, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {3, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   {4, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {5, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {6, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {7, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   {8, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {9, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {10, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {11, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   {12, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {13, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {14, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {15, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   {16, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {17, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {18, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {19, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   {20, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {21, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {22, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {23, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   {24, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {25, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {26, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {27, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   {28, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
+  (*   {29, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
+  (*   {30, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
+  (*   {31, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
+  (*   ast_env_nil. *)
+  (* Hint Unfold control_reg_env: env_unfold_db. *)
+
+  (* Unset Printing Implicit. *)
+
+  (* Definition control_reg_p : wf_bigrammar control_register_t. *)
+  (*   Time gen_ast_defs control_reg_env. *)
+  (*   Time refine(gr @ (mp: _ -> [|control_register_t|]) *)
+  (*            & (fun u => *)
+  (*                 match u with *)
+  (*                   | CR0 => case0 () *)
+  (*                   | CR2 => case1 () *)
+  (*                   | CR3 => case2 () *)
+  (*                   | CR4 => case3 () *)
+  (*                 end) *)
+  (*            & _); clear_ast_defs; invertible_tac. *)
+  (*    - Time destruct w; parsable_tac. *)
+  (* Defined. *)
+
+  (* End SpeedTest. *)
+
 
   Definition control_reg_env: AST_Env control_register_t := 
     {0, ! "000", (fun v => CR0 %% control_register_t)} :::
