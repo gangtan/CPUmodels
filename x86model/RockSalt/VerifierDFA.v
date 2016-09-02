@@ -14,26 +14,20 @@
     This file contains definitions of the parsers used to build the DFAs
     used in FastVerifier.
 *)
+
+Require Import Coq.Strings.Ascii.
+
 Require Import Coqlib.
 Require Import Parser.
 Require Import Recognizer.
-Require Import Ascii.
-(* Require Import String. *)
-Require Import List.
-Require Import Bits.
 Require Import Decode.
-Require Import Eqdep.
 Require Import Int32.
+Require Import X86Syntax.
+
 Unset Automatic Introduction.
 Set Implicit Arguments.
 Open Scope char_scope.
-(* Require ExtrOcamlString. *)
-(* Require ExtrOcamlNatBigInt. *)
-(* Require ExtrOcamlNatInt. *)
 Import ParserArg.X86_PARSER_ARG.
-(* Import X86_PARSER. *)
-(* Import X86_BASE_PARSER. *)
-Require Import X86Syntax.
 
 Definition byte2token (b: int8) : token_id := Zabs_nat (Word.unsigned b).
 Definition token2byte (t: token_id) : int8 := Word.repr (Z_of_nat t).

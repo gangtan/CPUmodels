@@ -9,12 +9,10 @@
    the License, or (at your option) any later version.
 *)
 
+Require Export Coq.micromega.Psatz.
 
-Require Import CommonTacs.
-Require Import List.
-Require Import ZArith.
-Require Export Psatz.
 Require Coqlib.
+Require Import CommonTacs.
 Require Import Bits.
 Export Word.
 

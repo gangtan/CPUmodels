@@ -12,15 +12,15 @@
 (** X86Lemmas.v. This file holds lemmas about X86 instructions *)
 
 Require Import CommonTacs.
-Require Import ZArith.
-Require Import List.
 Require Import Coqlib.
+
 Require Import Bits.
 Require Import Decode.
 Require Import X86Semantics.
-Require Import Monad.
+Require Import X86Model.Monad.
+
 Require Import Int32.
-Require Import Eqdep.
+(* Require Import Eqdep. *)
 Require Import VerifierDFA.
 Close Scope char_scope.
 
@@ -31,7 +31,6 @@ Import X86_Compile.
 
 Local Open Scope monad_scope.
 Set Implicit Arguments.
-
 
 Notation get_core_state s := (core (rtl_mach_state s)).
 

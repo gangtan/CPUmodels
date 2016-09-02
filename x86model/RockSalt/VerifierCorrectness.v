@@ -9,20 +9,19 @@
    the License, or (at your option) any later version.
 *)
 
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Strings.String.
+Require Import Coq.omega.Omega.
 
 Require Import Coqlib.
+Require Import CommonTacs.
 Require Import Parser.
-Require Import Ascii.
-Require Import String.
-Require Import List.
-Require Import Bits.
-
 Require Import Decode.
-Require Import X86Syntax.
 Require Import Recognizer.
 Require Import X86Semantics.
 Require Import X86Lemmas.
-Require Import Monad.
+Require Import X86Model.Monad.
+
 Require Import Int32.
 Require Import VerifierDFA.
 Require Import FastVerifier.
@@ -31,7 +30,6 @@ Require Import FastVerifier.
 (* Require Import DFACorrectness. *)
 (* Require Import NACLjmp. *)
 
-
 Import ParserArg.X86_PARSER_ARG.
 (* Import X86_PARSER. *)
 (* Import X86_BASE_PARSER. *)
@@ -39,9 +37,6 @@ Import X86_RTL.
 Import X86_MACHINE.
 Import X86_Compile.
 Require Import RTL.
-
-Import CommonTacs.
-Require Import Omega.
 
 Definition emptyPrefix := mkPrefix None None false false.
 

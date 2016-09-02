@@ -10,7 +10,7 @@ coq: Makefile.coq
 
 Makefile.coq: Makefile $(VS:%=%)
 	echo $(VS)
-	coq_makefile -R . rocksalt -R ../Model/ x86model $(VS) -o Makefile.coq
+	coq_makefile -R . Rocksalt -R ../Model/ X86Model $(VS) -o Makefile.coq
 
 clean:: Makefile.coq
 	$(MAKE) -f Makefile.coq clean

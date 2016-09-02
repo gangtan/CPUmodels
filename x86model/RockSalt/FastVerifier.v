@@ -12,11 +12,10 @@
 
 Require Import Coqlib.
 Require Import Parser.
-Require Import List.
-Require Import Bits.
 Require Import Decode.
 Require Import X86Syntax.
 Require Import Recognizer.
+
 Require Import Int32.
 Require Import VerifierDFA.
 
@@ -148,7 +147,7 @@ Section BUILT_DFAS.
      process_buffer loop, but I didn't want to complicate the logic
      there any more.  *)
 
-  Require Import Recdef.
+  Require Import Coq.funind.Recdef.
   Function checkAligned_aux (p: Int32Set.t * Z * nat) {measure snd p}
     : bool :=
   match p with
