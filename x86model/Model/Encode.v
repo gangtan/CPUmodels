@@ -1,12 +1,12 @@
 (* This file encodes Intel IA32 (x86) 32-bit instructions into 
  * their binary form. *)
 
-Require Import X86Syntax.
-Require Import String.
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Strings.String.
+
 Require Import Coqlib.
-Require Import Bits.
-Require Import Ascii.
-Require Import Monad.
+Require Import X86Syntax.
+Require Import X86Model.Monad.
 Local Open Scope monad_scope.
 
 (* an encoding monad *)

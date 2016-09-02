@@ -1,9 +1,8 @@
 Require Import Coq.Program.Equality.
 Require Import Coqlib.
-Require Import List.
-Require Import Bool.
 Require Import ParserArg.
 Import X86_PARSER_ARG.
+
 Set Implicit Arguments.
 
 Inductive void : Type := .
@@ -827,8 +826,9 @@ Ltac xinterp_simpl :=
 
 (** Some utilities for viewing and seeing the size of Xforms. *)
 
-Require Import String.
-Open Scope string_scope.
+Require Import Coq.Strings.String.
+Local Open Scope string_scope.
+
 Definition emit (s:string) (a:list string) : list string := s :: a.
 Definition seq {A} (c1 c2:A -> A)(a:A): A := 
   c2 (c1 a).

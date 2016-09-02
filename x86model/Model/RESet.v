@@ -1,16 +1,15 @@
-Require Import MSets.MSetInterface.
-Require Import MSets.MSetProperties.
-Require Import MSets.MSetAVL.
-
-Require Import Structures.OrdersAlt.
-
-Require Import Xform.
-Require Import Regexp.
+Require Import Coq.MSets.MSetInterface.
+Require Import Coq.MSets.MSetProperties.
+Require Import Coq.MSets.MSetAVL.
+Require Import Coq.Structures.OrdersAlt.
 
 Require Import CommonTacs.
 Require Import Coqlib.  (* for proof_irrelevance *)
 
+Require Import Xform.
+Require Import Regexp.
 Require Import ParserArg.
+
 Import X86_PARSER_ARG.
 
 Set Implicit Arguments.

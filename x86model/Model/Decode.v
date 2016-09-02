@@ -11,21 +11,18 @@
 
 (* This file provides simple bit-level parsing combinators for disassembling
  * Intel IA32 (x86) 32-bit binaries. *)
-Require Coqlib.
 Require Import Coq.Init.Logic.
-Require Import Bool.
-Require Import String.
-Require Import List.
-Require Import Maps.
-Require Import Ascii.
-Require Import ZArith.
-Require Import Eqdep.
+Require Import Coq.Logic.Eqdep.
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Strings.String.
+
+Require Import Coqlib.
+Require Import CommonTacs.
+Require Import X86Model.Maps.
+
 Unset Automatic Introduction.
 Set Implicit Arguments.
 Local Open Scope Z_scope.
-
-Require ExtrOcamlString.
-Require ExtrOcamlNatBigInt.
 
 (* Module X86_PARSER. *)
   (* Commented out because the Parser is no longer a functor, due to the
@@ -33,7 +30,6 @@ Require ExtrOcamlNatBigInt.
      Module X86_BASE_PARSER := Parser.Parser(X86_PARSER_ARG).
   *)
   Require Import X86Syntax.
-  Require Import Bits.
   Require ParserArg.
   Import ParserArg.X86_PARSER_ARG.
   Require Import Parser.
@@ -169,7 +165,7 @@ Require ExtrOcamlNatBigInt.
       | S n' => 
         fun v =>
           let f' := sig_of_bitsn n' (snd v) in
-          fun x => if Coqlib.zeq x (Z_of_nat n') then fst v else f' x
+          fun x => if zeq x (Z_of_nat n') then fst v else f' x
     end.
 
   Definition intn_of_sig (n:nat) (f:Z->bool): Word.int n :=

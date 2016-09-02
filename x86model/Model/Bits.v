@@ -27,9 +27,9 @@
 
 
 Require Import Coqlib.
-Require Import Znumtheory.
-Local Open Scope Z_scope.
+Require Import Coq.ZArith.Znumtheory.
 Require Import Coq.Classes.Morphisms.
+Local Open Scope Z_scope.
 
 Module Word.
   Section WORDSIZE.
@@ -3784,9 +3784,9 @@ Qed.
 
 Add Ring WordRing: WordRing.
 
-Require Import String.
+Require Coq.Strings.String.
 
-Definition string_to_int (s : string) := 
+Definition string_to_int (s : String.string) := 
   let zb := string_to_Z_bool s in 
   repr (Z_of_bits wordsize zb).
 

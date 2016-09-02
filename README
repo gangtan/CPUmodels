@@ -1,16 +1,10 @@
-The Model and RockSalt directories last checked in Coq 8.5pl1
-
-MIPSmodel/
-	A Coq formalization of a MIPS processor
-        (sorry, but this directory hasn't been migrated to Coq 8.5)
+The Model and RockSalt directories last checked in Coq 8.5pl2
 
 x86model/
 	A Coq formalization of a Pentium
 
-
 x86model/Model
-	The CPU model, including the flocq-2.5.1 library
-        (up to date to Coq 8.5)
+	The CPU model (up to date to Coq 8.5)
 
 x86model/RockSalt
 	A formally verified SFI checker based on our model of x86
@@ -27,3 +21,8 @@ x86model/cdriver
 x86model/semantics_trace
 	Simulation and instrumentation of x86 binaries
         (sorry, but hasn't tested this for a while)
+
+MIPSmodel/
+	A Coq formalization of a MIPS processor
+        (sorry, but this directory hasn't been migrated to Coq 8.5)
+

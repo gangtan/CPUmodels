@@ -1,11 +1,10 @@
 Require Import CommonTacs.
-Set Implicit Arguments.
-
-Require Import List.
 
 Require Import ParserArg.
 Require Export Xform.
 Require Export GrammarType.
+
+Set Implicit Arguments.
 
 
 (** Our user-facing [grammar]s, indexed by a [type], reflecting the type of the

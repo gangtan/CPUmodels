@@ -3,27 +3,19 @@
 (* This file glues all individual x86 instruction bigrammars in
    Decode_ins.v into one big bigrammar. *)
 
-Require Import Coqlib.
 Require Import Coq.Init.Logic.
-Require Import Bool.
-Require Import String.
-Require Import List.
-Require Import Maps.
-Require Import Ascii.
-Require Import ZArith.
-Require Import Eqdep.
+Require Import Coq.Logic.Eqdep.
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Strings.String.
+
+Require Import Coqlib.
 Require Import CommonTacs.
-Require Import Program.
-Require Import Coq.Classes.Morphisms.
+Require Import X86Model.Maps.
 
 Unset Automatic Introduction.
 Set Implicit Arguments.
 
-Require ExtrOcamlString.
-Require ExtrOcamlNatBigInt.
-
   Require Import X86Syntax.
-  Require Import Bits.
   Require ParserArg.
   Import ParserArg.X86_PARSER_ARG.
   Require Import BiGrammar.

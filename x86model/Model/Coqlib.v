@@ -17,13 +17,15 @@
     used throughout the development.  It complements the Coq standard
     library. *)
 
-Require Export ZArith.
-Require Export List.
-Require Export Bool.
-Require Import Znumtheory.
-Require Import SetoidList.
+Require Export Coq.Bool.Bool.
+Require Export Coq.Arith.Arith.
+Require Export Coq.ZArith.ZArith.
+Require Export Coq.Lists.List.
+
+Require Import Coq.ZArith.Znumtheory.
+Require Import Coq.Lists.SetoidList.
 Require Import Classes.RelationClasses.
-Require Import Wf_nat.
+Require Import Coq.Arith.Wf_nat.
 
 (** * Logical axioms *)
 
@@ -1482,8 +1484,8 @@ Proof.
   intros; destruct l. reflexivity. destruct l; reflexivity.
 Qed.
 
-Require Import Ascii.
-Require Import String.
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Strings.String.
 
 Fixpoint string_to_bool_list (s:string) : list bool := 
   match s with

@@ -9,21 +9,15 @@
    the License, or (at your option) any later version.
 *)
 
-Require ExtrOcamlString.
-Require ExtrOcamlNatBigInt.
-Require ExtrOcamlZBigInt.
-Require Import List.
-Require Import Bits.
-Require Import ZArith.
+Require Import Coq.Strings.String.
+Require Import Coq.Program.Program.
+
 Require Import Parser.
 Require Decode.
-Require Import String.
-Require Import Monad.
-Require Import Maps.
+Require Import X86Model.Monad.
+Require Import X86Model.Maps.
 Require Export X86Syntax.
 Require Export RTL.
-
-Require Import Program.
 
 Set Implicit Arguments.
 Unset Automatic Introduction.
@@ -509,8 +503,6 @@ Module X86_MACHINE.
 End X86_MACHINE.
 
 Module X86_RTL := RTL.RTL(X86_MACHINE).
-
-Require Import List.
 
 (* compilation from x86 instructions to RTL instructions *)
 Module X86_Compile.

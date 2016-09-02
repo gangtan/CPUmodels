@@ -11,19 +11,15 @@
 
 Require Import Coq.Program.Equality.
 Require Import Coq.Init.Logic.
-Require Import List.
-Require Import Arith.
-Require Import Bool.
-Require Import MSetsMore.
-Require Import Eqdep.
-(* Require Import PArith. *)
-Require Import ZArith.
+Require Import Coq.Logic.Eqdep.
 
+Require Import CommonTacs.
+
+Require Import MSetsMore.
 Require Import Regexp.
 Require Import ParserArg.
 Import X86_PARSER_ARG.
 
-Require Import CommonTacs.
 Set Implicit Arguments.
 
 Local Ltac false_elim :=

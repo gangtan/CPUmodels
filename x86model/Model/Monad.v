@@ -10,7 +10,7 @@
 *)
 
 Require Import Coqlib.
-Require Import List.
+
 Set Implicit Arguments.
 
 Class Monad(M:Type->Type) : Type := {

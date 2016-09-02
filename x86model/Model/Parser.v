@@ -13,17 +13,17 @@
 
 Require Import Coq.Program.Equality.
 Require Import Coq.Lists.SetoidList.
-Require Import List.
-Require Import Arith.
-Require Import Bool.
-Require Import MSetsMore.
-Require Import ZArith.
-Require Vector.
-Require Import Regexp.
-Require Import ParserArg.
-(* Import X86_PARSER_ARG. *)
+Require Import Coq.Arith.Arith.
+
 Require Export Xform.
 Require Export Grammar.
+
+Require Import MSetsMore.
+Require X86Model.Vector.
+Require Import Regexp.
+
+Require Import ParserArg.
+(* Import X86_PARSER_ARG. *)
 
 Require Import CommonTacs.
 Set Implicit Arguments.
@@ -1518,14 +1518,15 @@ Section DFA.
   (* provide a way to dump out info on a DFA *)
   Section DFA_TO_STRING.
     Require Import Coq.Program.Wf.
-    Require Import String.
-    Definition digit2string (n:nat) :string := 
+    Require Import Coq.Strings.String.
+
+    Definition digit2string (n:nat) :String.string := 
       match n with 
         | 0 => "0" | 1 => "1" | 2 => "2" | 3 => "3" | 4 => "4" | 5 => "5"
         | 6 => "6" | 7 => "7" | 8 => "8" | _ => "9"
       end.
 
-    Program Fixpoint nat_show (n:nat) {measure n} : string :=
+    Program Fixpoint nat_show (n:nat) {measure n} : String.string :=
       if Compare_dec.le_gt_dec n 9 then
         digit2string n
       else
@@ -1555,7 +1556,10 @@ Section DFA.
       list_show transition_show "{" (";" ++ nl) "}" ts.
     Definition dfa_show (d:DFA) : string := transitions_show (dfa_transition d).
   End DFA_TO_STRING.
-  
+
+  (* reimporting list to cancel the effect of import the string library *)
+  Require Import Coq.Lists.List.
+
   (** ** Lemmas about wfs-level operations *)
 
   Hint Rewrite RESS.add_set_empty.
@@ -1657,7 +1661,7 @@ Section DFA.
     rewrite RESS.add_elements_2 in H2 by assumption.
     rewrite H2.
     rewrite app_ass.
-    assert (H12:cardinal_wfs ss = List.length (RESS.elements (proj1_sig ss))).
+    assert (H12:cardinal_wfs ss = length (RESS.elements (proj1_sig ss))).
       unfold cardinal_wfs. rewrite POW.MM.cardinal_spec. omega.
     rewrite Coqlib.nth_error_app_eq by crush.
     rewrite <- app_comm_cons. 
@@ -1977,7 +1981,7 @@ Section DFA.
       n <= num_tokens -> tid = num_tokens-n ->
       match gen_row' n ss tid H H1 with 
         | existT _ ss1 (existT _ entries1 Hwfs) => 
-          List.length entries1 = n /\
+          length entries1 = n /\
           forall tid', tid' >= tid -> wf_entries entries1 (tid'-tid) tid'
       end.
     Proof. induction n.
@@ -2073,7 +2077,7 @@ Section DFA.
           (H1:gpos < cardinal_wfs ss),
       match gen_row ss H H1 with 
         | existT _ ss1 (existT _ entries1 Hwfs) => 
-          List.length entries1 = num_tokens /\
+          length entries1 = num_tokens /\
           forall tid, wf_entries entries1 tid tid
       end.
     Proof. unfold gen_row. intros.
@@ -2127,13 +2131,13 @@ Section DFA.
   (*     original set of states [s], they are now indexed by [s ++ s1]. *)
   Definition coerce_transitions ss ss' (H:wfs_ext ss ss')
               (ts:transitions_t ss) : transitions_t ss' :=
-    List.map (fun (t:transition_t ss) =>
+    map (fun (t:transition_t ss) =>
       {| row_num := row_num t ;
          row_num_lt :=
            (lt_le_trans _ _ _ (row_num_lt t) (wfs_ext_cardinal_leq H)) ;
          row_entries :=
            List.map (coerce_entry H (row_num_lt t)) (row_entries t) ;
-         row_nils := List.map (coerce_nils H (row_num_lt t)) (row_nils t) 
+         row_nils := map (coerce_nils H (row_num_lt t)) (row_nils t) 
       |}) ts.
 
   (** A relation that puts an upper bound on nats *)
@@ -2225,7 +2229,6 @@ Section DFA.
      with those additional states.  
   *)
   Unset Implicit Arguments.
-  Require Import List.
   Require Import Coq.Program.Wf.
   Program Fixpoint build_table (ss:wf_states) (rows:transitions_t ss)
           (next_state:nat) {wf build_table_metric next_state} : 
@@ -2309,7 +2312,7 @@ Section DFA.
        match nth_error rows i with 
          | Some ts => 
            (* have an entry in the row for each token *)
-           List.length (row_entries ts) = num_tokens /\ 
+           length (row_entries ts) = num_tokens /\ 
            (* row_num is the right number *)
            row_num ts = i /\
            (* each entry in the row is semantically correct *)
@@ -2320,7 +2323,7 @@ Section DFA.
          | _ => False
        end.
 
-  Definition wf_table ss rows := @table_inv (List.length rows) ss rows.
+  Definition wf_table ss rows := @table_inv (length rows) ss rows.
 
   Lemma fcoerce_eq t1 t2 (f : t1 ->> t2) (H1 : t1 = t1) (H2 : t2 = t2) :
     fcoerce f H1 H2 = f.
@@ -2367,7 +2370,7 @@ Section DFA.
 
   Lemma table_inv_imp n ss (rows:transitions_t ss) :
     table_inv n rows -> 
-    1 <= cardinal_wfs ss /\ n <= cardinal_wfs ss /\ n <= List.length rows.
+    1 <= cardinal_wfs ss /\ n <= cardinal_wfs ss /\ n <= length rows.
   Proof.
     unfold table_inv ; destruct n.
       intros; repeat split; [crush | crush | auto with arith].
@@ -2383,7 +2386,7 @@ Section DFA.
   Hint Rewrite Coqlib.list_length_map.
 
   Lemma gen_row_table_inv n ss rows :
-    n = List.length rows ->
+    n = length rows ->
     match get_element_wfs2 n ss with
       | inleft s0 =>
         let (s, Hge) := s0 in
@@ -2402,7 +2405,7 @@ Section DFA.
     destruct s as [s Hgew].
     generalize (build_table_help1 n s ss Hgew) (build_table_help2 n s ss Hgew).
     intros H2 H4. intros.
-    assert (n=List.length (coerce_transitions Hwfs rows)).
+    assert (n=length (coerce_transitions Hwfs rows)).
       unfold coerce_transitions. crush.
     generalize (gen_row_prop _ _ H2 H4).
     rewrite H0. intros. sim.
@@ -2437,10 +2440,10 @@ Section DFA.
   (** This lemma establishes that the [build_table] loop maintains the
       [table_inv] and only adds to the states and rows of the table. *)
   Lemma build_table_prop: forall n ss rows,
-     n = List.length rows -> table_inv n rows ->
+     n = length rows -> table_inv n rows ->
      match build_table ss rows n with 
        | existT _ ss' rows' => 
-         List.length rows' = cardinal_wfs ss' /\ 
+         length rows' = cardinal_wfs ss' /\ 
          wf_table rows' /\ wfs_ext ss ss'
          (* /\ exists rows1, rows' = rows ++ rows1 *)
      end.
@@ -2462,7 +2465,7 @@ Section DFA.
       assert (n < cardinal_wfs ss).
         use_lemma RESS.get_element_some_lt by eassumption. trivial.
       use_lemma build_table_metric_dec by eassumption. 
-      assert (S n = List.length rows1). 
+      assert (S n = length rows1). 
         unfold coerce_transitions in Heqrows1. crush.
       assert (table_inv (1+n) rows1) by crush.
       use_lemma H by eassumption. clear H.
@@ -2480,7 +2483,7 @@ Section DFA.
   Lemma build_transition_table_prop: 
     match build_transition_table with
       | existT _ ss rows =>
-        List.length rows = cardinal_wfs ss /\ wf_table rows /\
+        length rows = cardinal_wfs ss /\ wf_table rows /\
         wfs_ext ini_states ss
     end.
   Proof. unfold build_transition_table.
@@ -2495,7 +2498,7 @@ Section DFA.
 
   Lemma build_dfa_help1 ss rows:
     build_transition_table = existT _ ss rows -> 
-    List.length rows = cardinal_wfs ss.
+    length rows = cardinal_wfs ss.
   Proof. intros. generalize build_transition_table_prop.
     rewrite H. crush.
   Qed.
@@ -2675,7 +2678,7 @@ Section NAIVE_PARSE.
   Definition naive_parse t (g:grammar t) (cs : list char_p) : list (interp t) :=
   let (r, fuser) := split_grammar g in 
   let (rs, f) := wpdrv cs (RES.singleton_xform r) in
-    flat_map (compose (List.map fuser) (xinterp f)) 
+    flat_map (compose (map fuser) (xinterp f)) 
              (RES.re_set_extract_nil rs).
 
   Lemma naive_parse_corr1 : forall t (g:grammar t) cs v, in_grammar g cs v -> 
@@ -2732,7 +2735,7 @@ Section NAIVE_PARSE.
     let (rs,f) := wpdrv (token_id_to_chars tk) (rx_nps nps) in 
     let v := RES.re_set_extract_nil rs in
     (@mkNPS _ _ (existT _ rs f) (fixup_nps nps),
-     flat_map (compose (List.map (fixup_nps nps)) (xinterp f)) v).
+     flat_map (compose (map (fixup_nps nps)) (xinterp f)) v).
 
   (** The semantics of naive parser states *)
   Definition in_nps t1 t2 (nps:naiveParserState t1 t2) (str:list char_p) (v: interp t2) :=
@@ -2979,7 +2982,7 @@ Section DFA_PARSE.
   Proof. intros. generalize (Coqlib.nth_error_none _ _ H').
     generalize (dfa_wf ps). unfold wf_dfa, wf_table, table_inv.
     intro H2. destruct H2 as [[H3 [H4 H5]] H6].
-    assert (H10:row_ps ps < List.length (dfa_transition (dfa_ps ps))).
+    assert (H10:row_ps ps < length (dfa_transition (dfa_ps ps))).
       eapply Coqlib.nth_error_some_lt. eassumption.
     specialize (H5 (row_ps ps) H10).
     rewrite H in H5.
@@ -3155,7 +3158,7 @@ Section DFA_PARSE.
                   in_ps ps2 str v.
   Proof. generalize (dfa_wf ps1). unfold wf_dfa. intro H0.
     destruct H0 as [H0 _].
-    assert (H2:row_ps ps1 < List.length (dfa_transition (dfa_ps ps1))).
+    assert (H2:row_ps ps1 < length (dfa_transition (dfa_ps ps1))).
       rewrite (dfa_transition_len (dfa_ps ps1)).
       apply (row_ps_lt ps1).
     unfold parse_token.
@@ -3183,7 +3186,7 @@ Section DFA_PARSE.
       unfold compose.
       split.
       SCase "In v vs <-> in_ps ps2 nil v".
-        assert (H8:next_state entries < List.length (dfa_transition (dfa_ps ps1))).
+        assert (H8:next_state entries < length (dfa_transition (dfa_ps ps1))).
           rewrite (dfa_transition_len (dfa_ps ps1)).
           rewrite <- (dfa_states_len (dfa_ps ps1)).
           apply (next_state_lt entries).
@@ -3701,7 +3704,7 @@ Extraction Implicit vparse_token [t r].
 (*         end *)
 (*     | aStar a1 =>  *)
 (*       fun (v:list (interp (regexp_type a1))) =>  *)
-(*         List.fold_right  *)
+(*         fold_right  *)
 (*         (fun v1 sopt =>  *)
 (*           match to_string a1 v1, sopt with *)
 (*             | Some (c::s1), Some s2 => Some ((c::s1) ++ s2) *)

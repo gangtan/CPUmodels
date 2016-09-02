@@ -3,24 +3,23 @@
 (** This file provides bit-level bigrammars for parsing and pretty-printing
     individual x86 instructions. *)
 
-Require Import Coqlib.
 Require Import Coq.Init.Logic.
-Require Import Bool.
-Require Import String.
-Require Import List.
-Require Import Maps.
-Require Import Ascii.
-Require Import ZArith.
-Require Import Eqdep.
-Require Import CommonTacs.
-Require Import Program.
+Require Import Coq.Logic.Eqdep.
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Strings.String.
 Require Import Coq.Classes.Morphisms.
+Require Import Coq.Program.Program.
+
+Require Import Coqlib.
+Require Import CommonTacs.
+Require Import X86Model.Maps.
 
 Unset Automatic Introduction.
 Set Implicit Arguments.
 
-Require ExtrOcamlString.
-Require ExtrOcamlNatBigInt.
+(* Require Import Eqdep. *)
+(* Require ExtrOcamlString. *)
+(* Require ExtrOcamlNatBigInt. *)
 
 (* Module X86_PARSER. *)
   (* Commented out because the Parser is no longer a functor, due to the
@@ -28,7 +27,6 @@ Require ExtrOcamlNatBigInt.
      Module X86_BASE_PARSER := Parser.Parser(X86_PARSER_ARG).
   *)
   Require Import X86Syntax.
-  Require Import Bits.
   Require ParserArg.
   Import ParserArg.X86_PARSER_ARG.
   Require Import BiGrammar.
@@ -626,7 +624,6 @@ Require ExtrOcamlNatBigInt.
        
      See the def of control_reg_p for a typical definition.
   *)
-
    
   (** The type for environments that include a list of grammars and
       semantic functions going from AST values to semantic values of type
@@ -914,6 +911,10 @@ Require ExtrOcamlNatBigInt.
 
   (* let l := env_split ae in *)
   (* pose l. *)
+
+(* next: turn the above into typed coq functions; so that we can
+   compress the size of terms when doing proofs *)
+
 
 
   Ltac clear_ast_defs :=
@@ -1206,61 +1207,104 @@ Require ExtrOcamlNatBigInt.
   Defined.
 
   (* speed tests *)
-  (* Section SpeedTest. *)
+  Section SpeedTest.
 
-  (* Definition control_reg_env: AST_Env control_register_t := *)
-  (*   {0, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {1, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {2, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {3, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   {4, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {5, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {6, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {7, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   {8, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {9, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {10, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {11, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   {12, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {13, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {14, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {15, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   {16, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {17, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {18, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {19, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   {20, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {21, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {22, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {23, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   {24, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {25, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {26, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {27, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   {28, ! "000", (fun v => CR0 %% control_register_t)} ::: *)
-  (*   {29, ! "010", (fun v => CR2 %% control_register_t)} ::: *)
-  (*   {30, ! "011", (fun v => CR3 %% control_register_t)} ::: *)
-  (*   {31, ! "100", (fun v => CR4 %% control_register_t)} ::: *)
-  (*   ast_env_nil. *)
-  (* Hint Unfold control_reg_env: env_unfold_db. *)
+  Definition control_reg_env: AST_Env control_register_t :=
+    {0, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {1, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {2, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {3, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {4, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {5, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {6, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {7, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {8, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {9, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {10, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {11, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {12, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {13, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {14, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {15, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {16, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {17, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {18, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {19, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {20, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {21, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {22, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {23, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {24, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {25, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {26, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {27, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {28, ! "000", (fun v => CR0 %% control_register_t)} :::
+    {29, ! "010", (fun v => CR2 %% control_register_t)} :::
+    {30, ! "011", (fun v => CR3 %% control_register_t)} :::
+    {31, ! "100", (fun v => CR4 %% control_register_t)} :::
+    ast_env_nil.
+  Hint Unfold control_reg_env: env_unfold_db.
 
-  (* Unset Printing Implicit. *)
+  Unset Printing Implicit.
+  Unset Ltac Debug.
 
-  (* Definition control_reg_p : wf_bigrammar control_register_t. *)
-  (*   Time gen_ast_defs control_reg_env. *)
-  (*   Time refine(gr @ (mp: _ -> [|control_register_t|]) *)
-  (*            & (fun u => *)
-  (*                 match u with *)
-  (*                   | CR0 => case0 () *)
-  (*                   | CR2 => case1 () *)
-  (*                   | CR3 => case2 () *)
-  (*                   | CR4 => case3 () *)
-  (*                 end) *)
-  (*            & _); clear_ast_defs; invertible_tac. *)
-  (*    - Time destruct w; parsable_tac. *)
-  (* Defined. *)
+  (* possible todo: change ast_env to use heterogeneous lists that are
+     indexed by lists of types of bigrammars; and write a gen_case coq
+     functon instead of using ltac gen_rev_case. *)
+     
+  (* this is five times faster than the original script *)   
+  Definition control_reg_p : wf_bigrammar control_register_t.
+    pose (ae:=control_reg_env);
+    autounfold with env_unfold_db in ae;
+    let ae1 := eval cbv delta [ae] in ae in
+      let g := gen_ast_grammar ae1 in pose (gr:=g);
+      let m := gen_ast_map ae1 in pose (mp:=m);
+      (* gen_rev_cases ae1; *)
+      clear ae.
+    Time refine(gr @ (mp: _ -> [|control_register_t|])
+             & (fun u =>
+                  match u with
+                    | CR0 => _
+                    | CR2 => _ 
+                    | CR3 => _
+                    | CR4 => _
+                  end)
+             & _). clear_ast_defs.
+    Unshelve.
+    Focus 2.
+    pose (ae:=control_reg_env);
+    autounfold with env_unfold_db in ae;
+    let ae1 := eval cbv delta [ae] in ae in
+      let f := gen_rev_case ae1 0 in
+      clear ae;
+      exact (Some (f ())).
+    Focus 2.
+    pose (ae:=control_reg_env);
+    autounfold with env_unfold_db in ae;
+    let ae1 := eval cbv delta [ae] in ae in
+      let f := gen_rev_case ae1 1 in
+      clear ae;
+      exact (Some (f ())).
+    Focus 2.
+    pose (ae:=control_reg_env);
+    autounfold with env_unfold_db in ae;
+    let ae1 := eval cbv delta [ae] in ae in
+      let f := gen_rev_case ae1 2 in
+      clear ae;
+      exact (Some (f ())).
+    Focus 2.
+    pose (ae:=control_reg_env);
+    autounfold with env_unfold_db in ae;
+    let ae1 := eval cbv delta [ae] in ae in
+      let f := gen_rev_case ae1 3 in
+      clear ae;
+      exact (Some (f ())).
+    cbv beta zeta.
+    Time invertible_tac.
+     - Time destruct w; parsable_tac.
+  Defined.
 
-  (* End SpeedTest. *)
+
 
 
   Definition control_reg_env: AST_Env control_register_t := 

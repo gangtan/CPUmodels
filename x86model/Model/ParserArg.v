@@ -1,9 +1,9 @@
-Require Import Bool.
-Require Import ZArith.
-Require Import List.
+Require Export Coq.Bool.Bool.
+Require Export Coq.ZArith.ZArith.
+Require Export Coq.Lists.List.
 
-Require Import String.
-Require Import Structures.OrdersAlt.
+Require Import Coq.Strings.String.
+Require Import Coq.Structures.OrdersAlt.
 
 Module Type PARSER_ARG.
   (* the type of characters used in the grammar specifications *)

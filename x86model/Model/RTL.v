@@ -9,17 +9,17 @@
    the License, or (at your option) any later version.
 *)
 
-Require Import List.
+
+Require Import Coq.ZArith.ZArith.
+Require Coq.Strings.String.
+
+Require Import X86Model.Monad.
+Require Import X86Model.Maps.
 Require Import Bits.
-Require Import ZArith.
-Require Import Parser.
-Require Import String.
-Require Import Monad.
-Require Import Maps.
-Require Import X86Syntax.
-Require Import Eqdep.
+
 Require Import Flocq.Appli.Fappli_IEEE_bits.
 Require Import Flocq.Appli.Fappli_IEEE.
+
 Set Implicit Arguments.
 Unset Automatic Introduction.
 
@@ -423,7 +423,7 @@ Module RTL(M : MACHINE_SIG).
   (** We collect all of the information for an instruction into a record
       satisfying this interface. *)
   Record instruction := { 
-    instr_assembly : string ;  (* for printing/debugging *)
+    instr_assembly : String.string ;  (* for printing/debugging *)
     instr_rtl : list rtl_instr (* semantics as RTL instructions *)
   }.
 End RTL.

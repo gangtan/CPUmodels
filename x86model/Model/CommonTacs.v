@@ -9,11 +9,13 @@
    the License, or (at your option) any later version.
 *)
 
+Require Export Coq.Bool.Bool.
+Require Export Coq.Arith.Arith.
+Require Export Coq.ZArith.ZArith.
+Require Export Coq.Lists.List.
 Require Export Coq.omega.Omega.
 
-Require Import Bool.
-Require Import ZArith.
-Require Import Eqdep List.
+Require Import Coq.Logic.Eqdep.
 
 Set Implicit Arguments.
 
@@ -382,7 +384,7 @@ Ltac un_done :=
            | [ H : done _ |- _ ] => clear H
          end.
 
-Require Import JMeq.
+Require Import Coq.Logic.JMeq.
 
 (** A more parameterized version of the famous [crush].  Extra arguments are:
    * - A tuple-list of lemmas we try [inster]-ing 
@@ -455,7 +457,8 @@ Ltac guessKeep v H :=
 (* The following tactics are from the book "Software Foundations"
    by Pierce, Casinghino and Greenberg *)
 
-Require String. Open Scope string_scope.
+Require Coq.Strings.String. 
+Open Scope string_scope.
 
 Ltac move_to_top x :=
   match reverse goal with

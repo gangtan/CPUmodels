@@ -1,18 +1,25 @@
 
 * How to build the CPU models?
 
-You will need Coq 8.4pl3 (known to work for us as of Dec 12th, 2014).
+You will need Coq 8.5pl2.
 
+- install the ocaml package manager opam
+- opam repo add coq-released https://coq.inria.fr/opam/released
+- opam install coq-ext-lib (version 0.9.4)
+- opam install coq-flocq-2.5.1
 - For x86, go to x86model and type make.
-- For MIPS, go to MIPSmodel and type make.
+- Sorry, but the MIPS model is not up to date to Coq 8.5.
+
  
-* How to build the validation tools?
+* How to build the validation tools? (sorry, haven't checked this for a while;
+  it may not working)
 
 First, build the x86 CPU model. Then, you will need OCaml 3.12 (or a more
 recent verison), and pin (http://www.pintool.org/). Please go to the
 x86model/semantics_trace directory and for further instructions.
 
-* How to build the RockSalt C driver?
+* How to build the RockSalt C driver? (sorry, haven't checked this for a while;
+  it may not working)
 
 You will need to install the developer version of native client first. Then,
 replace the native_client/src/trustaed/validator_x86/ncval.c file with ours,

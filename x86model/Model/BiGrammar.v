@@ -1,21 +1,25 @@
 (** Gang Tan: Bi-directional grammars for both parsing and pretty-printing *)
 
 Require Import Coq.Init.Logic.
+Require Import Coq.Logic.Eqdep.
+
 Require Import Coqlib.  (* for extensionality & proof_irrelevance *)
-Require Import Arith.
-Require Import Eqdep.
-Require Import Omega.
 Require Import CommonTacs.
+
 Require Import Program.
 
-Unset Automatic Introduction. 
-Set Implicit Arguments.
+(* Require Import ExtLib.Tactics. *)
 
-Require Import Monad.
+Require Import X86Model.Monad.
 Local Open Scope monad_scope.
 
 Require Import ParserArg.
 Require Export GrammarType.
+
+Unset Automatic Introduction. 
+Set Implicit Arguments.
+
+
 
 (* Module Type NEW_PARSER_ARG. *)
 (*   (* the type of characters used in the grammar specifications *) *)

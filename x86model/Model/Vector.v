@@ -1,4 +1,5 @@
-Require Import List.
+Require Import Coq.Lists.List.
+
 Axiom vector : Type -> Type.
 Axiom length : forall {A}, vector A -> nat.
 Axiom get : forall {A} (v:vector A) (i:nat), (i < length v) -> A.

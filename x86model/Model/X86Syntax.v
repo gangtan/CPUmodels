@@ -12,9 +12,10 @@
 
 (* This file provides abstract syntax definitions for the IA32 (x86) 32-bit
  * instruction set architecture. *)
-Require Import List.
-Require Import Bits.
-Require Import ZArith.
+Require Export Coq.ZArith.ZArith.
+Require Export Coq.Lists.List.
+
+Require Export Bits.
 Set Implicit Arguments.
 Local Open Scope Z_scope.
 

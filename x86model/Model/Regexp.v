@@ -1,8 +1,6 @@
-Require Import List.
-Require Import Bool.
-Require Import Xform.
+Require Import Coq.Structures.OrdersAlt.
 Require Import CommonTacs.
-Require Import Structures.OrdersAlt.
+Require Import Xform.
 Require Import ParserArg.
 Import X86_PARSER_ARG.
 
