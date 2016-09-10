@@ -17,10 +17,6 @@ Require Import X86Model.Maps.
 Unset Automatic Introduction.
 Set Implicit Arguments.
 
-(* Require Import Eqdep. *)
-(* Require ExtrOcamlString. *)
-(* Require ExtrOcamlNatBigInt. *)
-
 (* Module X86_PARSER. *)
   (* Commented out because the Parser is no longer a functor, due to the
      bug with Extraction Implicit. 
@@ -642,8 +638,10 @@ Set Implicit Arguments.
       forall (l:nat) (pt:type), 
         wf_bigrammar pt -> (interp pt -> interp t) -> AST_Env t -> AST_Env t.
   Arguments ast_env_nil [t].
-  Notation "{ l , g , f } ::: al" := 
+  Notation "{{ l , g , f }} ::: al" :=
     (ast_env_cons l g f al) (right associativity, at level 70).
+  (* Notation "{ l , g , f } ::: al" := *)
+  (*   (ast_env_cons l g f al) (right associativity, at level 70). *)
 
   Fixpoint env_length t (ae:AST_Env t) :=
     match ae with
@@ -885,6 +883,182 @@ Set Implicit Arguments.
       gen_rev_cases ae1;
       clear ae.
 
+
+(* experiments *)
+
+  (* todo: add comments *)
+
+  Definition label := nat.
+
+todo: remove ids from typetree and tmember but it remains in gr_tree
+
+  (** A tree of types; each leaf node is labeled by a natural number
+      id; this is for the convenience of performing look ups from an
+      id to its corresponding type. For a node, the label should be
+      larger than or equal to the ids of the left-tree leafs and
+      should be small than the ids of the right-tree leafs; this
+      enables a binary search from ids to types. *)
+  Inductive typetree: Type :=
+  | Leaf: label -> type -> typetree
+  | Node: label -> typetree -> typetree -> typetree.
+
+  Inductive tmember: type -> typetree -> Type :=
+  | MLeaf: forall id t, tmember t (Leaf id t)
+  | MLTree: forall id t tt1 tt2, tmember t tt1 -> tmember t (Node id tt1 tt2)
+  | MRTree: forall id t tt1 tt2, tmember t tt2 -> tmember t (Node id tt1 tt2).
+
+  Inductive gr_tree (rt:type): typetree -> Type :=
+  | GLeaf: forall (id:label) (t:type) (g:wf_bigrammar t), 
+      ([|t|] -> [|rt|]) -> gr_tree rt (Leaf id t)
+  | GNode: forall (id:label) (tt1 tt2:typetree),
+      gr_tree rt tt1 -> gr_tree rt tt2 ->
+      gr_tree rt (Node id tt1 tt2).
+
+  Fixpoint ast_type (tt: typetree): type :=
+    match tt with
+    | Leaf _ t => t
+    | Node _ tt1 tt2 =>
+      sum_t (ast_type tt1) (ast_type tt2)
+    end.
+
+  Fixpoint ast_grammar {rt tt} (gt:gr_tree rt tt): 
+    wf_bigrammar (ast_type tt) :=
+    match gt in gr_tree _ tt' return wf_bigrammar (ast_type tt') with
+    | GLeaf _ t g m => g
+    | GNode _ gt1 gt2 => 
+      let g1:= ast_grammar gt1 in
+      let g2:= ast_grammar gt2 in 
+      g1 |+| g2
+    end.
+
+  Fixpoint ast_map {rt tt} (gt:gr_tree rt tt): [|ast_type tt|] -> [|rt|] :=
+    match gt in gr_tree _ tt' return [|ast_type tt'|] -> [|rt|] with
+    | GLeaf _ t g m => m
+    | GNode _ gt1 gt2 => 
+      let m1:= ast_map gt1 in
+      let m2:= ast_map gt2 in
+      fun v => match v with
+               | inl v1 => m1 v1
+               | inr v2 => m2 v2
+               end
+    end.
+
+  Fixpoint inv_case {t tt} (m: tmember t tt): 
+    [|t|] -> [|ast_type tt|] :=
+    match m in tmember t' tt' return [|t'|] -> [|ast_type tt'|] with
+    | MLeaf _ t => fun v => v
+    | MLTree _ _ m' =>
+      fun v => inl (inv_case m' v)
+    | MRTree _ _ m' =>
+      fun v => inr (inv_case m' v)
+    end.
+
+  Fixpoint tt_get (id:nat) (tt:typetree): {t : type & tmember t tt} :=
+    match tt return {t:type & tmember t tt} with
+    | Leaf id t => existT _ t (MLeaf id t)
+    | Node id' tt1 tt2 => 
+      if Nat.leb id id' then
+        let x := tt_get id tt1 in
+        match x with
+        | existT _ t tm => existT _ t (MLTree _ _ tm)
+        end
+      else
+        let x := tt_get id tt2 in
+        match x with
+        | existT _ t tm => existT _ t (MRTree _ _ tm)
+        end
+    end.
+
+  (* tactic for converting an ast_env to a treetype and a grammar
+     tree; we could use a dependently typed heterogeneous list to
+     avoid using tactics for this one, but that would require a
+     non-standard induction principle as the list is split into two
+     halves; so this is sufficient for now. *)
+  Ltac gen_gr_tree ast_env := 
+    match type of ast_env with
+    | AST_Env ?rt =>
+      match ast_env with
+      | ast_env_cons ?id ?g ?f ast_env_nil => 
+        let gt := type of g in
+        match gt with
+        | wf_bigrammar ?t => 
+          constr:(id, GLeaf rt id g f)
+        end
+      | ast_env_nil => fail (* should not happen *)
+      | _ => 
+        let aepair := env_split ast_env in
+        match aepair with
+        | (?ael, ?aer) =>
+          match gen_gr_tree ael with
+          | (?id1, ?gr1) =>
+            match gen_gr_tree aer with
+            | (?id2, ?gr2) =>
+              let gt := eval compute in (Nat.ltb id1 id2) in
+                  match gt with
+                  | false => constr:(id1, GNode id1 gr1 gr2)
+                  (* since the index in a node should be the biggest in
+                    its left-tree node, we still use id1 in the Node
+                    constructon *)
+                  | true => constr:(id2, GNode id1 gr1 gr2)
+                  end
+            end
+          end
+        end
+      end
+    end.
+
+  Ltac gen_trees ast_env :=
+    pose (ae:=ast_env);
+    autounfold with env_unfold_db in ae;
+    let ae1 := eval cbv delta [ae] in ae in
+      match gen_gr_tree ae1 with
+      | (_, ?g) =>
+        pose (gt:=g);
+        match type of g with
+          | gr_tree _ ?t =>
+            pose (tt:=t)
+        end
+      end;
+      clear ae.
+
+  Ltac gen_tm_cases tt len := 
+    let rec gen_tm_cases_aux i := 
+        let eq_len := (eval compute in (beq_nat i len)) in
+        match eq_len with
+          | true => idtac
+          | false =>
+            let inj:=fresh "case" in
+            let tt_r := (eval compute in (tt_get i tt)) in
+            match tt_r with
+              | existT _ _ ?tm =>
+                pose (inj:=tm); simpl in inj; 
+                gen_tm_cases_aux (S i)
+            end
+       end
+    in let dummyf := constr:(fun v:unit => v) in
+       pose (case:=dummyf);
+       gen_tm_cases_aux 0.
+
+  Definition test_env: AST_Env register_t :=
+    {{0, empty, (fun v => EAX %% register_t)}} :::
+    {{1, empty, (fun v => ECX %% register_t)}} :::
+    {{2, empty, (fun v => EDX %% register_t)}} :::
+    {{3, empty, (fun v => EBX %% register_t)}} :::
+    {{4, empty, (fun v => EBP %% register_t)}} :::
+    {{5, empty, (fun v => ESI %% register_t)}} :::
+    {{6, empty, (fun v => EDI %% register_t)}} :::
+    ast_env_nil.
+  Hint Unfold test_env : env_unfold_db.
+
+  Goal True.
+    gen_trees test_env.
+    gen_tm_cases tt 7.
+    let ae:= eval unfold test_env in test_env in
+    let tt:= gen_gr_tree ae in
+    pose tt.
+    trivial.
+  Qed.
+    
   (* testing the above tactics *)
   (* Definition test_env: AST_Env register_t := *)
   (*   {0, empty, (fun v => EAX %% register_t)} ::: *)
@@ -1210,101 +1384,194 @@ Set Implicit Arguments.
   Section SpeedTest.
 
   Definition control_reg_env: AST_Env control_register_t :=
-    {0, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {1, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {2, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {3, ! "100", (fun v => CR4 %% control_register_t)} :::
-    {4, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {5, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {6, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {7, ! "100", (fun v => CR4 %% control_register_t)} :::
-    {8, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {9, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {10, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {11, ! "100", (fun v => CR4 %% control_register_t)} :::
-    {12, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {13, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {14, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {15, ! "100", (fun v => CR4 %% control_register_t)} :::
-    {16, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {17, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {18, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {19, ! "100", (fun v => CR4 %% control_register_t)} :::
-    {20, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {21, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {22, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {23, ! "100", (fun v => CR4 %% control_register_t)} :::
-    {24, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {25, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {26, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {27, ! "100", (fun v => CR4 %% control_register_t)} :::
-    {28, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {29, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {30, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {31, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {{0, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{1, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{2, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{3, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{4, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{5, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{6, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{7, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{8, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{9, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{10, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{11, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{12, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{13, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{14, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{15, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{16, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{17, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{18, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{19, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{20, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{21, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{22, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{23, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{24, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{25, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{26, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{27, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{28, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{29, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{30, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{31, ! "100", (fun v => CR4 %% control_register_t)}} :::
     ast_env_nil.
   Hint Unfold control_reg_env: env_unfold_db.
 
   Unset Printing Implicit.
   Unset Ltac Debug.
 
+  Definition control_reg_p : wf_bigrammar control_register_t.
+    gen_trees control_reg_env.
+    gen_tm_cases tt 32.
+    Time refine((ast_grammar gt) @ (ast_map gt)
+             & (fun u =>
+                  match u with
+                    | CR0 => Some (inv_case case0 ())
+                    | CR2 => Some (inv_case case1 ())
+                    | CR3 => Some (inv_case case2 ())
+                    | CR4 => Some (inv_case case3 ())
+                  end)
+             & _).
+   unfold invertible; split; [unfold printable | unfold parsable];
+   compute [snd fst].
+   - intros.
+     clear_ast_defs. compute [gt] in *; clear gt.
+     compute [ast_grammar] in *.
+     Time repeat match goal with
+       | [v: interp (ast_type (Node _ _ _)) |- _] =>
+         destruct v
+     end.
+     compute [ast_map ast_type];
+     autorewrite with inv_db;
+     match goal with
+      | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
+        exists v; split; compute [inv_case];
+        ibr_sim
+     end.
+   - intros.
+     Time destruct w;
+      match goal with
+      | [H:None = Some _ |- _] => discriminate
+      | [H:Some _ = Some _ |- _] =>
+        inversion H; clear H; subst
+      | _ => (autorewrite with inv_db; trivial) || ibr_sim ||
+             destruct_pp_var destruct_var
+      end;
+      compute [ast_map gt]; trivial.
+  Defined.
+
+
+  (* Definition control_reg_p : wf_bigrammar control_register_t. *)
+  (*   gen_trees control_reg_env. *)
+  (*   gen_tm_cases tt 32. *)
+  (*   Time refine((ast_grammar gt) @ (ast_map gt) *)
+  (*            & (fun u => *)
+  (*                 match u with *)
+  (*                   | CR0 => Some (inv_case case0 ()) *)
+  (*                   | CR2 => Some (inv_case case1 ()) *)
+  (*                   | CR3 => Some (inv_case case2 ()) *)
+  (*                   | CR4 => Some (inv_case case3 ()) *)
+  (*                 end) *)
+  (*            & _). *)
+  (*  unfold invertible; split; [unfold printable | unfold parsable]; *)
+  (*  compute [snd fst]. *)
+  (*  - compute [ast_map ast_grammar gt ast_type interp]; intros. *)
+  (*    Time repeat (ibr_sim || destruct_pr_var); *)
+  (*    autorewrite with inv_db; *)
+  (*    match goal with *)
+  (*     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] => *)
+  (*       exists v; split; clear_ast_defs; compute [inv_case]; *)
+  (*       ibr_sim *)
+  (*    end. *)
+  (*  - intros. *)
+  (*    Time destruct w; *)
+  (*     match goal with *)
+  (*     | [H:None = Some _ |- _] => discriminate *)
+  (*     | [H:Some _ = Some _ |- _] =>  *)
+  (*       inversion H; clear H; subst *)
+  (*     | _ => (autorewrite with inv_db; trivial) || ibr_sim || *)
+  (*            destruct_pp_var destruct_var *)
+  (*     end; *)
+  (*     compute [ast_map gt]; trivial. *)
+  (* Defined. *)
+
   (* possible todo: change ast_env to use heterogeneous lists that are
      indexed by lists of types of bigrammars; and write a gen_case coq
      functon instead of using ltac gen_rev_case. *)
      
   (* this is five times faster than the original script *)   
+  (* Definition control_reg_p : wf_bigrammar control_register_t. *)
+  (*   pose (ae:=control_reg_env); *)
+  (*   autounfold with env_unfold_db in ae; *)
+  (*   let ae1 := eval cbv delta [ae] in ae in *)
+  (*     let g := gen_ast_grammar ae1 in pose (gr:=g); *)
+  (*     let m := gen_ast_map ae1 in pose (mp:=m); *)
+  (*     (* gen_rev_cases ae1; *) *)
+  (*     clear ae. *)
+  (*   Time refine(gr @ (mp: _ -> [|control_register_t|]) *)
+  (*            & (fun u => *)
+  (*                 match u with *)
+  (*                   | CR0 => _ *)
+  (*                   | CR2 => _  *)
+  (*                   | CR3 => _ *)
+  (*                   | CR4 => _ *)
+  (*                 end) *)
+  (*            & _). clear_ast_defs. *)
+  (*   Unshelve. *)
+  (*   Focus 2. *)
+  (*   pose (ae:=control_reg_env); *)
+  (*   autounfold with env_unfold_db in ae; *)
+  (*   let ae1 := eval cbv delta [ae] in ae in *)
+  (*     let f := gen_rev_case ae1 0 in *)
+  (*     clear ae; *)
+  (*     exact (Some (f ())). *)
+  (*   Focus 2. *)
+  (*   pose (ae:=control_reg_env); *)
+  (*   autounfold with env_unfold_db in ae; *)
+  (*   let ae1 := eval cbv delta [ae] in ae in *)
+  (*     let f := gen_rev_case ae1 1 in *)
+  (*     clear ae; *)
+  (*     exact (Some (f ())). *)
+  (*   Focus 2. *)
+  (*   pose (ae:=control_reg_env); *)
+  (*   autounfold with env_unfold_db in ae; *)
+  (*   let ae1 := eval cbv delta [ae] in ae in *)
+  (*     let f := gen_rev_case ae1 2 in *)
+  (*     clear ae; *)
+  (*     exact (Some (f ())). *)
+  (*   Focus 2. *)
+  (*   pose (ae:=control_reg_env); *)
+  (*   autounfold with env_unfold_db in ae; *)
+  (*   let ae1 := eval cbv delta [ae] in ae in *)
+  (*     let f := gen_rev_case ae1 3 in *)
+  (*     clear ae; *)
+  (*     exact (Some (f ())). *)
+  (*   cbv beta zeta. *)
+  (*   Time invertible_tac. *)
+  (*    - Time destruct w; parsable_tac. *)
+  (* Defined. *)
+
+
   Definition control_reg_p : wf_bigrammar control_register_t.
-    pose (ae:=control_reg_env);
-    autounfold with env_unfold_db in ae;
-    let ae1 := eval cbv delta [ae] in ae in
-      let g := gen_ast_grammar ae1 in pose (gr:=g);
-      let m := gen_ast_map ae1 in pose (mp:=m);
-      (* gen_rev_cases ae1; *)
-      clear ae.
-    Time refine(gr @ (mp: _ -> [|control_register_t|])
+    Time gen_ast_defs control_reg_env.
+    refine(gr @ (mp: _ -> [|control_register_t|])
              & (fun u =>
                   match u with
-                    | CR0 => _
-                    | CR2 => _ 
-                    | CR3 => _
-                    | CR4 => _
+                    | CR0 => case0 ()
+                    | CR2 => case1 ()
+                    | CR3 => case2 ()
+                    | CR4 => case3 ()
                   end)
-             & _). clear_ast_defs.
-    Unshelve.
-    Focus 2.
-    pose (ae:=control_reg_env);
-    autounfold with env_unfold_db in ae;
-    let ae1 := eval cbv delta [ae] in ae in
-      let f := gen_rev_case ae1 0 in
-      clear ae;
-      exact (Some (f ())).
-    Focus 2.
-    pose (ae:=control_reg_env);
-    autounfold with env_unfold_db in ae;
-    let ae1 := eval cbv delta [ae] in ae in
-      let f := gen_rev_case ae1 1 in
-      clear ae;
-      exact (Some (f ())).
-    Focus 2.
-    pose (ae:=control_reg_env);
-    autounfold with env_unfold_db in ae;
-    let ae1 := eval cbv delta [ae] in ae in
-      let f := gen_rev_case ae1 2 in
-      clear ae;
-      exact (Some (f ())).
-    Focus 2.
-    pose (ae:=control_reg_env);
-    autounfold with env_unfold_db in ae;
-    let ae1 := eval cbv delta [ae] in ae in
-      let f := gen_rev_case ae1 3 in
-      clear ae;
-      exact (Some (f ())).
-    cbv beta zeta.
-    Time invertible_tac.
+             & _).  Time clear_ast_defs; invertible_tac.
      - Time destruct w; parsable_tac.
   Defined.
 
 
+end of experiment
+
+Idea for speeding up: for bijections, do exist v before destruct for the 
 
 
   Definition control_reg_env: AST_Env control_register_t := 
