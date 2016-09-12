@@ -1,4 +1,4 @@
-(** Gang Tan: Bi-directional grammars for both parsing and pretty-printing *)
+(** Gang Tan: Bi-directional grammars for parsing and pretty-printing *)
 
 Require Import Coq.Init.Logic.
 Require Import Coq.Logic.Eqdep.
@@ -18,8 +18,6 @@ Require Export GrammarType.
 
 Unset Automatic Introduction. 
 Set Implicit Arguments.
-
-
 
 (* Module Type NEW_PARSER_ARG. *)
 (*   (* the type of characters used in the grammar specifications *) *)
@@ -182,7 +180,6 @@ Extraction Implicit Cat [t1 t2].
 Extraction Implicit Alt [t1 t2].
 Extraction Implicit Star [t].
 Extraction Implicit Map [t1 t2].
-
 
 
 (** Denotation of Bi-Grammars *)
@@ -362,6 +359,7 @@ Require Import Bits.
 (* "Create HintDb inv_db" would not create an empty rewrite db *)
 Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z : inv_db.
 
+
 (** convert variables of grammar types to their interpreted types *)
 Ltac simpl_grammar_ty :=
   repeat match goal with
@@ -413,8 +411,8 @@ Ltac destruct_pr_var :=
    the same as the original one; taking a custom simplicaticion tactic as
    an input *)
 Ltac printable_tac_gen simp :=
-  repeat (simp || destruct_pr_var);
   autorewrite with inv_db;
+  repeat (simp || destruct_pr_var);
   match goal with
     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
       exists v; split; simp
@@ -457,10 +455,13 @@ Ltac parsable_tac_gen simp dv_tac :=
              destruct_pp_var dv_tac
     end.
 
-Ltac invertible_tac_gen simp dv_tac := 
+Ltac unfold_invertible :=
   unfold invertible; split; [unfold printable | unfold parsable]; 
-  compute [snd fst]; intros;
-  [try (abstract(printable_tac_gen simp); fail) |
+  compute [snd fst]; intros.
+
+Ltac invertible_tac_gen unfold_tac simp dv_tac := 
+  unfold_tac;
+  [try (abstract (printable_tac_gen simp); fail) |
    try (abstract (parsable_tac_gen simp dv_tac); fail)].
 
 Ltac strong_invertible_tac :=
@@ -649,7 +650,7 @@ Qed.
 Local Ltac localcrush :=
   repeat match goal with
            | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
-           | [ |- invertible _ _ ] => invertible_tac_gen idtac destruct_var
+           | [ |- invertible _ _ ] => invertible_tac_gen unfold_invertible idtac destruct_var
            | _ => crush
          end.
 
@@ -711,7 +712,7 @@ Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
                                | None => None
                              end
                  end)
-            & _); invertible_tac_gen idtac destruct_var.
+            & _); invertible_tac_gen unfold_invertible idtac destruct_var.
   - destruct_pr_var.
     + remember_destruct_head as v1; eauto.
       remember_destruct_head as v2.
@@ -797,7 +798,7 @@ Ltac ibr_sim :=
            | _ => auto with ibr_rng_db
          end.
 
-Ltac invertible_tac := invertible_tac_gen ibr_sim destruct_var.
+Ltac invertible_tac := invertible_tac_gen unfold_invertible ibr_sim destruct_var.
 Ltac printable_tac := printable_tac_gen ibr_sim.
 Ltac parsable_tac := parsable_tac_gen ibr_sim destruct_var.
 Ltac ibr_prover := repeat (ibr_sim || destruct_pr_var).
@@ -916,6 +917,362 @@ Defined.
 (*       crush. *)
 (*     * crush. *)
 (* Defined. *)
+
+(** * Definitions and tactics for combining a list of grammars using balanced ASTs *)
+
+(** Assume we have a list of grammars of type "wf_bigrammar pt_i". We
+    want to combine them into a single grammar that produces semantic
+    values of type t. One easy way of combining them is to do "(g_1 @
+    f_1) |\/| ... (g_n @ f_n)", where f_i is of type [|pt_i|] ->
+    [|t|]. However, this leads to an inverse function that tries all
+    cases and is inefficient.
+
+    Oftentimes, t is an inductive type and each g_i injects into one
+    (or a few) case of the inductive type of t. The following
+    definitions and tactics take advantage of this to get more
+    efficient inverse functions. Here are the general steps:
+
+    - combine g_i using balanced alts to get "g_1 |+| ... |+|
+      g_n". This doesn't lose any info as it generates values in an
+      AST tree type.
+
+    - then we need a map function that converts AST tree values to
+      type t; this map function can be produced using ast_map, a
+      dependently typed function that takes a bigrammar tree that is
+      generated from an ast env.
+
+    - for the inverse function, we should do case analysis over values
+      of type t, and construct corresponding tree values. Function
+      inv_case is used to facilitate the process
+       
+   See the def of control_reg_p for a typical definition.  *)
+   
+(* todo: Idea for speeding up: for bijections, do exist v before destruct for the  *)
+
+Definition index := N.
+
+(** The type for environments that include a list of grammars and
+    semantic functions going from AST values to semantic values of
+    type t.  An AST env is used in tactics that generate the map and
+    the reverse function. Each entry in an AST env also includes an
+    index that is used in gen_rev_case_by_lbl to generate a reverse
+    mapping function for the case identified by the index.  In an
+    AST_Env, indexs must be in the asending order; however, they don't
+    need to be consecutive (although they could). *)
+Inductive AST_Env (rt:type):= 
+| ast_env_nil : AST_Env rt
+| ast_env_cons : 
+    (* each grammar in an AST_Env including an index, the type of a
+     grammar, the grammar, and a map function for constructing a semantic
+     value given values produced by the grammar *)
+    forall (l:index) (t:type), 
+      wf_bigrammar t -> ([|t|] -> [|rt|]) -> AST_Env rt -> AST_Env rt.
+Arguments ast_env_nil [rt].
+Arguments ast_env_cons _ (l)%N t _ _ _.
+Notation "{{ l , g , f }} ::: al" :=
+  (ast_env_cons l g f al) (right associativity, at level 70).
+
+Fixpoint env_length t (ae:AST_Env t) :=
+  match ae with
+  | ast_env_nil => O
+  | ast_env_cons _ _ _ ae' => S (env_length ae')
+  end.
+
+(** Cat p1 to every grammar inside the ast env *)
+Fixpoint ast_env_cat t1 t2 (p1:wf_bigrammar t1) (ae: AST_Env t2) :
+  AST_Env (Pair_t t1 t2) :=
+  match ae with
+    | ast_env_nil => ast_env_nil
+    | ast_env_cons l p2 f ae' =>
+      ast_env_cons l (p1 $ p2) (fun v => (fst v, f (snd v)) %% Pair_t t1 t2)
+                   (ast_env_cat p1 ae')
+  end.
+Notation "p $$$ ae" :=
+  (ast_env_cat p ae) (right associativity, at level 80).
+
+(** Append two ast envs *)
+Fixpoint ast_env_app t (ae1 ae2: AST_Env t) : AST_Env t := 
+  match ae1 with
+  | ast_env_nil => ae2
+  | ast_env_cons l p f ae1' =>
+    ast_env_cons l p f (ast_env_app ae1' ae2)
+  end.
+
+Notation "ael +++ aer" := 
+  (ast_env_app ael aer) (right associativity, at level 85).
+
+(* compute ceiling(n/2) *)
+Fixpoint divide_by_two n :=
+  match n with
+    | O => O
+    | S O => 1
+    | S (S n') => S (divide_by_two n')
+  end.
+
+(** Split the env list into two halves at the middle *)
+Fixpoint env_split t (ae:AST_Env t) :=
+  let len:= env_length ae in
+  let mid := divide_by_two len in
+  (* using CPS to build the two lists in one pass *)
+  let fix splitHelper i l k :=
+      match beq_nat i mid with
+      | true => k (ast_env_nil, l)
+      | false =>
+        match l with
+        | ast_env_cons n g f ae' =>
+          splitHelper (S i) ae'
+                      (fun v => k (ast_env_cons n g (f: _ -> [|t|]) (fst v), snd v))
+        | _ => (ast_env_nil, ast_env_nil) (* this case should never happen *)
+        end
+      end
+  in splitHelper O ae (fun u => u).
+
+Ltac env_length ast_env := 
+  match ast_env with
+  | ast_env_nil => O
+  | ast_env_cons _ _ _ ?ae' => 
+    let l := env_length ae' in
+    constr: (S l)
+  end.
+
+(* The ltac version of env_split; using the Gallina version of env_split
+   can be problematic in "eval simpl in (env_split ...)" because the
+   simpl tactic would unfold the environment in unexpected ways *)
+Ltac env_split ae :=
+  let len := env_length ae in
+  let mid := eval compute in (divide_by_two len) in
+      let aet := type of ae in
+      let t := match aet with
+               | AST_Env ?t => t
+               end in
+      (* using CPS to build the two lists in one pass *)
+      let rec splitHelper i l k :=
+          let eq := eval compute in (beq_nat i mid) in
+      match eq with
+      | true => constr:(k (ast_env_nil, l))
+      | false =>
+        match l with
+        | ast_env_cons ?n ?g ?f ?ae' =>
+          let res := splitHelper (S i) ae'
+                                 (fun v => k (ast_env_cons n g
+                                                           (f: _ -> [|t|]) (fst v), snd v)) in
+          constr:(res)
+        end
+      end
+        in let aepair := splitHelper O ae (fun u:aet*aet => u) in
+           eval cbv beta delta [fst snd] iota in aepair.
+
+(** A tree of types. *)
+Inductive typetree: Type :=
+| Leaf: type -> typetree
+| Node: typetree -> typetree -> typetree.
+
+(** The interpreation of a type tree. *)
+Fixpoint ast_type (tt: typetree): type :=
+  match tt with
+  | Leaf t => t
+  | Node tt1 tt2 =>
+    Sum_t (ast_type tt1) (ast_type tt2)
+  end.
+
+(** A tree of bigrammars and semantic actions; it's indexed by the a
+    result type rt and each semantic action produces rt values. The
+    tree is also indexed by a type tree, which tells the type of the
+    corresponding bigrammar. Each node is indexed by an id; this is
+    for the convenience of performing look ups from an id to its
+    corresponding type. For a node, the index should be larger than or
+    equal to the ids of the left-tree leafs and should be small than
+    the ids of the right-tree leafs; this enables a binary search from
+    ids to types. *)
+Inductive gr_tree (rt:type): typetree -> Type :=
+| GLeaf: forall (id:index) (t:type) (g:wf_bigrammar t), 
+    ([|t|] -> [|rt|]) -> gr_tree rt (Leaf t)
+| GNode: forall (id:index) (tt1 tt2:typetree),
+    gr_tree rt tt1 -> gr_tree rt tt2 ->
+    gr_tree rt (Node tt1 tt2).
+
+(** Combining bigrammars in a bigrammar tree using Alt. *)
+Fixpoint ast_bigrammar {rt tt} (gt:gr_tree rt tt): 
+  wf_bigrammar (ast_type tt) :=
+  match gt in gr_tree _ tt' return wf_bigrammar (ast_type tt') with
+  | GLeaf _ id g m => g
+  | GNode _ gt1 gt2 => 
+    let g1:= ast_bigrammar gt1 in
+    let g2:= ast_bigrammar gt2 in 
+    g1 |+| g2
+  end.
+
+(** Combining bigrammars in a bigrammar tree using Alt. *)
+Fixpoint ast_map {rt tt} (gt:gr_tree rt tt): [|ast_type tt|] -> [|rt|] :=
+  match gt in gr_tree _ tt' return [|ast_type tt'|] -> [|rt|] with
+  | GLeaf _ id g m => m
+  | GNode _ gt1 gt2 => 
+    let m1:= ast_map gt1 in
+    let m2:= ast_map gt2 in
+    fun v => match v with
+             | inl v1 => m1 v1
+             | inr v2 => m2 v2
+             end
+  end.
+
+(** A relation between t and tt saying that t is a member of type
+    tree tt. *)
+Inductive tmember: type -> typetree -> Type :=
+| MLeaf: forall t, tmember t (Leaf t)
+| MLTree: forall t tt1 tt2, tmember t tt1 -> tmember t (Node tt1 tt2)
+| MRTree: forall t tt1 tt2, tmember t tt2 -> tmember t (Node tt1 tt2).
+
+(** Generate an inverse function for an AST env entry from a proof
+      saying the entry is in the tree. *)
+Fixpoint inv_case {t tt} (m: tmember t tt): 
+  [|t|] -> [|ast_type tt|] :=
+  match m in tmember t' tt' return [|t'|] -> [|ast_type tt'|] with
+  | MLeaf t => fun v => v
+  | MLTree _ m' =>
+    fun v => inl (inv_case m' v)
+  | MRTree _ m' =>
+    fun v => inr (inv_case m' v)
+  end.
+
+Definition inv_case_some {t tt} (m: tmember t tt): 
+  [|t|] -> option [|ast_type tt|] :=
+  fun v => Some (inv_case m v).
+
+(** Generate a tmember proof from the index of a bigrammar of a
+    bigrammar tree. *)
+Fixpoint get_type_idx (id:index) {rt tt} (gt: gr_tree rt tt): 
+  {t : type & tmember t tt} :=
+  match gt in gr_tree _ tt' return {t:type & tmember t tt'} with
+  | @GLeaf _ id t g _ => existT _ t (MLeaf t)
+  | GNode id' tt1 tt2 => 
+    if N.leb id id' then
+      let x := get_type_idx id tt1 in
+      match x with
+      | existT _ t tm => existT _ t (MLTree _ tm)
+      end
+    else
+      let x := get_type_idx id tt2 in
+      match x with
+      | existT _ t tm => existT _ t (MRTree _ tm)
+      end
+  end.
+
+(* tactic for converting an ast_env to a bigrammar tree; we could
+   use a dependently typed heterogeneous list to avoid using tactics
+   for this one, but that would require a non-standard induction
+   principle as the list is split into two halves; so this is
+   sufficient for now. *)
+  Ltac get_gr_tree ast_env := 
+    match type of ast_env with
+    | AST_Env ?rt =>
+      match ast_env with
+      | ast_env_cons ?id ?g ?f ast_env_nil => 
+        let gt := type of g in
+        match gt with
+        | wf_bigrammar ?t => 
+          constr:(id, GLeaf rt id g f)
+        end
+      | ast_env_nil => fail (* should not happen *)
+      | _ => 
+        let aepair := env_split ast_env in
+        match aepair with
+        | (?ael, ?aer) =>
+          match get_gr_tree ael with
+          | (?id1, ?gr1) =>
+            match get_gr_tree aer with
+            | (?id2, ?gr2) =>
+              let gt := eval compute in (N.ltb id1 id2) in
+                  match gt with
+                  | false => constr:(id1, GNode id1 gr1 gr2)
+                  (* since the index in a node should be the biggest in
+                    its left-tree node, we still use id1 in the Node
+                    constructon *)
+                  | true => constr:(id2, GNode id1 gr1 gr2)
+                  end
+            end
+          end
+        end
+      end
+    end.
+
+Ltac gen_gr_tree ast_env :=
+  pose (ae:=ast_env);
+  autounfold with env_unfold_db in ae;
+  let ae1 := eval cbv delta [ae] in ae in
+    match get_gr_tree ae1 with
+    | (_, ?g) =>
+      pose (gt:=g); clear ae
+    end.
+
+Ltac gen_tm_cases gt len := 
+  let rec gen_tm_cases_aux i := 
+    let eq_len := (eval compute in (beq_nat i len)) in
+      match eq_len with
+        | true => idtac
+        | false =>
+          let inj:=fresh "case" in
+          let ti := (eval compute in (get_type_idx (N.of_nat i) gt)) in
+          match ti with
+            | existT _ _ ?tm =>
+              pose (inj:=tm); simpl in inj; 
+              gen_tm_cases_aux (S i)
+          end
+     end
+  in let dummyf := constr:(()) in
+     pose (case:=dummyf);
+     gen_tm_cases_aux 0.
+
+Ltac gen_ast_defs ast_env := 
+  pose (ae:=ast_env);
+  autounfold with env_unfold_db in ae;
+  let ae1 := eval cbv delta [ae] in ae in
+    match get_gr_tree ae1 with
+    | (_, ?g) =>
+      pose (gt:=g); clear ae;
+      let len := env_length ae1 in
+      gen_tm_cases gt len
+    end.
+
+Ltac clear_ast_defs :=
+  repeat match goal with
+           | [inj:= _ |- _] => compute [inj] in *; clear inj
+         end.
+
+Ltac clear_gt := 
+  match goal with
+  | [gt := _ |- _] =>
+    match type of gt with
+    | gr_tree _ _ => compute [gt] in *; clear gt
+    end
+  end.
+
+Ltac unfold_invertible_ast := 
+  unfold invertible; split; [unfold printable | unfold parsable]; 
+  compute [snd fst]; try clear_gt; compute [ast_bigrammar ast_map inv_case_some];
+  [(clear_ast_defs; compute [ast_type inv_case]) | idtac];
+  intros.
+
+Ltac invertible_ast_tac := 
+  invertible_tac_gen unfold_invertible_ast ibr_sim destruct_var.
+
+Definition test_env: AST_Env Unit_t :=
+  {{0, empty, (fun v => () %% Unit_t)}} :::
+  {{1, empty, (fun v => () %% Unit_t)}} :::
+  {{2, empty, (fun v => () %% Unit_t)}} :::
+  {{3, empty, (fun v => () %% Unit_t)}} :::
+  {{4, empty, (fun v => () %% Unit_t)}} :::
+  {{5, empty, (fun v => () %% Unit_t)}} :::
+  {{6, empty, (fun v => () %% Unit_t)}} :::
+  ast_env_nil.
+Hint Unfold test_env: env_unfold_db.
+
+Goal True.
+  gen_ast_defs test_env.
+  let ae:= eval unfold test_env in test_env in
+  let tt:= get_gr_tree ae in
+  pose tt.
+  trivial.
+Qed.
 
 (** * Constructors for building permutations of bigrammars. *)
 

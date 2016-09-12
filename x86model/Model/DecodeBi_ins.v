@@ -592,510 +592,6 @@ Set Implicit Arguments.
   Hint Rewrite zero_shrink32_8_inv: inv_db.
   Hint Rewrite zero_extend8_32_inv using assumption: inv_db.
 
-  (** * Definitions and tactics for combining a list of grammars using balanced ASTs *)
-
-  (** Assume we have a list of grammars of type "wf_bigrammar pt_i". We want
-      to combine them into a single grammar that produces semantic values of
-      type t. One easy way of combining them is to do "(g_1 @ f_1) |\/|
-      ... (g_n @ f_n)", where f_i is of type [|pt_i|] -> [|t|]. However,
-      this leads to an inverse function that tries all cases and is
-      inefficient.
-
-      Oftentimes, t is an inductive type and each g_i injects into one (or a
-      few) case of the inductive type of t. The following definitions and
-      tactics take advantage of this to get more efficient inverse
-      functions. Here are the general steps:
-
-      - combine g_i using balanced alts to get "g_1 |+| ... |+| g_n". This
-        doesn't lose any info as it generates values in an AST tree type.
-
-      - then we need a map function that converts AST tree values to type
-        t; tactic gen_ast_map is used to aotumate this process given an
-        ast_env that specifies g_i and f_i.
-
-      - for the reverse function, we should do case analysis over values of
-        type t, and construct corresponding tree values. Tactic
-        gen_rev_cases is used to facilitate the process by generating
-        a list of functions mapping from a value to an ast tree value
-       
-     See the def of control_reg_p for a typical definition.
-  *)
-   
-  (** The type for environments that include a list of grammars and
-      semantic functions going from AST values to semantic values of type
-      t.  An AST env is used in tactics that generate the map and the
-      reverse function. Each entry in an AST env also includes a natural
-      number label that is used in gen_rev_case_by_lbl to generate a
-      reverse mapping function for the case identified by the label.  In an
-      AST_Env, labels must be in the asending order; however, they don't
-      need to be consecutive (although they could). *)
-  Inductive AST_Env (t:type):= 
-  | ast_env_nil : AST_Env t
-  | ast_env_cons : 
-      (* each grammar in an AST_Env including an index nat, the type of a
-       grammar, the grammar, and a map function for constructing a semantic
-       value given values produced by the grammar *)
-      forall (l:nat) (pt:type), 
-        wf_bigrammar pt -> (interp pt -> interp t) -> AST_Env t -> AST_Env t.
-  Arguments ast_env_nil [t].
-  Notation "{{ l , g , f }} ::: al" :=
-    (ast_env_cons l g f al) (right associativity, at level 70).
-  (* Notation "{ l , g , f } ::: al" := *)
-  (*   (ast_env_cons l g f al) (right associativity, at level 70). *)
-
-  Fixpoint env_length t (ae:AST_Env t) :=
-    match ae with
-      | ast_env_nil => O
-      | ast_env_cons _ _ _ ae' => S (env_length ae')
-    end.
-
-  (** Cat p1 to every grammar inside the ast env *)
-  Fixpoint ast_env_cat t1 t2 (p1:wf_bigrammar t1) (ae: AST_Env t2) :
-    AST_Env (pair_t t1 t2) := 
-    match ae with
-      | ast_env_nil => ast_env_nil
-      | ast_env_cons l p2 f ae' => 
-        ast_env_cons l (p1 $ p2) (fun v => (fst v, f (snd v)) %% pair_t t1 t2)
-                     (ast_env_cat p1 ae')
-    end.
-  Notation "p $$$ ae" := 
-    (ast_env_cat p ae) (right associativity, at level 80).
-
-  (** Append two ast envs *)
-  Fixpoint ast_env_app t (ae1 ae2: AST_Env t) : AST_Env t := 
-    match ae1 with
-      | ast_env_nil => ae2
-      | ast_env_cons l p f ae1' =>
-        ast_env_cons l p f (ast_env_app ae1' ae2)
-    end.
-
-  Notation "ael +++ aer" := 
-    (ast_env_app ael aer) (right associativity, at level 85).
-
-  (* compute ceiling(n/2) *)
-  Fixpoint divide_by_two n :=
-    match n with
-      | O => O
-      | S O => 1
-      | S (S n') => S (divide_by_two n')
-    end.
-
-  (** Split the env list into two halves at the middle *)
-  (* possible todo: change env_split to output a AST tree
-     and reuse that tree in other tacitics so that it 
-     doesn't need to be called multiple times. *)
-  Fixpoint env_split t (ae:AST_Env t) :=
-    let len:= env_length ae in
-    let mid := divide_by_two len in
-    (* using CPS to build the two lists in one pass *)
-    let fix splitHelper i l k :=
-        match beq_nat i mid with
-          | true => k (ast_env_nil, l)
-          | false =>
-            match l with
-              | ast_env_cons n g f ae' =>
-                splitHelper (S i) ae'
-                  (fun v => k (ast_env_cons n g (f: _ -> [|t|]) (fst v), snd v))
-              | _ => (ast_env_nil, ast_env_nil) (* this case should never happen *)
-            end
-        end
-    in splitHelper O ae (fun u => u).
-
-  Ltac env_length ast_env := 
-    match ast_env with
-      | ast_env_nil => O
-      | ast_env_cons _ _ _ ?ae' => 
-        let l := env_length ae' in
-        constr: (S l)
-    end.
-
-  (* The ltac version of env_split; using the Gallina version of env_split
-     can be problematic in "eval simpl in (env_split ...)" because the
-     simpl tactic would unfold the environment in unexpected ways *)
-  Ltac env_split ae :=
-    let len := env_length ae in
-    let mid := eval compute in (divide_by_two len) in
-    let aet := type of ae in
-    let t := match aet with
-               | AST_Env ?t => t
-             end in
-    (* using CPS to build the two lists in one pass *)
-    let rec splitHelper i l k :=
-        let eq := eval compute in (beq_nat i mid) in
-        match eq with
-          | true => constr:(k (ast_env_nil, l))
-          | false =>
-            match l with
-              | ast_env_cons ?n ?g ?f ?ae' =>
-                let res := splitHelper (S i) ae'
-                             (fun v => k (ast_env_cons n g
-                                         (f: _ -> [|t|]) (fst v), snd v)) in
-                constr:(res)
-            end
-        end
-    in let aepair := splitHelper O ae (fun u:aet*aet => u) in
-       eval cbv beta delta [fst snd] iota in aepair.
-
-  Ltac gen_ast_grammar ast_env :=
-  match ast_env with
-    | ast_env_cons ?l ?g ?f ast_env_nil => constr:(g)
-    | ast_env_nil => never (* should not happen *)
-    | _ =>
-      let aepair := env_split ast_env in
-      match aepair with
-        | (?ael, ?aer) => 
-          let g1 := gen_ast_grammar ael in
-          let g2 := gen_ast_grammar aer in
-          constr:(g1 |+| g2)
-      end
-  end.
-
-  Ltac gen_ast_type ast_env :=
-    match ast_env with
-      | ast_env_cons ?l ?g ?f ast_env_nil =>
-        let gt := type of g in
-        match gt with
-          | wf_bigrammar ?pt => pt
-        end
-      | ast_env_nil => unit_t (* should not happen *)
-      | _ =>
-        let aepair := env_split ast_env in
-        match aepair with
-          | (?ael, ?aer) => 
-            let t1 := gen_ast_type ael in
-            let t2 := gen_ast_type aer in
-            constr:(sum_t t1 t2)
-        end
-    end.
-
-  (** generate a map function from an AST tree to semantic values according
-      to an ast_env; should not call it with ast_env_nil *)
-  Ltac gen_ast_map_aux ast_env :=
-  match ast_env with
-    | ast_env_cons ?l ?g ?f ast_env_nil => 
-      constr: (fun v => f v)
-    | _ => 
-      let aepair := env_split ast_env in
-      match aepair with
-        | (?ael, ?aer) => 
-          let m1 := gen_ast_map_aux ael in
-          let m2 := gen_ast_map_aux aer in
-          constr:(fun v => 
-                    match v with
-                      | inl v1 => m1 v1
-                      | inr v2 => m2 v2
-                    end)
-      end
-  end.
-
-  Ltac gen_ast_map ast_env := 
-    let m := gen_ast_map_aux ast_env in
-    eval simpl in m.
-
-  (** generate a reverse mapping function for an AST env entry based on the
-      index of the entry (not the label of the entry); the index starts
-      from 0 *)
-  Ltac gen_rev_case ast_env i := 
-    let len := env_length ast_env in
-    let t := gen_ast_type ast_env in
-    let rec gen_rev_case_aux i n t:= 
-        let eq_1 := (eval compute in (beq_nat n 1)) in
-        match eq_1 with
-          | true => constr:(fun v: interp t => v)
-          | false =>
-            let n1 := (eval compute in (divide_by_two n)) in
-            let b := (eval compute in (Nat.ltb i n1)) in
-            match t with
-              | sum_t ?t1 ?t2 =>
-                match b with
-                  | true => 
-                    let f := gen_rev_case_aux i n1 t1 in 
-                    constr:(fun v => (inl  (f v)):(interp t))
-                  | false => 
-                    let n2 := (eval compute in (minus n n1)) in
-                    let i1 := (eval compute in (minus i n1)) in
-                    let f := gen_rev_case_aux i1 n2 t2 in
-                    constr:(fun v => (inr (f v)):(interp t))
-                end
-            end
-        end
-    in gen_rev_case_aux i len t.
-
-  Ltac gen_rev_cases ast_env := 
-    let len := env_length ast_env in
-    let rec gen_rev_cases_aux i := 
-        let eq_len := (eval compute in (beq_nat i len)) in
-        match eq_len with
-          | true => idtac
-          | false => 
-            let inj:=fresh "case" in
-            let f := gen_rev_case ast_env i in
-            let f1 := constr:(fun v => Some (f v)) in
-            pose (inj:=f1); simpl in inj; 
-            gen_rev_cases_aux (S i)
-       end
-    in let dummyf := constr:(fun v:unit => v) in
-       pose (case:=dummyf);
-       gen_rev_cases_aux 0.
-
-  (** generate a reverse mapping function for an AST env entry based on the
-      label of the entry (not the index of the entry); parameter t could be
-      calculated from ast_env, but passing it for efficiency. *)
-  Ltac gen_rev_case_lbl l ast_env t := 
-    match ast_env with
-      | ast_env_cons ?l1 _ _ ast_env_nil => 
-        let eq_l_l1 := (eval compute in (beq_nat l l1)) in
-        match eq_l_l1 with
-          | true => constr:(fun v: interp t => v)
-        end
-      | _ =>
-      let aepair := env_split ast_env in
-      match aepair with
-        | (?ael, ?aer) =>
-          match aer with
-            | ast_env_cons ?l2 _ _ ?aer1 =>
-              match t with
-                | sum_t ?t1 ?t2 =>
-                  let b := (eval compute in (Nat.ltb l l2)) in
-                  match b with
-                    | true => 
-                      let f := gen_rev_case_lbl l ael t1 in 
-                      constr:(fun v => (inl  (f v)):(interp t))
-                    | false => 
-                      let f := gen_rev_case_lbl l aer t2 in
-                      constr:(fun v => (inr (f v)):(interp t))
-                  end
-              end
-          end
-      end
-    end.
-
-  (** given an ast env, generate a balanced grammar using |+|, a
-      map function from ast values to values of the target type, 
-      and a list of case functions for mapping from case values
-      to ast values *)
-  Ltac gen_ast_defs ast_env := 
-    pose (ae:=ast_env);
-    autounfold with env_unfold_db in ae;
-    let ae1 := eval cbv delta [ae] in ae in
-      let g := gen_ast_grammar ae1 in pose (gr:=g);
-      let m := gen_ast_map ae1 in pose (mp:=m);
-      gen_rev_cases ae1;
-      clear ae.
-
-
-(* experiments *)
-
-  (* todo: add comments *)
-
-  Definition label := nat.
-
-todo: remove ids from typetree and tmember but it remains in gr_tree
-
-  (** A tree of types; each leaf node is labeled by a natural number
-      id; this is for the convenience of performing look ups from an
-      id to its corresponding type. For a node, the label should be
-      larger than or equal to the ids of the left-tree leafs and
-      should be small than the ids of the right-tree leafs; this
-      enables a binary search from ids to types. *)
-  Inductive typetree: Type :=
-  | Leaf: label -> type -> typetree
-  | Node: label -> typetree -> typetree -> typetree.
-
-  Inductive tmember: type -> typetree -> Type :=
-  | MLeaf: forall id t, tmember t (Leaf id t)
-  | MLTree: forall id t tt1 tt2, tmember t tt1 -> tmember t (Node id tt1 tt2)
-  | MRTree: forall id t tt1 tt2, tmember t tt2 -> tmember t (Node id tt1 tt2).
-
-  Inductive gr_tree (rt:type): typetree -> Type :=
-  | GLeaf: forall (id:label) (t:type) (g:wf_bigrammar t), 
-      ([|t|] -> [|rt|]) -> gr_tree rt (Leaf id t)
-  | GNode: forall (id:label) (tt1 tt2:typetree),
-      gr_tree rt tt1 -> gr_tree rt tt2 ->
-      gr_tree rt (Node id tt1 tt2).
-
-  Fixpoint ast_type (tt: typetree): type :=
-    match tt with
-    | Leaf _ t => t
-    | Node _ tt1 tt2 =>
-      sum_t (ast_type tt1) (ast_type tt2)
-    end.
-
-  Fixpoint ast_grammar {rt tt} (gt:gr_tree rt tt): 
-    wf_bigrammar (ast_type tt) :=
-    match gt in gr_tree _ tt' return wf_bigrammar (ast_type tt') with
-    | GLeaf _ t g m => g
-    | GNode _ gt1 gt2 => 
-      let g1:= ast_grammar gt1 in
-      let g2:= ast_grammar gt2 in 
-      g1 |+| g2
-    end.
-
-  Fixpoint ast_map {rt tt} (gt:gr_tree rt tt): [|ast_type tt|] -> [|rt|] :=
-    match gt in gr_tree _ tt' return [|ast_type tt'|] -> [|rt|] with
-    | GLeaf _ t g m => m
-    | GNode _ gt1 gt2 => 
-      let m1:= ast_map gt1 in
-      let m2:= ast_map gt2 in
-      fun v => match v with
-               | inl v1 => m1 v1
-               | inr v2 => m2 v2
-               end
-    end.
-
-  Fixpoint inv_case {t tt} (m: tmember t tt): 
-    [|t|] -> [|ast_type tt|] :=
-    match m in tmember t' tt' return [|t'|] -> [|ast_type tt'|] with
-    | MLeaf _ t => fun v => v
-    | MLTree _ _ m' =>
-      fun v => inl (inv_case m' v)
-    | MRTree _ _ m' =>
-      fun v => inr (inv_case m' v)
-    end.
-
-  Fixpoint tt_get (id:nat) (tt:typetree): {t : type & tmember t tt} :=
-    match tt return {t:type & tmember t tt} with
-    | Leaf id t => existT _ t (MLeaf id t)
-    | Node id' tt1 tt2 => 
-      if Nat.leb id id' then
-        let x := tt_get id tt1 in
-        match x with
-        | existT _ t tm => existT _ t (MLTree _ _ tm)
-        end
-      else
-        let x := tt_get id tt2 in
-        match x with
-        | existT _ t tm => existT _ t (MRTree _ _ tm)
-        end
-    end.
-
-  (* tactic for converting an ast_env to a treetype and a grammar
-     tree; we could use a dependently typed heterogeneous list to
-     avoid using tactics for this one, but that would require a
-     non-standard induction principle as the list is split into two
-     halves; so this is sufficient for now. *)
-  Ltac gen_gr_tree ast_env := 
-    match type of ast_env with
-    | AST_Env ?rt =>
-      match ast_env with
-      | ast_env_cons ?id ?g ?f ast_env_nil => 
-        let gt := type of g in
-        match gt with
-        | wf_bigrammar ?t => 
-          constr:(id, GLeaf rt id g f)
-        end
-      | ast_env_nil => fail (* should not happen *)
-      | _ => 
-        let aepair := env_split ast_env in
-        match aepair with
-        | (?ael, ?aer) =>
-          match gen_gr_tree ael with
-          | (?id1, ?gr1) =>
-            match gen_gr_tree aer with
-            | (?id2, ?gr2) =>
-              let gt := eval compute in (Nat.ltb id1 id2) in
-                  match gt with
-                  | false => constr:(id1, GNode id1 gr1 gr2)
-                  (* since the index in a node should be the biggest in
-                    its left-tree node, we still use id1 in the Node
-                    constructon *)
-                  | true => constr:(id2, GNode id1 gr1 gr2)
-                  end
-            end
-          end
-        end
-      end
-    end.
-
-  Ltac gen_trees ast_env :=
-    pose (ae:=ast_env);
-    autounfold with env_unfold_db in ae;
-    let ae1 := eval cbv delta [ae] in ae in
-      match gen_gr_tree ae1 with
-      | (_, ?g) =>
-        pose (gt:=g);
-        match type of g with
-          | gr_tree _ ?t =>
-            pose (tt:=t)
-        end
-      end;
-      clear ae.
-
-  Ltac gen_tm_cases tt len := 
-    let rec gen_tm_cases_aux i := 
-        let eq_len := (eval compute in (beq_nat i len)) in
-        match eq_len with
-          | true => idtac
-          | false =>
-            let inj:=fresh "case" in
-            let tt_r := (eval compute in (tt_get i tt)) in
-            match tt_r with
-              | existT _ _ ?tm =>
-                pose (inj:=tm); simpl in inj; 
-                gen_tm_cases_aux (S i)
-            end
-       end
-    in let dummyf := constr:(fun v:unit => v) in
-       pose (case:=dummyf);
-       gen_tm_cases_aux 0.
-
-  Definition test_env: AST_Env register_t :=
-    {{0, empty, (fun v => EAX %% register_t)}} :::
-    {{1, empty, (fun v => ECX %% register_t)}} :::
-    {{2, empty, (fun v => EDX %% register_t)}} :::
-    {{3, empty, (fun v => EBX %% register_t)}} :::
-    {{4, empty, (fun v => EBP %% register_t)}} :::
-    {{5, empty, (fun v => ESI %% register_t)}} :::
-    {{6, empty, (fun v => EDI %% register_t)}} :::
-    ast_env_nil.
-  Hint Unfold test_env : env_unfold_db.
-
-  Goal True.
-    gen_trees test_env.
-    gen_tm_cases tt 7.
-    let ae:= eval unfold test_env in test_env in
-    let tt:= gen_gr_tree ae in
-    pose tt.
-    trivial.
-  Qed.
-    
-  (* testing the above tactics *)
-  (* Definition test_env: AST_Env register_t := *)
-  (*   {0, empty, (fun v => EAX %% register_t)} ::: *)
-  (*   {1, empty, (fun v => ECX %% register_t)} ::: *)
-  (*   {2, empty, (fun v => EDX %% register_t)} ::: *)
-  (*   {3, empty, (fun v => EBX %% register_t)} ::: *)
-  (*   {4, empty, (fun v => EBP %% register_t)} ::: *)
-  (*   {5, empty, (fun v => ESI %% register_t)} ::: *)
-  (*   {6, empty, (fun v => EDI %% register_t)} ::: *)
-  (*   ast_env_nil. *)
-  (* Hint Unfold test_env : env_unfold_db. *)
-
-  (* Goal False. *)
-  (*   gen_ast_defs test_env. *)
-
-  (* let ae:= eval unfold test_env in test_env in *)
-  (*   gen_ast_defs ae. *)
-  (* let cs := gen_rev_case_by_lbl ae 3 in *)
-  (* let cs' := eval cbv beta delta [interp] iota in cs in *)
-  (* pose cs'. *)
-
-  (* let m := gen_ast_map ae in *)
-  (* pose m. *)
-
-  (* let l := env_split ae in *)
-  (* pose l. *)
-
-(* next: turn the above into typed coq functions; so that we can
-   compress the size of terms when doing proofs *)
-
-
-
-  Ltac clear_ast_defs :=
-    repeat match goal with
-             | [inj:= _ |- _] => compute [inj]; clear inj
-           end.
-
   Ltac bg_pf_sim :=
     repeat match goal with
       | [ |- context[repr_in_signed_byte_dec ?i]] => 
@@ -1383,226 +879,101 @@ todo: remove ids from typetree and tmember but it remains in gr_tree
   (* speed tests *)
   Section SpeedTest.
 
-  Definition control_reg_env: AST_Env control_register_t :=
+  Definition test_env: AST_Env control_register_t :=
     {{0, ! "000", (fun v => CR0 %% control_register_t)}} :::
     {{1, ! "010", (fun v => CR2 %% control_register_t)}} :::
     {{2, ! "011", (fun v => CR3 %% control_register_t)}} :::
     {{3, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{4, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{5, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{6, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{7, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{8, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{9, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{10, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{11, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{12, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{13, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{14, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{15, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{16, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{17, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{18, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{19, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{20, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{21, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{22, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{23, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{24, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{25, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{26, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{27, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{28, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{29, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{30, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{31, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    (* {{4, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{5, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{6, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{7, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{8, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{9, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{10, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{11, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{12, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{13, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{14, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{15, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{16, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{17, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{18, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{19, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{20, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{21, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{22, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{23, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{24, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{25, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{26, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{27, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{28, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{29, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{30, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{31, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
     ast_env_nil.
-  Hint Unfold control_reg_env: env_unfold_db.
+  Hint Unfold test_env: env_unfold_db.
 
-  Unset Printing Implicit.
-  Unset Ltac Debug.
-
-  Definition control_reg_p : wf_bigrammar control_register_t.
-    gen_trees control_reg_env.
-    gen_tm_cases tt 32.
-    Time refine((ast_grammar gt) @ (ast_map gt)
+  Definition test_p : wf_bigrammar control_register_t.
+    gen_ast_defs test_env.
+    Time refine((ast_bigrammar gt) @ (ast_map gt)
              & (fun u =>
                   match u with
-                    | CR0 => Some (inv_case case0 ())
-                    | CR2 => Some (inv_case case1 ())
-                    | CR3 => Some (inv_case case2 ())
-                    | CR4 => Some (inv_case case3 ())
+                    | CR0 => inv_case_some case0 ()
+                    | CR2 => inv_case_some case1 ()
+                    | CR3 => inv_case_some case2 ()
+                    | CR4 => inv_case_some case3 ()
                   end)
-             & _).
-   unfold invertible; split; [unfold printable | unfold parsable];
-   compute [snd fst].
-   - intros.
-     clear_ast_defs. compute [gt] in *; clear gt.
-     compute [ast_grammar] in *.
-     Time repeat match goal with
-       | [v: interp (ast_type (Node _ _ _)) |- _] =>
-         destruct v
-     end.
-     compute [ast_map ast_type];
-     autorewrite with inv_db;
-     match goal with
-      | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
-        exists v; split; compute [inv_case];
-        ibr_sim
-     end.
-   - intros.
-     Time destruct w;
-      match goal with
-      | [H:None = Some _ |- _] => discriminate
-      | [H:Some _ = Some _ |- _] =>
-        inversion H; clear H; subst
-      | _ => (autorewrite with inv_db; trivial) || ibr_sim ||
-             destruct_pp_var destruct_var
-      end;
-      compute [ast_map gt]; trivial.
-  Defined.
+             & _); invertible_ast_tac.
+     - Time (destruct w; parsable_tac).
+  Time Defined.
 
-
-  (* Definition control_reg_p : wf_bigrammar control_register_t. *)
-  (*   gen_trees control_reg_env. *)
-  (*   gen_tm_cases tt 32. *)
-  (*   Time refine((ast_grammar gt) @ (ast_map gt) *)
-  (*            & (fun u => *)
-  (*                 match u with *)
-  (*                   | CR0 => Some (inv_case case0 ()) *)
-  (*                   | CR2 => Some (inv_case case1 ()) *)
-  (*                   | CR3 => Some (inv_case case2 ()) *)
-  (*                   | CR4 => Some (inv_case case3 ()) *)
-  (*                 end) *)
-  (*            & _). *)
-  (*  unfold invertible; split; [unfold printable | unfold parsable]; *)
-  (*  compute [snd fst]. *)
-  (*  - compute [ast_map ast_grammar gt ast_type interp]; intros. *)
-  (*    Time repeat (ibr_sim || destruct_pr_var); *)
-  (*    autorewrite with inv_db; *)
-  (*    match goal with *)
-  (*     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] => *)
-  (*       exists v; split; clear_ast_defs; compute [inv_case]; *)
-  (*       ibr_sim *)
-  (*    end. *)
-  (*  - intros. *)
-  (*    Time destruct w; *)
-  (*     match goal with *)
-  (*     | [H:None = Some _ |- _] => discriminate *)
-  (*     | [H:Some _ = Some _ |- _] =>  *)
-  (*       inversion H; clear H; subst *)
-  (*     | _ => (autorewrite with inv_db; trivial) || ibr_sim || *)
-  (*            destruct_pp_var destruct_var *)
-  (*     end; *)
-  (*     compute [ast_map gt]; trivial. *)
-  (* Defined. *)
-
-  (* possible todo: change ast_env to use heterogeneous lists that are
-     indexed by lists of types of bigrammars; and write a gen_case coq
-     functon instead of using ltac gen_rev_case. *)
-     
-  (* this is five times faster than the original script *)   
-  (* Definition control_reg_p : wf_bigrammar control_register_t. *)
-  (*   pose (ae:=control_reg_env); *)
-  (*   autounfold with env_unfold_db in ae; *)
-  (*   let ae1 := eval cbv delta [ae] in ae in *)
-  (*     let g := gen_ast_grammar ae1 in pose (gr:=g); *)
-  (*     let m := gen_ast_map ae1 in pose (mp:=m); *)
-  (*     (* gen_rev_cases ae1; *) *)
-  (*     clear ae. *)
+  (* Definition test_p : wf_bigrammar _register_t. *)
+  (*   Time gen_ast_defs test_env. *)
   (*   Time refine(gr @ (mp: _ -> [|control_register_t|]) *)
   (*            & (fun u => *)
   (*                 match u with *)
-  (*                   | CR0 => _ *)
-  (*                   | CR2 => _  *)
-  (*                   | CR3 => _ *)
-  (*                   | CR4 => _ *)
+  (*                   | CR0 => case0 () *)
+  (*                   | CR2 => case1 () *)
+  (*                   | CR3 => case2 () *)
+  (*                   | CR4 => case3 () *)
   (*                 end) *)
-  (*            & _). clear_ast_defs. *)
-  (*   Unshelve. *)
-  (*   Focus 2. *)
-  (*   pose (ae:=control_reg_env); *)
-  (*   autounfold with env_unfold_db in ae; *)
-  (*   let ae1 := eval cbv delta [ae] in ae in *)
-  (*     let f := gen_rev_case ae1 0 in *)
-  (*     clear ae; *)
-  (*     exact (Some (f ())). *)
-  (*   Focus 2. *)
-  (*   pose (ae:=control_reg_env); *)
-  (*   autounfold with env_unfold_db in ae; *)
-  (*   let ae1 := eval cbv delta [ae] in ae in *)
-  (*     let f := gen_rev_case ae1 1 in *)
-  (*     clear ae; *)
-  (*     exact (Some (f ())). *)
-  (*   Focus 2. *)
-  (*   pose (ae:=control_reg_env); *)
-  (*   autounfold with env_unfold_db in ae; *)
-  (*   let ae1 := eval cbv delta [ae] in ae in *)
-  (*     let f := gen_rev_case ae1 2 in *)
-  (*     clear ae; *)
-  (*     exact (Some (f ())). *)
-  (*   Focus 2. *)
-  (*   pose (ae:=control_reg_env); *)
-  (*   autounfold with env_unfold_db in ae; *)
-  (*   let ae1 := eval cbv delta [ae] in ae in *)
-  (*     let f := gen_rev_case ae1 3 in *)
-  (*     clear ae; *)
-  (*     exact (Some (f ())). *)
-  (*   cbv beta zeta. *)
-  (*   Time invertible_tac. *)
+  (*            & _); clear_ast_defs; invertible_tac. *)
   (*    - Time destruct w; parsable_tac. *)
-  (* Defined. *)
+  (* Time Defined. *)
 
-
-  Definition control_reg_p : wf_bigrammar control_register_t.
-    Time gen_ast_defs control_reg_env.
-    refine(gr @ (mp: _ -> [|control_register_t|])
-             & (fun u =>
-                  match u with
-                    | CR0 => case0 ()
-                    | CR2 => case1 ()
-                    | CR3 => case2 ()
-                    | CR4 => case3 ()
-                  end)
-             & _).  Time clear_ast_defs; invertible_tac.
-     - Time destruct w; parsable_tac.
-  Defined.
-
-
-end of experiment
-
-Idea for speeding up: for bijections, do exist v before destruct for the 
-
+  End SpeedTest.
 
   Definition control_reg_env: AST_Env control_register_t := 
-    {0, ! "000", (fun v => CR0 %% control_register_t)} :::
-    {1, ! "010", (fun v => CR2 %% control_register_t)} :::
-    {2, ! "011", (fun v => CR3 %% control_register_t)} :::
-    {3, ! "100", (fun v => CR4 %% control_register_t)} :::
+    {{0, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{1, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{2, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{3, ! "100", (fun v => CR4 %% control_register_t)}} :::
     ast_env_nil.
   Hint Unfold control_reg_env: env_unfold_db.
 
   Definition control_reg_p : wf_bigrammar control_register_t.
     gen_ast_defs control_reg_env.
-    refine(gr @ (mp: _ -> [|control_register_t|])
+    refine((ast_bigrammar gt) @ (ast_map gt)
              & (fun u =>
                   match u with
-                    | CR0 => case0 ()
-                    | CR2 => case1 ()
-                    | CR3 => case2 ()
-                    | CR4 => case3 ()
+                    | CR0 => inv_case_some case0 ()
+                    | CR2 => inv_case_some case1 ()
+                    | CR3 => inv_case_some case2 ()
+                    | CR4 => inv_case_some case3 ()
                   end)
-             & _); clear_ast_defs; invertible_tac.
+             & _); invertible_ast_tac.
      - destruct w; parsable_tac.
   Defined.
 
   Definition debug_reg_env : AST_Env debug_register_t := 
-    {0, ! "000", (fun _ => DR0 %% debug_register_t)} :::
-    {1, ! "001", (fun _ => DR1 %% debug_register_t)} :::
-    {2, ! "010", (fun _ => DR2 %% debug_register_t)} :::
-    {3, ! "011", (fun _ => DR3 %% debug_register_t)} :::
-    {4, ! "110", (fun _ => DR6 %% debug_register_t)} :::
-    {5, ! "111", (fun _ => DR7 %% debug_register_t)} :::
+    {{0, ! "000", (fun _ => DR0 %% debug_register_t)}} :::
+    {{1, ! "001", (fun _ => DR1 %% debug_register_t)}} :::
+    {{2, ! "010", (fun _ => DR2 %% debug_register_t)}} :::
+    {{3, ! "011", (fun _ => DR3 %% debug_register_t)}} :::
+    {{4, ! "110", (fun _ => DR6 %% debug_register_t)}} :::
+    {{5, ! "111", (fun _ => DR7 %% debug_register_t)}} :::
     ast_env_nil.
   Hint Unfold debug_reg_env: env_unfold_db.
      
@@ -1613,43 +984,43 @@ Idea for speeding up: for bijections, do exist v before destruct for the
    * happen with the CR registers above -- e.g., we don't have a CR1. *)
   Definition debug_reg_p : wf_bigrammar debug_register_t.
     gen_ast_defs debug_reg_env.
-    refine(gr @ (mp: _ -> [|debug_register_t|])
+    refine((ast_bigrammar gt) @ (ast_map gt)
               & (fun u => 
                    match u with
-                     | DR0 => case0 ()
-                     | DR1 => case1 ()
-                     | DR2 => case2 ()
-                     | DR3 => case3 ()
-                     | DR6 => case4 ()
-                     | DR7 => case5 ()
+                     | DR0 => inv_case_some case0 ()
+                     | DR1 => inv_case_some case1 ()
+                     | DR2 => inv_case_some case2 ()
+                     | DR3 => inv_case_some case3 ()
+                     | DR6 => inv_case_some case4 ()
+                     | DR7 => inv_case_some case5 ()
                 end)
-              & _); clear_ast_defs; invertible_tac.
+              & _); invertible_ast_tac.
     - destruct w; parsable_tac.
   Defined.
 
   Definition segment_reg_env : AST_Env segment_register_t := 
-    {0, ! "000", (fun _ => ES %% segment_register_t)} :::
-    {1, ! "001", (fun _ => CS %% segment_register_t)} :::
-    {2, ! "010", (fun _ => SS %% segment_register_t)} :::
-    {3, ! "011", (fun _ => DS %% segment_register_t)} :::
-    {4, ! "100", (fun _ => FS %% segment_register_t)} :::
-    {5, ! "101", (fun _ => GS %% segment_register_t)} :::
+    {{0, ! "000", (fun _ => ES %% segment_register_t)}} :::
+    {{1, ! "001", (fun _ => CS %% segment_register_t)}} :::
+    {{2, ! "010", (fun _ => SS %% segment_register_t)}} :::
+    {{3, ! "011", (fun _ => DS %% segment_register_t)}} :::
+    {{4, ! "100", (fun _ => FS %% segment_register_t)}} :::
+    {{5, ! "101", (fun _ => GS %% segment_register_t)}} :::
     ast_env_nil.
   Hint Unfold segment_reg_env: env_unfold_db.
 
   Definition segment_reg_p : wf_bigrammar segment_register_t.
     gen_ast_defs segment_reg_env.
-    refine (gr @ (mp: _ -> [|segment_register_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => 
                     match u with
-                      | ES => case0 ()
-                      | CS => case1 ()
-                      | SS => case2 ()
-                      | DS => case3 ()
-                      | FS => case4 ()
-                      | GS => case5 ()
+                      | ES => inv_case_some case0 ()
+                      | CS => inv_case_some case1 ()
+                      | SS => inv_case_some case2 ()
+                      | DS => inv_case_some case3 ()
+                      | FS => inv_case_some case4 ()
+                      | GS => inv_case_some case5 ()
                     end)
-               & _); clear_ast_defs; invertible_tac.
+               & _); invertible_ast_tac.
      - destruct w; parsable_tac.
   Defined.
     
@@ -1685,15 +1056,15 @@ Idea for speeding up: for bijections, do exist v before destruct for the
   Hint Resolve scale_rng: ibr_rng_db.
 
   Definition reg_no_esp_env: AST_Env register_t := 
-    {0, ! "000", (fun v => EAX %% register_t)} :::
-    {1, ! "001", (fun v => ECX %% register_t)} :::
-    {2, ! "010", (fun v => EDX %% register_t)} :::
-    {3, ! "011", (fun v => EBX %% register_t)} :::
+    {{0, ! "000", (fun v => EAX %% register_t)}} :::
+    {{1, ! "001", (fun v => ECX %% register_t)}} :::
+    {{2, ! "010", (fun v => EDX %% register_t)}} :::
+    {{3, ! "011", (fun v => EBX %% register_t)}} :::
     (* esp case not allowed *)
-    (* {0, ! "100", (fun v => ESX %% register_t)} ::: *)
-    {4, ! "101", (fun v => EBP %% register_t)} :::
-    {5, ! "110", (fun v => ESI %% register_t)} :::
-    {6, ! "111", (fun v => EDI %% register_t)} :::
+    (* {{0, ! "100", (fun v => ESX %% register_t)}} ::: *)
+    {{4, ! "101", (fun v => EBP %% register_t)}} :::
+    {{5, ! "110", (fun v => ESI %% register_t)}} :::
+    {{6, ! "111", (fun v => EDI %% register_t)}} :::
     ast_env_nil.
   Hint Unfold reg_no_esp_env : env_unfold_db.
 
@@ -1706,18 +1077,18 @@ Idea for speeding up: for bijections, do exist v before destruct for the
      definitions. *)
   Definition reg_no_esp : wf_bigrammar register_t. 
     gen_ast_defs reg_no_esp_env.
-    refine (gr @ (mp: _ -> [|register_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun r => match r with
-                          | EAX => case0 ()
-                          | ECX => case1 ()
-                          | EDX => case2 ()
-                          | EBX => case3 ()
+                          | EAX => inv_case_some case0 ()
+                          | ECX => inv_case_some case1 ()
+                          | EDX => inv_case_some case2 ()
+                          | EBX => inv_case_some case3 ()
                           | ESP => None
-                          | EBP => case4 ()
-                          | ESI => case5 ()
-                          | EDI => case6 ()
+                          | EBP => inv_case_some case4 ()
+                          | ESI => inv_case_some case5 ()
+                          | EDI => inv_case_some case6 ()
                         end)
-               & _); clear_ast_defs; invertible_tac.
+               & _); invertible_ast_tac.
      - destruct w; parsable_tac.
   Defined. 
 
@@ -1982,42 +1353,42 @@ Idea for speeding up: for bijections, do exist v before destruct for the
   (* Definition modrm_gen_noreg_env (reg_t:type) (reg_p:wf_bigrammar reg_t) *)
   (*           : AST_Env (pair_t reg_t address_t) := *)
   (*   (* mode 00 *) *)
-  (*   {0, "00" $$ reg_p $ reg_no_esp_ebp, *)
+  (*   {{0, "00" $$ reg_p $ reg_no_esp_ebp, *)
   (*    fun v => *)
   (*      let (r1,base):=v in (r1, mkAddress (Word.repr 0) (Some base) None) *)
-  (*      %% pair_t reg_t address_t} ::: *)
-  (*   {1, "00" $$ reg_p $ "100" $$ si_p $ reg_no_ebp, *)
+  (*      %% pair_t reg_t address_t}} ::: *)
+  (*   {{1, "00" $$ reg_p $ "100" $$ si_p $ reg_no_ebp, *)
   (*    fun v => match v with *)
   (*               | (r,(si,base)) => *)
   (*                 (r, mkAddress (Word.repr 0) (Some base) si) *)
-  (*             end %% pair_t reg_t address_t} ::: *)
-  (*   {2, "00" $$ reg_p $ "100" $$ si_p $ "101" $$ word, *)
+  (*             end %% pair_t reg_t address_t}} ::: *)
+  (*   {{2, "00" $$ reg_p $ "100" $$ si_p $ "101" $$ word, *)
   (*    fun v => match v with *)
   (*               | (r,(si,disp)) => (r, mkAddress disp None si) *)
-  (*             end %% pair_t reg_t address_t} ::: *)
-  (*   {3, "00" $$ reg_p $ "101" $$ word, *)
+  (*             end %% pair_t reg_t address_t}} ::: *)
+  (*   {{3, "00" $$ reg_p $ "101" $$ word, *)
   (*    fun v => let (r,disp):=v in (r, mkAddress disp None None) *)
-  (*      %% pair_t reg_t address_t} ::: *)
+  (*      %% pair_t reg_t address_t}} ::: *)
   (*   (* mode 01 *) *)
-  (*   {4, "01" $$ reg_p $ reg_no_esp $ byte, *)
+  (*   {{4, "01" $$ reg_p $ reg_no_esp $ byte, *)
   (*    fun v => match v with *)
   (*               | (r,(bs,disp)) => *)
   (*                 (r, mkAddress (sign_extend8_32 disp) (Some bs) None) *)
-  (*             end %% pair_t reg_t address_t} ::: *)
-  (*   {5, "01" $$ reg_p $ "100" $$ sib_p $ byte, *)
+  (*             end %% pair_t reg_t address_t}} ::: *)
+  (*   {{5, "01" $$ reg_p $ "100" $$ sib_p $ byte, *)
   (*    fun v => match v with *)
   (*               | (r, ((si,bs),disp)) => *)
   (*                 (r, mkAddress (sign_extend8_32 disp) (Some bs) si) *)
-  (*             end %% pair_t reg_t address_t} ::: *)
+  (*             end %% pair_t reg_t address_t}} ::: *)
   (*   (* mode 10 *) *)
-  (*   {6, "10" $$ reg_p $ reg_no_esp $ word, *)
+  (*   {{6, "10" $$ reg_p $ reg_no_esp $ word, *)
   (*    fun v => match v with *)
   (*               | (r,(bs,disp)) => (r, mkAddress disp (Some bs) None) *)
-  (*             end %% pair_t reg_t address_t} ::: *)
-  (*   {7, "10" $$ reg_p $ "100" $$ sib_p $ word, *)
+  (*             end %% pair_t reg_t address_t}} ::: *)
+  (*   {{7, "10" $$ reg_p $ "100" $$ sib_p $ word, *)
   (*    fun v => match v with *)
   (*               | (r,((si,bs),disp)) => (r, mkAddress disp (Some bs) si) *)
-  (*             end %% pair_t reg_t address_t} ::: *)
+  (*             end %% pair_t reg_t address_t}} ::: *)
   (*   ast_env_nil. *)
 
   (* Definition modrm_gen_noreg (reg_t: type) *)
@@ -2029,52 +1400,52 @@ Idea for speeding up: for bijections, do exist v before destruct for the
   (*                   match addr with *)
   (*                     | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} => *)
   (*                       (* alternate encoding: mod00 case2, making reg in si_p be ESP *) *)
-  (*                       case3 (r,disp) *)
+  (*                       inv_case_some case3 (r,disp) *)
   (*                     | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some si |} => *)
   (*                       (* special case: disp32[index*scale]; *)
   (*                          the mod bits in mod/rm must be 00 *) *)
-  (*                       case2 (r,(Some si,disp)) *)
+  (*                       inv_case_some case2 (r,(Some si,disp)) *)
   (*                     | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=None |} => *)
   (*                       if (register_eq_dec bs ESP) then *)
   (*                           (* alternate encoding: when disp is not zero or cannot *)
   (*                              be represented as a byte, then case5/7 can always *)
   (*                              be used *) *)
   (*                           if (Word.eq disp Word.zero) then *)
-  (*                             case1 (r, (None, ESP)) *)
+  (*                             inv_case_some case1 (r, (None, ESP)) *)
   (*                           else *)
   (*                             if (repr_in_signed_byte_dec disp) then *)
-  (*                               case5 (r, ((None, ESP), sign_shrink32_8 disp)) *)
-  (*                             else case7 (r, ((None, ESP), disp)) *)
+  (*                               inv_case_some case5 (r, ((None, ESP), sign_shrink32_8 disp)) *)
+  (*                             else inv_case_some case7 (r, ((None, ESP), disp)) *)
   (*                       else *)
   (*                         if (register_eq_dec bs EBP) then *)
   (*                           (* alternate encoding: case6 can always be used *) *)
   (*                           if (repr_in_signed_byte_dec disp) *)
-  (*                           then case4 (r, (bs, sign_shrink32_8 disp)) *)
-  (*                           else case6 (r, (bs, disp)) *)
+  (*                           then inv_case_some case4 (r, (bs, sign_shrink32_8 disp)) *)
+  (*                           else inv_case_some case6 (r, (bs, disp)) *)
   (*                         else *)
   (*                           (* alternate encoding: case4/6 can always be used depending *)
   (*                              on disp *) *)
   (*                           if (Word.eq disp Word.zero) then *)
-  (*                             case0 (r, bs) *)
+  (*                             inv_case_some case0 (r, bs) *)
   (*                           else *)
   (*                             if (repr_in_signed_byte_dec disp) *)
-  (*                             then case4 (r, (bs, sign_shrink32_8 disp)) *)
-  (*                             else case6 (r, (bs, disp)) *)
+  (*                             then inv_case_some case4 (r, (bs, sign_shrink32_8 disp)) *)
+  (*                             else inv_case_some case6 (r, (bs, disp)) *)
   (*                     | {| addrDisp:=disp; addrBase:=Some bs; addrIndex:=Some sci |} => *)
   (*                       if (register_eq_dec (snd sci) ESP) then None *)
   (*                       else if (register_eq_dec bs EBP) then *)
   (*                              (* alternate encoding: case7 can always be used *) *)
   (*                              if (repr_in_signed_byte_dec disp) then *)
-  (*                                case5 (r, ((Some sci, bs), sign_shrink32_8 disp)) *)
-  (*                              else case7 (r, ((Some sci, bs), disp)) *)
+  (*                                inv_case_some case5 (r, ((Some sci, bs), sign_shrink32_8 disp)) *)
+  (*                              else inv_case_some case7 (r, ((Some sci, bs), disp)) *)
   (*                            else *)
   (*                              (* alternate encoding: case5/7 can be used *) *)
   (*                              if (Word.eq disp Word.zero) then *)
-  (*                                case1 (r, (Some sci, bs)) *)
+  (*                                inv_case_some case1 (r, (Some sci, bs)) *)
   (*                              else *)
   (*                                if (repr_in_signed_byte_dec disp) then *)
-  (*                                  case5 (r, ((Some sci, bs), sign_shrink32_8 disp)) *)
-  (*                                else case7 (r, ((Some sci, bs), disp)) *)
+  (*                                  inv_case_some case5 (r, ((Some sci, bs), sign_shrink32_8 disp)) *)
+  (*                                else inv_case_some case7 (r, ((Some sci, bs), disp)) *)
   (*                   end) *)
   (*              & _); clear_ast_defs. invertible_tac. *)
   (*   - destruct_union. *)
@@ -2647,7 +2018,8 @@ Idea for speeding up: for bijections, do exist v before destruct for the
     end.
 
   Ltac ins_printable_tac := printable_tac_gen ins_pf_sim.
-  Ltac ins_invertible_tac := invertible_tac_gen ins_pf_sim ins_destruct_var.
+  Ltac ins_invertible_tac := 
+    invertible_tac_gen unfold_invertible_ast ins_pf_sim ins_destruct_var.
 
   Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
   Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
@@ -2658,58 +2030,51 @@ Idea for speeding up: for bijections, do exist v before destruct for the
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
     (* register/memory to register and vice versa -- the d bit specifies
        the direction. *)
-    {0, opcode1 $$ "0" $$ anybit $ anybit $ modrm_ret_reg,
+    {{0, opcode1 $$ "0" $$ anybit $ anybit $ modrm_ret_reg,
      fun v => match v with
                 | (d, (w, (r1, op2))) => 
                   if (d:bool) then (w, (Reg_op r1, op2)) else (w, (op2, Reg_op r1))
-              end %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              end %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* sign extend immediate byte to register *)
-    {1, "1000" $$ "0011" $$ "11" $$ opcode2 $$ reg $ byte,
+    {{1, "1000" $$ "0011" $$ "11" $$ opcode2 $$ reg $ byte,
      fun v => let (r, imm) := v in
                   (true, (Reg_op r, Imm_op (sign_extend8_32 imm)))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend immediate byte to register *)
-    {2, "1000" $$ "0000" $$ "11" $$ opcode2 $$ reg $ byte,
+    {{2, "1000" $$ "0000" $$ "11" $$ opcode2 $$ reg $ byte,
      fun v => let (r,imm) := v in
                   (false, (Reg_op r, Imm_op (zero_extend8_32 imm)))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate word to register *)
-    {3, "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_p opsize_override,
+    {{3, "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_p opsize_override,
      fun v => let (r, imm) := v in (true, (Reg_op r, Imm_op imm))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend immediate byte to EAX *)
-    {4, opcode1 $$ "100" $$ byte,
+    {{4, opcode1 $$ "100" $$ byte,
      fun imm => (false, (Reg_op EAX, Imm_op (zero_extend8_32 imm)))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* word to EAX *)
-    {5, opcode1 $$ "101" $$ imm_p opsize_override,
+    {{5, opcode1 $$ "101" $$ imm_p opsize_override,
      fun imm => (true, (Reg_op EAX, Imm_op imm))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend immediate byte to memory *)
-    {6, "1000" $$ "0000" $$ ext_op_modrm_noreg_ret_addr opcode2 $ byte,
+    {{6, "1000" $$ "0000" $$ ext_op_modrm_noreg_ret_addr opcode2 $ byte,
      fun v => let (addr,imm) := v in 
               (false, (Address_op addr, Imm_op (zero_extend8_32 imm)))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* sign-extend immediate byte to memory *)
-    {7, "1000" $$ "0011" $$ ext_op_modrm_noreg_ret_addr opcode2 $ byte,
+    {{7, "1000" $$ "0011" $$ ext_op_modrm_noreg_ret_addr opcode2 $ byte,
      fun v => let (addr,imm) := v in 
               (true, (Address_op addr, Imm_op (sign_extend8_32 imm)))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate word to memory *)
-    {8, "1000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr opcode2 $
+    {{8, "1000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr opcode2 $
                imm_p opsize_override,
      fun v => let (addr,imm) := v in 
               (true, (Address_op addr, Imm_op imm))
-              %% pair_t bool_t (pair_t operand_t operand_t)} :::
+              %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     ast_env_nil.
   Hint Unfold logic_or_arith_env : env_unfold_db.
-
-Lemma in_bigrammar_rng_cat2
-      t1 t2 (g1:bigrammar t1) (g2:bigrammar t2) (v1:[|t1|]) (v2:[|t2|]) :
-  in_bigrammar_rng g1 v1 /\ in_bigrammar_rng g2 v2 ->
-  in_bigrammar_rng (Cat g1 g2) (v1, v2).
-Proof. localsimpl. Qed.
-
 
   (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
   Definition logic_or_arith_p (opsize_override: bool)
@@ -2720,7 +2085,7 @@ Proof. localsimpl. Qed.
     intros.
     gen_ast_defs (logic_or_arith_env opsize_override opcode1 opcode2).
     refine(
-        (gr @ (mp: _ -> [| pair_t bool_t (pair_t operand_t operand_t) |])
+        ((ast_bigrammar gt) @ (ast_map gt)
             & (fun u: [|pair_t bool_t (pair_t operand_t operand_t)|] =>
                let (w, ops) := u in
                let (op1, op2) := ops in
@@ -2730,27 +2095,27 @@ Proof. localsimpl. Qed.
                      | Reg_op r2 =>
                        (* alternate encoding:  
                           set the d bit false and reverse the two regs *)
-                       case0 (true, (w, (r1, Reg_op r2)))
+                       inv_case_some case0 (true, (w, (r1, Reg_op r2)))
                      | Address_op a =>
-                       case0 (true, (w, (r1, Address_op a)))
+                       inv_case_some case0 (true, (w, (r1, Address_op a)))
                      | Imm_op imm => 
                        match r1 with
                          | EAX =>
-                           (* alternate encoding: use case 1, 2 and 3 above *)
-                           if w then case5 imm
+                           (* alternate encoding: use inv_case_some case 1, 2 and 3 above *)
+                           if w then inv_case_some case5 imm
                            else
                              if (repr_in_unsigned_byte_dec imm) then
-                               case4 (zero_shrink32_8 imm)
+                               inv_case_some case4 (zero_shrink32_8 imm)
                              else None
                          | _ =>
                            if w then
                              if (repr_in_signed_byte_dec imm) then
-                               case1 (r1, (sign_shrink32_8 imm))
+                               inv_case_some case1 (r1, (sign_shrink32_8 imm))
                              else
-                               case3 (r1, imm)
+                               inv_case_some case3 (r1, imm)
                            else
                              if (repr_in_unsigned_byte_dec imm) then
-                               case2 (r1, (zero_shrink32_8 imm))
+                               inv_case_some case2 (r1, (zero_shrink32_8 imm))
                              else None
                        end
                      | _ => None
@@ -2758,22 +2123,22 @@ Proof. localsimpl. Qed.
                  | Address_op a =>
                    match op2 with
                      | Reg_op r2 =>
-                       case0 (false, (w, (r2, Address_op a)))
+                       inv_case_some case0 (false, (w, (r2, Address_op a)))
                      | Imm_op imm => 
                        if w then
                          if (repr_in_signed_byte_dec imm) then
-                           case7 (a, (sign_shrink32_8 imm))
+                           inv_case_some case7 (a, (sign_shrink32_8 imm))
                          else
-                           case8 (a, imm)
+                           inv_case_some case8 (a, imm)
                        else 
                          if (repr_in_unsigned_byte_dec imm) then
-                           case6 (a, (zero_shrink32_8 imm))
+                           inv_case_some case6 (a, (zero_shrink32_8 imm))
                          else None
                      | _ => None
                    end
                  | _ => None
                end)
-            & _)); clear_ast_defs; invertible_tac.
+            & _)); ins_invertible_tac.
   - destruct_union.
     + (* case 0 *)
       destruct v as [d [w [r1 op2]]].  destruct d; ins_printable_tac.
@@ -2797,7 +2162,7 @@ Proof. localsimpl. Qed.
       destruct v as [op b]; ins_printable_tac.
     + (* case 8 *)
       destruct v as [op1 op2]; ins_printable_tac.
-  - destruct w as [wd [op1 op2]].
+  - destruct w as [wd [op1 op2]]. 
     destruct op1; try parsable_tac.
     + (* op1 = Reg_op _ *)
       destruct op2; try parsable_tac.
@@ -2825,25 +2190,25 @@ Proof. localsimpl. Qed.
   Definition bit_test_env (opcode1 opcode2: string) : 
     AST_Env (pair_t operand_t operand_t) :=
     (* bit base a reg; bit offset a byte *)
-    {0, "0000" $$ "1111" $$ "1011" $$ "1010" $$ "11" $$ opcode1 $$ reg $ byte,
+    {{0, "0000" $$ "1111" $$ "1011" $$ "1010" $$ "11" $$ opcode1 $$ reg $ byte,
      fun v => let (r1,b):=v in (Reg_op r1, Imm_op (zero_extend8_32 b))
-                %% pair_t operand_t operand_t} :::
+                %% pair_t operand_t operand_t}} :::
     (* bit base an address; bit offset a byte *)
-    {1, "0000" $$ "1111" $$ "1011" $$ "1010"
+    {{1, "0000" $$ "1111" $$ "1011" $$ "1010"
                $$ ext_op_modrm_noreg_ret_addr opcode1 $ byte,
      fun v => let (addr,b):=v in (Address_op addr, Imm_op (zero_extend8_32 b))
-                %% pair_t operand_t operand_t} :::
+                %% pair_t operand_t operand_t}} :::
     (* bit base a reg or an address; bit offset a reg *)
-    {2, "0000" $$ "1111" $$ "101" $$ opcode2 $$ "011" $$ modrm_ret_reg,
+    {{2, "0000" $$ "1111" $$ "101" $$ opcode2 $$ "011" $$ modrm_ret_reg,
      fun v => let (r2,op1):=v in (op1, Reg_op r2)
-                %% pair_t operand_t operand_t} :::
+                %% pair_t operand_t operand_t}} :::
     ast_env_nil.
   Hint Unfold bit_test_env : env_unfold_db.
 
   Definition bit_test_p (opcode1:string) (opcode2:string) : 
     wf_bigrammar (pair_t operand_t operand_t).
     intros. gen_ast_defs (bit_test_env opcode1 opcode2).
-    refine (gr @ (mp: _ -> [|pair_t operand_t operand_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
               & (fun u: [|pair_t operand_t operand_t|] =>
                    let (op1,op2):=u in
                    match op1 with
@@ -2851,24 +2216,24 @@ Proof. localsimpl. Qed.
                        match op2 with
                          | Imm_op b =>
                            if repr_in_unsigned_byte_dec b
-                           then case0 (r1, zero_shrink32_8 b)
+                           then inv_case_some case0 (r1, zero_shrink32_8 b)
                            else None
                            (* alternative encoding possible: switch the two register operands *)
-                         | Reg_op r2 => case2 (r2,op1)
+                         | Reg_op r2 => inv_case_some case2 (r2,op1)
                          | _ => None
                        end
                      | Address_op addr =>
                        match op2 with
                          | Imm_op b =>
                            if repr_in_unsigned_byte_dec b
-                           then case1 (addr, zero_shrink32_8 b)
+                           then inv_case_some case1 (addr, zero_shrink32_8 b)
                            else None
-                         | Reg_op r2 => case2 (r2,op1)
+                         | Reg_op r2 => inv_case_some case2 (r2,op1)
                          | _ => None
                        end
                      | _ => None
                    end)
-              & _); clear_ast_defs; ins_invertible_tac.
+              & _). ins_invertible_tac.
   Defined.
 
   Definition BT_p := bit_test_p "100" "00".
@@ -2921,7 +2286,7 @@ Proof. localsimpl. Qed.
                       end
                     | _, _ => None
                   end)
-             & _); unfold t; ins_invertible_tac.
+             & _); unfold t. ins_invertible_tac.
   Defined.
 
   Definition CDQ_p : wf_bigrammar unit_t := "1001" $$  ! "1001".
@@ -3151,31 +2516,31 @@ Proof. localsimpl. Qed.
     AST_Env (pair_t bool_t
                     (pair_t bool_t (pair_t operand_t (option_t selector_t)))) :=
     (* near relative jump; sign extend byte *)
-    {0, "1110" $$ "1011" $$ byte,
+    {{0, "1110" $$ "1011" $$ byte,
      fun b => (true, (false, (Imm_op (sign_extend8_32 b), None)))
         %% pair_t bool_t
-             (pair_t bool_t (pair_t operand_t (option_t selector_t)))} :::
+             (pair_t bool_t (pair_t operand_t (option_t selector_t)))}} :::
     (* near relative jump via a word *)
-    {1, "1110" $$ "1001" $$ word,
+    {{1, "1110" $$ "1001" $$ word,
      fun imm => (true, (false, (Imm_op imm, None)))
         %% pair_t bool_t
-             (pair_t bool_t (pair_t operand_t (option_t selector_t)))} :::
+             (pair_t bool_t (pair_t operand_t (option_t selector_t)))}} :::
     (* near absolute jump via an operand *)
-    {2, "1111" $$ "1111" $$ ext_op_modrm "100",
+    {{2, "1111" $$ "1111" $$ ext_op_modrm "100",
      fun op => (true, (true, (op, None)))
         %% pair_t bool_t
-             (pair_t bool_t (pair_t operand_t (option_t selector_t)))} :::
+             (pair_t bool_t (pair_t operand_t (option_t selector_t)))}} :::
     (* far absolute jump via base and offset *) 
-    {3, "1110" $$ "1010" $$ word $ halfword,
+    {{3, "1110" $$ "1010" $$ word $ halfword,
      fun v => let (base,offset):=v in 
               (false, (true, (Imm_op base, Some offset)))
         %% pair_t bool_t
-             (pair_t bool_t (pair_t operand_t (option_t selector_t)))} :::
+             (pair_t bool_t (pair_t operand_t (option_t selector_t)))}} :::
     (* far abslute jump via operand *)
-    {4, "1111" $$ "1111" $$ ext_op_modrm "101",
+    {{4, "1111" $$ "1111" $$ ext_op_modrm "101",
      fun op => (false, (true, (op, None)))
         %% pair_t bool_t
-             (pair_t bool_t (pair_t operand_t (option_t selector_t)))} :::
+             (pair_t bool_t (pair_t operand_t (option_t selector_t)))}} :::
     ast_env_nil.
   Hint Unfold JMP_env : env_unfold_db.
 
@@ -3183,9 +2548,7 @@ Proof. localsimpl. Qed.
     wf_bigrammar (pair_t bool_t
                          (pair_t bool_t (pair_t operand_t (option_t selector_t)))).
     gen_ast_defs JMP_env.
-    refine (gr @ (mp: _ ->
-                      [|pair_t bool_t
-                        (pair_t bool_t (pair_t operand_t (option_t selector_t)))|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
               & (fun u: [|pair_t bool_t
                            (pair_t bool_t (pair_t operand_t (option_t selector_t)))|]
                  =>
@@ -3197,23 +2560,23 @@ Proof. localsimpl. Qed.
                          | (Imm_op imm, None) =>
                            if (repr_in_signed_byte_dec imm) then
                              (* alternate encoding: case 1 *)
-                             case0 (sign_shrink32_8 imm)
-                           else case1 imm
+                             inv_case_some case0 (sign_shrink32_8 imm)
+                           else inv_case_some case1 imm
                          | _ => None
                        end
                      | true,true => 
                        match u2 with
                          | (Reg_op _, None)
-                         | (Address_op _, None) => case2 (fst u2)
+                         | (Address_op _, None) => inv_case_some case2 (fst u2)
                          | _ => None
                        end
                      | false,true =>
                        match u2 with
                          | (Imm_op base, Some offset) =>
-                           case3 (base,offset)
+                           inv_case_some case3 (base,offset)
                          | (Reg_op _, None)
                          | (Address_op _, None) =>
-                           case4 (fst u2)
+                           inv_case_some case4 (fst u2)
                          | _ => None
                        end
                      | _,_ => None
@@ -3304,69 +2667,69 @@ Proof. localsimpl. Qed.
   Definition MOV_env (opsize_override:bool):
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
     (* op2 to op1 *)
-    {0, "1000" $$ "101" $$ anybit $ modrm_ret_reg,
+    {{0, "1000" $$ "101" $$ anybit $ modrm_ret_reg,
      fun v => match v with (w,(r1,op2)) => (w,(Reg_op r1,op2)) end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* op1 to op2 *)
-    {1, "1000" $$ "100" $$ anybit $ modrm_ret_reg,
+    {{1, "1000" $$ "100" $$ anybit $ modrm_ret_reg,
      fun v => match v with (w,(r1,op2)) => (w,(op2,Reg_op r1)) end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate to reg *)
-    {2, "1100" $$ "0111" $$ "11" $$ "000" $$ reg $ imm_p opsize_override,
+    {{2, "1100" $$ "0111" $$ "11" $$ "000" $$ reg $ imm_p opsize_override,
      fun v => match v with (r,imm) => (true, (Reg_op r, Imm_op imm)) end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend byte to reg *)
-    {3, "1100" $$ "0110" $$ "11" $$ "000" $$ reg $ byte,
+    {{3, "1100" $$ "0110" $$ "11" $$ "000" $$ reg $ byte,
      fun v => match v with
                   (r,b) => (false, (Reg_op r, Imm_op (zero_extend8_32 b)))
               end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate to reg; alternate encoding*)
-    {4, "1011" $$ "1" $$ reg $ imm_p opsize_override,
+    {{4, "1011" $$ "1" $$ reg $ imm_p opsize_override,
      fun v => match v with (r,imm) => (true, (Reg_op r, Imm_op imm)) end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend byte to reg; alternate encoding *)
-    {5, "1011" $$ "0" $$ reg $ byte,
+    {{5, "1011" $$ "0" $$ reg $ byte,
      fun v => match v with
                   (r,b) => (false, (Reg_op r, Imm_op (zero_extend8_32 b)))
               end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate to mem *)
-    {6, "1100" $$ "0111" $$ ext_op_modrm_noreg_ret_addr "000"
+    {{6, "1100" $$ "0111" $$ ext_op_modrm_noreg_ret_addr "000"
                $ imm_p opsize_override,
      fun v => match v with
                   (addr,imm) => (true, (Address_op addr, Imm_op imm))
               end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend byte to mem *)
-    {7, "1100" $$ "0110" $$ ext_op_modrm_noreg_ret_addr "000" $ byte,
+    {{7, "1100" $$ "0110" $$ ext_op_modrm_noreg_ret_addr "000" $ byte,
      fun v => match v with
                   (addr,b) => (false, (Address_op addr, Imm_op (zero_extend8_32 b)))
               end
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* 32-bit memory to EAX *)
-    {8, "1010" $$ "0001" $$ word,
+    {{8, "1010" $$ "0001" $$ word,
      fun imm => (true, (Reg_op EAX, Offset_op imm))
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* 8-bit memory to EAX *)
-    {9, "1010" $$ "0000" $$ word,
+    {{9, "1010" $$ "0000" $$ word,
      fun imm => (false, (Reg_op EAX, Offset_op imm))
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* EAX to memory (update 32 bits in mem) *)
-    {10, "1010" $$ "0011" $$ word,
+    {{10, "1010" $$ "0011" $$ word,
      fun imm => (true, (Offset_op imm, Reg_op EAX))
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* EAX to memory (update 8 bits in mem) *)
-    {11, "1010" $$ "0010" $$ word,
+    {{11, "1010" $$ "0010" $$ word,
      fun imm => (false, (Offset_op imm, Reg_op EAX))
-        %% pair_t bool_t (pair_t operand_t operand_t)} :::
+        %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     ast_env_nil.
   Hint Unfold MOV_env : env_unfold_db.
 
   Definition MOV_p (opsize_override:bool): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros. gen_ast_defs (MOV_env opsize_override).
-    refine (gr @ (mp: _ -> [|pair_t bool_t (pair_t operand_t operand_t)|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
               & (fun u: [|pair_t bool_t (pair_t operand_t operand_t)|] => 
                    let (w,u1):=u in
                    let (op1,op2):=u1 in
@@ -3377,44 +2740,44 @@ Proof. localsimpl. Qed.
                          | Address_op _ =>
                            (* alternate encoding when both op1 and op2 are Reg_op: 
                               case1 and swap op1 and op2 *)
-                           case0 (w, (r1, op2))
+                           inv_case_some case0 (w, (r1, op2))
                          | Imm_op imm => 
                            if w then (* use case 4; alternate encoding: case 2 *)
-                             case4 (r1,imm)
+                             inv_case_some case4 (r1,imm)
                            else
                              if (repr_in_unsigned_byte_dec imm)
                              then
                              (* use case 5; alternate encoding: case 3 *)
-                               case5 (r1, zero_shrink32_8 imm)
+                               inv_case_some case5 (r1, zero_shrink32_8 imm)
                              else None
                          | Offset_op imm => 
                            match r1 with
-                             | EAX => if w then case8 imm
-                                      else case9 imm
+                             | EAX => if w then inv_case_some case8 imm
+                                      else inv_case_some case9 imm
                              | _ => None
                            end
                        end
                      | Address_op addr =>
                        match op2 with
                          | Reg_op r => 
-                           case1 (w,(r, Address_op addr))
+                           inv_case_some case1 (w,(r, Address_op addr))
                          | Imm_op imm =>
-                           if w then case6 (addr,imm)
+                           if w then inv_case_some case6 (addr,imm)
                            else 
                              if (repr_in_unsigned_byte_dec imm)
-                             then case7 (addr, zero_shrink32_8 imm)
+                             then inv_case_some case7 (addr, zero_shrink32_8 imm)
                              else None
                          | _ => None
                        end
                      | Offset_op imm => 
                        match op2 with
                          | Reg_op EAX => 
-                           if w then case10 imm else case11 imm
+                           if w then inv_case_some case10 imm else inv_case_some case11 imm
                          | _ => None
                        end
                      | _ => None
                    end)
-              & _); clear_ast_defs; ins_invertible_tac.
+              & _); ins_invertible_tac.
     - abstract 
         (destruct w as [wd [op1 op2]]; destruct op1; try parsable_tac;
          destruct op2; ins_pf_sim; try parsable_tac;
@@ -3506,84 +2869,84 @@ Proof. localsimpl. Qed.
   Defined.
 
   Definition POPSR_env : AST_Env segment_register_t :=
-    {0, "000" $$ "00" $$ ! "111", (fun v => ES %% segment_register_t)} :::
-    {1, "000" $$ "10" $$ ! "111", (fun v => SS %% segment_register_t)} :::
-    {2, "000" $$ "11" $$ ! "111", (fun v => DS %% segment_register_t)} :::
-    {3, "0000" $$ "1111" $$ "10" $$ "100" $$ ! "001",
-     (fun _ => FS %% segment_register_t)} :::
-    {4, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "001",
-     (fun _ => GS %% segment_register_t)} :::
+    {{0, "000" $$ "00" $$ ! "111", (fun v => ES %% segment_register_t)}} :::
+    {{1, "000" $$ "10" $$ ! "111", (fun v => SS %% segment_register_t)}} :::
+    {{2, "000" $$ "11" $$ ! "111", (fun v => DS %% segment_register_t)}} :::
+    {{3, "0000" $$ "1111" $$ "10" $$ "100" $$ ! "001",
+     (fun _ => FS %% segment_register_t)}} :::
+    {{4, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "001",
+     (fun _ => GS %% segment_register_t)}} :::
     ast_env_nil.
   Hint Unfold POPSR_env : env_unfold_db.
 
   Definition POPSR_p : wf_bigrammar segment_register_t.
     gen_ast_defs POPSR_env.
-    refine (gr @ (mp: _ -> [|segment_register_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => match u with
-                             | ES => case0 ()
-                             | SS => case1 ()
-                             | DS => case2 ()
-                             | FS => case3 ()
-                             | GS => case4 ()
+                             | ES => inv_case_some case0 ()
+                             | SS => inv_case_some case1 ()
+                             | DS => inv_case_some case2 ()
+                             | FS => inv_case_some case3 ()
+                             | GS => inv_case_some case4 ()
                              | _ => None
                            end)
-               & _); clear_ast_defs; ins_invertible_tac.
+               & _); ins_invertible_tac.
   Defined.
 
   Definition POPA_p := "0110" $$ ! "0001".
   Definition POPF_p := "1001" $$ ! "1101".
 
   Definition PUSH_env : AST_Env (pair_t bool_t operand_t) :=
-    {0, "1111" $$ "1111" $$ ext_op_modrm_noreg_ret_addr "110", 
-     (fun addr => (true, Address_op addr) %% pair_t bool_t operand_t)} :::
-    {1, "0101" $$ "0" $$ reg, 
-     (fun r => (true, Reg_op r) %% pair_t bool_t operand_t)} :::
-    {2, "0110" $$ "1010" $$ byte,
-     (fun b => (false, Imm_op (sign_extend8_32 b)) %% pair_t bool_t operand_t)} :::
-    {3, "0110" $$ "1000" $$ word,
-     (fun w => (true, Imm_op w) %% pair_t bool_t operand_t)} :::
+    {{0, "1111" $$ "1111" $$ ext_op_modrm_noreg_ret_addr "110", 
+     (fun addr => (true, Address_op addr) %% pair_t bool_t operand_t)}} :::
+    {{1, "0101" $$ "0" $$ reg, 
+     (fun r => (true, Reg_op r) %% pair_t bool_t operand_t)}} :::
+    {{2, "0110" $$ "1010" $$ byte,
+     (fun b => (false, Imm_op (sign_extend8_32 b)) %% pair_t bool_t operand_t)}} :::
+    {{3, "0110" $$ "1000" $$ word,
+     (fun w => (true, Imm_op w) %% pair_t bool_t operand_t)}} :::
     ast_env_nil.
   Hint Unfold PUSH_env : env_unfold_db.
 
   Definition PUSH_p : wf_bigrammar (pair_t bool_t operand_t).
     gen_ast_defs PUSH_env.
-    refine (gr @ (mp: _ -> [|pair_t bool_t operand_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
                     match u with
-                      | (true, Address_op addr) => case0 addr
-                      | (true, Reg_op r) => case1 r
-                      | (true, Imm_op w) => case3 w
+                      | (true, Address_op addr) => inv_case_some case0 addr
+                      | (true, Reg_op r) => inv_case_some case1 r
+                      | (true, Imm_op w) => inv_case_some case3 w
                       | (false, Imm_op w) =>
-                        if (repr_in_signed_byte_dec w) then case2 (sign_shrink32_8 w)
+                        if (repr_in_signed_byte_dec w) then inv_case_some case2 (sign_shrink32_8 w)
                         else None
                       | _ => None
                     end)
-               & _); clear_ast_defs; ins_invertible_tac.
+               & _); ins_invertible_tac.
   Defined.
 
   Definition PUSHSR_env : AST_Env segment_register_t :=
-    {0, "000" $$ "00" $$ ! "110", (fun v => ES %% segment_register_t)} :::
-    {1, "000" $$ "01" $$ ! "110", (fun v => CS %% segment_register_t)} :::
-    {2, "000" $$ "10" $$ ! "110", (fun v => SS %% segment_register_t)} :::
-    {3, "000" $$ "11" $$ ! "110", (fun v => DS %% segment_register_t)} :::
-    {4, "0000" $$ "1111" $$ "10" $$ "100" $$ ! "000", 
-     (fun v => FS %% segment_register_t)} :::
-    {5, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "000",
-     (fun v => GS %% segment_register_t)} :::
+    {{0, "000" $$ "00" $$ ! "110", (fun v => ES %% segment_register_t)}} :::
+    {{1, "000" $$ "01" $$ ! "110", (fun v => CS %% segment_register_t)}} :::
+    {{2, "000" $$ "10" $$ ! "110", (fun v => SS %% segment_register_t)}} :::
+    {{3, "000" $$ "11" $$ ! "110", (fun v => DS %% segment_register_t)}} :::
+    {{4, "0000" $$ "1111" $$ "10" $$ "100" $$ ! "000", 
+     (fun v => FS %% segment_register_t)}} :::
+    {{5, "0000" $$ "1111" $$ "10" $$ "101" $$ ! "000",
+     (fun v => GS %% segment_register_t)}} :::
     ast_env_nil.
   Hint Unfold PUSHSR_env : env_unfold_db.
 
   Definition PUSHSR_p : wf_bigrammar segment_register_t.
     gen_ast_defs PUSHSR_env.
-    refine (gr @ (mp: _ -> [|segment_register_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => 
                     match u with
-                      | ES => case0 ()
-                      | CS => case1 ()
-                      | SS => case2 ()
-                      | DS => case3 ()
-                      | FS => case4 ()
-                      | GS => case5 ()
+                      | ES => inv_case_some case0 ()
+                      | CS => inv_case_some case1 ()
+                      | SS => inv_case_some case2 ()
+                      | DS => inv_case_some case3 ()
+                      | FS => inv_case_some case4 ()
+                      | GS => inv_case_some case5 ()
                     end)
                & _); clear_ast_defs; ins_invertible_tac.
   Defined.
@@ -3647,28 +3010,28 @@ Proof. localsimpl. Qed.
   *)
 
   Definition RET_env : AST_Env (pair_t bool_t (option_t half_t)) := 
-    {0, "1100" $$ ! "0011", 
-     (fun v => (true, None) %% pair_t bool_t (option_t half_t))} :::
-    {1, "1100" $$ "0010" $$ halfword,
-     (fun h => (true, Some h) %% pair_t bool_t (option_t half_t))} :::
-    {2, "1100" $$ ! "1011",
-     (fun h => (false, None) %% pair_t bool_t (option_t half_t))} :::
-    {3, "1100" $$ "1010" $$ halfword,
-     (fun h => (false, Some h) %% pair_t bool_t (option_t half_t))} :::
+    {{0, "1100" $$ ! "0011", 
+     (fun v => (true, None) %% pair_t bool_t (option_t half_t))}} :::
+    {{1, "1100" $$ "0010" $$ halfword,
+     (fun h => (true, Some h) %% pair_t bool_t (option_t half_t))}} :::
+    {{2, "1100" $$ ! "1011",
+     (fun h => (false, None) %% pair_t bool_t (option_t half_t))}} :::
+    {{3, "1100" $$ "1010" $$ halfword,
+     (fun h => (false, Some h) %% pair_t bool_t (option_t half_t))}} :::
     ast_env_nil.
   Hint Unfold RET_env : env_unfold_db.
 
   Definition RET_p : wf_bigrammar (pair_t bool_t (option_t half_t)).
     gen_ast_defs RET_env.
-    refine (gr @ (mp: _ -> [|pair_t bool_t (option_t half_t)|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => 
                     match u with
-                      | (true, None) => case0 ()
-                      | (true, Some h) => case1 h
-                      | (false, None) => case2 ()
-                      | (false, Some h) => case3 h
+                      | (true, None) => inv_case_some case0 ()
+                      | (true, Some h) => inv_case_some case1 h
+                      | (false, None) => inv_case_some case2 ()
+                      | (false, Some h) => inv_case_some case3 h
                     end)
-               & _); clear_ast_defs; ins_invertible_tac.
+               & _); ins_invertible_tac.
   Defined.
 
   Definition ROL_p := rotate_p "000".
@@ -3700,47 +3063,46 @@ Proof. localsimpl. Qed.
 
   Definition shiftdouble_env (opcode:string) : 
     AST_Env (pair_t operand_t (pair_t register_t reg_or_immed_t)) :=
-    {0, "0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte,
+    {{0, "0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ "11" $$ reg $ reg $ byte,
      (fun v => match v with | (r2,(r1,b)) => (Reg_op r1, (r2, Imm_ri b)) end
-                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
-    {1, "0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte,
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))}} :::
+    {{1, "0000" $$ "1111" $$ "1010" $$ opcode $$ "00" $$ modrm_noreg $ byte,
      (fun v => match v with
                  | ((r,addr), b) => (Address_op addr, (r, Imm_ri b)) end
-                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
-    {2, "0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg,
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))}} :::
+    {{2, "0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ "11" $$ reg $ reg,
     (fun v => match v with | (r2,r1) => (Reg_op r1, (r2, Reg_ri ECX)) end
-                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
-    {3, "0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg,
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))}} :::
+    {{3, "0000" $$ "1111" $$ "1010" $$ opcode $$ "01" $$ modrm_noreg,
     (fun v => match v with
                 | (r,addr) => (Address_op addr, (r, Reg_ri ECX)) end
-                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))} :::
+                 %% pair_t operand_t (pair_t register_t reg_or_immed_t))}} :::
     ast_env_nil.
   Hint Unfold shiftdouble_env : env_unfold_db.
 
   Definition shiftdouble_p (opcode:string) :
     wf_bigrammar (pair_t operand_t (pair_t register_t reg_or_immed_t)).
     intros; gen_ast_defs (shiftdouble_env opcode).
-    refine (gr @ (mp: _ -> 
-                      [|pair_t operand_t (pair_t register_t reg_or_immed_t)|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u:[|pair_t operand_t (pair_t register_t reg_or_immed_t)|] => 
                     let (op1,u1):=u in
                     let (r2,ri):=u1 in
                     match op1 with
                       | Reg_op r1 => 
                         match ri with
-                          | Imm_ri b => case0 (r2,(r1,b))
-                          | Reg_ri ECX => case2 (r2,r1)
+                          | Imm_ri b => inv_case_some case0 (r2,(r1,b))
+                          | Reg_ri ECX => inv_case_some case2 (r2,r1)
                           | _ => None
                         end
                       | Address_op addr =>
                         match ri with
-                          | Imm_ri b => case1 ((r2,addr),b)
-                          | Reg_ri ECX => case3 (r2,addr)
+                          | Imm_ri b => inv_case_some case1 ((r2,addr),b)
+                          | Reg_ri ECX => inv_case_some case3 (r2,addr)
                           | _ => None
                         end
                       | _ => None
                     end)
-               & _); clear_ast_defs; ins_invertible_tac.
+               & _); ins_invertible_tac.
     - destruct w as [op [r2 ri]]. 
       destruct op; destruct ri as [r3 | addr]; try parsable_tac;
       destruct r3; parsable_tac.
@@ -3765,30 +3127,30 @@ Proof. localsimpl. Qed.
 
   Definition TEST_env (opsize_override:bool) : 
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
-    {0, "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_p opsize_override,
+    {{0, "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_p opsize_override,
      (fun v => (true, (fst v, Imm_op (snd v)))
-                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
-    {1, "1111" $$ "0110" $$ ext_op_modrm "000" $ byte,
+                 %% pair_t bool_t (pair_t operand_t operand_t))}} :::
+    {{1, "1111" $$ "0110" $$ ext_op_modrm "000" $ byte,
      (fun v => (false, (fst v, Imm_op (zero_extend8_32 (snd v))))
-                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
-    {2, "1000" $$ "010" $$ anybit $ modrm_ret_reg,
+                 %% pair_t bool_t (pair_t operand_t operand_t))}} :::
+    {{2, "1000" $$ "010" $$ anybit $ modrm_ret_reg,
      (fun v => 
         match v with
           | (w,(r1,op2)) => (w, (Reg_op r1, op2))
-        end %% pair_t bool_t (pair_t operand_t operand_t))} :::
-    {3, "1010" $$ "1001" $$ imm_p opsize_override,
+        end %% pair_t bool_t (pair_t operand_t operand_t))}} :::
+    {{3, "1010" $$ "1001" $$ imm_p opsize_override,
      (fun v => (true, (Imm_op v, Reg_op EAX))
-                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
-    {4, "1010" $$ "1000" $$ byte,
+                 %% pair_t bool_t (pair_t operand_t operand_t))}} :::
+    {{4, "1010" $$ "1000" $$ byte,
      (fun b => (false, (Reg_op EAX, Imm_op (zero_extend8_32 b)))
-                 %% pair_t bool_t (pair_t operand_t operand_t))} :::
+                 %% pair_t bool_t (pair_t operand_t operand_t))}} :::
     ast_env_nil.
   Hint Unfold TEST_env : env_unfold_db.
 
   Definition TEST_p (opsize_override: bool) : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros; gen_ast_defs (TEST_env opsize_override).
-    refine (gr @ (mp: _ -> [|pair_t bool_t (pair_t operand_t operand_t)|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u:[|pair_t bool_t (pair_t operand_t operand_t)|] => 
                     let (w,u1) := u in
                     let (op1,op2):=u1 in
@@ -3797,33 +3159,33 @@ Proof. localsimpl. Qed.
                         match op1 with
                           | Reg_op _ | Address_op _ => 
                             if w then 
-                              case0 (op1, imm)
+                              inv_case_some case0 (op1, imm)
                             else
                               if repr_in_unsigned_byte_dec imm then
                                 (* alternate encoding: case4 when op1 is EAX
                                    and imm within a byte *)
-                                case1 (op1, zero_shrink32_8 imm)
+                                inv_case_some case1 (op1, zero_shrink32_8 imm)
                               else None
                           | _ => None
                         end
                       | Reg_op r2 =>
                         match op1 with
-                          | Reg_op r1 => case2 (w, (r1, op2))
+                          | Reg_op r1 => inv_case_some case2 (w, (r1, op2))
                           | Imm_op i => 
                             if (register_eq_dec r2 EAX) then
-                              if w then case3 i
+                              if w then inv_case_some case3 i
                               else None
                             else None
                           | _ => None
                         end
                       | Address_op _ =>
                         match op1 with
-                          | Reg_op r1 => case2 (w, (r1, op2))
+                          | Reg_op r1 => inv_case_some case2 (w, (r1, op2))
                           | _ => None
                         end
                       | _ => None
                     end)
-               & _); clear_ast_defs; invertible_tac.
+               & _); invertible_ast_tac.
     - abstract (destruct_union; ins_printable_tac).
     - abstract 
         (destruct w as [b [op1 op2]]; destruct op2; destruct op1; destruct b;
@@ -3900,7 +3262,8 @@ Proof. localsimpl. Qed.
     end.
 
   Local Ltac fp_parsable_tac := parsable_tac_gen ins_pf_sim fp_destruct_var.
-  Local Ltac fp_invertible_tac := invertible_tac_gen ins_pf_sim fp_destruct_var.
+  Local Ltac fp_invertible_tac := 
+    invertible_tac_gen unfold_invertible_ast ins_pf_sim fp_destruct_var.
 
   Definition fpu_reg_op_p : wf_bigrammar fp_operand_t.
     refine (fpu_reg @ (fun v => FPS_op v %% fp_operand_t)
@@ -3960,30 +3323,30 @@ Proof. localsimpl. Qed.
 
   Definition fp_arith_env (bs0 bs1: string) :
     AST_Env (pair_t bool_t fp_operand_t) :=
-    {0, "11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr bs0,
-     (fun addr => (true, FPM32_op addr) %% pair_t bool_t fp_operand_t)} :::
-    {1, "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr bs0,
-     (fun addr => (true, FPM64_op addr) %% pair_t bool_t fp_operand_t)} :::
-    {2, "11011" $$ "0" $$ "0011" $$ bs0 $$ fpu_reg,
-     (fun fr => (true, FPS_op fr) %% pair_t bool_t fp_operand_t)} :::
-    {3, "11011" $$ "1" $$ "0011" $$ bs1 $$ fpu_reg,
-     (fun fr => (false, FPS_op fr) %% pair_t bool_t fp_operand_t)} :::
+    {{0, "11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr bs0,
+     (fun addr => (true, FPM32_op addr) %% pair_t bool_t fp_operand_t)}} :::
+    {{1, "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr bs0,
+     (fun addr => (true, FPM64_op addr) %% pair_t bool_t fp_operand_t)}} :::
+    {{2, "11011" $$ "0" $$ "0011" $$ bs0 $$ fpu_reg,
+     (fun fr => (true, FPS_op fr) %% pair_t bool_t fp_operand_t)}} :::
+    {{3, "11011" $$ "1" $$ "0011" $$ bs1 $$ fpu_reg,
+     (fun fr => (false, FPS_op fr) %% pair_t bool_t fp_operand_t)}} :::
     ast_env_nil.
   Hint Unfold fp_arith_env : env_unfold_db.
 
   Definition fp_arith_p (bs0 bs1: string) : 
     wf_bigrammar (pair_t bool_t fp_operand_t).
     intros; gen_ast_defs (fp_arith_env bs0 bs1).
-    refine (gr @ (mp: _ -> [|pair_t bool_t fp_operand_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
               & (fun u =>
                    match u with
-                     | (true, FPM32_op addr) => case0 addr
-                     | (true, FPM64_op addr) => case1 addr
-                     | (true, FPS_op fr) => case2 fr
-                     | (false, FPS_op fr) => case3 fr
+                     | (true, FPM32_op addr) => inv_case_some case0 addr
+                     | (true, FPM64_op addr) => inv_case_some case1 addr
+                     | (true, FPS_op fr) => inv_case_some case2 fr
+                     | (false, FPS_op fr) => inv_case_some case3 fr
                      | _ => None
                    end)
-              & _); clear_ast_defs; fp_invertible_tac.
+              & _); fp_invertible_tac.
   Defined.
 
   Definition FADD_p := fp_arith_p "000" "000".
@@ -4015,7 +3378,10 @@ Proof. localsimpl. Qed.
                      | Some (b2,(b1,(b0,()))) => Some (b2,(b1,(b0,op)))
                      | None => None (* impossible case *)
                    end)
-              & _); invertible_tac.
+              & _); invertible_ast_tac.
+    - repeat (ibr_sim || destruct_pr_var);
+      autorewrite with inv_db;
+      printable_tac.
     - destruct w as [ct op].
       remember_rev (bitsn_of_int 3 (fp_condition_type_to_Z ct)) as u.
       destruct u as [[b2 [b1 [b0 b]]] | ]; try parsable_tac.
@@ -4164,29 +3530,29 @@ Proof. localsimpl. Qed.
   Definition FISUBR_p := fp_iarith_p "101".
 
   Definition FLD_env : AST_Env fp_operand_t :=
-    {0, "11011" $$ "001" $$ ext_op_modrm_noreg_ret_addr "000",
-     (fun addr => FPM32_op addr %% fp_operand_t)} :::
-    {1, "11011" $$ "101" $$ ext_op_modrm_noreg_ret_addr "000",
-     (fun addr => FPM64_op addr %% fp_operand_t)} :::
-    {2, "11011" $$ "011" $$ ext_op_modrm_noreg_ret_addr "101",
-     (fun addr => FPM80_op addr %% fp_operand_t)} :::
-    {3, "11011" $$ "001" $$ "11000" $$ fpu_reg,
-     (fun fr => FPS_op fr %% fp_operand_t)} :::
+    {{0, "11011" $$ "001" $$ ext_op_modrm_noreg_ret_addr "000",
+     (fun addr => FPM32_op addr %% fp_operand_t)}} :::
+    {{1, "11011" $$ "101" $$ ext_op_modrm_noreg_ret_addr "000",
+     (fun addr => FPM64_op addr %% fp_operand_t)}} :::
+    {{2, "11011" $$ "011" $$ ext_op_modrm_noreg_ret_addr "101",
+     (fun addr => FPM80_op addr %% fp_operand_t)}} :::
+    {{3, "11011" $$ "001" $$ "11000" $$ fpu_reg,
+     (fun fr => FPS_op fr %% fp_operand_t)}} :::
     ast_env_nil.
   Hint Unfold FLD_env : env_unfold_db.
 
   Definition FLD_p: wf_bigrammar fp_operand_t.
     gen_ast_defs FLD_env.
-    refine (gr @ (mp:_ -> [|fp_operand_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
                     match u with
-                      | FPM32_op addr => case0 addr
-                      | FPM64_op addr => case1 addr
-                      | FPM80_op addr => case2 addr
-                      | FPS_op fr => case3 fr
+                      | FPM32_op addr => inv_case_some case0 addr
+                      | FPM64_op addr => inv_case_some case1 addr
+                      | FPM80_op addr => inv_case_some case2 addr
+                      | FPS_op fr => inv_case_some case3 fr
                       | _ => None
                     end)
-               & _); clear_ast_defs; fp_invertible_tac.
+               & _); fp_invertible_tac.
   Defined.
 
   Definition FLD1_p := "11011" $$ "001111" $$ ! "01000".
@@ -4263,29 +3629,29 @@ Proof. localsimpl. Qed.
   Definition FSTENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "110".
 
   Definition FSTP_env : AST_Env fp_operand_t :=
-    {0, "11011" $$ "001" $$ ext_op_modrm_noreg_ret_addr "011",
-     (fun addr => FPM32_op addr %% fp_operand_t)} :::
-    {1, "11011" $$ "101" $$ ext_op_modrm_noreg_ret_addr "011",
-     (fun addr => FPM64_op addr %% fp_operand_t)} :::
-    {2, "11011" $$ "011" $$ ext_op_modrm_noreg_ret_addr "111",
-     (fun addr => FPM80_op addr %% fp_operand_t)} :::
-    {3, "11011" $$ "101" $$ "11011" $$ fpu_reg,
-     (fun fr => FPS_op fr %% fp_operand_t)} :::
+    {{0, "11011" $$ "001" $$ ext_op_modrm_noreg_ret_addr "011",
+     (fun addr => FPM32_op addr %% fp_operand_t)}} :::
+    {{1, "11011" $$ "101" $$ ext_op_modrm_noreg_ret_addr "011",
+     (fun addr => FPM64_op addr %% fp_operand_t)}} :::
+    {{2, "11011" $$ "011" $$ ext_op_modrm_noreg_ret_addr "111",
+     (fun addr => FPM80_op addr %% fp_operand_t)}} :::
+    {{3, "11011" $$ "101" $$ "11011" $$ fpu_reg,
+     (fun fr => FPS_op fr %% fp_operand_t)}} :::
     ast_env_nil.
   Hint Unfold FSTP_env : env_unfold_db.
 
   Definition FSTP_p: wf_bigrammar fp_operand_t.
     gen_ast_defs FSTP_env.
-    refine (gr @ (mp:_ -> [|fp_operand_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
                     match u with
-                      | FPM32_op addr => case0 addr
-                      | FPM64_op addr => case1 addr
-                      | FPM80_op addr => case2 addr
-                      | FPS_op fr => case3 fr
+                      | FPM32_op addr => inv_case_some case0 addr
+                      | FPM64_op addr => inv_case_some case1 addr
+                      | FPM80_op addr => inv_case_some case2 addr
+                      | FPS_op fr => inv_case_some case3 fr
                       | _ => None
                     end)
-               & _); clear_ast_defs; fp_invertible_tac.
+               & _); fp_invertible_tac.
   Defined.
 
   Definition FSUB_p := fp_arith_p "100" "101".
@@ -4494,7 +3860,7 @@ Proof. localsimpl. Qed.
     end.
 
   Local Ltac mmx_invertible_tac := 
-    invertible_tac_gen mmx_pf_sim mmx_destruct_var.
+    invertible_tac_gen unfold_invertible_ast mmx_pf_sim mmx_destruct_var.
 
   (** ** Bigrammars for MMX instructions *)
 
@@ -4502,32 +3868,32 @@ Proof. localsimpl. Qed.
 
   Definition MOVD_env : AST_Env (pair_t mmx_operand_t mmx_operand_t) :=
     (* gpreg to and from mmxreg *)
-    {0, "0000" $$ "1111" $$ "011" $$ anybit $ "1110" $$ "11" $$ mmx_reg $ reg,
+    {{0, "0000" $$ "1111" $$ "011" $$ anybit $ "1110" $$ "11" $$ mmx_reg $ reg,
     (fun v => let (d,v1):=v in let (mr,r):=v1 in
               (if d then (MMX_Reg_op mr, GP_Reg_op r)
                else (GP_Reg_op r, MMX_Reg_op mr))
-              %% pair_t mmx_operand_t mmx_operand_t) } :::
+              %% pair_t mmx_operand_t mmx_operand_t) }} :::
     (* mem to and from mmxreg *)
-    {1, "0000" $$ "1111" $$ "011" $$ anybit $ "1110" $$ modrm_mmx_noreg,
+    {{1, "0000" $$ "1111" $$ "011" $$ anybit $ "1110" $$ modrm_mmx_noreg,
      (fun v => let (d,v1):=v in let (mr,addr):=v1 in
                (if d then (MMX_Addr_op addr, MMX_Reg_op mr)
                 else (MMX_Reg_op mr, MMX_Addr_op addr))
-               %% pair_t mmx_operand_t mmx_operand_t) } :::
+               %% pair_t mmx_operand_t mmx_operand_t) }} :::
     ast_env_nil.
   Hint Unfold MOVD_env : env_unfold_db.
 
   Definition MOVD_p : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
     gen_ast_defs MOVD_env.
-    refine (gr @ (mp: _ -> [|pair_t mmx_operand_t mmx_operand_t|])
+    refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
                     match u with
-                      | (MMX_Reg_op mr, GP_Reg_op r) => case0 (true,(mr,r))
-                      | (GP_Reg_op r, MMX_Reg_op mr) => case0 (false,(mr,r))
-                      | (MMX_Addr_op addr, MMX_Reg_op mr) => case1 (true,(mr,addr))
-                      | (MMX_Reg_op mr, MMX_Addr_op addr) => case1 (false,(mr,addr))
+                      | (MMX_Reg_op mr, GP_Reg_op r) => inv_case_some case0 (true,(mr,r))
+                      | (GP_Reg_op r, MMX_Reg_op mr) => inv_case_some case0 (false,(mr,r))
+                      | (MMX_Addr_op addr, MMX_Reg_op mr) => inv_case_some case1 (true,(mr,addr))
+                      | (MMX_Reg_op mr, MMX_Addr_op addr) => inv_case_some case1 (false,(mr,addr))
                       | _ => None
                     end)
-               & _); clear_ast_defs; mmx_invertible_tac.
+               & _); mmx_invertible_tac.
     - destruct_union;
       destruct v as [d [mr r]]; destruct d; printable_tac; ins_ibr_sim.
   Defined.
@@ -4887,7 +4253,8 @@ Proof. localsimpl. Qed.
         destruct H2 as [H2 | H2]; destruct H2; subst op2
     end.
 
-  Local Ltac sse_invertible_tac := invertible_tac_gen sse_pf_sim sse_destruct_var.
+  Local Ltac sse_invertible_tac := 
+    invertible_tac_gen unfold_invertible_ast sse_pf_sim sse_destruct_var.
 
   Definition ADDPS_p := 
     "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm. 
