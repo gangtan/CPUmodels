@@ -1123,7 +1123,7 @@ Inductive tmember: type -> typetree -> Type :=
 | MRTree: forall t tt1 tt2, tmember t tt2 -> tmember t (Node tt1 tt2).
 
 (** Generate an inverse function for an AST env entry from a proof
-      saying the entry is in the tree. *)
+    saying the entry is in the tree. *)
 Fixpoint inv_case {t tt} (m: tmember t tt): 
   [|t|] -> [|ast_type tt|] :=
   match m in tmember t' tt' return [|t'|] -> [|ast_type tt'|] with
@@ -1156,13 +1156,14 @@ Fixpoint get_type_idx (id:index) {rt tt} (gt: gr_tree rt tt):
       | existT _ t tm => existT _ t (MRTree _ tm)
       end
   end.
+Arguments get_type_idx (id)%N rt tt gt.
 
 (* tactic for converting an ast_env to a bigrammar tree; we could
    use a dependently typed heterogeneous list to avoid using tactics
    for this one, but that would require a non-standard induction
    principle as the list is split into two halves; so this is
    sufficient for now. *)
-  Ltac get_gr_tree ast_env := 
+Ltac get_gr_tree ast_env := 
     match type of ast_env with
     | AST_Env ?rt =>
       match ast_env with
@@ -1211,12 +1212,13 @@ Ltac gen_tm_cases gt len :=
         | true => idtac
         | false =>
           let inj:=fresh "case" in
-          let ti := (eval compute in (get_type_idx (N.of_nat i) gt)) in
-          match ti with
-            | existT _ _ ?tm =>
-              pose (inj:=tm); simpl in inj; 
-              gen_tm_cases_aux (S i)
-          end
+          (* another variation is to put the literal term
+             "get_type_idx (N.of_nat i) gt)" into the context and
+             perform evaluation later during proofs; however, this
+             would not speed up proofs *)
+          pose (inj:=projT2 (get_type_idx (N.of_nat i) gt));
+          simpl in inj; 
+          gen_tm_cases_aux (S i)
      end
   in let dummyf := constr:(()) in
      pose (case:=dummyf);
@@ -1247,12 +1249,12 @@ Ltac clear_gt :=
   end.
 
 Ltac unfold_invertible_ast := 
-  unfold invertible; split; [unfold printable | unfold parsable]; 
-  compute [snd fst]; try clear_gt; compute [ast_bigrammar ast_map inv_case_some];
+  unfold invertible; try clear_gt; split; [unfold printable | unfold parsable]; 
+  compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
   [(clear_ast_defs; compute [ast_type inv_case]) | idtac];
   intros.
 
-Ltac invertible_ast_tac := 
+Ltac ast_invertible_tac := 
   invertible_tac_gen unfold_invertible_ast ibr_sim destruct_var.
 
 Definition test_env: AST_Env Unit_t :=

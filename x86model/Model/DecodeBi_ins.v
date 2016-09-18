@@ -884,39 +884,39 @@ Set Implicit Arguments.
     {{1, ! "010", (fun v => CR2 %% control_register_t)}} :::
     {{2, ! "011", (fun v => CR3 %% control_register_t)}} :::
     {{3, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    (* {{4, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
-    (* {{5, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
-    (* {{6, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
-    (* {{7, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
-    (* {{8, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
-    (* {{9, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
-    (* {{10, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
-    (* {{11, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
-    (* {{12, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
-    (* {{13, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
-    (* {{14, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
-    (* {{15, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
-    (* {{16, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
-    (* {{17, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
-    (* {{18, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
-    (* {{19, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
-    (* {{20, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
-    (* {{21, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
-    (* {{22, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
-    (* {{23, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
-    (* {{24, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
-    (* {{25, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
-    (* {{26, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
-    (* {{27, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
-    (* {{28, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
-    (* {{29, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
-    (* {{30, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
-    (* {{31, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    {{4, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{5, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{6, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{7, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{8, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{9, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{10, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{11, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{12, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{13, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{14, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{15, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{16, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{17, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{18, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{19, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{20, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{21, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{22, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{23, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{24, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{25, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{26, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{27, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    {{28, ! "000", (fun v => CR0 %% control_register_t)}} :::
+    {{29, ! "010", (fun v => CR2 %% control_register_t)}} :::
+    {{30, ! "011", (fun v => CR3 %% control_register_t)}} :::
+    {{31, ! "100", (fun v => CR4 %% control_register_t)}} :::
     ast_env_nil.
   Hint Unfold test_env: env_unfold_db.
 
   Definition test_p : wf_bigrammar control_register_t.
-    gen_ast_defs test_env.
+    Time gen_ast_defs test_env.
     Time refine((ast_bigrammar gt) @ (ast_map gt)
              & (fun u =>
                   match u with
@@ -925,9 +925,10 @@ Set Implicit Arguments.
                     | CR3 => inv_case_some case2 ()
                     | CR4 => inv_case_some case3 ()
                   end)
-             & _); invertible_ast_tac.
+             & _); ast_invertible_tac.
      - Time (destruct w; parsable_tac).
   Time Defined.
+
 
   (* Definition test_p : wf_bigrammar _register_t. *)
   (*   Time gen_ast_defs test_env. *)
@@ -963,7 +964,7 @@ Set Implicit Arguments.
                     | CR3 => inv_case_some case2 ()
                     | CR4 => inv_case_some case3 ()
                   end)
-             & _); invertible_ast_tac.
+             & _); ast_invertible_tac.
      - destruct w; parsable_tac.
   Defined.
 
@@ -994,7 +995,7 @@ Set Implicit Arguments.
                      | DR6 => inv_case_some case4 ()
                      | DR7 => inv_case_some case5 ()
                 end)
-              & _); invertible_ast_tac.
+              & _); ast_invertible_tac.
     - destruct w; parsable_tac.
   Defined.
 
@@ -1020,7 +1021,7 @@ Set Implicit Arguments.
                       | FS => inv_case_some case4 ()
                       | GS => inv_case_some case5 ()
                     end)
-               & _); invertible_ast_tac.
+               & _); ast_invertible_tac.
      - destruct w; parsable_tac.
   Defined.
     
@@ -1088,7 +1089,7 @@ Set Implicit Arguments.
                           | ESI => inv_case_some case5 ()
                           | EDI => inv_case_some case6 ()
                         end)
-               & _); invertible_ast_tac.
+               & _); ast_invertible_tac.
      - destruct w; parsable_tac.
   Defined. 
 
@@ -3185,7 +3186,7 @@ Set Implicit Arguments.
                         end
                       | _ => None
                     end)
-               & _); invertible_ast_tac.
+               & _); ast_invertible_tac.
     - abstract (destruct_union; ins_printable_tac).
     - abstract 
         (destruct w as [b [op1 op2]]; destruct op2; destruct op1; destruct b;
@@ -3378,7 +3379,7 @@ Set Implicit Arguments.
                      | Some (b2,(b1,(b0,()))) => Some (b2,(b1,(b0,op)))
                      | None => None (* impossible case *)
                    end)
-              & _); invertible_ast_tac.
+              & _); ast_invertible_tac.
     - repeat (ibr_sim || destruct_pr_var);
       autorewrite with inv_db;
       printable_tac.
