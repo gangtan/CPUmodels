@@ -358,12 +358,17 @@ Set Implicit Arguments.
   (* Specialized printable and parsable tactics used when combining
      instruction grammars *)
 
-  Local Ltac ins_com_printable := 
+(* todo: replace destruct_union with this one *)
+  Ltac destruct_val :=
     repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-             | [v: [| unit_t |] |- _] => destruct v
-             | [v:[|pair_t _ _|] |- _] => destruct v
-           end;
+             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
+             | [v: [| Unit_t |] |- _] => destruct v
+             | [v: [| Pair_t _ _|] |- _] => destruct v
+           end.
+
+
+  Local Ltac ins_com_printable := 
+    destruct_val;
     try (match goal with
            | [ |- exists v', ?c = Some v' /\ _] => 
              match c with
@@ -411,6 +416,19 @@ Set Implicit Arguments.
               inversion H; clear H; subst; trivial
         end
     end.
+
+(* todo: move earlier;
+   Specialized tactic for invertibility proofs when combining instructions *)
+Local Ltac ci_invertible_tac :=
+  apply strong_inv_imp_inv; unfold strong_invertible;
+  try clear_gt; split; [unfold printable | unfold parsable];
+  compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
+  [(clear_ast_defs; compute [ast_type inv_case]) | idtac]; intros;
+  [try (abstract (destruct_val; trivial); fail) |
+   try (abstract (
+            match goal with
+            | [ |- _ = ?w] => destruct w; inversion H; trivial
+            end); fail)].
 
   Definition i_instr1_env : AST_Env i_instr1_t := 
     {{0, AAA_p, (fun v => I_AAA %% i_instr1_t)}} :::
@@ -494,9 +512,8 @@ Set Implicit Arguments.
                       | I_WRMSR => inv_case_some case34 ()
                       | I_XLAT => inv_case_some case35 ()
                     end)
-               & _). Time ast_invertible_tac.
-     - Time abstract (destruct w; parsable_tac).
-  Defined.
+               & _). Time ci_invertible_tac.
+  Time Defined.
 
   Definition i_instr2_env : AST_Env i_instr2_t := 
     {{0, ARPL_p, (fun v => match v with (op1,op2) => I_ARPL op1 op2
@@ -585,13 +602,7 @@ Set Implicit Arguments.
                       | I_LSS op1 op2 => inv_case_some case27 (op1,op2)
                       | I_LTR op1 => inv_case_some case28 op1
                     end)
-               & _). unfold_invertible_ast.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
+               & _). ci_invertible_tac.
   Defined.
 
   Definition i_instr3_env : AST_Env i_instr3_t := 
@@ -651,13 +662,7 @@ Set Implicit Arguments.
                       | I_VERR op => inv_case_some case17 op 
                       | I_VERW op => inv_case_some case18 op 
                     end)
-               & _); unfold_invertible_ast. 
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
+               & _). ci_invertible_tac.
   Defined.
 
   (** This set of instructions can take prefixes in prefix_grammar_rep we
@@ -737,9 +742,8 @@ Ltac gen_ast_type ast_env :=
                    | I_SCAS a1 =>
                      inv_case_some (projT2 (get_type_idx 11 gt)) (fst u, a1)
                    end)
-              & _). unfold_invertible_ast.
-    - abstract ins_com_printable.
-    - abstract (destruct w as [p ins]; destruct ins; ins_com_parsable).
+              & _). ci_invertible_tac.
+    - abstract (destruct w as [p ins]; destruct ins; inversion H; trivial).
   Defined.
 
   (** Instructions that can take prefixes in
@@ -900,7 +904,7 @@ Ltac gen_ast_type ast_env :=
   (*     refine (if (op_override (fst u)) then _ else _); *)
   (*     [gen_inv_case gt lbl1 u arg | gen_inv_case gt lbl2 u arg]. *)
 
-  Local Open Scope N_scope.
+  (* Local Open Scope N_scope. *)
 
   (* Definition from_instr5 (u:prefix * i_instr5) : option [|i_instr5_grammar_type|]. *)
   (*   let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in *)
@@ -951,7 +955,6 @@ Ltac gen_ast_type ast_env :=
   (*   * (* XCHG *) gen_op_override gt 10 35 u (a1,(a2,a3)). *)
   (*   * (* XOR *)  gen_op_override gt 11 36 u (a1,(a2,a3)). *)
   (* Defined. *)
-
 
   Definition from_instr5 (u:prefix * i_instr5) : option [|i_instr5_grammar_type|].
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
@@ -1052,6 +1055,24 @@ Ltac gen_ast_type ast_env :=
        exact(fi).
   Defined.
 
+
+(* todo: remove *)
+  Ltac new_destruct_union :=
+    repeat match goal with
+             | [v: [| Sum_t _ _ |] |- _ ] =>
+               destruct v as [v | v];
+               match goal with
+               | [H: in_bigrammar_rng (` (_ |+| _)) (inl _) |- _] =>
+                 unfold proj1_sig at 1, alt at 1 in H;
+                 apply in_bigrammar_rng_alt_inl in H
+               | [H: in_bigrammar_rng (` (_ |+| _)) (inr _) |- _] =>
+                 unfold proj1_sig at 1, alt at 1 in H;
+                 apply in_bigrammar_rng_alt_inr in H
+               end
+             | [v: [| Unit_t |] |- _] => destruct v
+             | [v: [| Pair_t _ _|] |- _] => destruct v
+           end.
+
   Definition i_instr5_grammar : wf_bigrammar (pair_t prefix_t i_instr5_t).
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
         gen_gr_tree ige.
@@ -1059,9 +1080,55 @@ Ltac gen_ast_type ast_env :=
     (*     gen_tm_cases gt' 53%nat. *)
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & from_instr5'
-               & _). unfold from_instr5'. unfold_invertible_ast.
-    - Time (abstract ins_com_printable).
-    - Time (abstract (destruct w as [p ins]; destruct ins; ins_com_parsable)).
+               & _). unfold from_instr5'; unfold_invertible_ast.
+    - Time abstract (
+      destruct_val;
+      try (match goal with
+           | [ |- exists v', ?c = Some v' /\ _] => 
+             match c with
+               | Some ?v =>
+                 exists v; split; trivial
+               | if op_override _ then Some ?v1 else Some ?v2 =>
+                 ibr_sim;
+                 match goal with
+                   | [ H: in_bigrammar_rng
+                            (` prefix_grammar_lock_with_op_override) ?pre |- _] =>
+                     assert (H2: op_override pre = true) by
+                         (apply lock_with_op_override_rng_inv; trivial);
+                     rewrite H2;
+                     exists v1; split; ibr_sim
+                   | [ H: in_bigrammar_rng
+                            (` prefix_grammar_lock_no_op_override) ?pre |- _] =>
+                     assert (H2: op_override pre = false) by
+                         (apply lock_no_op_override_rng_inv; trivial);
+                     rewrite H2;
+                     exists v2; split; ibr_sim
+                   | [ H: in_bigrammar_rng
+                            (` prefix_grammar_seg_with_op_override) ?pre |- _] =>
+                     assert (H2: op_override pre = true) by
+                         (apply seg_with_op_override_rng_inv; trivial);
+                     rewrite H2;
+                     exists v1; split; ibr_sim
+                   | [ H: in_bigrammar_rng
+                            (` prefix_grammar_only_seg_override) ?pre |- _] =>
+                     assert (H2: op_override pre = false) by
+                         (apply only_seg_override_rng_inv; trivial);
+                     rewrite H2;
+                     exists v2; split; ibr_sim
+                 end
+             end
+          end)).
+    - Time (abstract (destruct w as [p ins]; destruct ins; 
+                          match goal with
+                          | [H: ?c = Some _ |- _] => 
+                            match c with
+                            | None => discriminate H
+                            | Some _ => inversion H; clear H; subst; trivial
+                            | if op_override ?p then Some _ else Some _ => 
+                              destruct (op_override p);
+                                inversion H; clear H; subst; trivial
+                            end
+                          end)).
   Time Defined.
 
   (** This set of instructions can take prefixes in
@@ -1121,13 +1188,7 @@ Ltac gen_ast_type ast_env :=
                       | I_SHR w op1 ri => inv_case_some case14 (w,(op1,ri))
                       | I_SHRD op1 r ri => inv_case_some case15 (op1,(r,ri))
                     end)
-               & _); unfold_invertible_ast.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - abstract (destruct w; parsable_tac).
+               & _). ci_invertible_tac. 
   Defined.
 
   Definition f_instr1_env : AST_Env f_instr1_t := 
@@ -1231,13 +1292,7 @@ Ltac gen_ast_type ast_env :=
                       | F_FMUL z op => inv_case_some case41 (z,op)
                       | F_FMULP op => inv_case_some case42 op
                     end)
-               & _). unfold_invertible_ast.
-    - Time (repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac).
-    - abstract (destruct w; parsable_tac).
+               & _). ci_invertible_tac.
   Defined.
 
   Definition f_instr2_env : AST_Env f_instr2_t := 
@@ -1322,14 +1377,8 @@ Ltac gen_ast_type ast_env :=
                       | F_FYL2XP1 => inv_case_some case33 ()
                       | F_FWAIT => inv_case_some case34 ()
                     end)
-               & _); unfold_invertible_ast.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
-  Time Defined.
+               & _). ci_invertible_tac.
+  Defined.
 
   Definition m_instr_env : AST_Env m_instr_t := 
     {{0, EMMS_p, (fun v => M_EMMS %% m_instr_t)}} :::
@@ -1421,13 +1470,7 @@ Ltac gen_ast_type ast_env :=
                       | M_PUNPCKL gg op1 op2 => inv_case_some case25 (gg,(op1,op2))
                       | M_PXOR op1 op2 => inv_case_some case26 (op1,op2)
                     end)
-               & _); unfold_invertible_ast.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
+               & _). ci_invertible_tac.
   Defined.
 
   Definition s_instr1_env : AST_Env s_instr1_t := 
@@ -1544,13 +1587,7 @@ Ltac gen_ast_type ast_env :=
                       | S_RSQRTPS op1 op2 => inv_case_some case33 (op1,op2)
                       | S_RSQRTSS op1 op2 => inv_case_some case34 (op1,op2)
                     end)
-               & _); unfold_invertible_ast.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
+               & _). ci_invertible_tac.
   Defined.
 
   Definition s_instr2_env : AST_Env s_instr2_t := 
@@ -1641,13 +1678,7 @@ Ltac gen_ast_type ast_env :=
                       | S_PREFETCHNTA op => inv_case_some case26 op
                       | S_SFENCE => inv_case_some case27 tt
                     end)
-               & _); unfold_invertible_ast.
-    - repeat match goal with
-               | [v: [| Sum_t _ _ |] |- _ ] => case v as [v | v]
-               | [v: [| unit_t |] |- _] => destruct v
-               | [v:[|pair_t _ _|] |- _] => destruct v
-             end; abstract printable_tac.
-    - Time abstract (destruct w; parsable_tac).
+               & _). ci_invertible_tac.
   Defined.
 
   Definition instr_grammar_env : AST_Env (pair_t prefix_t instruction_t) :=
@@ -2333,34 +2364,15 @@ Ltac gen_ast_type ast_env :=
 
                      (* | _ => None *)
                    end)
-               & _). unfold_invertible_ast.
-
-(* todo: replace the old one *)
-  Ltac new_destruct_union :=
-    repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] =>
-               destruct v as [v | v];
-               match goal with
-               | [H: in_bigrammar_rng (` (_ |+| _)) (inl _) |- _] =>
-                 unfold proj1_sig at 1, alt at 1 in H;
-                 apply in_bigrammar_rng_alt_inl in H
-               | [H: in_bigrammar_rng (` (_ |+| _)) (inr _) |- _] =>
-                 unfold proj1_sig at 1, alt at 1 in H;
-                 apply in_bigrammar_rng_alt_inr in H
-               end
+               & _). ci_invertible_tac.
+  - abstract(
+      repeat match goal with
+             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
              | [v: [| Unit_t |] |- _] => destruct v
-           end.
-     exists v.
-     Time (      split; [idtac | trivial];
-      new_destruct_union;
-      destruct v as [pre hi];
-      destruct hi; trivial).
-    - Time abstract (destruct w as [pre i]; destruct i; parsable_tac).
+             end;
+      destruct v as [pre hi]; destruct hi; trivial).
+  - Time abstract (destruct w as [pre i]; destruct i; inversion H; trivial).
   Time Defined.
-
-    (* - Time (destruct_union; destruct v as [pre hi]; *)
-    (*        abstract (destruct hi; printable_tac)). *)
-(* todo: use the following strategy for other proofs *)
 
   (** Starting constructing the x86 parser *)
   Require Import Parser.
@@ -2403,4 +2415,3 @@ Ltac gen_ast_type ast_env :=
     parse_token ps (byte_less_than_num_tokens byte).
 
 (* End X86_PARSER. *)
-
