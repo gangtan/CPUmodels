@@ -8,8 +8,6 @@ Require Import CommonTacs.
 
 Require Import Program.
 
-(* Require Import ExtLib.Tactics. *)
-
 Require Import X86Model.Monad.
 Local Open Scope monad_scope.
 
