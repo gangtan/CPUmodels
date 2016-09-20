@@ -99,10 +99,16 @@ Set Implicit Arguments.
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
-  Ltac destruct_union :=
+  Ltac destruct_sum := 
+    repeat match goal with
+           | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
+           end.
+
+  Ltac destruct_val :=
     repeat match goal with
              | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
              | [v: [| Unit_t |] |- _] => destruct v
+             | [v: [| Pair_t _ _|] |- _] => destruct v
            end.
 
   Ltac ins_destruct_var v := 
@@ -1127,7 +1133,7 @@ Set Implicit Arguments.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    destruct_union; crush.
+    destruct_val; crush.
   Qed.
 
   Definition reg_no_ebp : wf_bigrammar register_t.
@@ -1191,7 +1197,7 @@ Set Implicit Arguments.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    destruct_union; crush.
+    destruct_val; crush.
   Qed.
 
   Definition reg_no_esp_ebp : wf_bigrammar register_t.
@@ -1255,7 +1261,7 @@ Set Implicit Arguments.
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv.
     destruct H as [v [_ H]]. simpl in H.
-    destruct_union; crush.
+    destruct_val; crush.
   Qed.
 
   Definition si_p: wf_bigrammar (option_t (pair_t scale_t register_t)). 
@@ -1449,7 +1455,7 @@ Set Implicit Arguments.
   (*                                else inv_case_some case7 (r, ((Some sci, bs), disp)) *)
   (*                   end) *)
   (*              & _); clear_ast_defs. invertible_tac. *)
-  (*   - destruct_union. *)
+  (*   - destruct_val. *)
   (*     + (* case 0 *) *)
   (*       destruct v as [r bs]. *)
   (*       rewrite Word.int_eq_refl. *)
@@ -1644,10 +1650,10 @@ Set Implicit Arguments.
                                  else Some (inr (inr (r, inr ((Some sci, bs), disp))))
                     end)
                & _); invertible_tac.
-    - destruct_union.
+    - destruct_sum.
       + (* mode 00 *)
         destruct v as [r v].
-        unfold rm00 in *; destruct_union.
+        unfold rm00 in *; destruct_sum.
         * (* case 0 *)
          rewrite Word.int_eq_refl.
          rename v into bs.
@@ -1672,11 +1678,11 @@ Set Implicit Arguments.
         * (* case 3 *) abstract printable_tac.
       + (* mode 01 *)
         destruct v as [r v].
-        unfold rm01 in *; destruct_union; ins_ibr_sim.
+        unfold rm01 in *; destruct_sum; ins_ibr_sim.
         * (* case 0 *)
           destruct v as [bs disp].
-         abstract (unfold rm00; bg_pf_sim;
-                   try destruct_head; printable_tac; ins_ibr_sim).
+          abstract (unfold rm00; bg_pf_sim;
+                    try destruct_head; printable_tac; ins_ibr_sim).
         * (* case 1 *)
           destruct v as [[si bs] disp].
           rewrite sign_shrink32_8_inv.
@@ -1690,7 +1696,7 @@ Set Implicit Arguments.
                       try destruct_head; printable_tac; ins_ibr_sim). }
        + (* mode 10 *)
         destruct v as [r v].
-        unfold rm10 in *; destruct_union; ins_ibr_sim.
+        unfold rm10 in *; destruct_sum; ins_ibr_sim.
         * (* case 0 *)
           destruct v as [bs disp].
          abstract (unfold rm00, rm01; bg_pf_sim; 
@@ -1793,7 +1799,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
+    - destruct_val; printable_tac.
     - ins_parsable_tac.
   Defined.
 
@@ -1891,7 +1897,7 @@ Set Implicit Arguments.
     compute [fst].
     match goal with
       | [v: [|sum_t ?t1 (sum_t ?t2 ?t3)|] |- _] => 
-        destruct_union; ins_ibr_sim;
+        destruct_sum; ins_ibr_sim;
         destruct v as [r1' v];
         [exists (inl [|sum_t t2 t3|] (r2, v)) | 
          exists (inr [|t1|] (inl [|t3|] (r2,v))) |
@@ -2140,7 +2146,7 @@ Set Implicit Arguments.
                  | _ => None
                end)
             & _)); ins_invertible_tac.
-  - destruct_union.
+  - destruct_sum.
     + (* case 0 *)
       destruct v as [d [w [r1 op2]]].  destruct d; ins_printable_tac.
     + (* case 1 *)
@@ -2426,7 +2432,7 @@ Set Implicit Arguments.
                     | _ => None
                   end)
              & _); ins_invertible_tac.
-    - destruct_union; try ins_printable_tac.
+    - destruct_sum; try ins_printable_tac.
       + (* case 3 *)
         destruct v as [[r1 op2] imm].
         destruct opsize_override; compute [negb];
@@ -2475,7 +2481,7 @@ Set Implicit Arguments.
                      | _ => None
                    end)
               & _); ins_invertible_tac.
-    - destruct_union; try ins_printable_tac.
+    - destruct_sum; try ins_printable_tac.
       + (* case 0 *)
         destruct v as [w r].
         destruct w; ins_printable_tac.
@@ -3187,7 +3193,7 @@ Set Implicit Arguments.
                       | _ => None
                     end)
                & _); ast_invertible_tac.
-    - abstract (destruct_union; ins_printable_tac).
+    - abstract (destruct_val; ins_printable_tac).
     - abstract 
         (destruct w as [b [op1 op2]]; destruct op2; destruct op1; destruct b;
          ins_pf_sim; parsable_tac).
@@ -3243,7 +3249,7 @@ Set Implicit Arguments.
                      | _ => None
                    end)
               & _); ins_invertible_tac.
-    - destruct_union.  
+    - destruct_sum.  
       + destruct v as [w [r1 op2]]; ins_pf_sim; bg_pf_sim;
         destruct w; printable_tac; ins_ibr_sim.
       + ins_printable_tac.
@@ -3718,7 +3724,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
+    - destruct_val; printable_tac.
     - mmx_parsable_tac.
   Defined.
 
@@ -3895,7 +3901,7 @@ Set Implicit Arguments.
                       | _ => None
                     end)
                & _); mmx_invertible_tac.
-    - destruct_union;
+    - destruct_sum;
       destruct v as [d [mr r]]; destruct d; printable_tac; ins_ibr_sim.
   Defined.
 
@@ -4079,7 +4085,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
+    - destruct_val; printable_tac.
     - sse_parsable_tac.
   Defined.
 
@@ -4110,7 +4116,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_union; destruct v; printable_tac.
+    - destruct_val; printable_tac.
     - sse_parsable_tac.
   Defined.
 

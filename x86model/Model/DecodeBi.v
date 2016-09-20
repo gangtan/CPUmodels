@@ -157,7 +157,7 @@ Set Implicit Arguments.
     in_bigrammar_rng (` op_override_p) op -> op = true.
   Proof. unfold op_override_p; intros; ins_ibr_sim. 
     compute [ast_type ast_bigrammar] in *.
-    destruct_union; trivial.
+    destruct_val; trivial.
   Qed.
 
   (* Lemma op_override_p_rng_inv op : *)
@@ -332,7 +332,6 @@ Set Implicit Arguments.
     ibr_prover. subst pre; trivial. 
   Qed.
 
-
   Lemma seg_with_op_override_rng_inv pre: 
     in_bigrammar_rng (` prefix_grammar_seg_with_op_override) pre ->
     op_override pre = true.
@@ -354,78 +353,14 @@ Set Implicit Arguments.
     subst pre; trivial.
   Qed.
 
-
-  (* Specialized printable and parsable tactics used when combining
-     instruction grammars *)
-
-(* todo: replace destruct_union with this one *)
-  Ltac destruct_val :=
-    repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
-             | [v: [| Unit_t |] |- _] => destruct v
-             | [v: [| Pair_t _ _|] |- _] => destruct v
-           end.
-
-
-  Local Ltac ins_com_printable := 
-    destruct_val;
-    try (match goal with
-           | [ |- exists v', ?c = Some v' /\ _] => 
-             match c with
-               | Some ?v =>
-                 exists v; split; trivial
-               | if op_override _ then Some ?v1 else Some ?v2 =>
-                 ibr_prover;
-                 match goal with
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_lock_with_op_override) ?pre |- _] =>
-                     assert (H2: op_override pre = true) by
-                         (apply lock_with_op_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v1; split; ibr_prover
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_lock_no_op_override) ?pre |- _] =>
-                     assert (H2: op_override pre = false) by
-                         (apply lock_no_op_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v2; split; ibr_prover
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_seg_with_op_override) ?pre |- _] =>
-                     assert (H2: op_override pre = true) by
-                         (apply seg_with_op_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v1; split; ibr_prover
-                   | [ H: in_bigrammar_rng
-                            (` prefix_grammar_only_seg_override) ?pre |- _] =>
-                     assert (H2: op_override pre = false) by
-                         (apply only_seg_override_rng_inv; trivial);
-                     rewrite H2;
-                     exists v2; split; ibr_prover
-                 end
-             end
-        end).
-
-  Local Ltac ins_com_parsable := 
-    match goal with
-      | [H: ?c = Some _ |- _] => 
-        match c with
-          | None => discriminate H
-          | Some _ => inversion H; clear H; subst; trivial
-          | if op_override ?p then Some _ else Some _ => 
-            destruct (op_override p);
-              inversion H; clear H; subst; trivial
-        end
-    end.
-
-(* todo: move earlier;
-   Specialized tactic for invertibility proofs when combining instructions *)
-Local Ltac ci_invertible_tac :=
-  apply strong_inv_imp_inv; unfold strong_invertible;
-  try clear_gt; split; [unfold printable | unfold parsable];
-  compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
-  [(clear_ast_defs; compute [ast_type inv_case]) | idtac]; intros;
-  [try (abstract (destruct_val; trivial); fail) |
-   try (abstract (
+  (* Specialized tactic for invertibility proofs when combining instructions *)
+  Local Ltac ci_invertible_tac :=
+    apply strong_inv_imp_inv; unfold strong_invertible;
+    try clear_gt; split; [unfold printable | unfold parsable];
+    compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
+    [(clear_ast_defs; compute [ast_type inv_case]) | idtac]; intros;
+    [try (abstract (destruct_val; trivial); fail) |
+     try (abstract (
             match goal with
             | [ |- _ = ?w] => destruct w; inversion H; trivial
             end); fail)].
@@ -662,7 +597,7 @@ Local Ltac ci_invertible_tac :=
                       | I_VERR op => inv_case_some case17 op 
                       | I_VERW op => inv_case_some case18 op 
                     end)
-               & _). ci_invertible_tac.
+               & _). Time ci_invertible_tac.
   Defined.
 
   (** This set of instructions can take prefixes in prefix_grammar_rep we
@@ -703,21 +638,10 @@ Local Ltac ci_invertible_tac :=
     exact(ige).
   Defined.
 
-(* todo: move earlier *)
-Ltac gen_ast_type ast_env :=
-  match get_gr_tree ast_env with
-  | (_, ?gt) =>
-    match type of gt with
-    | gr_tree _ ?tt => tt
-    end
-  end.
-
   Definition i_instr4_grammar_type : typetree.
     let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
     let tt:=gen_ast_type ige in exact(tt).
   Defined.
-
-(* todo: rename get_type_idx to something nicer *)
 
   Definition i_instr4_grammar : wf_bigrammar (pair_t prefix_t i_instr4_t).
     let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
@@ -726,21 +650,21 @@ Ltac gen_ast_type ast_env :=
               & (fun u =>
                    match snd u with
                    | I_INS a1 => 
-                     inv_case_some (projT2 (get_type_idx 0 gt)) (fst u, a1)
+                     inv_case_some (projT2 (get_tm_by_idx 0 gt)) (fst u, a1)
                    | I_OUTS a1 => 
-                     inv_case_some (projT2 (get_type_idx 1 gt)) (fst u, a1)
+                     inv_case_some (projT2 (get_tm_by_idx 1 gt)) (fst u, a1)
                    | I_MOVS a1 =>
-                     inv_case_some (projT2 (get_type_idx 2 gt)) (fst u, a1)
+                     inv_case_some (projT2 (get_tm_by_idx 2 gt)) (fst u, a1)
                    | I_LODS a1 => 
-                     inv_case_some (projT2 (get_type_idx 3 gt)) (fst u, a1)
+                     inv_case_some (projT2 (get_tm_by_idx 3 gt)) (fst u, a1)
                    | I_STOS a1 =>
-                     inv_case_some (projT2 (get_type_idx 4 gt)) (fst u, a1)
+                     inv_case_some (projT2 (get_tm_by_idx 4 gt)) (fst u, a1)
                    | I_RET a1 a2 =>
-                     inv_case_some (projT2 (get_type_idx 5 gt)) (fst u, (a1,a2))
+                     inv_case_some (projT2 (get_tm_by_idx 5 gt)) (fst u, (a1,a2))
                    | I_CMPS a1 =>
-                     inv_case_some (projT2 (get_type_idx 10 gt)) (fst u, a1)
+                     inv_case_some (projT2 (get_tm_by_idx 10 gt)) (fst u, a1)
                    | I_SCAS a1 =>
-                     inv_case_some (projT2 (get_type_idx 11 gt)) (fst u, a1)
+                     inv_case_some (projT2 (get_tm_by_idx 11 gt)) (fst u, a1)
                    end)
               & _). ci_invertible_tac.
     - abstract (destruct w as [p ins]; destruct ins; inversion H; trivial).
@@ -882,80 +806,6 @@ Ltac gen_ast_type ast_env :=
     let tt:=gen_ast_type ige in exact(ast_type tt).
   Defined.
 
-  (* Local Ltac gen5 lbl u arg := *)
-  (*     let ige := eval unfold i_instr5_grammar_env *)
-  (*                in i_instr5_grammar_env in *)
-  (*     let t := eval unfold i_instr5_grammar_type *)
-  (*                in i_instr5_grammar_type in *)
-  (*     let f:=gen_rev_inv_case_some case_lbl lbl ige t in *)
-  (*     let f1 := eval simpl in f in *)
-  (*     exact (Some (f1 (fst u, arg))). *)
-
-(* todo: move *)
-  Local Ltac gen_inv_case gt lbl u arg :=
-    exact (inv_case_some (projT2 (get_type_idx lbl gt)) (fst u, arg)).
-
-  Local Ltac gen_op_override gt case1 case2 u arg :=
-      refine (if (op_override (fst u)) then
-                inv_case_some case1 (fst u, arg)
-              else inv_case_some case2 (fst u, arg)).
-
-  (* Local Ltac gen_op_override gt lbl1 lbl2 u arg := *)
-  (*     refine (if (op_override (fst u)) then _ else _); *)
-  (*     [gen_inv_case gt lbl1 u arg | gen_inv_case gt lbl2 u arg]. *)
-
-  (* Local Open Scope N_scope. *)
-
-  (* Definition from_instr5 (u:prefix * i_instr5) : option [|i_instr5_grammar_type|]. *)
-  (*   let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in *)
-  (*     gen_gr_tree ige. *)
-  (*   intro. *)
-  (*   refine (match snd u with *)
-  (*             | I_ADC a1 a2 a3 => _ *)
-  (*             | I_ADD a1 a2 a3 => _ *)
-  (*             | I_AND a1 a2 a3 => _ *)
-  (*             | I_BTC a1 a2 => _ *)
-  (*             | I_BTR a1 a2 => _ *)
-  (*             | I_BTS a1 a2 => _ *)
-  (*             | I_CMP a1 a2 a3 => _ *)
-  (*             | I_CMPXCHG a1 a2 a3 => _ *)
-  (*             | I_DEC a1 a2 => _ *)
-  (*             | I_IMUL a1 a2 a3 a4 => _ *)
-  (*             | I_INC a1 a2 => _ *)
-  (*             | I_MOV a1 a2 a3 => _ *)
-  (*             | I_NEG a1 a2 => _ *)
-  (*             | I_NOT a1 a2 => _ *)
-  (*             | I_OR a1 a2 a3 => _ *)
-  (*             | I_SBB a1 a2 a3 => _ *)
-  (*             | I_SUB a1 a2 a3 => _ *)
-  (*             | I_TEST a1 a2 a3 => _ *)
-  (*             | I_XADD a1 a2 a3 => _ *)
-  (*             | I_XCHG a1 a2 a3 => _ *)
-  (*             | I_XOR a1 a2 a3 => _ *)
-  (*           end). *)
-  (*   * (* ADC *) gen_op_override gt 0 20 u (a1,(a2,a3)). *)
-  (*   * (* ADD *)  gen_op_override gt 1 21 u (a1,(a2,a3)). *)
-  (*   * (* AND *)  gen_op_override gt 2 22 u (a1,(a2,a3)). *)
-  (*   * (* BTC *) gen_inv_case gt 23 u (a1,a2). *)
-  (*   * (* BTR *) gen_inv_case gt 24 u (a1,a2). *)
-  (*   * (* BTS *) gen_inv_case gt 25 u (a1,a2). *)
-  (*   * (* CMP *)  gen_op_override gt 40 50 u (a1,(a2,a3)). *)
-  (*   * (* CMPXCHG *) gen_inv_case gt 26 u (a1,(a2,a3)). *)
-  (*   * (* DEC *) gen_op_override gt 3 27 u (a1,a2). *)
-  (*   * (* IMUL *)  gen_op_override gt 41 51 u (a1,(a2,(a3,a4))). *)
-  (*   * (* INC *) gen_op_override gt 4 28 u (a1,a2). *)
-  (*   * (* MOV *)  gen_op_override gt 42 52 u (a1,(a2,a3)). *)
-  (*   * (* NEG *) gen_op_override gt 5 29 u (a1,a2). *)
-  (*   * (* NOT *) gen_op_override gt 6 30 u (a1,a2). *)
-  (*   * (* OR *)  gen_op_override gt 7 31 u (a1,(a2,a3)). *)
-  (*   * (* SBB *)  gen_op_override gt 8 32 u (a1,(a2,a3)). *)
-  (*   * (* SUB *)  gen_op_override gt 9 33 u (a1,(a2,a3)). *)
-  (*   * (* TEST *)  gen_op_override gt 43 53 u (a1,(a2,a3)). *)
-  (*   * (* XADD *) gen_inv_case gt 34 u (a1,(a2,a3)). *)
-  (*   * (* XCHG *) gen_op_override gt 10 35 u (a1,(a2,a3)). *)
-  (*   * (* XOR *)  gen_op_override gt 11 36 u (a1,(a2,a3)). *)
-  (* Defined. *)
-
   Definition from_instr5 (u:prefix * i_instr5) : option [|i_instr5_grammar_type|].
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
       gen_gr_tree ige.
@@ -1043,41 +893,18 @@ Ltac gen_ast_type ast_env :=
 
   Definition from_instr5' : 
      prefix * i_instr5 -> option [|i_instr5_grammar_type|].
-    (* let ige := eval compute *)
-    (*            in from_instr5 in *)
-    (* exact(ige). *)
     let fi := eval cbv beta
                delta [from_instr5 inv_case_some
-                      inv_case projT2 get_type_idx N.of_nat N.leb N.compare
+                      inv_case projT2 get_tm_by_idx N.of_nat N.leb N.compare
                       Pos.of_succ_nat Pos.compare Pos.compare_cont Pos.succ]
                iota zeta
                in from_instr5 in
        exact(fi).
   Defined.
 
-
-(* todo: remove *)
-  Ltac new_destruct_union :=
-    repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] =>
-               destruct v as [v | v];
-               match goal with
-               | [H: in_bigrammar_rng (` (_ |+| _)) (inl _) |- _] =>
-                 unfold proj1_sig at 1, alt at 1 in H;
-                 apply in_bigrammar_rng_alt_inl in H
-               | [H: in_bigrammar_rng (` (_ |+| _)) (inr _) |- _] =>
-                 unfold proj1_sig at 1, alt at 1 in H;
-                 apply in_bigrammar_rng_alt_inr in H
-               end
-             | [v: [| Unit_t |] |- _] => destruct v
-             | [v: [| Pair_t _ _|] |- _] => destruct v
-           end.
-
   Definition i_instr5_grammar : wf_bigrammar (pair_t prefix_t i_instr5_t).
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
         gen_gr_tree ige.
-    (* let gt' := eval cbv delta [gt] in gt in *)
-    (*     gen_tm_cases gt' 53%nat. *)
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & from_instr5'
                & _). unfold from_instr5'; unfold_invertible_ast.
@@ -2365,12 +2192,9 @@ Ltac gen_ast_type ast_env :=
                      (* | _ => None *)
                    end)
                & _). ci_invertible_tac.
-  - abstract(
-      repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
-             | [v: [| Unit_t |] |- _] => destruct v
-             end;
-      destruct v as [pre hi]; destruct hi; trivial).
+  - abstract (
+        destruct_sum;
+        destruct v as [pre hi]; destruct hi; trivial).
   - Time abstract (destruct w as [pre i]; destruct i; inversion H; trivial).
   Time Defined.
 

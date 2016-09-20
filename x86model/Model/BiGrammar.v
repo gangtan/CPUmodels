@@ -947,8 +947,6 @@ Defined.
        
    See the def of control_reg_p for a typical definition.  *)
    
-(* todo: Idea for speeding up: for bijections, do exist v before destruct for the  *)
-
 Definition index := N.
 
 (** The type for environments that include a list of grammars and
@@ -1140,23 +1138,23 @@ Definition inv_case_some {t tt} (m: tmember t tt):
 
 (** Generate a tmember proof from the index of a bigrammar of a
     bigrammar tree. *)
-Fixpoint get_type_idx (id:index) {rt tt} (gt: gr_tree rt tt): 
+Fixpoint get_tm_by_idx (id:index) {rt tt} (gt: gr_tree rt tt): 
   {t : type & tmember t tt} :=
   match gt in gr_tree _ tt' return {t:type & tmember t tt'} with
   | @GLeaf _ id t g _ => existT _ t (MLeaf t)
   | GNode id' tt1 tt2 => 
     if N.leb id id' then
-      let x := get_type_idx id tt1 in
+      let x := get_tm_by_idx id tt1 in
       match x with
       | existT _ t tm => existT _ t (MLTree _ tm)
       end
     else
-      let x := get_type_idx id tt2 in
+      let x := get_tm_by_idx id tt2 in
       match x with
       | existT _ t tm => existT _ t (MRTree _ tm)
       end
   end.
-Arguments get_type_idx (id)%N rt tt gt.
+Arguments get_tm_by_idx (id)%N rt tt gt.
 
 (* tactic for converting an ast_env to a bigrammar tree; we could
    use a dependently typed heterogeneous list to avoid using tactics
@@ -1213,10 +1211,10 @@ Ltac gen_tm_cases gt len :=
         | false =>
           let inj:=fresh "case" in
           (* another variation is to put the literal term
-             "get_type_idx (N.of_nat i) gt)" into the context and
+             "get_tm_by_idx (N.of_nat i) gt)" into the context and
              perform evaluation later during proofs; however, this
              would not speed up proofs *)
-          pose (inj:=projT2 (get_type_idx (N.of_nat i) gt));
+          pose (inj:=projT2 (get_tm_by_idx (N.of_nat i) gt));
           simpl in inj; 
           gen_tm_cases_aux (S i)
      end
@@ -1234,6 +1232,14 @@ Ltac gen_ast_defs ast_env :=
       let len := env_length ae1 in
       gen_tm_cases gt len
     end.
+
+Ltac gen_ast_type ast_env :=
+  match get_gr_tree ast_env with
+  | (_, ?gt) =>
+    match type of gt with
+    | gr_tree _ ?tt => tt
+    end
+  end.
 
 Ltac clear_ast_defs :=
   repeat match goal with
