@@ -157,7 +157,7 @@ Set Implicit Arguments.
     in_bigrammar_rng (` op_override_p) op -> op = true.
   Proof. unfold op_override_p; intros; ins_ibr_sim. 
     compute [ast_type ast_bigrammar] in *.
-    destruct_val; trivial.
+    destruct_all; trivial.
   Qed.
 
   (* Lemma op_override_p_rng_inv op : *)
@@ -359,7 +359,7 @@ Set Implicit Arguments.
     try clear_gt; split; [unfold printable | unfold parsable];
     compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
     [(clear_ast_defs; compute [ast_type inv_case]) | idtac]; intros;
-    [try (abstract (destruct_val; trivial); fail) |
+    [try (abstract (destruct_all; trivial); fail) |
      try (abstract (
             match goal with
             | [ |- _ = ?w] => destruct w; inversion H; trivial
@@ -909,7 +909,7 @@ Set Implicit Arguments.
                & from_instr5'
                & _). unfold from_instr5'; unfold_invertible_ast.
     - Time abstract (
-      destruct_val;
+      destruct_all;
       try (match goal with
            | [ |- exists v', ?c = Some v' /\ _] => 
              match c with

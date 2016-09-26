@@ -357,52 +357,59 @@ Require Import Bits.
 (* "Create HintDb inv_db" would not create an empty rewrite db *)
 Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z : inv_db.
 
-
-(** convert variables of grammar types to their interpreted types *)
-Ltac simpl_grammar_ty :=
-  repeat match goal with
-          | [v: [|Pair_t _ _|] |- _ ] => simpl in v
-          | [v: [|Sum_t _ _|] |- _ ] => simpl in v
-          | [v: [|Option_t _|] |- _ ] => simpl in v
-          | [v: [|Unit_t|] |- _ ] => simpl in v
-        end.
-
-(** destruct a variable in the parser domain *)
-Ltac destruct_pr_var :=
-  let dpv_helper v :=
-      match type of v with
-        | unit => destruct v
-        | _ =>
-          match goal with
-            | [ |- context[match v with | inl _ => _ | inr _ => _ end]] =>
-              destruct v as [v | v]
-            | [ |- context[match v with (_,_) => _ end]] => destruct v
-            | [ |- context[match v with Some _  => _ | None => _ end]] =>
-              destruct v
-            | [H:context[match v with | inl _ => _ | inr _ => _ end] |- _] =>
-              destruct v as [v | v]
-            | [H:context[match v with (_,_) => _ end] |- _] => destruct v
-            | [H:context[match v with Some _  => _ | None => _ end] |- _] =>
-              destruct v
-          end
-      end
-  in
-  let rec focus_on v :=
-      match v with
-        (* fail early so that dpv_helper v is not called *)
-        | ()  => fail 1
-        | inl _ => fail 1 
-        | inr _ => fail 1
-        | Some ?v1 => focus_on v1 || fail 1
-        | (?v1,?v2) => focus_on v1 || focus_on v2 || fail 1
-        | _ => 
-          (* really wanted to make sure v here is a variable, but don't
-             know how to do that in Coq *)
-          dpv_helper v
-      end in
-  simpl_grammar_ty;
+(* Checking that w is a symbolic name, instead of a complex expression *)
+Ltac is_name w :=
   match goal with
-    | [ H:in_bigrammar_rng _ ?v |- _] => focus_on v
+  | [ w1: _ |- _] =>
+    assert (JMeq w w1) by trivial
+  end.
+
+Ltac destruct_sum := 
+  repeat match goal with
+         | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
+         end.
+
+Ltac destruct_all := 
+  repeat match goal with
+  | [v:[| Unit_t |] |- _] => destruct v
+  | [v:[| Sum_t _ _ |] |- _] => destruct v as [v | v]
+  | [v:[| Pair_t _ _ |] |- _] => destruct v
+  | [v:[| Option_t _ |] |- _] => destruct v
+  end.
+
+Ltac destruct_var v :=
+    match type of v with
+    | [|Unit_t|] => destruct v
+    | _ =>
+      match goal with
+      | [ |- context[match v with | inl _ => _ | inr _ => _ end]] =>
+        destruct v as [v | v]
+      | [ |- context[match v with (_,_) => _ end]] => destruct v
+      | [ |- context[match v with Some _  => _ | None => _ end]] =>
+        destruct v
+      | [H:context[match v with | inl _ => _ | inr _ => _ end] |- _] =>
+        destruct v as [v | v]
+      | [H:context[match v with (_,_) => _ end] |- _] => destruct v
+      | [H:context[match v with Some _  => _ | None => _ end] |- _] =>
+        destruct v
+      end
+    end.
+
+(* Check if e contains a symbolic name that can be destructed by dpv_tac *)
+Ltac dpv_exp e dpv_tac := 
+  match e with
+    | ()  => fail 1
+    | inl ?e1 => fail 1
+    | inr ?e1 => fail 1
+    | Some ?e1 => dpv_exp e1 dpv_tac || fail 1
+    | (?e1,?e2) => dpv_exp e1 dpv_tac || dpv_exp e2 dpv_tac || fail 1
+    | _ => dpv_tac e
+  end.
+
+(** destruct a variable that appears in in_bigrammar_rng *)
+Ltac destruct_pr_var :=
+  match goal with
+    | [ H:in_bigrammar_rng _ ?e |- _] => dpv_exp e destruct_var
   end.
 
 (** Proving parsable in the special situation when the existential value is
@@ -410,54 +417,34 @@ Ltac destruct_pr_var :=
    an input *)
 Ltac printable_tac_gen simp :=
   autorewrite with inv_db;
-  repeat (simp || destruct_pr_var);
+  repeat (destruct_pr_var || simp);
   match goal with
     | [ |- exists v', Some ?v = Some v' /\ in_bigrammar_rng _ _] =>
       exists v; split; simp
   end.
 
 (** destruct a variable in the pretty-printer domain *)
-Ltac destruct_pp_var dv_tac := 
-  let rec focus_on v :=
-      match v with
-        | Some ?v1 => focus_on v1 || fail 1
-        | (?v1,?v2) => focus_on v1 || focus_on v2 || fail 1
-        | _ => dv_tac v
-      end in
-  simpl_grammar_ty;
+Ltac destruct_pp_var dv_tac :=
   match goal with
-    | [ |- _ = ?v] => focus_on v
-  end.
-
-Ltac destruct_var v :=
-  match goal with
-    | [H: match v with Some _ => _ | None => _ end = _ |- _ ] =>
-      destruct v as [v | ]
-    | [H: match v with (_,_) => _ end = _ |- _ ] =>
-      destruct v
-    | [H: match v with true => _ | false => _ end = _ |- _] =>
-      destruct v
-    | [ |- context[match v with (_,_) => _ end]] =>
-      destruct v
+    | [ |- _ = ?e] => first [dpv_exp e destruct_var | dpv_exp e dv_tac]
   end.
 
 (* parametrized by a tactic for simplification and 
    a tactic for for destructing variables *)
-Ltac parsable_tac_gen simp dv_tac := 
-  repeat 
-    match goal with
-      | [H:None = Some _ |- _] => discriminate
-      | [H:Some _ = Some _ |- _] => 
-        inversion H; clear H; subst
-      | _ => (autorewrite with inv_db; trivial) || simp ||
-             destruct_pp_var dv_tac
-    end.
+Ltac parsable_tac_gen simp dv_tac :=
+  repeat match goal with
+         | [H:None = Some _ |- _] => discriminate
+         | [H:Some _ = Some _ |- _] => 
+           inversion H; clear H; subst; trivial
+         | _ => autorewrite with inv_db; repeat (destruct_pp_var dv_tac);
+                simp
+         end.
 
 Ltac unfold_invertible :=
   unfold invertible; split; [unfold printable | unfold parsable]; 
   compute [snd fst]; intros.
 
-Ltac invertible_tac_gen unfold_tac simp dv_tac := 
+Ltac invertible_tac_gen unfold_tac simp dv_tac :=
   unfold_tac;
   [try (abstract (printable_tac_gen simp); fail) |
    try (abstract (parsable_tac_gen simp dv_tac); fail)].
@@ -648,7 +635,7 @@ Qed.
 Local Ltac localcrush :=
   repeat match goal with
            | [H: wf_bigrammar _ |- wf_grammar _] => destruct H
-           | [ |- invertible _ _ ] => invertible_tac_gen unfold_invertible idtac destruct_var
+           | [ |- invertible _ _ ] => invertible_tac_gen unfold_invertible idtac idtac
            | _ => crush
          end.
 
@@ -710,7 +697,7 @@ Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
                                | None => None
                              end
                  end)
-            & _); invertible_tac_gen unfold_invertible idtac destruct_var.
+            & _); invertible_tac_gen unfold_invertible idtac idtac.
   - destruct_pr_var.
     + remember_destruct_head as v1; eauto.
       remember_destruct_head as v2.
@@ -796,9 +783,9 @@ Ltac ibr_sim :=
            | _ => auto with ibr_rng_db
          end.
 
-Ltac invertible_tac := invertible_tac_gen unfold_invertible ibr_sim destruct_var.
+Ltac invertible_tac := invertible_tac_gen unfold_invertible ibr_sim idtac.
 Ltac printable_tac := printable_tac_gen ibr_sim.
-Ltac parsable_tac := parsable_tac_gen ibr_sim destruct_var.
+Ltac parsable_tac := parsable_tac_gen ibr_sim idtac.
 Ltac ibr_prover := repeat (ibr_sim || destruct_pr_var).
 
 Hint Resolve in_bigrammar_rng_eps in_bigrammar_rng_any: ibr_rng_db.
@@ -811,7 +798,7 @@ Lemma in_bigrammar_rng_union t (g1 g2:wf_bigrammar t) v:
   in_bigrammar_rng (` (g1 |\/| g2)) v <->
   in_bigrammar_rng (` g1) v \/ in_bigrammar_rng (` g2) v.
 Proof. intros; unfold union; split; intros.
-  - ibr_sim; crush; ibr_prover.
+  - ibr_prover; crush.
   - ibr_prover. simpl.
     destruct H.
     + exists (inl [|t|] v). split; ibr_prover.
@@ -1259,7 +1246,7 @@ Ltac unfold_invertible_ast :=
   intros.
 
 Ltac ast_invertible_tac := 
-  invertible_tac_gen unfold_invertible_ast ibr_sim destruct_var.
+  invertible_tac_gen unfold_invertible_ast ibr_sim idtac.
 
 Definition test_env: AST_Env Unit_t :=
   {{0, empty, (fun v => () %% Unit_t)}} :::
@@ -1280,6 +1267,7 @@ Goal True.
   trivial.
 Qed.
 
+
 (** * Constructors for building permutations of bigrammars. *)
 
 Definition perm2 t1 t2 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) : 
@@ -1292,7 +1280,7 @@ Definition perm2 t1 t2 (p1: wf_bigrammar t1) (p2: wf_bigrammar t2) :
                        end %% Pair_t t1 t2)
            & (fun u:[|Pair_t t1 t2|] => 
                 let (a,b):=u in Some (inl (a,b)))
-           & _); invertible_tac.
+           & _). invertible_tac.
 Defined.
 
 Lemma perm2_rng t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) v1 v2:

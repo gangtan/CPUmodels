@@ -99,39 +99,29 @@ Set Implicit Arguments.
   Local Ltac lineararith := 
     unfold two_power_nat, shift_nat in *; simpl in *; omega.
 
-  Ltac destruct_sum := 
-    repeat match goal with
-           | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
-           end.
 
-  Ltac destruct_val :=
-    repeat match goal with
-             | [v: [| Sum_t _ _ |] |- _ ] => destruct v as [v | v]
-             | [v: [| Unit_t |] |- _] => destruct v
-             | [v: [| Pair_t _ _|] |- _] => destruct v
-           end.
-
-  Ltac ins_destruct_var v := 
+  Ltac ins_destruct_var v :=
     match goal with
-      | [ H: match v with | EAX => _ | ECX => _ | EDX => _ | EBX => _ 
-                       | ESP => _ | EBP => _ | ESI => _ | EDI => _ end 
-             = _ |- _ ] =>
-        destruct v
-      | [ H: match v with | Imm_op _ => _ | Reg_op _ => _ 
-                       | Address_op _ => _ | Offset_op _ => _ end
-             = _ |- _ ] =>
-        destruct v
-      | [ H: match v with | Reg_ri _ => _ | Imm_ri _ => _ end
-             = _ |- _ ] =>
-        destruct v
-      | [ H: match v with | ES => _ | CS => _ | SS => _ | DS => _ 
-                       | FS => _ | GS => _ end 
-             = _ |- _ ] =>
-        destruct v
-      | _ => destruct_var v
+    | [H: match v with true => _ | false => _ end = _ |- _] =>
+      case v as []
+    | [ H: match v with | EAX => _ | ECX => _ | EDX => _ | EBX => _
+                   | ESP => _ | EBP => _ | ESI => _ | EDI => _ end
+           = _ |- _ ] =>
+      case v as []
+    | [ H: match v with | Imm_op _ => _ | Reg_op _ => _
+                   | Address_op _ => _ | Offset_op _ => _ end
+           = _ |- _ ] =>
+      case v as []
+    | [ H: match v with | Reg_ri _ => _ | Imm_ri _ => _ end
+           = _ |- _ ] =>
+      case v as []
+    | [ H: match v with | ES => _ | CS => _ | SS => _ | DS => _
+                   | FS => _ | GS => _ end
+           = _ |- _ ] =>
+      case v as []
     end.
 
-  Ltac ins_parsable_tac := 
+  Ltac ins_parsable_tac :=
     parsable_tac_gen ibr_sim ins_destruct_var.
 
   Obligation Tactic := localcrush.
@@ -890,34 +880,34 @@ Set Implicit Arguments.
     {{1, ! "010", (fun v => CR2 %% control_register_t)}} :::
     {{2, ! "011", (fun v => CR3 %% control_register_t)}} :::
     {{3, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{4, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{5, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{6, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{7, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{8, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{9, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{10, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{11, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{12, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{13, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{14, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{15, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{16, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{17, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{18, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{19, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{20, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{21, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{22, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{23, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{24, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{25, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{26, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{27, ! "100", (fun v => CR4 %% control_register_t)}} :::
-    {{28, ! "000", (fun v => CR0 %% control_register_t)}} :::
-    {{29, ! "010", (fun v => CR2 %% control_register_t)}} :::
-    {{30, ! "011", (fun v => CR3 %% control_register_t)}} :::
-    {{31, ! "100", (fun v => CR4 %% control_register_t)}} :::
+    (* {{4, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{5, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{6, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{7, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{8, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{9, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{10, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{11, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{12, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{13, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{14, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{15, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{16, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{17, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{18, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{19, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{20, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{21, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{22, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{23, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{24, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{25, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{26, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{27, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
+    (* {{28, ! "000", (fun v => CR0 %% control_register_t)}} ::: *)
+    (* {{29, ! "010", (fun v => CR2 %% control_register_t)}} ::: *)
+    (* {{30, ! "011", (fun v => CR3 %% control_register_t)}} ::: *)
+    (* {{31, ! "100", (fun v => CR4 %% control_register_t)}} ::: *)
     ast_env_nil.
   Hint Unfold test_env: env_unfold_db.
 
@@ -932,9 +922,8 @@ Set Implicit Arguments.
                     | CR4 => inv_case_some case3 ()
                   end)
              & _); ast_invertible_tac.
-     - Time (destruct w; parsable_tac).
+  Time (destruct w; parsable_tac).
   Time Defined.
-
 
   (* Definition test_p : wf_bigrammar _register_t. *)
   (*   Time gen_ast_defs test_env. *)
@@ -1133,7 +1122,7 @@ Set Implicit Arguments.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    destruct_val; crush.
+    destruct_all; crush.
   Qed.
 
   Definition reg_no_ebp : wf_bigrammar register_t.
@@ -1197,7 +1186,7 @@ Set Implicit Arguments.
     unfold in_bigrammar_rng. 
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv. destruct H as [u [_ H]]. simpl in H.
-    destruct_val; crush.
+    destruct_all; crush.
   Qed.
 
   Definition reg_no_esp_ebp : wf_bigrammar register_t.
@@ -1261,7 +1250,7 @@ Set Implicit Arguments.
     destruct H as [s H]. simpl in H.
     in_bigrammar_inv.
     destruct H as [v [_ H]]. simpl in H.
-    destruct_val; crush.
+    destruct_all; crush.
   Qed.
 
   Definition si_p: wf_bigrammar (option_t (pair_t scale_t register_t)). 
@@ -1455,7 +1444,7 @@ Set Implicit Arguments.
   (*                                else inv_case_some case7 (r, ((Some sci, bs), disp)) *)
   (*                   end) *)
   (*              & _); clear_ast_defs. invertible_tac. *)
-  (*   - destruct_val. *)
+  (*   - destruct_all. *)
   (*     + (* case 0 *) *)
   (*       destruct v as [r bs]. *)
   (*       rewrite Word.int_eq_refl. *)
@@ -1799,7 +1788,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_val; printable_tac.
+    - destruct_all; printable_tac.
     - ins_parsable_tac.
   Defined.
 
@@ -2175,7 +2164,8 @@ Set Implicit Arguments.
       destruct op2; try parsable_tac.
       destruct r; destruct wd; ins_pf_sim; parsable_tac.
     + (* op1 = Address_op _ *)
-      destruct op2; try parsable_tac; ins_pf_sim; parsable_tac.
+      destruct op2; try parsable_tac.
+      destruct wd; ins_pf_sim; parsable_tac.
   Defined.
 
   Definition ADC_p s := logic_or_arith_p s "00010" "010".
@@ -2983,9 +2973,14 @@ Set Implicit Arguments.
                      | _ => None
                    end)
               & _); ins_invertible_tac.
-    - ins_parsable_tac; destruct r; ins_parsable_tac.
+    - ins_parsable_tac;
+      match goal with
+      | [ H: match ?r with | EAX => _ | ECX => _ | EDX => _ | EBX => _
+                     | ESP => _ | EBP => _ | ESI => _ | EDI => _ end
+             = _ |- _ ] => destruct r
+      end; ins_parsable_tac.
   Defined.
-
+                                    
   Definition RCL_p := rotate_p "010".
   Definition RCR_p := rotate_p "011".
 
@@ -3193,7 +3188,7 @@ Set Implicit Arguments.
                       | _ => None
                     end)
                & _); ast_invertible_tac.
-    - abstract (destruct_val; ins_printable_tac).
+    - abstract (destruct_all; ins_printable_tac).
     - abstract 
         (destruct w as [b [op1 op2]]; destruct op2; destruct op1; destruct b;
          ins_pf_sim; parsable_tac).
@@ -3724,7 +3719,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_val; printable_tac.
+    - destruct_all; printable_tac.
     - mmx_parsable_tac.
   Defined.
 
@@ -4085,7 +4080,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_val; printable_tac.
+    - destruct_all; printable_tac.
     - sse_parsable_tac.
   Defined.
 
@@ -4116,7 +4111,7 @@ Set Implicit Arguments.
                    | _ => None
                  end)
             & _); invertible_tac.
-    - destruct_val; printable_tac.
+    - destruct_all; printable_tac.
     - sse_parsable_tac.
   Defined.
 
@@ -4656,4 +4651,3 @@ Extraction Implicit never [t].
 Extraction Implicit always [t].
 Extraction Implicit bitsleft [t].
 Extraction Implicit modrm_gen [reg_t].
-
