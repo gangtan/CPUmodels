@@ -1065,8 +1065,8 @@ Module X86_Compile.
       | O => @load_Z size1 0
       | S m =>
         op2 <- compute_parity_aux op1 op2 m;
-        one <- load_Z s 1;
-        op1 <- arith shru_op op1 one; 
+        sf <- load_Z s (Z.of_nat m);
+        op1 <- arith shru_op op1 sf;
         r <- cast_u size1 op1;
         @arith size1 xor_op r op2
     end.
@@ -1309,7 +1309,6 @@ Definition conv_SAHF: Conv unit :=
         p0 <- load seg op1;
         p1 <- load seg op2;
         p2 <- arith add_op p0 p1;
-        set seg p2 op1;;        
 
         (* RTL for OF *)
         b0 <- test lt_op zero p0;
@@ -1346,8 +1345,11 @@ Definition conv_SAHF: Conv unit :=
         b0 <- test ltu_op n2 n0;
         b1 <- test ltu_op n2 n1;
         b0 <- @arith size1 or_op b0 b1;
-        set_flag AF b0.
+        set_flag AF b0;;
 
+        (* this has to go last as the computing of flags relies on the
+           old op1 value *)
+        set seg p2 op1.
 
   (* If e is true, then this is sub, otherwise it's cmp 
      Dest is equal to op1 for the case of SUB,
