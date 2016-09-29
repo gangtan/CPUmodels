@@ -1091,7 +1091,6 @@ Module X86_Compile.
         p0 <- load seg op ; 
         p1 <- load_Z _ 1 ; 
         p2 <- arith add_op p0 p1 ; 
-        set seg p2 op;;
 
         (* Note that CF is NOT changed by INC *)
 
@@ -1112,7 +1111,9 @@ Module X86_Compile.
         n1 <- load_Z size4 1;
         n2 <- arith add_op n0 n1;
         afp <- test ltu_op n2 n0;
-        set_flag AF afp.
+        set_flag AF afp;;
+
+        set seg p2 op.
 
   Definition conv_DEC (pre: prefix) (w: bool) (op: operand) : Conv unit :=
     let load := load_op pre w in 
@@ -1121,7 +1122,6 @@ Module X86_Compile.
         p0 <- load seg op;
         p1 <- load_Z _ 1;
         p2 <- arith sub_op p0 p1;
-        set seg p2 op;;
 
         (* Note that CF is NOT changed by DEC *)
         zero <- load_Z _ 0;
@@ -1141,7 +1141,9 @@ Module X86_Compile.
         n1 <- load_Z size4 1;
         n2 <- arith sub_op n0 n1;
         afp <- test ltu_op n0 n2;
-        set_flag AF afp.
+        set_flag AF afp;;
+
+        set seg p2 op.
 
   Definition conv_ADC (pre: prefix) (w: bool) (op1 op2: operand) : Conv unit :=
     let load := load_op pre w in 
@@ -1158,7 +1160,6 @@ Module X86_Compile.
         cfext <- cast_u _ cf1; 
         p2 <- arith add_op p0 p1;
         p2 <- arith add_op p2 cfext;
-        set seg p2 op1;;        
 
         (* RTL for OF *)
         b0 <- test lt_op zero p0;
@@ -1197,7 +1198,10 @@ Module X86_Compile.
         b0 <- test ltu_op n2 n0;
         b1 <- test ltu_op n2 n1;
         b0 <- @arith size1 or_op b0 b1;
-        set_flag AF b0.
+        set_flag AF b0;;
+
+        set seg p2 op1.
+
 
 Definition conv_STC: Conv unit :=
   one <- load_Z size1 1;
@@ -1474,6 +1478,7 @@ Definition conv_SAHF: Conv unit :=
         b0'' <- test eq_op p0 p1;
         b0 <- arith or_op b0' b0'';
         set_flag AF b0;;
+
         set seg p2 op1.
 
   (* I tried refactoring this so that it was smaller, but the way I did
