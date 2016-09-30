@@ -1096,23 +1096,23 @@ Module X86_Compile.
 
         zero <- load_Z _ 0;
         ofp <- test lt_op p2 p0;
-        set_flag OF ofp;;
 
         zfp <- test eq_op p2 zero;
-        set_flag ZF zfp;;
 
         sfp <- test lt_op p2 zero;
-        set_flag SF sfp;;
 
         pfp <- compute_parity p2;
-        set_flag PF pfp;;
 
         n0 <- cast_u size4 p0;
         n1 <- load_Z size4 1;
         n2 <- arith add_op n0 n1;
         afp <- test ltu_op n2 n0;
-        set_flag AF afp;;
 
+        set_flag OF ofp;;
+        set_flag ZF zfp;;
+        set_flag SF sfp;;
+        set_flag PF pfp;;
+        set_flag AF afp;;
         set seg p2 op.
 
   Definition conv_DEC (pre: prefix) (w: bool) (op: operand) : Conv unit :=
@@ -1124,25 +1124,26 @@ Module X86_Compile.
         p2 <- arith sub_op p0 p1;
 
         (* Note that CF is NOT changed by DEC *)
+
         zero <- load_Z _ 0;
         ofp <- test lt_op p0 p2; 
-        set_flag OF ofp;;
 
         zfp <- test eq_op p2 zero;
-        set_flag ZF zfp;;
         
         sfp <- test lt_op p2 zero;
-        set_flag SF sfp;;
 
         pfp <- compute_parity p2;
-        set_flag PF pfp;;
 
         n0 <- cast_u size4 p0;
         n1 <- load_Z size4 1;
         n2 <- arith sub_op n0 n1;
         afp <- test ltu_op n0 n2;
-        set_flag AF afp;;
 
+        set_flag OF ofp;;
+        set_flag ZF zfp;;
+        set_flag SF sfp;;
+        set_flag PF pfp;;
+        set_flag AF afp;;
         set seg p2 op.
 
   Definition conv_ADC (pre: prefix) (w: bool) (op1 op2: operand) : Conv unit :=
@@ -1168,26 +1169,21 @@ Module X86_Compile.
         b3 <- @arith size1 xor_op b0 b1;
         b3 <- @arith size1 xor_op up b3;
         b4 <- @arith size1 xor_op b0 b2;
-        b4 <- @arith size1 and_op b3 b4;
-        set_flag OF b4;;
+        ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
         b0 <- test ltu_op p2 p0;
         b1 <- test ltu_op p2 p1;
-        b0 <- @arith size1 or_op b0 b1;
-        set_flag CF b0;;
+        cfp <- @arith size1 or_op b0 b1;
 
         (* RTL for ZF *)
-        b0 <- test eq_op p2 zero;
-        set_flag ZF b0;;
+        zfp <- test eq_op p2 zero;
 
         (* RTL for SF *)
-        b0 <- test lt_op p2 zero;
-        set_flag SF b0;;
+        sfp <- test lt_op p2 zero;
 
         (* RTL for PF *)
-        b0 <- compute_parity p2;
-        set_flag PF b0;;
+        pfp <- compute_parity p2;
 
         (* RTL for AF *)
         n0 <- cast_u size4 p0;
@@ -1197,9 +1193,14 @@ Module X86_Compile.
         n2 <- @arith size4 add_op n2 cf4;
         b0 <- test ltu_op n2 n0;
         b1 <- test ltu_op n2 n1;
-        b0 <- @arith size1 or_op b0 b1;
-        set_flag AF b0;;
+        afp <- @arith size1 or_op b0 b1;
 
+        set_flag OF ofp;;
+        set_flag CF cfp;;
+        set_flag ZF zfp;;
+        set_flag SF sfp;;
+        set_flag PF pfp;;
+        set_flag AF afp;;
         set seg p2 op1.
 
 
@@ -1273,32 +1274,33 @@ Definition conv_SAHF: Conv unit :=
   pos <- load_Z size8 7;
   tmp <- @arith size8 shr_op ah pos;
   tmp <- @arith size8 and_op tmp one;
-  b <- test eq_op one tmp;
-  set_flag SF b;;
+  sfp <- test eq_op one tmp;
 
   pos <- load_Z size8 6;
   tmp <- @arith size8 shr_op ah pos;
   tmp <- @arith size8 and_op tmp one;
-  b <- test eq_op one tmp;
-  set_flag ZF b;;
+  zfp <- test eq_op one tmp;
 
   pos <- load_Z size8 4;
   tmp <- @arith size8 shr_op ah pos;
   tmp <- @arith size8 and_op tmp one;
-  b <- test eq_op one tmp;
-  set_flag AF b;;
+  afp <- test eq_op one tmp;
 
   pos <- load_Z size8 2;
   tmp <- @arith size8 shr_op ah pos;
   tmp <- @arith size8 and_op tmp one;
-  b <- test eq_op one tmp;
-  set_flag PF b;;
+  pfp <- test eq_op one tmp;
 
   pos <- load_Z size8 0;
   tmp <- @arith size8 shr_op ah pos;
   tmp <- @arith size8 and_op tmp one;
-  b <- test eq_op one tmp;
-  set_flag CF b. 
+  cfp <- test eq_op one tmp;
+
+  set_flag SF sfp;;
+  set_flag ZF zfp;;
+  set_flag AF afp;;
+  set_flag PF pfp;;
+  set_flag CF cfp.
 
 
   Definition conv_ADD (pre: prefix) (w: bool) (op1 op2: operand) : Conv unit :=
@@ -1321,26 +1323,21 @@ Definition conv_SAHF: Conv unit :=
         b3 <- @arith size1 xor_op b0 b1;
         b3 <- @arith size1 xor_op up b3;
         b4 <- @arith size1 xor_op b0 b2;
-        b4 <- @arith size1 and_op b3 b4;
-        set_flag OF b4;;
+        ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
         b0 <- test ltu_op p2 p0;
         b1 <- test ltu_op p2 p1;
-        b0 <- @arith size1 or_op b0 b1;
-        set_flag CF b0;;
+        cfp <- @arith size1 or_op b0 b1;
 
         (* RTL for ZF *)
-        b0 <- test eq_op p2 zero;
-        set_flag ZF b0;;
+        zfp <- test eq_op p2 zero;
 
         (* RTL for SF *)
-        b0 <- test lt_op p2 zero;
-        set_flag SF b0;;
+        sfp <- test lt_op p2 zero;
 
         (* RTL for PF *)
-        b0 <- compute_parity p2;
-        set_flag PF b0;;
+        pfp <- compute_parity p2;
 
         (* RTL for AF *)
         n0 <- cast_u size4 p0;
@@ -1348,9 +1345,14 @@ Definition conv_SAHF: Conv unit :=
         n2 <- @arith size4 add_op n0 n1;
         b0 <- test ltu_op n2 n0;
         b1 <- test ltu_op n2 n1;
-        b0 <- @arith size1 or_op b0 b1;
-        set_flag AF b0;;
+        afp <- @arith size1 or_op b0 b1;
 
+        set_flag OF ofp;;
+        set_flag CF cfp;;
+        set_flag ZF zfp;;
+        set_flag SF sfp;;
+        set_flag PF pfp;;
+        set_flag AF afp;;
         (* this has to go last as the computing of flags relies on the
            old op1 value *)
         set seg p2 op1.
@@ -1386,31 +1388,31 @@ Definition conv_SAHF: Conv unit :=
         b3 <- @arith size1 xor_op b0 b1;
         b3 <- @arith size1 xor_op up b3;
         b4 <- @arith size1 xor_op b0 b2;
-        b4 <- @arith size1 and_op b3 b4;
-        set_flag OF b4;;
+        ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
-        b0 <- test ltu_op p0 p1;
-        set_flag CF b0;;
+        cfp <- test ltu_op p0 p1;
 
         (* RTL for ZF *)
-        b0 <- test eq_op p2 zero;
-        set_flag ZF b0;;
+        zfp <- test eq_op p2 zero;
 
         (* RTL for SF *)
-        b0 <- test lt_op p2 zero;
-        set_flag SF b0;;
+        sfp <- test lt_op p2 zero;
 
         (* RTL for PF *)
-        b0 <- compute_parity p2;
-        set_flag PF b0;;
+        pfp <- compute_parity p2;
 
         (* RTL for AF *)
         n0 <- cast_u size4 p0;
         n1 <- cast_u size4 p1;
-        b0 <- test ltu_op p0 p1;
-        set_flag AF b0;;
+        afp <- test ltu_op p0 p1;
 
+        set_flag OF ofp;;
+        set_flag CF cfp;;
+        set_flag ZF zfp;;
+        set_flag SF sfp;;
+        set_flag PF pfp;;
+        set_flag AF afp;;
         if e then
           set segdest p2 dest
         else 
@@ -1450,35 +1452,35 @@ Definition conv_SAHF: Conv unit :=
         b3 <- @arith size1 xor_op b0 b1;
         b3 <- @arith size1 xor_op up b3;
         b4 <- @arith size1 xor_op b0 b2;
-        b4 <- @arith size1 and_op b3 b4;
-        set_flag OF b4;;
+        ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
         b0' <- test ltu_op p0 p1;
         b0'' <- test eq_op p0 p1;
-        b0 <- arith or_op b0' b0'';
-        set_flag CF b0;;
+        cfp <- arith or_op b0' b0'';
 
         (* RTL for ZF *)
-        b0 <- test eq_op p2 zero;
-        set_flag ZF b0;;
+        zfp <- test eq_op p2 zero;
 
         (* RTL for SF *)
-        b0 <- test lt_op p2 zero;
-        set_flag SF b0;;
+        sfp <- test lt_op p2 zero;
 
         (* RTL for PF *)
-        b0 <- compute_parity p2;
-        set_flag PF b0;;
+        pfp <- compute_parity p2;
 
         (* RTL for AF *)
         n0 <- cast_u size4 p0;
         n1 <- cast_u size4 p1;
         b0' <- test ltu_op p0 p1;
         b0'' <- test eq_op p0 p1;
-        b0 <- arith or_op b0' b0'';
-        set_flag AF b0;;
+        afp <- arith or_op b0' b0'';
 
+        set_flag OF ofp;;
+        set_flag CF cfp;;
+        set_flag ZF zfp;;
+        set_flag SF sfp;;
+        set_flag PF pfp;;
+        set_flag AF afp;;
         set seg p2 op1.
 
   (* I tried refactoring this so that it was smaller, but the way I did
@@ -1698,8 +1700,6 @@ Definition conv_SAHF: Conv unit :=
     Obligation 1. unfold opsize. 
       destruct (op_override pre); simpl; auto. Defined.
 
-
-
   Definition conv_MUL (pre: prefix) (w: bool) (op: operand) :=
     let seg := get_segment_op pre DS op in
     undef_flag SF;;
@@ -1712,11 +1712,11 @@ Definition conv_SAHF: Conv unit :=
                     p1ext <- cast_u size16 p1;
                     p2ext <- cast_u size16 p2;
                     res <- arith mul_op p1ext p2ext;
-                    iset_op16 seg res (Reg_op EAX);;
                     max <- load_Z _ 255;
                     cf_test <- test ltu_op max res;
                     set_flag CF cf_test;;
-                    set_flag OF cf_test
+                    set_flag OF cf_test;;
+                    iset_op16 seg res (Reg_op EAX)
       | true, true => p1 <- iload_op16 seg op;
                     p2 <- iload_op16 seg (Reg_op EAX);
                     p1ext <- cast_u size32 p1;
@@ -1726,12 +1726,12 @@ Definition conv_SAHF: Conv unit :=
                     sixteen <- load_Z size32 16;
                     res_shifted <- arith shru_op res sixteen;
                     res_upper <- cast_u size16 res_shifted;
-                    iset_op16 seg res_lower (Reg_op EAX);;
-                    iset_op16 seg res_upper (Reg_op EDX);;
                     zero <- load_Z size16 0;
                     cf_test <- test ltu_op zero res_upper;
                     set_flag CF cf_test;;
-                    set_flag OF cf_test
+                    set_flag OF cf_test;;
+                    iset_op16 seg res_upper (Reg_op EDX);;
+                    iset_op16 seg res_lower (Reg_op EAX)
       | false, true => p1 <- iload_op32 seg op;
                     p2 <- iload_op32 seg (Reg_op EAX);
                     p1ext <- cast_u 63 p1;
