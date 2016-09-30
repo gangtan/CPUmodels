@@ -82,6 +82,11 @@ Module RTL(M : MACHINE_SIG).
   End AddrIndexed.
   Module AddrMap := IMap(AddrIndexed).
 
+  (** psuedo registers can serve as temporary storage when defining
+      instruction semantics; s is the size of the pseudo reg. *)
+  Inductive pseudo_reg (s:nat) : Set :=
+  | ps_reg : Z -> pseudo_reg s.
+
   (** RTL instructions form a RISC-like core language that operate over pseudo-registers.
       We assume that we're working under an environment that holds an infinite number of
       pseudo registers for each bit-vector size of interest.  The instructions include
@@ -114,6 +119,7 @@ Module RTL(M : MACHINE_SIG).
   | cast_u_rtl_exp : forall s1 s2 (e:rtl_exp s1), rtl_exp s2
   | imm_rtl_exp : forall s, int s -> rtl_exp s
   | get_loc_rtl_exp : forall s (l:M.location s), rtl_exp s
+  | get_ps_reg_rtl_exp: forall s (ps: pseudo_reg s), rtl_exp s     
   | get_array_rtl_exp : forall l s, M.array l s -> rtl_exp l -> rtl_exp s
   | get_byte_rtl_exp : forall (addr:rtl_exp M.size_addr),  rtl_exp size8
   | get_random_rtl_exp : forall s, rtl_exp s
@@ -132,7 +138,8 @@ Module RTL(M : MACHINE_SIG).
 
   Inductive rtl_instr : Type :=
   | set_loc_rtl : forall s (e:rtl_exp s) (l:M.location s), rtl_instr
-  | set_array_rtl : forall l s, M.array l s -> rtl_exp l -> rtl_exp s -> rtl_instr
+  | set_ps_reg_rtl: forall s (e:rtl_exp s) (ps:pseudo_reg s), rtl_instr
+  | set_array_rtl : forall l s (arr: M.array l s) (e1:rtl_exp l) (e2:rtl_exp s), rtl_instr
   | set_byte_rtl: forall (e:rtl_exp size8)(addr:rtl_exp M.size_addr), rtl_instr
   (** advance the clock of the oracle so that the next get_random_rtl_exp returns
       a new random bitvalue *)
@@ -148,8 +155,11 @@ Module RTL(M : MACHINE_SIG).
     oracle_offset : Z
   }.
 
+  Definition pseudo_env := forall s, pseudo_reg s -> int s.
+
   Record rtl_state := { 
     rtl_oracle : oracle ; 
+    rtl_env : pseudo_env ;
     rtl_mach_state : M.mach_state ; 
     rtl_memory : AddrMap.t int8
   }. 
@@ -173,30 +183,58 @@ Module RTL(M : MACHINE_SIG).
   intros ; apply Coqlib.extensionality. auto.
   intros ; apply Coqlib.extensionality. intros. destruct (c x) ; auto. destruct r ; auto.
   intros ; apply Coqlib.extensionality. intros. destruct (f x) ; auto.
-    destruct r ; auto.
+  destruct r ; auto.
   Defined.
 
   Definition Fail T : RTL T := fun rs => (Fail_ans,rs).
   Definition Trap T : RTL T := fun rs => (Trap_ans,rs).
 
+  Definition empty_env : pseudo_env := fun s _ => Word.zero.
+
+  Definition eq_pseudo_reg s : 
+    forall (ps1 ps2:pseudo_reg s), {ps1 = ps2} + {ps1 <> ps2}.
+    intros. destruct ps1. destruct ps2. destruct (Z_eq_dec z z0). subst. left. auto.
+    right. intro. apply n. congruence.
+  Defined.
+
+  Definition update_ps_env s (ps:pseudo_reg s) (v:int s) (env:pseudo_env) : pseudo_env.
+    intros s ps v env s' ps'.
+    destruct (eq_nat_dec s s'). subst. destruct (eq_pseudo_reg ps ps'). subst. apply v.
+    apply (env s' ps').
+    apply (env s' ps').
+  Defined.
+
   Definition set_loc s (l:M.location s) (v:int s) : RTL unit := 
-    fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_mach_state := M.set_location l v (rtl_mach_state rs) ; 
-                           rtl_memory := rtl_memory rs |}).
+    fun rs => (Okay_ans tt, 
+               {| rtl_oracle := rtl_oracle rs ; 
+                  rtl_env := rtl_env rs;
+                  rtl_mach_state := M.set_location l v (rtl_mach_state rs) ; 
+                  rtl_memory := rtl_memory rs |}).
+  Definition set_ps_reg s (ps:pseudo_reg s) (v:int s): RTL unit :=
+    fun rs => (Okay_ans tt, 
+               {| rtl_oracle := rtl_oracle rs ; 
+                  rtl_env := update_ps_env ps v (rtl_env rs);
+                  rtl_mach_state := rtl_mach_state rs ; 
+                  rtl_memory := rtl_memory rs |}).
   Definition set_array l s (a:M.array l s) (i:int l) (v:int s) : RTL unit := 
-    fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_mach_state := M.array_upd a i v (rtl_mach_state rs) ; 
-                           rtl_memory := rtl_memory rs |}).
+    fun rs => (Okay_ans tt, 
+               {| rtl_oracle := rtl_oracle rs ; 
+                  rtl_env := rtl_env rs;
+                  rtl_mach_state := M.array_upd a i v (rtl_mach_state rs) ; 
+                  rtl_memory := rtl_memory rs |}).
   Definition set_byte (addr:int M.size_addr) (v:int size8) : RTL unit := 
-    fun rs => (Okay_ans tt, {| rtl_oracle := rtl_oracle rs ; 
-                           rtl_mach_state := rtl_mach_state rs ;
-                           rtl_memory := AddrMap.set addr v (rtl_memory rs) |}).
+    fun rs => (Okay_ans tt, 
+               {| rtl_oracle := rtl_oracle rs ; 
+                  rtl_env := rtl_env rs;
+                  rtl_mach_state := rtl_mach_state rs ;
+                  rtl_memory := AddrMap.set addr v (rtl_memory rs) |}).
   Definition advance_oracle : RTL unit :=
     fun rs =>
       let o := rtl_oracle rs in
       let o' := {| oracle_bits := oracle_bits o; oracle_offset := oracle_offset o + 1 |} in
         (Okay_ans tt,
           {| rtl_oracle := o' ;
+             rtl_env := rtl_env rs;
              rtl_mach_state := rtl_mach_state rs ;
              rtl_memory := rtl_memory rs |}).
 
@@ -374,6 +412,7 @@ Module RTL(M : MACHINE_SIG).
         let v := interp_rtl_exp e rs in Word.repr (Word.unsigned v)
       | imm_rtl_exp v => v
       | get_loc_rtl_exp l => M.get_location l (rtl_mach_state rs)
+      | get_ps_reg_rtl_exp ps => rtl_env rs ps
       | get_array_rtl_exp a e => 
         let i := interp_rtl_exp e rs in M.array_sub a i (rtl_mach_state rs)
       | get_byte_rtl_exp addr => 
@@ -407,6 +446,8 @@ Module RTL(M : MACHINE_SIG).
     match instr with 
       | set_loc_rtl e l => 
         v <- interp_rtl_exp_comp e; set_loc l v
+      | set_ps_reg_rtl e ps =>
+        v <- interp_rtl_exp_comp e; set_ps_reg ps v
       | set_array_rtl a e1 e2 =>
         i <- interp_rtl_exp_comp e1; v <- interp_rtl_exp_comp e2; 
         set_array a i v
@@ -427,4 +468,3 @@ Module RTL(M : MACHINE_SIG).
     instr_rtl : list rtl_instr (* semantics as RTL instructions *)
   }.
 End RTL.
-

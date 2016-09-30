@@ -510,7 +510,9 @@ Module X86_Compile.
   Import X86_RTL.
   Local Open Scope monad_scope.
 
-  Record conv_state := { c_rev_i :list rtl_instr }.
+  (** c_rev_i is the list of rtl instructions generated in reverse;
+      c_next is the index of the next pseudo reg. *)
+  Record conv_state := { c_rev_i : list rtl_instr ; c_next : Z }.
   Definition Conv(T:Type) := conv_state -> T * conv_state.
   Instance Conv_monad : Monad Conv := {
     Return := fun A (x:A) (s:conv_state) => (x,s) ; 
@@ -521,12 +523,12 @@ Module X86_Compile.
   intros ; apply Coqlib.extensionality ; intros. destruct (c x). auto.
   intros ; apply Coqlib.extensionality ; intros. destruct (f x) ; auto. 
   Defined.
-  Definition runConv (c:Conv unit) : (list rtl_instr) := 
-    match c {|c_rev_i := nil |} with 
+  Definition runConv (c:Conv unit) : (list rtl_instr) :=
+    match c {|c_rev_i := nil ; c_next:=0|} with
       | (_, c') => (List.rev (c_rev_i c'))
     end.
-  Definition EMIT(i:rtl_instr) : Conv unit := 
-    fun s => (tt,{|c_rev_i := i::(c_rev_i s) |}).
+  Definition EMIT(i:rtl_instr) : Conv unit :=
+    fun s => (tt,{|c_rev_i := i::(c_rev_i s) ; c_next := c_next s|}).
   Notation "'emit' i" := (EMIT i) (at level 75) : monad_scope.
   
   (* Begin: a set of basic conversion constructs *)
@@ -541,6 +543,27 @@ Module X86_Compile.
   Definition cast_s s1 s2 (e:rtl_exp s1) := ret (@cast_s_rtl_exp s1 s2 e).
   Definition read_loc s (l:loc s) := ret (get_loc_rtl_exp l).
   Definition write_loc s (e:rtl_exp s) (l:loc s)  := emit set_loc_rtl e l.
+
+  (* Definition write_current_ps s (e: rtl_exp s) : Conv unit := *)
+  (*   fun ts =>  *)
+  (*     let r := c_next ts in *)
+  (*     let ts' := {|c_rev_i := (set_ps_reg_rtl e (ps_reg s r))::c_rev_i ts; *)
+  (*                  c_next := r|} in *)
+  (*     ((), ts'). *)
+
+  (* store the value of e into the current pseudo reg and advance the
+     index of the pseudo reg; it returns an rtl_exp that retrives the
+     value from the storage; *)
+  Definition write_ps_and_fresh s (e: rtl_exp s) : Conv (rtl_exp s) :=
+    fun ts => 
+      let r := c_next ts in
+      let ts' := {|c_rev_i := (set_ps_reg_rtl e (ps_reg s r))::c_rev_i ts;
+                   c_next := r + 1|} in
+      (get_ps_reg_rtl_exp (ps_reg s r), ts').
+
+  (* Definition read_ps s (ps:pseudo_reg s): Conv (rtl_exp s) :=  *)
+  (*   ret (get_ps_reg_rtl_exp ps). *)
+
   Definition read_array l s (a:array l s) (idx:rtl_exp l) := 
     ret (get_array_rtl_exp a idx).
   Definition write_array l s (a:array l s) (idx:rtl_exp l) (v:rtl_exp s) :=
@@ -1157,8 +1180,10 @@ Module X86_Compile.
         (* RTL for op1 *)
         p0 <- load seg op1;
         p1 <- load seg op2;
-        cf1 <- get_flag CF;
-        cfext <- cast_u _ cf1; 
+        cf0 <- get_flag CF;
+        (* store the current CF flag in a pseudo reg *)
+        old_cf <- write_ps_and_fresh cf0;
+        cfext <- cast_u _ old_cf; 
         p2 <- arith add_op p0 p1;
         p2 <- arith add_op p2 cfext;
 
@@ -1188,7 +1213,7 @@ Module X86_Compile.
         (* RTL for AF *)
         n0 <- cast_u size4 p0;
         n1 <- cast_u size4 p1;
-        cf4 <- cast_u size4 cf1;
+        cf4 <- cast_u size4 old_cf;
         n2 <- @arith size4 add_op n0 n1;
         n2 <- @arith size4 add_op n2 cf4;
         b0 <- test ltu_op n2 n0;
@@ -1202,7 +1227,6 @@ Module X86_Compile.
         set_flag PF pfp;;
         set_flag AF afp;;
         set seg p2 op1.
-
 
 Definition conv_STC: Conv unit :=
   one <- load_Z size1 1;
@@ -1436,7 +1460,9 @@ Definition conv_SAHF: Conv unit :=
         zero <- load_Z _ 0;
         up <- load_Z size1 1;
         
-        old_cf <- get_flag CF;
+        cf0 <- get_flag CF;
+        (* store the current CF flag in a pseudo reg *)
+        old_cf <- write_ps_and_fresh cf0;
         old_cf_ext <- cast_u _ old_cf;
         (* RTL for op1 *)
         p0 <- load seg op1;
@@ -1496,63 +1522,75 @@ Definition conv_SAHF: Conv unit :=
       undef_flag AF;;
       undef_flag PF;;
       match op_override pre, w with
-        | _, false => dividend <- iload_op16 seg (Reg_op EAX);
-                      divisor <- iload_op8 seg op;
-                      zero <- load_Z _ 0;
-                      divide_by_zero <- test eq_op zero divisor;
-                      if_trap divide_by_zero;;
-                      divisor_ext <- cast_u _ divisor;
-                      quotient <- arith divu_op dividend divisor_ext;
-                      max_quotient <- load_Z _ 255;
-                      div_error <- test ltu_op max_quotient quotient;
-                      if_trap div_error;;
-                      remainder <- arith modu_op dividend divisor_ext;
-                      quotient_trunc <- cast_u _ quotient;
-                      remainder_trunc <- cast_u _ remainder;
-                      iset_op8 seg quotient_trunc (Reg_op EAX);;
-                      iset_op8 seg remainder_trunc (Reg_op ESP) (* This is AH *)
-       | true, true => dividend_lower <- iload_op16 seg (Reg_op EAX);
-                       dividend_upper <- iload_op16 seg (Reg_op EDX);
-                       dividend0 <- cast_u size32 dividend_upper;
-                       sixteen <- load_Z size32 16;
-                       dividend1 <- arith shl_op dividend0 sixteen;
-                       dividend_lower_ext <- cast_u size32 dividend_lower;
-                       dividend <- arith or_op dividend1 dividend_lower_ext;
-                       divisor <- iload_op16 seg op;
-                       zero <- load_Z _ 0;
-                       divide_by_zero <- test eq_op zero divisor;
-                       if_trap divide_by_zero;;
-                       divisor_ext <- cast_u _ divisor;
-                       quotient <- arith divu_op dividend divisor_ext;
-                       max_quotient <- load_Z _ 65535;
-                       div_error <- test ltu_op max_quotient quotient;
-                       if_trap div_error;;
-                       remainder <- arith modu_op dividend divisor_ext;
-                       quotient_trunc <- cast_u _ quotient;
-                       remainder_trunc <- cast_u _ remainder;
-                       iset_op16 seg quotient_trunc (Reg_op EAX);;
-                       iset_op16 seg remainder_trunc (Reg_op EDX) 
-       | false, true => dividend_lower <- iload_op32 seg (Reg_op EAX);
-                       dividend_upper <- iload_op32 seg (Reg_op EDX);
-                       dividend0 <- cast_u 63 dividend_upper;
-                       thirtytwo <- load_Z 63 32;
-                       dividend1 <- arith shl_op dividend0 thirtytwo;
-                       dividend_lower_ext <- cast_u _ dividend_lower;
-                       dividend <- arith or_op dividend1 dividend_lower_ext;
-                       divisor <- iload_op32 seg op;
-                       zero <- load_Z _ 0;
-                       divide_by_zero <- test eq_op zero divisor;
-                       if_trap divide_by_zero;;
-                       divisor_ext <- cast_u _ divisor;
-                       quotient <- arith divu_op dividend divisor_ext;
-                       max_quotient <- load_Z _ 4294967295;
-                       div_error <- test ltu_op max_quotient quotient;
-                       if_trap div_error;;
-                       remainder <- arith modu_op dividend divisor_ext;
-                       quotient_trunc <- cast_u _ quotient;
-                       remainder_trunc <- cast_u _ remainder;
-                       iset_op32 seg quotient_trunc (Reg_op EAX);;
-                       iset_op32 seg remainder_trunc (Reg_op EDX) 
+        | _, false => 
+          eax <- iload_op16 seg (Reg_op EAX);
+          (* store the old eax since later on we may update both eax and op *)
+          dividend <- write_ps_and_fresh eax;
+          op_val <- iload_op8 seg op;
+          (* store the old op value since the update on eax may change it 
+             when op is eax *)
+          divisor <- write_ps_and_fresh op_val;
+          zero <- load_Z _ 0;
+          divide_by_zero <- test eq_op zero divisor;
+          if_trap divide_by_zero;;
+          divisor_ext <- cast_u _ divisor;
+          quotient <- arith divu_op dividend divisor_ext;
+          max_quotient <- load_Z _ 255;
+          div_error <- test ltu_op max_quotient quotient;
+          if_trap div_error;;
+          remainder <- arith modu_op dividend divisor_ext;
+          quotient_trunc <- cast_u _ quotient;
+          remainder_trunc <- cast_u _ remainder;
+          iset_op8 seg quotient_trunc (Reg_op EAX);;
+          iset_op8 seg remainder_trunc (Reg_op ESP) (* This is AH *)
+        | true, true => 
+          eax <- iload_op16 seg (Reg_op EAX);
+          dividend_lower <- write_ps_and_fresh eax;
+          dividend_upper <- iload_op16 seg (Reg_op EDX);
+          dividend0 <- cast_u size32 dividend_upper;
+          sixteen <- load_Z size32 16;
+          dividend1 <- arith shl_op dividend0 sixteen;
+          dividend_lower_ext <- cast_u size32 dividend_lower;
+          dividend <- arith or_op dividend1 dividend_lower_ext;
+          op_val <- iload_op16 seg op;
+          divisor <- write_ps_and_fresh op_val;
+          zero <- load_Z _ 0;
+          divide_by_zero <- test eq_op zero divisor;
+          if_trap divide_by_zero;;
+          divisor_ext <- cast_u _ divisor;
+          quotient <- arith divu_op dividend divisor_ext;
+          max_quotient <- load_Z _ 65535;
+          div_error <- test ltu_op max_quotient quotient;
+          if_trap div_error;;
+          remainder <- arith modu_op dividend divisor_ext;
+          quotient_trunc <- cast_u _ quotient;
+          remainder_trunc <- cast_u _ remainder;
+          iset_op16 seg quotient_trunc (Reg_op EAX);;
+          iset_op16 seg remainder_trunc (Reg_op EDX) 
+        | false, true => 
+          oe <- iload_op32 seg (Reg_op EAX);
+          dividend_lower <- write_ps_and_fresh oe;
+          dividend_upper <- iload_op32 seg (Reg_op EDX);
+          dividend0 <- cast_u 63 dividend_upper;
+          thirtytwo <- load_Z 63 32;
+          dividend1 <- arith shl_op dividend0 thirtytwo;
+          dividend_lower_ext <- cast_u _ dividend_lower;
+          dividend <- arith or_op dividend1 dividend_lower_ext;
+          op_val <- iload_op32 seg op;
+          divisor <- write_ps_and_fresh op_val;
+          zero <- load_Z _ 0;
+          divide_by_zero <- test eq_op zero divisor;
+          if_trap divide_by_zero;;
+          divisor_ext <- cast_u _ divisor;
+          quotient <- arith divu_op dividend divisor_ext;
+          max_quotient <- load_Z _ 4294967295;
+          div_error <- test ltu_op max_quotient quotient;
+          if_trap div_error;;
+          remainder <- arith modu_op dividend divisor_ext;
+          quotient_trunc <- cast_u _ quotient;
+          remainder_trunc <- cast_u _ remainder;
+          iset_op32 seg quotient_trunc (Reg_op EAX);;
+          iset_op32 seg remainder_trunc (Reg_op EDX) 
      end.
 
   Definition conv_IDIV (pre: prefix) (w: bool) (op: operand) :=
@@ -1564,8 +1602,10 @@ Definition conv_SAHF: Conv unit :=
       undef_flag AF;;
       undef_flag PF;;
       match op_override pre, w with
-        | _, false => dividend <- iload_op16 seg (Reg_op EAX);
-                      divisor <- iload_op8 seg op;
+        | _, false => eax <- iload_op16 seg (Reg_op EAX);
+                      dividend <- write_ps_and_fresh eax;
+                      op_val <- iload_op8 seg op;
+                      divisor <- write_ps_and_fresh op_val;
                       zero <- load_Z _ 0;
                       divide_by_zero <- test eq_op zero divisor;
                       if_trap divide_by_zero;;
@@ -1582,14 +1622,16 @@ Definition conv_SAHF: Conv unit :=
                       remainder_trunc <- cast_s _ remainder;
                       iset_op8 seg quotient_trunc (Reg_op EAX);;
                       iset_op8 seg remainder_trunc (Reg_op ESP) (* This is AH *)
-       | true, true => dividend_lower <- iload_op16 seg (Reg_op EAX);
+       | true, true => eax <- iload_op16 seg (Reg_op EAX);
+                       dividend_lower <- write_ps_and_fresh eax;
                        dividend_upper <- iload_op16 seg (Reg_op EDX);
                        dividend0 <- cast_s size32 dividend_upper;
                        sixteen <- load_Z size32 16;
                        dividend1 <- arith shl_op dividend0 sixteen;
                        dividend_lower_ext <- cast_s size32 dividend_lower;
                        dividend <- arith or_op dividend1 dividend_lower_ext;
-                       divisor <- iload_op16 seg op;
+                       op_val <- iload_op16 seg op;
+                       divisor <- write_ps_and_fresh op_val;
                        zero <- load_Z _ 0;
                        divide_by_zero <- test eq_op zero divisor;
                        if_trap divide_by_zero;;
@@ -1606,14 +1648,16 @@ Definition conv_SAHF: Conv unit :=
                        remainder_trunc <- cast_s _ remainder;
                        iset_op16 seg quotient_trunc (Reg_op EAX);;
                        iset_op16 seg remainder_trunc (Reg_op EDX) 
-       | false, true => dividend_lower <- iload_op32 seg (Reg_op EAX);
+       | false, true => eax <- iload_op32 seg (Reg_op EAX);
+                       dividend_lower <- write_ps_and_fresh eax;
                        dividend_upper <- iload_op32 seg (Reg_op EDX);
                        dividend0 <- cast_s 63 dividend_upper;
                        thirtytwo <- load_Z 63 32;
                        dividend1 <- arith shl_op dividend0 thirtytwo;
                        dividend_lower_ext <- cast_s _ dividend_lower;
                        dividend <- arith or_op dividend1 dividend_lower_ext;
-                       divisor <- iload_op32 seg op;
+                       op_val <- iload_op32 seg op;
+                       divisor <- write_ps_and_fresh op_val;
                        zero <- load_Z _ 0;
                        divide_by_zero <- test eq_op zero divisor;
                        if_trap divide_by_zero;;
@@ -1638,10 +1682,13 @@ Definition conv_SAHF: Conv unit :=
     undef_flag ZF;;
     undef_flag AF;;
     undef_flag PF;;
-    (match opopt2 with | None => let load := load_op pre w in
-                let seg := get_segment_op pre DS op1 in
-                 p1 <- load seg (Reg_op EAX);
-                 p2 <- load seg op1;
+    match opopt2 with
+     | None => let load := load_op pre w in
+               let seg := get_segment_op pre DS op1 in
+                 eax <- load seg (Reg_op EAX);
+                 p1 <- write_ps_and_fresh eax;
+                 op1_val <- load seg op1;
+                 p2 <- write_ps_and_fresh op1_val;
                  p1ext <- cast_s (2*((opsize (op_override pre) w)+1)-1) p1;
                  p2ext <- cast_s (2*((opsize (op_override pre) w)+1)-1) p2;
                  res <- arith mul_op p1ext p2ext;
@@ -1680,7 +1727,8 @@ Definition conv_SAHF: Conv unit :=
                       set_flag CF flag;;
                       set_flag OF flag;;
                       set seg lowerhalf op1
-          |Some imm3  =>  let load := load_op pre w in
+          | Some imm3  =>
+                    let load := load_op pre w in
                     let set := set_op pre w in
                     let seg := get_segment_op2 pre DS op1 op2 in
                       p1 <- load seg op2;
@@ -1696,7 +1744,7 @@ Definition conv_SAHF: Conv unit :=
                       set_flag OF flag;;
                       set seg lowerhalf op1
         end
-    end).
+    end.
     Obligation 1. unfold opsize. 
       destruct (op_override pre); simpl; auto. Defined.
 
@@ -1717,8 +1765,11 @@ Definition conv_SAHF: Conv unit :=
                     set_flag CF cf_test;;
                     set_flag OF cf_test;;
                     iset_op16 seg res (Reg_op EAX)
-      | true, true => p1 <- iload_op16 seg op;
-                    p2 <- iload_op16 seg (Reg_op EAX);
+      | true, true => 
+                    op_val <- iload_op16 seg op;
+                    p1 <- write_ps_and_fresh op_val;
+                    eax <- iload_op16 seg (Reg_op EAX); 
+                    p2 <- write_ps_and_fresh eax;
                     p1ext <- cast_u size32 p1;
                     p2ext <- cast_u size32 p2;
                     res <- arith mul_op p1ext p2ext;
@@ -1730,10 +1781,13 @@ Definition conv_SAHF: Conv unit :=
                     cf_test <- test ltu_op zero res_upper;
                     set_flag CF cf_test;;
                     set_flag OF cf_test;;
-                    iset_op16 seg res_upper (Reg_op EDX);;
-                    iset_op16 seg res_lower (Reg_op EAX)
-      | false, true => p1 <- iload_op32 seg op;
-                    p2 <- iload_op32 seg (Reg_op EAX);
+                    iset_op16 seg res_lower (Reg_op EAX);;
+                    iset_op16 seg res_upper (Reg_op EDX)
+      | false, true => 
+                    op_val <- iload_op32 seg op;
+                    p1 <- write_ps_and_fresh op_val;
+                    eax <- iload_op32 seg (Reg_op EAX);
+                    p2 <- write_ps_and_fresh eax;
                     p1ext <- cast_u 63 p1;
                     p2ext <- cast_u 63 p2;
                     res <- arith mul_op p1ext p2ext;
@@ -1741,12 +1795,12 @@ Definition conv_SAHF: Conv unit :=
                     thirtytwo <- load_Z 63 32;
                     res_shifted <- arith shru_op res thirtytwo;
                     res_upper <- cast_u size32 res_shifted;
-                    iset_op32 seg res_lower (Reg_op EAX);;
-                    iset_op32 seg res_upper (Reg_op EDX);;
                     zero <- load_Z size32 0;
                     cf_test <- test ltu_op zero res_upper;
                     set_flag CF cf_test;;
-                    set_flag OF cf_test
+                    set_flag OF cf_test;;
+                    iset_op32 seg res_lower (Reg_op EAX);;
+                    iset_op32 seg res_upper (Reg_op EDX)
    end.
 
   Definition conv_shift shift (pre: prefix) (w: bool) (op1: operand) (op2: reg_or_immed) :=
