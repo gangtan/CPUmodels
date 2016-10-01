@@ -650,11 +650,6 @@ Module X86_Compile.
     y' <- cast_u (s1+s2+1) y;
     arith add_op raised_x y'.
 
-
-  (* used in the old version of the semantics to copy a pseudo register;
-     now it's a no-op *)
-  Definition copy_ps s (rs:rtl_exp s) := cast_u s rs.
-
   Definition scale_to_int32 (s:scale) : int32 :=
     Word.repr match s with | Scale1 => 1 | Scale2 => 2 | Scale4 => 4 | Scale8 => 8 end.
 
@@ -1859,7 +1854,8 @@ Definition conv_SAHF: Conv unit :=
     p2cast <- cast_u ((opsize (op_override pre) w) + 1) p2;
     
     tmp <- cast_u ((opsize (op_override pre) w) + 1) p1;
-    cf <- get_flag CF;
+    cf0 <- get_flag CF; 
+    cf <- write_ps_and_fresh cf0;
     cf <- cast_u ((opsize (op_override pre) w) + 1) cf;
     tt <- load_Z _ (Z_of_nat ((opsize (op_override pre) w) + 1));
     cf <- arith shl_op cf tt;
@@ -1899,7 +1895,8 @@ Definition conv_SAHF: Conv unit :=
 
     tmp <- cast_u ((opsize (op_override pre) w) + 1) p1;
     tmp <- arith shl_op tmp oneshift;
-    cf <- get_flag CF;
+    cf0 <- get_flag CF;
+    cf <- write_ps_and_fresh cf0;
     cf <- cast_u ((opsize (op_override pre) w) + 1) cf;
     tmp <- arith or_op tmp cf;
     tmp <- arith ror_op tmp p2cast;
@@ -1910,7 +1907,6 @@ Definition conv_SAHF: Conv unit :=
     undef_flag OF;;
     set_flag CF cf;;
     set seg p3 op1.
-
 
   Definition conv_SHLD pre (op1: operand) (r: register) ri :=
     let load := load_op pre true in
@@ -2020,18 +2016,18 @@ Definition conv_SAHF: Conv unit :=
   Definition conv_AAA_AAS (op1: bit_vector_op) : Conv unit :=
     pnine <- load_Z size8 9;
     p0Fmask <- load_Z size8 15;
-    paf <- get_flag AF;
-    pal <- get_AL;
+    af_val <- get_flag AF;
+    paf <- write_ps_and_fresh af_val;
+    al <- get_AL;
+    pal <- write_ps_and_fresh al;
     digit1 <- arith and_op pal p0Fmask;
     cond1 <- test lt_op pnine digit1;
     cond <- arith or_op cond1 paf;
 
-    pah <- get_AH;
+    ah <- get_AH;
+    pah <- write_ps_and_fresh ah;
     (*Else branch*)
     pfalse <- load_Z size1 0;
-    v_ah0 <- copy_ps pah;
-    v_af0 <- copy_ps pfalse;
-    v_cf0 <- copy_ps pfalse;
     v_al0 <- arith and_op pal p0Fmask;
     
     (*If branch*)
@@ -2042,24 +2038,20 @@ Definition conv_SAHF: Conv unit :=
     pal_cmask <- arith and_op pal_c p0Fmask;
     v_al <- if_exp cond pal_cmask v_al0;
     
-    pah <- get_AH;
     pah_c <- arith op1 pah pone;
-    v_ah <- if_exp cond pah_c v_ah0;
-    v_af <- if_exp cond ptrue v_af0;
-    v_cf <- if_exp cond ptrue v_cf0;
+    v_ah <- if_exp cond pah_c pah;
+    v_af <- if_exp cond ptrue pfalse;
+    v_cf <- if_exp cond ptrue pfalse;
 
     (*Set final values*)
-    set_AL v_al;;
-    set_AH v_ah;;
     set_flag AF v_af;;
     set_flag CF v_cf;;
-
     undef_flag OF;;
     undef_flag SF;;
     undef_flag ZF;;
-    undef_flag PF
-    .
-
+    undef_flag PF;;
+    set_AL v_al;;
+    set_AH v_ah.
 
   Definition conv_AAD : Conv unit :=
     pal <- get_AL;
@@ -2071,27 +2063,26 @@ Definition conv_SAHF: Conv unit :=
     tensval <- arith mul_op pah pten;
     pal_c <- arith add_op pal tensval;
     pal_cmask <- arith and_op pal_c pFF;
-    set_AL pal_cmask;;
-    set_AH pzero;;
 
-    b0 <- test eq_op pal_cmask pzero;
-    set_flag ZF b0;;
-    b1 <- test lt_op pal_cmask pzero;
-    set_flag SF b1;;
-    b2 <- compute_parity pal_cmask;
-    set_flag PF b2;;
+    zfp <- test eq_op pal_cmask pzero;
+    set_flag ZF zfp;;
+    sfp <- test lt_op pal_cmask pzero;
+    set_flag SF sfp;;
+    pfp <- compute_parity pal_cmask;
+    set_flag PF pfp;;
     undef_flag OF;;
     undef_flag AF;;
-    undef_flag CF
-    .
+    undef_flag CF;;
+
+    (* ordering important *)
+    set_AL pal_cmask;;
+    set_AH pzero.
 
   Definition conv_AAM : Conv unit :=
     pal <- get_AL;
     pten <- load_Z size8 10;
     digit1 <- arith divu_op pal pten;
     digit2 <- arith modu_op pal pten;
-    set_AH digit1;;
-    set_AL digit2;;
 
     pzero <- load_Z size8 0;
     b0 <- test eq_op digit2 pzero;
@@ -2102,8 +2093,11 @@ Definition conv_SAHF: Conv unit :=
     set_flag PF b2;;
     undef_flag OF;;
     undef_flag AF;;
-    undef_flag CF
-    .
+    undef_flag CF;;
+
+    (* ordering important *)
+    set_AH digit1;;
+    set_AL digit2.
 
   Definition testcarryAdd s (p1:rtl_exp s) p2 p3 : Conv (rtl_exp size1) :=
     b0 <-test ltu_op p3 p1;
@@ -2117,15 +2111,16 @@ Definition conv_SAHF: Conv unit :=
   Definition conv_DAA_DAS (op1: bit_vector_op) 
     (tester: (rtl_exp size8) -> (rtl_exp size8) -> (rtl_exp size8) ->
       Conv (rtl_exp size1)) : Conv unit :=
-    pal <- @choose size8;
-    set_AL pal;;
     undef_flag CF;;
     undef_flag AF;;
     undef_flag SF;;
     undef_flag ZF;;
     undef_flag PF;;
-    undef_flag OF
-  .
+    undef_flag OF;;
+
+    pal <- @choose size8;
+    set_AL pal.
+
 (*
   Definition conv_DAA_DAS (op1: bit_vector_op) tester: Conv unit :=
     pal <- get_AL;
@@ -2253,9 +2248,10 @@ Definition conv_SAHF: Conv unit :=
       value <- loadmem oldesp;
       offset <- load_Z size32 espoffset;
       newesp <- arith add_op oldesp offset;
-      set_reg newesp ESP;;
-      set value op
-      .
+      (* set op before changing esp *)
+      set value op;;
+      set_reg newesp ESP.
+
   Definition conv_POPA (pre:prefix) :=
     let espoffset := match (op_override pre) with
                        | true => 2%Z
@@ -2287,8 +2283,7 @@ Definition conv_SAHF: Conv unit :=
     offset <- load_Z size32 espoffset;
     newesp <- arith sub_op oldesp offset;
     setmem p0 newesp;;
-    set_reg newesp ESP
-    .
+    set_reg newesp ESP.
 
   Definition conv_PUSH_pseudo (pre:prefix) (w:bool) 
     pr  := (* (pr: pseudo_reg (opsize (op_override pre) w)) *)
@@ -2303,8 +2298,7 @@ Definition conv_SAHF: Conv unit :=
     offset <- load_Z size32 espoffset;
     newesp <- arith sub_op oldesp offset;
     setmem pr newesp;;
-    set_reg newesp ESP
-    .
+    set_reg newesp ESP.
 
 (*
     let seg := get_segment pre SS in
@@ -2335,8 +2329,7 @@ Definition conv_PUSHA (pre:prefix) :=
     conv_PUSH_pseudo pre true oldesp;;
     pushrtl EBP;;
     pushrtl ESI;;
-    pushrtl EDI
-.
+    pushrtl EDI.
 
 Definition get_and_place T dst pos fl: Conv (rtl_exp T) :=
   fl <- get_flag fl;
@@ -2384,8 +2377,8 @@ Definition conv_POP_pseudo (pre: prefix) :=
         oldesp <- load_reg ESP;
         offset <- load_Z size32 espoffset;
         newesp <- arith add_op oldesp offset;
-        set_reg newesp ESP;;
-        loadmem oldesp.
+        loadmem oldesp;;
+        set_reg newesp ESP.
 
 Definition extract_and_set T value pos fl: Conv unit :=
   one <- load_Z T 1;
@@ -2460,14 +2453,14 @@ Definition conv_POPF pre :=
         value <- load_mem32 SS oldesp;
         four <- load_Z size32 4;
         newesp <- arith add_op oldesp four;
+        set_pc value;;
         (match disp with
            | None => set_reg newesp ESP
            | Some imm => imm0 <- load_int imm;
              imm <- cast_u size32 imm0;
              newesp2 <- arith add_op newesp imm;
              set_reg newesp2 ESP
-         end);;
-        set_pc value
+         end)
       else
         raise_error.
   
@@ -2481,7 +2474,6 @@ Definition conv_POPF pre :=
     p0 <- load_reg ECX;
     p1 <- load_Z _ 1;
     p2 <- arith sub_op p0 p1;
-    set_reg p2 ECX;;
     pzero <- load_Z _ 0;
     pcz <- test eq_op p2 pzero;
     pcnz <- arith xor_op pcz ptrue;
@@ -2506,7 +2498,10 @@ Definition conv_POPF pre :=
        |false => load_Z size32 (-1%Z)
      end);
     eip2 <- arith and_op eip1 eipmask;
-    if_set_loc bcond eip2 pc_loc.
+    (* update pc before updating ecx as the new pc depends on old pc
+       and old ECX and new ECX depends only on the old ECX *)
+    if_set_loc bcond eip2 pc_loc;;
+    set_reg p2 ECX.
 
   (************************)
   (* Misc Ops             *)
@@ -2541,10 +2536,11 @@ Definition conv_POPF pre :=
       src <- iload_op32 seg op2;
       zero <- load_Z size32 0;
       zf <- test eq_op src zero;
-      set_flag ZF zf;;
       res0 <- conv_BS_aux d size32 src;
       res1 <- @choose _;
       res <- if_exp zf res1 res0;
+
+      set_flag ZF zf;;
       iset_op32 seg res op1.
 
   Definition conv_BSF p op1 op2 := conv_BS true p op1 op2.
@@ -2589,10 +2585,7 @@ Definition conv_POPF pre :=
     let set := set_mem pre w seg in
     value <- load addr;
     newvalue <- modify_Bit value poff bitval;
-    (* adding copy_ps makes the proof much easier since it meets the pattern 
-             "addr <- v; set_mem_n ... addr" *)
-    newaddr <- copy_ps addr; 
-    set newvalue newaddr.
+    set newvalue addr.
 
   (* id, comp, set, or reset on a single bit, depending on the params*)
   Definition fbit (param1: bool) (param2: bool) (v: rtl_exp size1):
@@ -2600,7 +2593,7 @@ Definition conv_POPF pre :=
     match param1, param2 with
       | true, true => load_Z size1 1
       | true, false => load_Z size1 0
-      | false, true => copy_ps v
+      | false, true => ret v
       | false, false => not v
     end.
 
@@ -2621,7 +2614,7 @@ Definition conv_POPF pre :=
       (match regimm with
          | Imm_op i =>
            arith modu_op pi popsz
-         | _ => copy_ps pi
+         | _ => ret pi
        end
       );
     popsz_bytes <- load_Z size32 ((BinInt.Z_of_nat (opsz + 1))/8);
@@ -2638,24 +2631,23 @@ Definition conv_POPF pre :=
            be shifted one more down, and the offset needs to be made positive *)
         isneg <- test lt_op bitoffset pzero;
         (*nbitoffset:size_opsz and nwordoffset:size32 are final signed values*)
-        nbitoffset0 <- copy_ps bitoffset;
-        nwordoffset0 <- copy_ps wordoffset;
         (*If the bitoffset was lt zero, we need to adjust values to make them positive*)
         negbitoffset <- arith add_op popsz bitoffset;
         negwordoffset <- arith add_op pneg1 wordoffset;
         nbitoffset1 <- cast_u _ negbitoffset;
-        nbitoffset <- if_exp isneg nbitoffset1 nbitoffset0;
+        nbitoffset <- if_exp isneg nbitoffset1 bitoffset;
 
         nwordoffset1 <- cast_u _ negwordoffset;
-        nwordoffset <- if_exp isneg nwordoffset1 nwordoffset0;
+        nwordoffset <- if_exp isneg nwordoffset1 wordoffset;
 
         newaddrdelta <- arith mul_op nwordoffset popsz_bytes;
         newaddr <- arith add_op newaddrdelta psaddr;
         
         value <- lmem newaddr;
         bt <- get_Bit value nbitoffset;
-        set_flag CF bt;;
         newbt <- fbit param1 param2 bt;
+
+        set_flag CF bt;;
         set_Bit_mem pre true op1 newaddr nbitoffset newbt in
     match op1 with
       | Imm_op _ => raise_error
@@ -2663,8 +2655,8 @@ Definition conv_POPF pre :=
         value <- load (Reg_op r1);
         bitoffset <- arith modu_op rawoffset popsz;
         bt <- get_Bit value bitoffset;
-        set_flag CF bt;;
         newbt <- fbit param1 param2 bt;
+        set_flag CF bt;;
         set_Bit pre true op1 bitoffset newbt
       | Address_op a => 
         psaddr <- compute_addr a;
@@ -2672,10 +2664,8 @@ Definition conv_POPF pre :=
       | Offset_op ioff => 
         psaddr <- load_int ioff;
         btmem psaddr
-    end
-.
+    end.
 
-    
   Definition conv_BSWAP (pre: prefix) (r: register) :=
     let seg := get_segment pre DS in
       eight <- load_Z size32 8;
@@ -2723,18 +2713,17 @@ Definition conv_POPF pre :=
                    sixteen <- load_Z _ 16;
                    p2_top0 <- arith shr_op p2 sixteen;
                    p2_top <- cast_s size16 p2_top0;
-                   iset_op16 seg p2_bottom (Reg_op EAX);;
-                   iset_op16 seg p2_top (Reg_op EDX)
+                   iset_op16 seg p2_top (Reg_op EDX);;
+                   iset_op16 seg p2_bottom (Reg_op EAX)
         | false =>  p1 <- iload_op32 seg (Reg_op EAX);
                    p2 <- cast_s 63 p1;
                    p2_bottom <- cast_s size32 p2;
                    thirtytwo <- load_Z _ 32;
                    p2_top0 <- arith shr_op p2 thirtytwo;
                    p2_top <- cast_s size32 p2_top0;
-                   iset_op32 seg p2_bottom (Reg_op EAX);;
-                   iset_op32 seg p2_top (Reg_op EDX)
+                   iset_op32 seg p2_top (Reg_op EDX);;
+                   iset_op32 seg p2_bottom (Reg_op EAX)
       end.
-          
 
   Definition conv_MOV (pre: prefix) (w: bool) (op1 op2: operand) : Conv unit :=
     let load := load_op pre w in 
@@ -2785,9 +2774,10 @@ Definition conv_POPF pre :=
     let set := set_op pre w in
     let seg := get_segment_op2 pre DS op1 op2 in
         p1 <- load seg op1;
+        sp1 <- write_ps_and_fresh p1;
         p2 <- load seg op2;
         set seg p2 op1;;
-        set seg p1 op2.
+        set seg sp1 op2.
 
   Definition conv_XADD (pre: prefix) (w: bool) (op1 op2: operand) : Conv unit :=
     conv_XCHG pre w op1 op2;;
@@ -2812,7 +2802,8 @@ Definition conv_POPF pre :=
                       | false, true => 4
                     end);
     df <- get_flag DF;
-    old_reg <- iload_op32 DS (Reg_op reg);
+    tmp <- iload_op32 DS (Reg_op reg);
+    old_reg <- write_ps_and_fresh tmp;
     new_reg1 <- arith add_op old_reg offset;
     new_reg2 <- arith sub_op old_reg offset;
     set_reg new_reg1 reg;;
@@ -3091,7 +3082,6 @@ Section X86FloatSemantics.
     i <- load_Z _ loc;
     v <- load_Z _ (enc_fpu_tag_mode tm);
     set_fpu_tag i v.
-
 
   (* increment the stack top; this is for popping the FPU stack grows downward *)
   Definition inc_stktop := 
@@ -3475,87 +3465,58 @@ Section X86FloatSemantics.
   Definition load_stktop : Conv (rtl_exp size80) :=
     topp <- get_stktop;
     get_fpu_reg topp.
-    
 
   Definition conv_FST (pre: prefix) (op: fp_operand) : Conv unit :=
     topp <- get_stktop;
-    v <- get_fpu_reg topp;
+    rv <- get_fpu_reg topp;
 
     underflow <- is_empty_tag topp;
 
     rm <- get_fpu_rctrl;
     let sr := get_segment pre DS in
 
+    (* Imprecision: in the no-underflow case, C1 should be set
+       if result was rounded up; cleared otherwise *)
+    v <- choose size1;
+    zero <- load_Z _ 0;
+    c1 <- if_exp underflow zero v;
+    set_fpu_flag F_C1 c1;;
+
+    undef_fpu_flag F_C0;;
+    undef_fpu_flag F_C2;;
+    undef_fpu_flag F_C3;;
+
     match op with
       | FPS_op i => (* Copy st(0) to st(i) *)
         fi <- freg_of_offset i;
-        set_fpu_reg fi v
+        set_fpu_reg fi rv
 
       | FPM16_op a => raise_error
 
       | FPM32_op a =>  (* Copy st(0) to 32-bit memory *)
         addr <- compute_addr a;
-        f32 <- float32_of_de_float v rm;
+        f32 <- float32_of_de_float rv rm;
         set_mem32 sr f32 addr
 
       | FPM64_op a =>  (* Copy st(0) to 64-bit memory *)
         addr <- compute_addr a;
-        f64 <- float64_of_de_float v rm;
+        f64 <- float64_of_de_float rv rm;
         set_mem64 sr f64 addr
 
       | FPM80_op a =>  (* Copy st(0) to 80-bit memory *)
         addr <- compute_addr a;
-        set_mem80 sr v addr
-    end;;
-
-    (* Imprecision: in the no-underflow case, C1 should be set
-       if result was rounded up; cleared otherwise *)
-    v <- choose size1;
-    zero <- load_Z _ 0;
-    c1 <- if_exp underflow zero v;
-    set_fpu_flag F_C1 c1;;
-
-    undef_fpu_flag F_C0;;
-    undef_fpu_flag F_C2;;
-    undef_fpu_flag F_C3.
-
-
-
-
-(* Suman *)
+        set_mem80 sr rv addr
+    end.
 
   Definition conv_FIST (pre: prefix) (op: fp_operand) : Conv unit :=
     topp <- get_stktop;
-    v <- get_fpu_reg topp;
+    rv <- get_fpu_reg topp;
 
     underflow <- is_empty_tag topp;
 
     rm <- get_fpu_rctrl;
     let sr := get_segment pre DS in
 
-    match op with
-      | FPS_op i => (* Copy st(0) to st(i) *)
-        fi <- freg_of_offset i;
-        set_fpu_reg fi v
-
-      | FPM16_op a => raise_error
-
-      | FPM32_op a =>  (* Copy st(0) to 32-bit memory *)
-      addr <- compute_addr a;
-      f32 <- float32_of_de_float v rm;
-      set_mem32 sr f32 addr
-
-      | FPM64_op a =>  (* Copy st(0) to 64-bit memory *)
-      addr <- compute_addr a;
-        f64 <- float64_of_de_float v rm;
-        set_mem64 sr f64 addr
-
-      | FPM80_op a =>  (* Copy st(0) to 80-bit memory *)
-        addr <- compute_addr a;
-	set_mem80 sr v addr
-
-    end;;
-
     (* Imprecision: in the no-underflow case, C1 should be set
        if result was rounded up; cleared otherwise *)
     v <- choose size1;
@@ -3565,13 +3526,30 @@ Section X86FloatSemantics.
 
     undef_fpu_flag F_C0;;
     undef_fpu_flag F_C2;;
-    undef_fpu_flag F_C3.
+    undef_fpu_flag F_C3;;
 
+    match op with
+      | FPS_op i => (* Copy st(0) to st(i) *)
+        fi <- freg_of_offset i;
+        set_fpu_reg fi rv
 
+      | FPM16_op a => raise_error
 
-(* Suman *)
+      | FPM32_op a =>  (* Copy st(0) to 32-bit memory *)
+      addr <- compute_addr a;
+      f32 <- float32_of_de_float rv rm;
+      set_mem32 sr f32 addr
 
+      | FPM64_op a =>  (* Copy st(0) to 64-bit memory *)
+      addr <- compute_addr a;
+        f64 <- float64_of_de_float rv rm;
+        set_mem64 sr f64 addr
 
+      | FPM80_op a =>  (* Copy st(0) to 80-bit memory *)
+        addr <- compute_addr a;
+	set_mem80 sr rv addr
+
+    end.
 
   (* stack pop and set tag *)
   Definition stk_pop_and_set_tag := 
@@ -3584,11 +3562,9 @@ Section X86FloatSemantics.
     conv_FST pre op;;
     stk_pop_and_set_tag.
 
-
   Definition conv_FISTP (pre: prefix) (op: fp_operand) :=
     conv_FIST pre op;;
     stk_pop_and_set_tag.
-
 
 
   (* gtan: the following constants are gotten by executing 
@@ -3667,14 +3643,6 @@ Section X86FloatSemantics.
 
     ires <- float32_of_de_float res rm;
 
-    match op with
-      | Imm_op _ => raise_error
-      | Reg_op r => set_reg ires r
-      | Address_op a => addr <- compute_addr a ; set_mem32 DS ires addr
-      | Offset_op off => addr <- load_int off;
-                                 set_mem32 DS ires addr
-    end;;
-
 
     (* Imprecision: in the no-underflow case, C1 should be set
        if result was rounded up; cleared otherwise *)
@@ -3685,8 +3653,15 @@ Section X86FloatSemantics.
 
     undef_fpu_flag F_C0;;
     undef_fpu_flag F_C2;;
-    undef_fpu_flag F_C3.
+    undef_fpu_flag F_C3;;
 
+    match op with
+      | Imm_op _ => raise_error
+      | Reg_op r => set_reg ires r
+      | Address_op a => addr <- compute_addr a ; set_mem32 DS ires addr
+      | Offset_op off => addr <- load_int off;
+                                 set_mem32 DS ires addr
+    end.
 
   Definition conv_farith (fop: float_arith_op) (noreverse: bool)
     (pre: prefix) (zerod: bool) (op: fp_operand) : Conv unit :=
@@ -3703,6 +3678,17 @@ Section X86FloatSemantics.
              | false, false => farith_de fop rm st0 opv
            end;
 
+    (* Imprecision: in the no-underflow case, C1 should be set
+       if result was rounded up; cleared otherwise *)
+    v <- choose size1;
+    zero <- load_Z _ 0;
+    c1 <- if_exp underflow zero v;
+    set_fpu_flag F_C1 c1;;
+
+    undef_fpu_flag F_C0;;
+    undef_fpu_flag F_C2;;
+    undef_fpu_flag F_C3;;
+
     match zerod, op with
       | true, FPS_op _ 
       | true, FPM32_op _ 
@@ -3714,19 +3700,7 @@ Section X86FloatSemantics.
         set_fpu_reg fi res
 
       | _, _ => raise_error
-    end;;
-
-
-    (* Imprecision: in the no-underflow case, C1 should be set
-       if result was rounded up; cleared otherwise *)
-    v <- choose size1;
-    zero <- load_Z _ 0;
-    c1 <- if_exp underflow zero v;
-    set_fpu_flag F_C1 c1;;
-
-    undef_fpu_flag F_C0;;
-    undef_fpu_flag F_C2;;
-    undef_fpu_flag F_C3.
+    end.
 
   (* ST(i) <- ST(i) fop ST(0) and pop the stack top *)
    Definition conv_farith_and_pop (fop: float_arith_op) (noreverse: bool) 
@@ -4259,3 +4233,7 @@ Notation "m1 ==> m2" := (step_immed m1 m2) (at level 55, m2 at next level).
 Require Import Relation_Operators.
 Definition steps := clos_refl_trans rtl_state step_immed.
 Notation "m1 '==>*' m2" := (steps m1 m2) (at level 55, m2 at next level).
+
+(* Definition no_prefix : prefix := mkPrefix None None false false. *)
+(* Compute (runConv (string_op_reg_shift EAX no_prefix false)). *)
+
