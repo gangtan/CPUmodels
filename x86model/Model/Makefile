@@ -1,7 +1,7 @@
 # Note: you first need to install the flocq library under the flocq-2.1.0 directory;
 # just go to that directory and follow the instructions in INSTALL
 
-MODULES := Coqlib CommonTacs Maps Bits X86Syntax Monad Vector MSetsMore ParserArg Xform Regexp RESet GrammarType Grammar BiGrammar Parser Recognizer Decode Encode RTL FloatingAux X86Semantics DecodeBi_ins DecodeBi
+MODULES := Coqlib CommonTacs Maps Bits X86Syntax Monad Vector MSetsMore ParserArg Xform Regexp RESet GrammarType Grammar BiGrammar Parser Recognizer Decode Encode RTL FloatingAux X86Semantics SemTests DecodeBi_ins DecodeBi
 # CheckDeterministic
 VS 	:= $(MODULES:%=%.v)
 

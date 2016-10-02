@@ -1462,8 +1462,8 @@ Definition conv_SAHF: Conv unit :=
         (* RTL for op1 *)
         p0 <- load seg op1;
         p1 <- load seg op2;
-        p2_0 <- arith sub_op p0 p1;
-        p2 <- arith sub_op p2_0 old_cf_ext;
+        p1' <- arith add_op p1 old_cf_ext;
+        p2 <- arith sub_op p0 p1';
 
         (* RTL for OF *)
         negp1 <- arith sub_op zero p1;
@@ -1476,9 +1476,7 @@ Definition conv_SAHF: Conv unit :=
         ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
-        b0' <- test ltu_op p0 p1;
-        b0'' <- test eq_op p0 p1;
-        cfp <- arith or_op b0' b0'';
+        cfp <- test ltu_op p0 p1';
 
         (* RTL for ZF *)
         zfp <- test eq_op p2 zero;
