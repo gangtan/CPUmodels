@@ -1,4 +1,5 @@
 
 all:
 	$(MAKE) -C Model
-	$(MAKE) -C RockSalt
+	# commented out for now
+	# $(MAKE) -C RockSalt

@@ -8,7 +8,9 @@ x86model/Model
 
 x86model/RockSalt
 	A formally verified SFI checker based on our model of x86
-        (mostly up to date to Coq 8.5, except for NaclJmp and DFACorrectness)
+        (mostly up to date to Coq 8.5, except for NaclJmp and
+        DFACorrectness; however, recent changes in x86Semantics.v made
+        the proof broken; needs fix)
 
 x86model/fuzz
 	A fuzz tester for the x86 model
