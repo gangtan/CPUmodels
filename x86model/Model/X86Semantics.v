@@ -1183,9 +1183,9 @@ Module X86_Compile.
         p2 <- arith add_op p2 cfext;
 
         (* RTL for OF *)
-        b0 <- test lt_op zero p0;
-        b1 <- test lt_op zero p1;
-        b2 <- test lt_op zero p2;
+        b0 <- test lt_op p0 zero;
+        b1 <- test lt_op p1 zero;
+        b2 <- test lt_op p2 zero;
         b3 <- @arith size1 xor_op b0 b1;
         b3 <- @arith size1 xor_op up b3;
         b4 <- @arith size1 xor_op b0 b2;
@@ -1336,9 +1336,12 @@ Definition conv_SAHF: Conv unit :=
         p2 <- arith add_op p0 p1;
 
         (* RTL for OF *)
-        b0 <- test lt_op zero p0;
-        b1 <- test lt_op zero p1;
-        b2 <- test lt_op zero p2;
+        (* b0, b1, b2 are the sign bits of p0, p1, p2, repsectively *)
+        (* overflow bit is set if those three bits are (0,0,1) or (1,1,0) *)
+        (* we compute "not (b0 xor b1) /\ (b0 xor b2)" *)
+        b0 <- test lt_op p0 zero;
+        b1 <- test lt_op p1 zero;
+        b2 <- test lt_op p2 zero;
         b3 <- @arith size1 xor_op b0 b1;
         b3 <- @arith size1 xor_op up b3;
         b4 <- @arith size1 xor_op b0 b2;
@@ -1392,7 +1395,7 @@ Definition conv_SAHF: Conv unit :=
     let set := set_op pre w in 
         (* RTL for useful constants *)
         zero <- load_Z _ 0;
-        up <- load_Z size1 1;
+        one <- load_Z size1 1;
 
         (* RTL for op1 *)
         p0 <- load seg1 op1;
@@ -1400,12 +1403,13 @@ Definition conv_SAHF: Conv unit :=
         p2 <- arith sub_op p0 p1;
 
         (* RTL for OF *)
-        negp1 <- arith sub_op zero p1;
-        b0 <- test lt_op zero p0;
-        b1 <- test lt_op zero negp1;
-        b2 <- test lt_op zero p2;
+        b0 <- test lt_op p0 zero;
+        b1' <- test lt_op p1 zero;
+        (* b1 = not (p1 < 0) *)
+        b1 <- arith xor_op b1' one;
+        b2 <- test lt_op p2 zero;
         b3 <- @arith size1 xor_op b0 b1;
-        b3 <- @arith size1 xor_op up b3;
+        b3 <- @arith size1 xor_op b3 one;
         b4 <- @arith size1 xor_op b0 b2;
         ofp <- @arith size1 and_op b3 b4;
 
@@ -1691,12 +1695,28 @@ Definition conv_SAHF: Conv unit :=
                  upperhalf <- cast_s (opsize (op_override pre) w) res_shifted;
                  zero <- load_Z _  0;
                  max <- load_Z _ (Word.max_unsigned (opsize (op_override pre) w));
+                 
+                 (* CF and OF are set when siginificant bits, including the sign bit,
+                    are carried to the upper half of the result; that is, when
+                    (1) upperhalf is non-zero and non-max, or (2) upperhalf is zero,
+                    but the significant bit of lower half is one, or (3) upperhalf
+                    is max (all 1s) and the siginicant bit of lower half is zero *)
                  b0 <- test eq_op upperhalf zero;
                  b1 <- test eq_op upperhalf max;
-                 b2 <- arith or_op b0 b1;
-                 flag <- not b2;
+                 b2 <- test lt_op lowerhalf zero;
+                 (* b4 is condition (1) above *)
+                 b3 <- arith or_op b0 b1;
+                 b4 <- not b3;
+                 (* b5 is condition (2) above *)
+                 b5 <- arith and_op b0 b2;
+                 (* b7 is condition (3) above *)
+                 b6 <- not b2;
+                 b7 <- arith and_op b1 b6;
+                 b8 <- arith or_op b4 b5;
+                 flag <- arith or_op b7 b8;
                  set_flag CF flag;;
                  set_flag OF flag;;
+
                  match (op_override pre), w with
                    | _, false => iset_op16 seg res (Reg_op EAX) 
                    | _, true =>  let set := set_op pre w in
