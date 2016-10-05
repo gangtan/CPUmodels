@@ -163,35 +163,58 @@ Module Test_Adc.
   Definition i:instr := 
     ADC true (Reg_op (EBX)) (Reg_op (ECX)).
 
-  Goal (gpr (run zero (repr 2146959366) (repr 2148007937) i) EBX)
-              = repr 7.
+  Goal gpr (run zero (repr 2146959366) (repr 2148007937) i) EBX = repr 7.
   Proof. reflexivity. Qed.
 
-  Goal (flag (run zero (repr 2146959366) (repr 2148007937) i) OF) = zero.
+  Goal flag (run zero (repr 2146959366) (repr 2148007937) i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal (gpr (run zero (repr 2146959366) (repr 2148007937) i) EBX) = repr 7.
+  Goal flag (run zero (repr 2146959366) (repr 2148007937) i) CF = one.
   Proof. reflexivity. Qed.
 
-  Goal (flag (runWithCF zero (repr 7) (repr 2148007937) one i) OF) = zero.
+  Goal flag (runWithCF zero (repr 7) (repr 2148007937) one i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal (flag (runWithCF zero (repr 67373084) (repr 3756307471) one i) OF) = zero.
+  Goal flag (runWithCF zero (repr 67373084) (repr 3756307471) one i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal (flag (runWithCF zero (repr 2036070270) (repr 111413377) one i) OF) = one.
+  Goal flag (runWithCF zero (repr 67373084) (repr 3756307471) one i) CF = zero.
   Proof. reflexivity. Qed.
 
-  Goal (flag (runWithCF zero zero zero one i) OF) = zero.
+  Goal flag (runWithCF zero (repr 2036070270) (repr 111413377) one i) OF = one.
   Proof. reflexivity. Qed.
 
-  Goal (flag (runWithCF zero (repr 4294967295) (repr 4294967295) one i) OF) = zero.
+  Goal flag (runWithCF zero (repr 2036070270) (repr 111413377) one i) CF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithCF zero zero zero one i) OF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithCF zero zero zero one i) CF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithCF zero (repr 4294967295) (repr 4294967295) one i) OF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithCF zero (repr 4294967295) (repr 4294967295) one i) CF = one.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithCF zero mone mone one i) CF = one.
   Proof. reflexivity. Qed.
 
 End Test_Adc.
 
 Module Test_Sbb.
   Definition i:instr := SBB true (Reg_op (EBX)) (Reg_op (ECX)).
+
+  Goal gpr (run zero (repr 2147483712) (repr 2147483648) i) EBX = repr 64.
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero (repr 2147483712) (repr 2147483648) i) OF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero (repr 2147483712) (repr 2147483648) i) CF = zero.
+  Proof. reflexivity. Qed.
 
   Goal (gpr (run zero (repr 3221249032) (repr 3221249032) i) EBX)
               = repr 0.
@@ -213,22 +236,49 @@ Module Test_Sbb.
               = repr 0.
   Proof. reflexivity. Qed.
 
-  (* this fails for now *)
-  (* Goal (flag (run zero (repr 2147483712) (repr 2147483648) i) OF) *)
-  (*             = repr 0. *)
-  (* Proof. reflexivity. Qed. *)
+  Goal flag (run zero (repr 3221249032) (repr 3221249032) i) OF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal gpr (run zero (repr 519538729) (repr 822083584) i) EBX = 
+       repr 3992422441.     
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero (repr 519538729) (repr 822083584) i) OF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero (repr 519538729) (repr 822083584) i) CF = one.
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero (repr 553647924) (repr 2147483648) i) OF = one.
+  Proof. reflexivity. Qed.
+
+  Goal gpr (run zero (repr 553647924) (repr 2147483648) i) EBX = 
+       repr 2701131572.    
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero (repr 553647924) (repr 2147483648) i) CF = one.
+  Proof. reflexivity. Qed.
+
+  Goal gpr (runWithCF zero zero (repr 4294967295) one i) EBX = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithCF zero zero (repr 4294967295) one i) OF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithCF zero zero (repr 4294967295) one i) CF = one.
+  Proof. reflexivity. Qed.
 
 End Test_Sbb.
 
 Module Test_Xadd.
   Definition i:instr := XADD true (Reg_op (EBX)) (Reg_op (ECX)).
 
-  Goal (flag (run zero (repr 1608135424) (repr 2759947009) i) OF)
-              = repr 0.
-  Proof. reflexivity. Qed.
-
   Goal intval 31 (gpr (run zero (repr 1608135424) (repr 2759947009) i) EBX)
               = intval 31 (repr 73115137).
+  Proof. reflexivity. Qed.
+
+  Goal (flag (run zero (repr 1608135424) (repr 2759947009) i) OF)
+              = repr 0.
   Proof. reflexivity. Qed.
 
 End Test_Xadd.

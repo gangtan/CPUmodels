@@ -1179,8 +1179,8 @@ Module X86_Compile.
         (* store the current CF flag in a pseudo reg *)
         old_cf <- write_ps_and_fresh cf0;
         cfext <- cast_u _ old_cf; 
-        p2 <- arith add_op p0 p1;
-        p2 <- arith add_op p2 cfext;
+        p2' <- arith add_op p0 p1;
+        p2 <- arith add_op p2' cfext;
 
         (* RTL for OF *)
         b0 <- test lt_op p0 zero;
@@ -1192,9 +1192,14 @@ Module X86_Compile.
         ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
-        b0 <- test ltu_op p2 p0;
-        b1 <- test ltu_op p2 p1;
-        cfp <- @arith size1 or_op b0 b1;
+        (* first test if p0+p1 has a carry; then check (p0+p1)+c *)
+        b0 <- test ltu_op p2' p0;
+        b1 <- test ltu_op p2' p1;
+        b2 <- test ltu_op p2 p2';
+        b3 <- test ltu_op p2 cfext;
+        b4 <- @arith size1 or_op b0 b1;
+        b5 <- @arith size1 or_op b2 b3;
+        cfp <- @arith size1 or_op b4 b5;
 
         (* RTL for ZF *)
         zfp <- test eq_op p2 zero;
@@ -1348,6 +1353,7 @@ Definition conv_SAHF: Conv unit :=
         ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
+        (* p0+p1 has a carry bit iff p2<p0 or p2<p1 *)
         b0 <- test ltu_op p2 p0;
         b1 <- test ltu_op p2 p1;
         cfp <- @arith size1 or_op b0 b1;
@@ -1457,7 +1463,7 @@ Definition conv_SAHF: Conv unit :=
     let seg := get_segment_op2 pre DS op1 op2 in
         (* RTL for useful constants *)
         zero <- load_Z _ 0;
-        up <- load_Z size1 1;
+        one <- load_Z size1 1;
         
         cf0 <- get_flag CF;
         (* store the current CF flag in a pseudo reg *)
@@ -1466,21 +1472,27 @@ Definition conv_SAHF: Conv unit :=
         (* RTL for op1 *)
         p0 <- load seg op1;
         p1 <- load seg op2;
-        p1' <- arith add_op p1 old_cf_ext;
-        p2 <- arith sub_op p0 p1';
+        p1' <- arith sub_op p0 p1;
+        p2 <- arith sub_op p1' old_cf_ext;
 
         (* RTL for OF *)
-        negp1 <- arith sub_op zero p1;
-        b0 <- test lt_op zero p0;
-        b1 <- test lt_op zero negp1;
-        b2 <- test lt_op zero p2;
+        b0 <- test lt_op p0 zero;
+        b1' <- test lt_op p1 zero;
+        (* b1 = not (p1 < 0) *)
+        b1 <- arith xor_op b1' one; 
+        b2 <- test lt_op p2 zero;
         b3 <- @arith size1 xor_op b0 b1;
-        b3 <- @arith size1 xor_op up b3;
+        b3 <- @arith size1 xor_op b3 one;
         b4 <- @arith size1 xor_op b0 b2;
         ofp <- @arith size1 and_op b3 b4;
 
         (* RTL for CF *)
-        cfp <- test ltu_op p0 p1';
+        (* first test if p0 < p1 to see if there is a carry in p0 - p1;
+           then test if p0-p1 < c to see if there is a carry in (p0-p1)- c;
+           cannot just test if p0 < p1+c because p1+c may overflow; *)
+        b0 <- test ltu_op p0 p1;
+        b1 <- test ltu_op p1' old_cf_ext;
+        cfp <- arith or_op b0 b1;
 
         (* RTL for ZF *)
         zfp <- test eq_op p2 zero;
