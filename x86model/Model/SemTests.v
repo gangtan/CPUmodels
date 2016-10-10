@@ -1,4 +1,6 @@
-(* Tests contributed by Konstantin Weitz *)
+(* Tests on x86 semantics contributed by Konstantin Weitz and 
+   Stefan Heule *)
+
 Require Import X86Semantics.
 Import X86_RTL.
 Import X86_Compile.
@@ -124,6 +126,12 @@ Definition gpr (s:@RTL_ans unit * rtl_state) :=
 
 Definition flag (s:@RTL_ans unit * rtl_state) :=
   flags_reg (core (rtl_mach_state (snd s))).
+
+Definition op_override_prefix : prefix := 
+  mkPrefix None None true false.
+
+Definition runWithOP (i:instr) :=
+  RTL_step_list (instr_to_rtl op_override_prefix i) init_rtl_state.
 
 End InitState.
 
@@ -345,3 +353,20 @@ Module Test_Neg.
   Proof. reflexivity. Qed.
 
 End Test_Neg.
+
+Module Test_BSF.
+
+  Definition i:instr := BSF (Reg_op EBX) (Reg_op ECX).
+
+  Goal gpr (runWithOP zero (repr 4294901760) (repr 2164260896) i) EBX = 
+       repr 4294901765.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithOP zero (repr 4294901760) (repr 2164260896) i) ZF = zero.
+  Proof. reflexivity. Qed.
+
+  Goal flag (runWithOP zero zero (repr 4294901760) i) ZF = one.
+  Proof. reflexivity. Qed.
+
+End Test_BSF.
+

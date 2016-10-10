@@ -2539,7 +2539,6 @@ Definition conv_POPF pre :=
 
   (* Unfortunately this is kind of "dumb", because we can't short-circuit
      once we find the msb/lsb *)
-
   Fixpoint conv_BS_aux {s} (d: bool) (n: nat) (op: rtl_exp s) : Conv (rtl_exp s) :=
     let curr_int := (match d with
                        | true => @Word.repr s (BinInt.Z_of_nat (s-n)) 
@@ -2557,24 +2556,26 @@ Definition conv_POPF pre :=
 
   Definition conv_BS (d: bool) (pre: prefix) (op1 op2: operand) :=
     let seg := get_segment_op2 pre DS op1 op2 in
+    let load := load_op pre true in
+    let set := set_op pre true in
       undef_flag AF;;
       undef_flag CF;;
       undef_flag SF;;
       undef_flag OF;;
       undef_flag PF;;
-      des <- iload_op32 seg op1;
-      src <- iload_op32 seg op2;
-      zero <- load_Z size32 0;
+      des <- load seg op1;
+      src <- load seg op2;
+      zero <- load_Z (opsize (op_override pre) true) 0;
       zf <- test eq_op src zero;
-      res0 <- conv_BS_aux d size32 src;
+      res0 <- conv_BS_aux d (opsize (op_override pre) true) src;
       res1 <- @choose _;
       res <- if_exp zf res1 res0;
 
       set_flag ZF zf;;
-      iset_op32 seg res op1.
+      set seg res op1.
 
-  Definition conv_BSF p op1 op2 := conv_BS true p op1 op2.
-  Definition conv_BSR p op1 op2 := conv_BS false p op1 op2.
+  Definition conv_BSF pre op1 op2 := conv_BS true pre op1 op2.
+  Definition conv_BSR pre op1 op2 := conv_BS false pre op1 op2.
   
   Definition get_Bit {s: nat} (pb: rtl_exp s) (poff: rtl_exp s) : 
     Conv (rtl_exp size1) :=
