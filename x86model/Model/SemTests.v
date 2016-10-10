@@ -21,7 +21,7 @@ Arguments Word.mone {_}.
 (* Notation "# n" := (mkint _ n _)(at level 45). *)
 
 Section InitState.
-Variable eax ebx ecx : int32.
+Variable eax ebx ecx edx: int32.
 Variable cf: int1.
 
 Definition empty_mem : AddrMap.t int8 := (Word.zero, PTree.empty _).
@@ -33,6 +33,7 @@ Definition init_reg : fmap register int32 :=
                EAX => eax
              | EBX => ebx
              | ECX => ecx
+             | EDX => edx
              | _ => Word.zero end.
 
 Definition empty_oracle : oracle.
@@ -84,9 +85,6 @@ Defined.
 
 Definition no_prefix : prefix := mkPrefix None None false false.
 
-Definition run (i:instr) :=
-  RTL_step_list (instr_to_rtl no_prefix i) init_rtl_state.
-
 Definition flags_cf : fmap flag int1 := 
   fun f => if flag_eq_dec f CF then cf else Word.zero.
 
@@ -118,9 +116,6 @@ Definition init_rtl_state_cf : rtl_state.
   |}.
 Defined.
 
-Definition runWithCF (i:instr) :=
-  RTL_step_list (instr_to_rtl no_prefix i) init_rtl_state_cf.
-
 Definition gpr (s:@RTL_ans unit * rtl_state) :=
   gp_regs (core (rtl_mach_state (snd s))).
 
@@ -130,10 +125,31 @@ Definition flag (s:@RTL_ans unit * rtl_state) :=
 Definition op_override_prefix : prefix := 
   mkPrefix None None true false.
 
-Definition runWithOP (i:instr) :=
-  RTL_step_list (instr_to_rtl op_override_prefix i) init_rtl_state.
-
 End InitState.
+
+Definition run (eax ebx: int32) (i:instr) :=
+  RTL_step_list (instr_to_rtl no_prefix i) 
+                (init_rtl_state eax ebx zero zero).
+
+Definition runCX (eax ebx ecx: int32) (i:instr) :=
+  RTL_step_list (instr_to_rtl no_prefix i) 
+                (init_rtl_state eax ebx ecx zero).
+
+Definition runCX_DX (eax ebx ecx edx: int32) (i:instr) :=
+  RTL_step_list (instr_to_rtl no_prefix i) 
+                (init_rtl_state eax ebx ecx edx).
+
+Definition runCX_CF (eax ebx ecx: int32) (cf:int1) (i:instr) :=
+  RTL_step_list (instr_to_rtl no_prefix i) 
+                (init_rtl_state_cf eax ebx ecx zero cf).
+
+Definition runCX_OP (eax ebx ecx: int32) (i:instr) :=
+  RTL_step_list (instr_to_rtl op_override_prefix i) 
+                (init_rtl_state eax ebx ecx zero).
+
+Definition runCX_DX_OP (eax ebx ecx edx: int32) (i:instr) :=
+  RTL_step_list (instr_to_rtl op_override_prefix i) 
+                (init_rtl_state eax ebx ecx edx).
 
 Module Test_XOR.
 
@@ -144,7 +160,7 @@ Module Test_XOR.
 
   (* PF should be zero since (gpr (run one zero zero i) EAX) is 1,
      which has an odd number of bits *)
-  Goal (flag (run one zero zero i) PF) = zero.
+  Goal (flag (run one zero i) PF) = zero.
   Proof. reflexivity. Qed.
 
 End Test_XOR.
@@ -155,13 +171,13 @@ Module Test_Add.
 
   (* ZF should be one, since (gpr  (run one mone zero i) EAX)
      returns zero *)
-  Goal (flag (run one mone zero i1) ZF) = one.
+  Goal (flag (run one mone i1) ZF) = one.
   Proof. reflexivity. Qed.
 
-  Goal (flag (run one mone zero i1) OF) = zero.
+  Goal (flag (run one mone i1) OF) = zero.
   Proof. reflexivity. Qed.
 
-  Goal (flag (run (repr 2147483648) (repr 2147483648) zero i1) OF) = one.
+  Goal (flag (run (repr 2147483648) (repr 2147483648) i1) OF) = one.
   Proof. reflexivity. Qed.
 
 End Test_Add.
@@ -171,43 +187,43 @@ Module Test_Adc.
   Definition i:instr := 
     ADC true (Reg_op (EBX)) (Reg_op (ECX)).
 
-  Goal gpr (run zero (repr 2146959366) (repr 2148007937) i) EBX = repr 7.
+  Goal gpr (runCX zero (repr 2146959366) (repr 2148007937) i) EBX = repr 7.
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 2146959366) (repr 2148007937) i) OF = zero.
+  Goal flag (runCX zero (repr 2146959366) (repr 2148007937) i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 2146959366) (repr 2148007937) i) CF = one.
+  Goal flag (runCX zero (repr 2146959366) (repr 2148007937) i) CF = one.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero (repr 7) (repr 2148007937) one i) OF = zero.
+  Goal flag (runCX_CF zero (repr 7) (repr 2148007937) one i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero (repr 67373084) (repr 3756307471) one i) OF = zero.
+  Goal flag (runCX_CF zero (repr 67373084) (repr 3756307471) one i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero (repr 67373084) (repr 3756307471) one i) CF = zero.
+  Goal flag (runCX_CF zero (repr 67373084) (repr 3756307471) one i) CF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero (repr 2036070270) (repr 111413377) one i) OF = one.
+  Goal flag (runCX_CF zero (repr 2036070270) (repr 111413377) one i) OF = one.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero (repr 2036070270) (repr 111413377) one i) CF = zero.
+  Goal flag (runCX_CF zero (repr 2036070270) (repr 111413377) one i) CF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero zero zero one i) OF = zero.
+  Goal flag (runCX_CF zero zero zero one i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero zero zero one i) CF = zero.
+  Goal flag (runCX_CF zero zero zero one i) CF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero (repr 4294967295) (repr 4294967295) one i) OF = zero.
+  Goal flag (runCX_CF zero (repr 4294967295) (repr 4294967295) one i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero (repr 4294967295) (repr 4294967295) one i) CF = one.
+  Goal flag (runCX_CF zero (repr 4294967295) (repr 4294967295) one i) CF = one.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero mone mone one i) CF = one.
+  Goal flag (runCX_CF zero mone mone one i) CF = one.
   Proof. reflexivity. Qed.
 
 End Test_Adc.
@@ -215,65 +231,65 @@ End Test_Adc.
 Module Test_Sbb.
   Definition i:instr := SBB true (Reg_op (EBX)) (Reg_op (ECX)).
 
-  Goal gpr (run zero (repr 2147483712) (repr 2147483648) i) EBX = repr 64.
+  Goal gpr (runCX zero (repr 2147483712) (repr 2147483648) i) EBX = repr 64.
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 2147483712) (repr 2147483648) i) OF = zero.
+  Goal flag (runCX zero (repr 2147483712) (repr 2147483648) i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 2147483712) (repr 2147483648) i) CF = zero.
+  Goal flag (runCX zero (repr 2147483712) (repr 2147483648) i) CF = zero.
   Proof. reflexivity. Qed.
 
-  Goal (gpr (run zero (repr 3221249032) (repr 3221249032) i) EBX)
+  Goal (gpr (runCX zero (repr 3221249032) (repr 3221249032) i) EBX)
               = repr 0.
   Proof. reflexivity. Qed.
 
-  Goal (flag (run zero (repr 3221249032) (repr 3221249032) i) ZF)
+  Goal (flag (runCX zero (repr 3221249032) (repr 3221249032) i) ZF)
               = repr 1.
   Proof. reflexivity. Qed.
 
-  Goal (flag (run zero (repr 3221249032) (repr 3221249032) i) PF)
+  Goal (flag (runCX zero (repr 3221249032) (repr 3221249032) i) PF)
               = repr 1.
   Proof. reflexivity. Qed.
 
-  Goal (flag (run zero (repr 3221249032) (repr 3221249032) i) SF)
+  Goal (flag (runCX zero (repr 3221249032) (repr 3221249032) i) SF)
               = repr 0.
   Proof. reflexivity. Qed.
 
-  Goal (flag (run zero (repr 3221249032) (repr 3221249032) i) CF)
+  Goal (flag (runCX zero (repr 3221249032) (repr 3221249032) i) CF)
               = repr 0.
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 3221249032) (repr 3221249032) i) OF = zero.
+  Goal flag (runCX zero (repr 3221249032) (repr 3221249032) i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal gpr (run zero (repr 519538729) (repr 822083584) i) EBX = 
+  Goal gpr (runCX zero (repr 519538729) (repr 822083584) i) EBX = 
        repr 3992422441.     
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 519538729) (repr 822083584) i) OF = zero.
+  Goal flag (runCX zero (repr 519538729) (repr 822083584) i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 519538729) (repr 822083584) i) CF = one.
+  Goal flag (runCX zero (repr 519538729) (repr 822083584) i) CF = one.
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 553647924) (repr 2147483648) i) OF = one.
+  Goal flag (runCX zero (repr 553647924) (repr 2147483648) i) OF = one.
   Proof. reflexivity. Qed.
 
-  Goal gpr (run zero (repr 553647924) (repr 2147483648) i) EBX = 
+  Goal gpr (runCX zero (repr 553647924) (repr 2147483648) i) EBX = 
        repr 2701131572.    
   Proof. reflexivity. Qed.
 
-  Goal flag (run zero (repr 553647924) (repr 2147483648) i) CF = one.
+  Goal flag (runCX zero (repr 553647924) (repr 2147483648) i) CF = one.
   Proof. reflexivity. Qed.
 
-  Goal gpr (runWithCF zero zero (repr 4294967295) one i) EBX = zero.
+  Goal gpr (runCX_CF zero zero (repr 4294967295) one i) EBX = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero zero (repr 4294967295) one i) OF = zero.
+  Goal flag (runCX_CF zero zero (repr 4294967295) one i) OF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithCF zero zero (repr 4294967295) one i) CF = one.
+  Goal flag (runCX_CF zero zero (repr 4294967295) one i) CF = one.
   Proof. reflexivity. Qed.
 
 End Test_Sbb.
@@ -281,11 +297,11 @@ End Test_Sbb.
 Module Test_Xadd.
   Definition i:instr := XADD true (Reg_op (EBX)) (Reg_op (ECX)).
 
-  Goal intval 31 (gpr (run zero (repr 1608135424) (repr 2759947009) i) EBX)
+  Goal intval 31 (gpr (runCX zero (repr 1608135424) (repr 2759947009) i) EBX)
               = intval 31 (repr 73115137).
   Proof. reflexivity. Qed.
 
-  Goal (flag (run zero (repr 1608135424) (repr 2759947009) i) OF)
+  Goal (flag (runCX zero (repr 1608135424) (repr 2759947009) i) OF)
               = repr 0.
   Proof. reflexivity. Qed.
 
@@ -294,11 +310,11 @@ End Test_Xadd.
 Module Test_Mul.
   Definition i:instr := MUL true (Reg_op (EBX)).
 
-  Goal gpr (run (repr 2233468006) (repr 1546826500) zero i) EDX
+  Goal gpr (run (repr 2233468006) (repr 1546826500) i) EDX
        =  (repr 804380396).
   Proof. reflexivity. Qed.
 
-  Goal flag (run (repr 1242038273) (repr 3052929025) zero i) CF = one.
+  Goal flag (run (repr 1242038273) (repr 3052929025) i) CF = one.
   Proof. reflexivity. Qed.
 
 End Test_Mul.
@@ -306,14 +322,14 @@ End Test_Mul.
 Module Test_Imul.
   Definition i:instr := IMUL true (Reg_op EBX) None None.
 
-  Goal (gpr (run (repr 633430437) (repr 2147483231) zero i) EDX)
+  Goal (gpr (run (repr 633430437) (repr 2147483231) i) EDX)
                =  (repr 316715156).
   Proof. reflexivity. Qed.
 
-  Goal (flag (run (repr 633430437) (repr 2147483231) zero i) CF) = one.
+  Goal (flag (run (repr 633430437) (repr 2147483231) i) CF) = one.
   Proof. reflexivity. Qed.
 
-  Goal flag (run (repr 4294967261) (repr 109051904) zero i) CF = one.
+  Goal flag (run (repr 4294967261) (repr 109051904) i) CF = one.
   Proof. reflexivity. Qed.
 
   (* SF is undefined according to manual *)
@@ -328,10 +344,10 @@ Module Test_Sub.
 
   Definition i:instr := SUB true (Reg_op EAX) (Reg_op EBX).
 
-  Goal (flag (run (repr 2147483645) (repr 2147483648) zero i) OF = one).
+  Goal (flag (run (repr 2147483645) (repr 2147483648) i) OF = one).
   Proof. reflexivity. Qed.
 
-  Goal (flag (run (repr 2684354560) (repr 2147483648) zero i) OF = zero).
+  Goal (flag (run (repr 2684354560) (repr 2147483648) i) OF = zero).
   Proof. reflexivity. Qed.
 
 End Test_Sub.
@@ -340,7 +356,7 @@ Module Test_Cmp.
 
   Definition i:instr := CMP true (Reg_op EBX) (Reg_op ECX).
 
-  Goal (flag (run zero zero (repr 2147483648) i) OF = one).
+  Goal (flag (runCX zero zero (repr 2147483648) i) OF = one).
   Proof. reflexivity. Qed.
 
 End Test_Cmp.
@@ -349,7 +365,7 @@ Module Test_Neg.
 
   Definition i:instr := NEG true (Reg_op EBX).
 
-  Goal flag (run zero (repr 2147483648) zero i) OF = one.
+  Goal flag (run zero (repr 2147483648) i) OF = one.
   Proof. reflexivity. Qed.
 
 End Test_Neg.
@@ -358,15 +374,59 @@ Module Test_BSF.
 
   Definition i:instr := BSF (Reg_op EBX) (Reg_op ECX).
 
-  Goal gpr (runWithOP zero (repr 4294901760) (repr 2164260896) i) EBX = 
+  Goal gpr (runCX_OP zero (repr 4294901760) (repr 2164260896) i) EBX = 
        repr 4294901765.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithOP zero (repr 4294901760) (repr 2164260896) i) ZF = zero.
+  Goal flag (runCX_OP zero (repr 4294901760) (repr 2164260896) i) ZF = zero.
   Proof. reflexivity. Qed.
 
-  Goal flag (runWithOP zero zero (repr 4294901760) i) ZF = one.
+  Goal flag (runCX_OP zero zero (repr 4294901760) i) ZF = one.
   Proof. reflexivity. Qed.
 
 End Test_BSF.
 
+Module Test_MOVSX.
+
+  Definition i1:instr := MOVSX false (Reg_op EBX) (Reg_op ECX).
+
+  Goal gpr (runCX_OP zero zero (repr 128) i1) EBX = repr 65408.
+  Proof. reflexivity. Qed.
+
+  Definition i2:instr := MOVSX false (Reg_op EBX) (Reg_op ECX).
+
+  Goal intval 31 (gpr (runCX zero zero (repr 128) i1) EBX) = 
+       intval 31 (repr 4294967168).
+  Proof. reflexivity. Qed.
+
+End Test_MOVSX.
+
+Module Test_SHLD.
+
+  Definition i1:instr := SHLD (Reg_op EBX) EDX (Reg_ri ECX).
+
+  Goal gpr (runCX_DX_OP zero (repr 384) (repr 72) (repr 33282) i1) EBX = 
+       repr 32898.
+  Proof. reflexivity. Qed.
+
+  Goal gpr (runCX zero (repr 2147483648) (repr 32) i1) EBX = 
+       repr 2147483648.
+  Proof. reflexivity. Qed.
+
+  Definition i2:instr := SHLD (Reg_op EBX) ECX (Imm_ri (repr 42)).
+
+  Goal gpr (runCX_OP zero (repr 63) (repr 57344) i2) EBX = 
+       repr 65408.
+  Proof. reflexivity. Qed.
+
+End Test_SHLD.
+
+Module Test_SHRD.
+
+  Definition i1:instr := SHRD (Reg_op EBX) EDX (Reg_ri ECX).
+
+  Goal gpr (runCX_DX_OP zero (repr 33152) (repr 8) (repr 40961) i1) EBX = 
+       repr 385.
+  Proof. reflexivity. Qed.
+
+End Test_SHRD.
