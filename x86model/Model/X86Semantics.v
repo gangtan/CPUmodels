@@ -14,8 +14,8 @@ Require Import Coq.Program.Program.
 
 Require Import Parser.
 Require Decode.
-Require Import X86Model.Monad.
-Require Import X86Model.Maps.
+Require Import Shared.Monad.
+Require Import Shared.Maps.
 Require Export X86Syntax.
 Require Export RTL.
 

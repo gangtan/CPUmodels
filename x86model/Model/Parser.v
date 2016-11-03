@@ -19,7 +19,7 @@ Require Export Xform.
 Require Export Grammar.
 
 Require Import MSetsMore.
-Require X86Model.Vector.
+Require Shared.Vector.
 Require Import Regexp.
 
 Require Import ParserArg.

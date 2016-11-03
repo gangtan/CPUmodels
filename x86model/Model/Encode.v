@@ -6,7 +6,7 @@ Require Import Coq.Strings.String.
 
 Require Import Coqlib.
 Require Import X86Syntax.
-Require Import X86Model.Monad.
+Require Import Shared.Monad.
 Local Open Scope monad_scope.
 
 (* an encoding monad *)

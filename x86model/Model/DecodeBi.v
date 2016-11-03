@@ -11,7 +11,7 @@ Require Import Coq.Program.Program.
 
 Require Import Coqlib.
 Require Import CommonTacs.
-Require Import X86Model.Maps.
+Require Import Shared.Maps.
 
 Unset Automatic Introduction.
 Set Implicit Arguments.
