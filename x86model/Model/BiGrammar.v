@@ -8,7 +8,7 @@ Require Import CommonTacs.
 
 Require Import Program.
 
-Require Import X86Model.Monad.
+Require Import Shared.Monad.
 Local Open Scope monad_scope.
 
 Require Import ParserArg.
