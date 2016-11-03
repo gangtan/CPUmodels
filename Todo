@@ -1,3 +1,6 @@
 * To be fixed: The Rocksalt directory is broken after changes to x86Semantics.v
 
 * To be fixed: in x86Semantics.v, the flags are set nondeterministically in SHL/SHR, although the manual says the opposite;
+
+* To be fixed: in x86Semantics.v, the flags are set nondeterministically in SHLD and related instructions
+

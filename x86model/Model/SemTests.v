@@ -399,6 +399,15 @@ Module Test_MOVSX.
        intval 31 (repr 4294967168).
   Proof. reflexivity. Qed.
 
+  (* with op_override on: movsbw %bl, %bx is 8 bit to 16 bit move *)
+  Definition i3:instr := MOVSX false (Reg_op EBX) (Reg_op EBX).
+
+  Compute (instr_to_rtl op_override_prefix i3).
+
+  (* Compute (gpr (run one zero zero i) EAX). *)
+  Goal (gpr (runCX_OP zero (repr 128) zero i3) EBX) = repr 65408.
+  Proof. reflexivity. Qed.
+      
 End Test_MOVSX.
 
 Module Test_SHLD.
