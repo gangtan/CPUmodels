@@ -1,6 +1,5 @@
 Require Import ParserArg.
 
-
 (* Grammar should be parametrized by a PARSER_ARG module; however, that
    would impede code extraction because of a Coq bug.  Instead, we
    introduce a bunch of definitions below to achieve some separation as
