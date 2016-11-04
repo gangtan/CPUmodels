@@ -64,24 +64,23 @@ Module MIPS_PARSER_ARG.
     destruct c1 ; destruct c2 ; intros  ; auto ; discriminate.
   Qed.
 
-  Inductive type : Set := 
-  | Int_t : type
-  | Register_t : type
-  | Shamt5_t : type
-  | Imm16_t : type
-  | Target26_t : type
-  | Instruction_t : type
-  | Pair_t (t1 t2: type) : type
-  | Unit_t : type.
+  Inductive tipe : Set := 
+  | Int_t
+  | Register_t
+  | Shamt5_t
+  | Imm16_t
+  | Target26_t
+  | Instruction_t
+  | UPair_t: tipe -> tipe -> tipe. 
 
-  Definition type_eq : forall (t1 t2:type), {t1=t2} + {t1<>t2}.
+  Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
     intros ; decide equality.
   Defined.
 
   Definition int5 := Word.int 4.
   Definition int26 := Word.int 25.
 
-  Fixpoint type_m (t:type) := 
+  Fixpoint tipe_m (t:tipe) := 
     match t with 
       | Int_t => Z
       | Register_t => register
@@ -89,14 +88,13 @@ Module MIPS_PARSER_ARG.
       | Imm16_t => int16
       | Target26_t => int26
       | Instruction_t => instr
-      | Pair_t t1 t2 => ((type_m t1) * (type_m t2))%type
-      | Unit_t => unit
+      | UPair_t t1 t2 => (tipe_m t1 * (tipe_m t2))%type
     end.
 
-  Definition user_type := type.
+  Definition user_type := tipe.
   Definition user_type_dec : forall (t1 t2:user_type), {t1=t2} + {t1<>t2} := 
-    type_eq.
-  Definition user_type_denote := type_m.
+    tipe_eq.
+  Definition user_type_denote := tipe_m.
 
   Definition byte_explode (b:int8) : list bool := 
   let bs := Word.bits_of_Z 8 (Word.unsigned b) in

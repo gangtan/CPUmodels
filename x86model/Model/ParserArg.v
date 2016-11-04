@@ -416,21 +416,21 @@ Module X86_PARSER_ARG.
   | S_PREFETCHNTA (op1: sse_operand)
   | S_SFENCE.
   
-  Inductive type : Set := 
-  | Int_t : type
-  | Register_t : type
-  | BitVector_t : nat -> type (* a bit vector of a certain width *)
-  | Scale_t : type
-  | Condition_t : type
-  | Address_t : type
-  | Operand_t : type
-  | Reg_or_Immed_t : type
-  | Fp_Debug_Register_t : type
-  | Fp_Operand_t : type
-  | Fp_Condition_t : type
-  | MMX_Granularity_t : type
-  | MMX_Operand_t : type
-  | SSE_Operand_t : type
+  Inductive tipe : Set := 
+  | Int_t
+  | Register_t
+  | BitVector_t : nat -> tipe (* a bit vector of a certain width *)
+  | Scale_t
+  | Condition_t
+  | Address_t
+  | Operand_t
+  | Reg_or_Immed_t
+  | Fp_Debug_Register_t
+  | Fp_Operand_t
+  | Fp_Condition_t
+  | MMX_Granularity_t
+  | MMX_Operand_t
+  | SSE_Operand_t
   | I_Instr1_t
   | I_Instr2_t
   | I_Instr3_t
@@ -442,17 +442,17 @@ Module X86_PARSER_ARG.
   | M_Instr_t
   | S_Instr1_t
   | S_Instr2_t
-  | Instruction_t : type
-  | Control_Register_t : type
-  | Debug_Register_t : type
-  | Segment_Register_t : type
-  | Lock_or_Rep_t : type
-  | Bool_t : type
-  | Prefix_t : type
+  | Instruction_t
+  | Control_Register_t
+  | Debug_Register_t
+  | Segment_Register_t
+  | Lock_or_Rep_t
+  | Bool_t
+  | Prefix_t
   (* G.T.: added option_t as a stardard decoder type *)
   (* | Option_t (t: type) : type *)
   (* Need pairs at this level if I want to have options of pairs*)
-  | UPair_t (t1 t2: type) : type. 
+  | UPair_t: tipe -> tipe -> tipe.
 
   Definition Byte_t := BitVector_t 7.
   Definition Half_t := BitVector_t 15.
@@ -463,12 +463,12 @@ Module X86_PARSER_ARG.
   Definition MMX_Register_t := BitVector_t 2.
   Definition SSE_Register_t := BitVector_t 2.
 
-  Definition type_eq : forall (t1 t2:type), {t1=t2} + {t1<>t2}.
+  Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
     intros ; decide equality.
     apply eq_nat_dec.
   Defined.
 
-  Fixpoint type_m (t:type) := 
+  Fixpoint tipe_m (t:tipe) := 
     match t with 
       | Int_t => Z
       | Register_t => register
@@ -503,13 +503,13 @@ Module X86_PARSER_ARG.
       | Bool_t => bool
       | Prefix_t => prefix
       (* | Option_t t => option (tipe_m t) *)
-      | UPair_t t1 t2 => ((type_m t1) * (type_m t2))%type
+      | UPair_t t1 t2 => ((tipe_m t1) * (tipe_m t2))%type
     end.
 
-  Definition user_type := type.
+  Definition user_type := tipe.
   Definition user_type_dec : forall (t1 t2:user_type), {t1=t2} + {t1<>t2} := 
-    type_eq.
-  Definition user_type_denote := type_m.
+    tipe_eq.
+  Definition user_type_denote := tipe_m.
 
   Definition byte_explode (b:int8) : list bool := 
   let bs := Word.bits_of_Z 8 (Word.unsigned b) in
