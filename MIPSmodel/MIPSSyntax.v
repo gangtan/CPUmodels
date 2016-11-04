@@ -13,10 +13,11 @@
 (* This file provides abstract syntax definitions for the MIPS32
  * instruction set architecture. *)
 Require Import List.
-Require Import Bits.
 Require Import ZArith.
 Set Implicit Arguments.
 Local Open Scope Z_scope.
+
+Require Import Shared.Bits.
 
 (********************************************)
 (* Type definitions for MIPS abstract syntax *)

@@ -48,6 +48,23 @@ Module X86_PARSER_ARG.
   Require Import Bits.
   Local Open Scope Z_scope.
 
+  Definition char_p : Set := bool.
+
+  Definition char_dec : forall (c1 c2:char_p), {c1=c2}+{c1<>c2} := bool_dec.
+
+  Definition char_cmp (c1 c2:char_p) : comparison :=
+    match c1, c2 with
+      | false, true => Lt
+      | true, false => Gt
+      | _, _ => Eq
+    end.
+
+  Lemma char_eq_leibniz :
+    forall c1 c2, char_cmp c1 c2 = Eq -> c1 = c2.
+  Proof.
+    destruct c1 ; destruct c2 ; intros  ; auto ; discriminate.
+  Qed.
+
   (** Hierarchical instruction syntax. The problem with a parser mapping
       directly to instr is that the current instr syntax is flat with more
       than 350 cases. A bidirectional grammar for instr would need to
@@ -398,10 +415,7 @@ Module X86_PARSER_ARG.
   | S_PREFETCHT2 (op1: sse_operand)
   | S_PREFETCHNTA (op1: sse_operand)
   | S_SFENCE.
-
   
-  Definition char_p : Set := bool.
-  Definition char_dec : forall (c1 c2:char_p), {c1=c2}+{c1<>c2} := bool_dec.
   Inductive type : Set := 
   | Int_t : type
   | Register_t : type
@@ -449,13 +463,12 @@ Module X86_PARSER_ARG.
   Definition MMX_Register_t := BitVector_t 2.
   Definition SSE_Register_t := BitVector_t 2.
 
-  Definition tipe := type.
-  Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
+  Definition type_eq : forall (t1 t2:type), {t1=t2} + {t1<>t2}.
     intros ; decide equality.
     apply eq_nat_dec.
   Defined.
 
-  Fixpoint tipe_m (t:tipe) := 
+  Fixpoint type_m (t:type) := 
     match t with 
       | Int_t => Z
       | Register_t => register
@@ -490,26 +503,13 @@ Module X86_PARSER_ARG.
       | Bool_t => bool
       | Prefix_t => prefix
       (* | Option_t t => option (tipe_m t) *)
-      | UPair_t t1 t2 => ((tipe_m t1) * (tipe_m t2))%type
+      | UPair_t t1 t2 => ((type_m t1) * (type_m t2))%type
     end.
-
-  Definition char_cmp (c1 c2:char_p) : comparison :=
-    match c1, c2 with
-      | false, true => Lt
-      | true, false => Gt
-      | _, _ => Eq
-    end.
-
-  Lemma char_eq_leibniz :
-    forall c1 c2, char_cmp c1 c2 = Eq -> c1 = c2.
-  Proof.
-    destruct c1 ; destruct c2 ; intros  ; auto ; discriminate.
-  Qed.
 
   Definition user_type := type.
   Definition user_type_dec : forall (t1 t2:user_type), {t1=t2} + {t1<>t2} := 
-    tipe_eq.
-  Definition user_type_denote := tipe_m.
+    type_eq.
+  Definition user_type_denote := type_m.
 
   Definition byte_explode (b:int8) : list bool := 
   let bs := Word.bits_of_Z 8 (Word.unsigned b) in
