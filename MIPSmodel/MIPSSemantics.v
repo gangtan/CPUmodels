@@ -9,20 +9,19 @@
    the License, or (at your option) any later version.
 *)
 
-   
-Require ExtrOcamlString.
-Require ExtrOcamlNatBigInt.
-Require ExtrOcamlZBigInt.
 Require Import List.
-Require Import Bits.
 Require Import ZArith.
-Require Import Parser.
-Require Import Decode.
 Require Import String.
-Require Import Monad.
-Require Import Maps.
-Require Import MIPSSyntax.
-Require Import RTL.
+
+Require Import Shared.Maps.
+Require Import Shared.Bits.
+Require Import Shared.RTL.
+Require Import Shared.Monad.
+
+Require Import MIPSModel.Parser.
+Require Import MIPSModel.Decode.
+Require Import MIPSModel.MIPSSyntax.
+
 Set Implicit Arguments.
 Unset Automatic Introduction.
 
@@ -139,6 +138,19 @@ Module MIPS_MACHINE.
       | bdelay_active_loc => fun v => set_bdelay_f v m
       | bdelay_pc_loc => fun v => set_bdelay v m
     end v.
+
+  (* The array component not needed for the MIPS machine *)
+  Inductive arr : nat -> nat -> Set :=.
+  Definition array := arr.
+
+  Definition array_sub l s (a:array l s) :=
+    match a in arr l' s' return int l' -> mach_state -> int s' with
+    end.
+
+  Definition array_upd l s (a:array l s) (i:int l) (v:int s) (m:mach_state) :=
+    match a in arr l' s' return int l' -> int s' -> mach_state with
+    end i v.
+
 End MIPS_MACHINE.
 
 Module MIPS_RTL := RTL.RTL(MIPS_MACHINE).
@@ -146,6 +158,8 @@ Module MIPS_RTL := RTL.RTL(MIPS_MACHINE).
 Module MIPS_Decode.
   Import MIPS_MACHINE.
   Import MIPS_RTL.
+
+Print MIPS_RTL.
   Local Open Scope monad_scope.
   Record conv_state := { c_rev_i : list rtl_instr ; c_next : Z }.
   Definition Conv(T:Type) := conv_state -> T * conv_state.
@@ -165,109 +179,138 @@ Module MIPS_Decode.
   Definition EMIT(i:rtl_instr) : Conv unit := 
     fun s => (tt,{|c_rev_i := i::(c_rev_i s) ; c_next := c_next s|}).
   Notation "'emit' i" := (EMIT i) (at level 75) : monad_scope.
+
   Definition fresh s (almost_i : pseudo_reg s -> rtl_instr) : Conv (pseudo_reg s) := 
     fun ts => let r := c_next ts in 
               let ts' := {|c_rev_i := (almost_i (ps_reg s r))::c_rev_i ts ; 
                            c_next := r + 1|} in 
                 (ps_reg s r, ts').
 
-  Definition load_Z s (i:Z) := fresh (load_imm_rtl (@Word.repr s i)).
-  Definition load_int s (i:int s) := fresh (load_imm_rtl i).
-  Definition arith s b (r1 r2:pseudo_reg s) := fresh (arith_rtl b r1 r2).
-  Definition test s t (r1 r2:pseudo_reg s) := fresh (test_rtl t r1 r2).
-  Definition load_reg (r:register) := fresh (get_loc_rtl (reg_loc r)).
-  Definition set_reg (p:pseudo_reg size32) (r:register) := 
-    emit set_loc_rtl p (reg_loc r).
-  Definition cast_u s1 s2 (r:pseudo_reg s1) := fresh (@cast_u_rtl s1 s2 r).
-  Definition cast_s s1 s2 (r:pseudo_reg s1) := fresh (@cast_s_rtl s1 s2 r).
-  Definition read_byte (a:pseudo_reg size32) := fresh (get_byte_rtl a).
-  Definition write_byte (v:pseudo_reg size8) (a:pseudo_reg size32) := 
+  (* Begin: a set of basic conversion constructs *)
+  Definition raise_error := emit error_rtl.
+  Definition raise_trap := emit trap_rtl.
+  Definition no_op := ret tt.
+  (* Definition ret_exp s (e:rtl_exp s) := ret e. *)
+  Definition load_int s (i:int s) := ret (imm_rtl_exp i).
+  Definition arith s b (e1 e2:rtl_exp s) := ret (arith_rtl_exp b e1 e2).
+  Definition test s t (e1 e2:rtl_exp s) := ret (test_rtl_exp t e1 e2).
+  Definition cast_u s1 s2 (e:rtl_exp s1) := ret (@cast_u_rtl_exp s1 s2 e).
+  Definition cast_s s1 s2 (e:rtl_exp s1) := ret (@cast_s_rtl_exp s1 s2 e).
+  Definition read_loc s (l:loc s) := ret (get_loc_rtl_exp l).
+  Definition write_loc s (e:rtl_exp s) (l:loc s)  := emit set_loc_rtl e l.
+
+  (* store the value of e into the current pseudo reg and advance the
+     index of the pseudo reg; it returns an rtl_exp that retrives the
+     value from the storage; *)
+  Definition write_ps_and_fresh s (e: rtl_exp s) : Conv (rtl_exp s) :=
+    fun ts => 
+      let r := c_next ts in
+      let ts' := {|c_rev_i := (set_ps_reg_rtl e (ps_reg s r))::c_rev_i ts;
+                   c_next := r + 1|} in
+      (get_ps_reg_rtl_exp (ps_reg s r), ts').
+
+  Definition read_byte (a:rtl_exp size32) := ret (get_byte_rtl_exp a).
+  Definition write_byte (v:rtl_exp size8) (a:rtl_exp size32) := 
     emit set_byte_rtl v a.
+  Definition if_exp s g (e1 e2:rtl_exp s) : Conv (rtl_exp s) :=
+    ret (if_rtl_exp g e1 e2).
+  Definition if_trap g : Conv unit := emit (if_rtl g trap_rtl).
+  Definition if_set_loc cond s (e:rtl_exp s) (l:location s) :=
+    emit (if_rtl cond (set_loc_rtl e l)).
+  Definition choose s : Conv (rtl_exp s) := 
+    emit (advance_oracle_rtl);;
+    ret (@get_random_rtl_exp s).
 
-  Definition get_pc := fresh (get_loc_rtl pc_loc).
-  Definition set_pc v := emit set_loc_rtl v pc_loc.
+  Definition load_Z s (z:Z) := load_int (@Word.repr s z).
 
-  Definition get_hi := fresh (get_loc_rtl hi_loc).
-  Definition get_lo := fresh (get_loc_rtl lo_loc).
-  Definition set_hi v := emit set_loc_rtl v hi_loc.
-  Definition set_lo v := emit set_loc_rtl v lo_loc.
+  Definition load_reg (r:register) := read_loc (reg_loc r).
+  Definition set_reg (p:rtl_exp size32) (r:register) := 
+    write_loc p (reg_loc r).
 
-  Definition get_bdelayf := fresh (get_loc_rtl bdelay_active_loc).
-  Definition get_bdelaypc := fresh (get_loc_rtl bdelay_pc_loc).
+  Definition get_pc := read_loc pc_loc.
+  Definition set_pc v := write_loc v pc_loc.
+
+  Definition get_hi := read_loc hi_loc.
+  Definition get_lo := read_loc lo_loc.
+  Definition set_hi v := write_loc v hi_loc.
+  Definition set_lo v := write_loc v lo_loc.
+
+  Definition get_bdelayf := read_loc bdelay_active_loc.
+  Definition get_bdelaypc := read_loc bdelay_pc_loc.
+
   (*Helper functions for setting the pc in a branch delayed way with / without a 
      conditional flag*)
   Definition set_bdelay_cond f v :=
     ttrue <- load_int Word.one;
-    (emit (if_rtl f (set_loc_rtl ttrue bdelay_active_loc));;
-      emit (if_rtl f (set_loc_rtl v bdelay_pc_loc))).
+    if_set_loc f ttrue bdelay_active_loc;;
+    if_set_loc f v bdelay_pc_loc.               
+
   Definition set_bdelay v:= 
     ttrue <- load_int Word.one;
-    (emit (set_loc_rtl ttrue bdelay_active_loc);;
-      emit (set_loc_rtl v bdelay_pc_loc)).
+    write_loc ttrue bdelay_active_loc;;
+    write_loc v bdelay_pc_loc.
+
   Definition clear_bdelay :=
     tzero <- load_int Word.zero;
     tfalse <- load_int Word.zero;
-    emit (set_loc_rtl tfalse bdelay_active_loc);;
-    emit (set_loc_rtl tzero bdelay_pc_loc).
+    write_loc tfalse bdelay_active_loc;;
+    write_loc tzero bdelay_pc_loc.
+
   (*If a delay is present, set the pc. Always clear the delay*)
   (*This check should be done before every non-cflow instruction*)
   Definition bd_prologue :=
     bdf <- get_bdelayf;
     bdpc <- get_bdelaypc;
-    emit (if_rtl bdf (set_loc_rtl bdpc pc_loc));;
-    clear_bdelay
-  .
-    (*If a delay is present for a control flow instruction, undefined behavior*)
+    if_set_loc bdf bdpc pc_loc;;
+    clear_bdelay.
+
+  (*If a delay is present for a control flow instruction, undefined behavior*)
   Definition bd_prologue_cf :=
     bdf <- get_bdelayf;
-    emit (if_rtl bdf (error_rtl))
-  .
- 
+    emit (if_rtl bdf (error_rtl)).
 
-  Definition not {s} (p: pseudo_reg s) : Conv (pseudo_reg s) :=
+  Definition not {s} (p: rtl_exp s) : Conv (rtl_exp s) :=
     mask <- load_Z s (Word.max_unsigned s);
     arith xor_op p mask.
 
-  Definition bnot (p: pseudo_reg size1) : Conv (pseudo_reg size1) :=
+  Definition bnot (p: rtl_exp size1) : Conv (rtl_exp size1) :=
     pone <- load_Z size1 1%Z;
     arith xor_op pone p.
-  Definition neg {s} (p: pseudo_reg s) : Conv (pseudo_reg s) :=
+
+  Definition neg {s} (p: rtl_exp s) : Conv (rtl_exp s) :=
     pzero <- load_Z s 0%Z;
     arith sub_op pzero p.
-  Definition undef s :=
-    fresh (@choose_rtl s)
-.
+
+  Definition undef s := choose s.
 
   (* Copy the contents of rs to a new pseudo register *)
-  Definition copy_ps s (rs:pseudo_reg s) := fresh (@cast_u_rtl s s rs).
+  (* Definition copy_ps s (rs:pseudo_reg s) := fresh (@cast_u_rtl s s rs). *)
 
-  Definition onemaskl s n : Conv (pseudo_reg s) :=
+  Definition onemaskl s n : Conv (rtl_exp s) :=
     numshift <- load_Z s ((Z_of_nat s)+1-n);
     mask <- load_Z s (Word.max_unsigned s);
     maskr <- arith shr_op mask numshift;
-    arith shl_op maskr numshift
-    .
+    arith shl_op maskr numshift.
     
   (* compute an effective address *)
-  Definition compute_addr(r:register) (i:int16) : Conv (pseudo_reg size32) := 
+  Definition compute_addr (r:register) (i:int16) : Conv (rtl_exp size32) := 
     b <- load_reg r;
     disp16 <- load_int i;
     disp32 <- cast_s size32 disp16;
-    arith add_op b disp32
-  .
+    arith add_op b disp32.
 
   (* load a byte from memory, taking into account the specified segment *)
-  Definition lmem (a:pseudo_reg size32) : Conv (pseudo_reg size8):=
+  Definition lmem (a:rtl_exp size32) : Conv (rtl_exp size8):=
     read_byte a.
 
   (* store a byte to memory, taking into account the specified segment *)
-  Definition smem (v:pseudo_reg size8) (a:pseudo_reg size32) :
+  Definition smem (v:rtl_exp size8) (a:rtl_exp size32) :
     Conv unit := 
     write_byte v a.
 
   (* load an n-byte vector from memory -- takes into account the segment *)
-  Program Fixpoint load_mem_n (addr:pseudo_reg size32)
-    (nbytes_minus_one:nat) : Conv (pseudo_reg ((nbytes_minus_one+1) * 8 -1)%nat) := 
+  Program Fixpoint load_mem_n (addr:rtl_exp size32)
+    (nbytes_minus_one:nat) : Conv (rtl_exp ((nbytes_minus_one+1) * 8 -1)%nat) := 
     match nbytes_minus_one with 
       | 0 => lmem addr
       | S n => 
@@ -282,15 +325,15 @@ Module MIPS_Decode.
         arith or_op p5 p8
     end.
 
-  Definition load_mem32 (addr:pseudo_reg size32) := 
+  Definition load_mem32 (addr:rtl_exp size32) := 
     load_mem_n addr 3.
-  Definition load_mem16 (addr:pseudo_reg size32) := 
+  Definition load_mem16 (addr:rtl_exp size32) := 
     load_mem_n addr 1.
-  Definition load_mem8 (addr:pseudo_reg size32) := 
+  Definition load_mem8 (addr:rtl_exp size32) := 
     load_mem_n addr 0.
   (* set memory with an n-byte vector *)
   Program Fixpoint set_mem_n {t}
-    (v: pseudo_reg (8*(t+1)-1)%nat) (addr : pseudo_reg size32) : Conv unit := 
+    (v: rtl_exp (8*(t+1)-1)%nat) (addr : rtl_exp size32) : Conv unit := 
     match t with 
       | 0 => smem v addr
       | S u => 
@@ -304,14 +347,15 @@ Module MIPS_Decode.
         smem p4 p6
     end.
 
-  Definition set_mem32  (v a:pseudo_reg size32) : Conv unit :=
+  Definition set_mem32  (v a:rtl_exp size32) : Conv unit :=
     @set_mem_n 3 v a.
-  Definition set_mem16  (v: pseudo_reg size16)
-    (a:pseudo_reg size32) : Conv unit :=
+  Definition set_mem16  (v:rtl_exp size16)
+    (a:rtl_exp size32) : Conv unit :=
       @set_mem_n 1 v a.
-  Definition set_mem8  (v: pseudo_reg size8) 
-    (a:pseudo_reg size32) : Conv unit :=
+  Definition set_mem8  (v: rtl_exp size8) 
+    (a:rtl_exp size32) : Conv unit :=
       @set_mem_n 0 v a.
+
   (**********************************************)
   (*   Conversion functions for instructions    *)
   (**********************************************)
@@ -320,7 +364,7 @@ Module MIPS_Decode.
   (* Arith ops            *)
   (************************)
 
-  Definition OF_check_add (a1:pseudo_reg size32) a2 sum : Conv unit :=
+  Definition OF_check_add (a1:rtl_exp size32) a2 sum : Conv unit :=
         zero <- load_Z _ 0;
         sign1 <- test lt_op zero a1;
         sign2 <- test lt_op zero a2;
@@ -329,9 +373,9 @@ Module MIPS_Decode.
         sign_res_neq <- @arith size1 xor_op sign1 signsum;
         of_flag <- @arith size1 and_op sign_op_eq sign_res_neq;
         (*Throw an exception if there was an overflow*)
-        emit if_rtl of_flag safe_fail_rtl
-        .
-  Definition OF_check_sub (a1:pseudo_reg size32) a2 diff : Conv unit :=
+        if_trap of_flag.
+        
+  Definition OF_check_sub (a1:rtl_exp size32) a2 diff : Conv unit :=
         zero <- load_Z _ 0;
         sign1 <- test lt_op zero a1;
         sign2 <- test lt_op zero a2;
@@ -340,8 +384,8 @@ Module MIPS_Decode.
         sign_res_neq <- @arith size1 xor_op sign1 signdiff;
         of_flag <- @arith size1 and_op sign_op_neq sign_res_neq;
         (*Throw an exception if there was an overflow*)
-        emit if_rtl of_flag safe_fail_rtl
-        .
+        if_trap of_flag.
+
   Definition conv_ADD (rop: roperand) : Conv unit :=
     match rop with
       | Rop rs rt rd _ =>
@@ -351,6 +395,7 @@ Module MIPS_Decode.
         OF_check_add a1 a2 sum;;
         set_reg sum rd
     end.
+
   Definition conv_ADDU (rop: roperand) : Conv unit :=
     match rop with
       | Rop rs rt rd _ =>
@@ -407,6 +452,7 @@ Module MIPS_Decode.
       rand2 <- undef size32;
       set_lo rand2
     end.
+
   Definition conv_MULTs caster (rop: roperand) : Conv unit :=
     match rop with | Rop rs rt _ _ =>
       a1 <- load_reg rs;
@@ -517,21 +563,20 @@ Module MIPS_Decode.
   Definition conv_SRAV := conv_shv shru_op.
   Definition conv_SRLV := conv_shv shr_op.
 
-  Definition conv_set (op1:test_op) (rop: roperand) : Conv unit :=
+  Definition conv_set (op1: test_op) (rop: roperand) : Conv unit :=
     match rop with | Rop rs rt rd _ =>
       pone <- load_Z size32 1;
       pzero <- load_Z size32 0;
       a1 <- load_reg rs;
       a2 <- load_reg rt;
       cond <- test op1 a1 a2;
-      v_rd <- copy_ps pzero;
-      emit (if_rtl cond (cast_u_rtl pone v_rd));;
+      u <- cast_u _ pone;
+      v_rd <- if_exp cond u pzero;
       set_reg v_rd rd
     end.
-      
+
   Definition conv_SLT := conv_set lt_op.
   Definition conv_SLTU := conv_set ltu_op.
-
 
   Definition conv_seti caster (op1:test_op) (iop: ioperand) : Conv unit :=
     match iop with | Iop rs rt i =>
@@ -541,13 +586,13 @@ Module MIPS_Decode.
       a2 <- load_int i;
       a2c <- caster a2;
       cond <- test op1 a1 a2c;
-      v_rd <- copy_ps pzero;
-      emit (if_rtl cond (cast_u_rtl pone v_rd));;
+      u <- cast_u _ pone;
+      v_rd <- if_exp cond u pzero;
       set_reg v_rd rt
     end.
+
   Definition conv_SLTI := conv_seti (cast_s size32) (lt_op).
   Definition conv_SLTIU := conv_seti (cast_u size32) (ltu_op).
-      
 
   Definition conv_SEB (rop:roperand) : Conv unit :=
     match rop with | Rop _ rt rd _ =>
@@ -556,6 +601,7 @@ Module MIPS_Decode.
       a1bc <- cast_s size32 a1b;
       set_reg a1bc rd
     end.
+
   Definition conv_SEH (rop:roperand) : Conv unit :=
     match rop with | Rop _ rt rd _ =>
       a1 <- load_reg rt;
@@ -568,16 +614,16 @@ Module MIPS_Decode.
   (* Memory Ops         *)
   (*--------------------*)
 
-  Definition testparity (p:Z) (v:pseudo_reg size32) : Conv (pseudo_reg size1) :=
+  Definition testparity (p:Z) (v:rtl_exp size32) : Conv (rtl_exp size1) :=
     pval <- load_Z size32 p;
     rem <- arith modu_op v pval;
     pzero <- load_Z size32 0;
     test eq_op rem pzero.
 
   Definition conv_L_tlc s
-    (tester:pseudo_reg size32 -> Conv (pseudo_reg size1))
-    (loader:pseudo_reg size32 -> Conv (pseudo_reg s))
-    (caster:pseudo_reg s -> Conv (pseudo_reg size32))
+    (tester:rtl_exp size32 -> Conv (rtl_exp size1))
+    (loader:rtl_exp size32 -> Conv (rtl_exp s))
+    (caster:rtl_exp s -> Conv (rtl_exp size32))
       (iop: ioperand) : Conv unit :=
     match iop with
       | Iop rs rt i =>
@@ -604,9 +650,9 @@ Module MIPS_Decode.
     conv_L_tlc (testparity 4) (load_mem32) (cast_u size32) iop.
   
   Definition conv_S_tlc s
-    (tester:pseudo_reg size32 -> Conv (pseudo_reg size1))
-    (saver:pseudo_reg s -> pseudo_reg size32 -> Conv unit)
-    (caster:pseudo_reg size32 -> Conv (pseudo_reg s))
+    (tester:rtl_exp size32 -> Conv (rtl_exp size1))
+    (saver:rtl_exp s -> rtl_exp size32 -> Conv unit)
+    (caster:rtl_exp size32 -> Conv (rtl_exp s))
       (iop: ioperand) : Conv unit :=
     match iop with
       | Iop rs rt i =>
@@ -620,27 +666,27 @@ Module MIPS_Decode.
         saver rvalc addr
     end.
 
-
   Definition conv_SB (iop:ioperand) := 
     conv_S_tlc (testparity 1) (@set_mem8) (cast_u size8) iop.
   Definition conv_SH (iop:ioperand) := 
     conv_S_tlc (testparity 2) (@set_mem16) (cast_u size16) iop.
   Definition conv_SW (iop:ioperand) := 
     conv_S_tlc (testparity 4) (@set_mem32) (cast_u size32) iop.
+
   (*--------------------*)
   (* Control Flow Ops   *)
   (*--------------------*)
 
 
   (*Shift and cast ints into the actual memory offset*)
-  Definition int2moffset_u s (i: int s) : Conv (pseudo_reg size32) :=
+  Definition int2moffset_u s (i: int s) : Conv (rtl_exp size32) :=
     ibits <- load_int i;
     ioffset <- cast_u size32 ibits;
     ptwo <- load_Z size32 2;
     ishifted <- arith shl_op ioffset ptwo;
     ret ishifted.
     
-  Definition int2moffset_s s (i: int s) : Conv (pseudo_reg size32) :=
+  Definition int2moffset_s s (i: int s) : Conv (rtl_exp size32) :=
     ibits <- load_int i;
     ioffset <- cast_s size32 ibits;
     ptwo <- load_Z size32 2;
@@ -673,39 +719,40 @@ Module MIPS_Decode.
   
   Definition conv_JRl (linkflag: bool) (rop:roperand) : Conv unit :=
     match rop with | Rop rs _ rd _ =>
-      if (register_eq_dec rs rd) then (emit error_rtl) else(
+      if (register_eq_dec rs rd) then (emit error_rtl) else (
         curpc <- get_pc;
         newpc <- load_reg rs;
         match (linkflag) with
           |true =>
             pfour <- load_Z size32 4;
             retpc <- arith add_op curpc pfour;
-            set_reg retpc rd;;
-            set_bdelay newpc
+            set_bdelay newpc;;
+            set_reg retpc rd
           |false=>
             set_bdelay newpc
         end
       )
     end.
+
   Definition conv_JALR (rop:roperand) : Conv unit := conv_JRl true rop.
   Definition conv_JR (rop:roperand) : Conv unit := conv_JRl false rop.
 
-  Definition b_getnewpc s (i: int s) : Conv (pseudo_reg size32) :=
+  Definition b_getnewpc s (i: int s) : Conv (rtl_exp size32) :=
     curpc <- get_pc;
     ioffset <- int2moffset_s i;
-    arith add_op curpc ioffset
-  .
+    arith add_op curpc ioffset.
+
   Inductive condition2 : Set :=
   | Eq_cond : condition2
-  | Ne_cond : condition2
-    .
+  | Ne_cond : condition2.
+
   Inductive condition1 : Set :=
   | Gez_cond : condition1
   | Gtz_cond : condition1
   | Lez_cond : condition1
-  | Ltz_cond : condition1
-    .
-  Definition conv_cond1 s (c:condition1) (a:pseudo_reg s) : Conv (pseudo_reg size1) :=
+  | Ltz_cond : condition1.
+
+  Definition conv_cond1 s (c:condition1) (a:rtl_exp s) : Conv (rtl_exp size1) :=
     pzero <- load_Z s 0%Z;
     match c with
       | Gez_cond => 
@@ -721,8 +768,8 @@ Module MIPS_Decode.
       | Ltz_cond =>
         test lt_op a pzero
     end.
-  Definition conv_cond2 s (c:condition2) (a1:pseudo_reg s) (a2:pseudo_reg s) :
-    Conv (pseudo_reg size1) :=
+  Definition conv_cond2 s (c:condition2) (a1:rtl_exp s) (a2:rtl_exp s) :
+    Conv (rtl_exp size1) :=
     match c with
       | Eq_cond => test eq_op a1 a2
       | Ne_cond => condf1 <- test eq_op a1 a2; bnot condf1
@@ -865,7 +912,5 @@ Fixpoint RTL_step_list l :=
   end.
 
 Definition step_ins inst: RTL unit := 
-  flush_env;;
-  RTL_step_list (MIPS_Decode.instr_to_rtl inst)
-.
+  RTL_step_list (MIPS_Decode.instr_to_rtl inst).
 
