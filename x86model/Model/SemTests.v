@@ -319,17 +319,17 @@ Module Test_Mul.
 
 End Test_Mul.
 
-Module Test_Imul.
-  Definition i:instr := IMUL true (Reg_op EBX) None None.
+Module Test_IMUL.
+  Definition i1:instr := IMUL true (Reg_op EBX) None None.
 
-  Goal (gpr (run (repr 633430437) (repr 2147483231) i) EDX)
+  Goal (gpr (run (repr 633430437) (repr 2147483231) i1) EDX)
                =  (repr 316715156).
   Proof. reflexivity. Qed.
 
-  Goal (flag (run (repr 633430437) (repr 2147483231) i) CF) = one.
+  Goal (flag (run (repr 633430437) (repr 2147483231) i1) CF) = one.
   Proof. reflexivity. Qed.
 
-  Goal flag (run (repr 4294967261) (repr 109051904) i) CF = one.
+  Goal flag (run (repr 4294967261) (repr 109051904) i1) CF = one.
   Proof. reflexivity. Qed.
 
   (* SF is undefined according to manual *)
@@ -337,8 +337,19 @@ Module Test_Imul.
   (*              =  (repr 1). *)
   (* Proof. reflexivity. Qed. *)
 
+  Definition i2: instr := 
+    IMUL true (Reg_op ECX) (Some (Reg_op EBX)) (Some (repr 65504)).
 
-End Test_Imul.
+  Goal (flag (runCX_OP zero (repr 1024) zero i2) CF) = zero.
+  Proof. reflexivity. Qed.
+  
+  Goal (flag (runCX_OP zero (repr 1024) zero i2) OF) = zero.
+  Proof. reflexivity. Qed.
+
+  Goal (gpr (runCX_OP zero (repr 1024) zero i2) ECX) = repr 32768.
+  Proof. reflexivity. Qed.
+
+End Test_IMUL.
 
 Module Test_Sub.
 
@@ -402,7 +413,7 @@ Module Test_MOVSX.
   (* with op_override on: movsbw %bl, %bx is 8 bit to 16 bit move *)
   Definition i3:instr := MOVSX false (Reg_op EBX) (Reg_op EBX).
 
-  Compute (instr_to_rtl op_override_prefix i3).
+  (* Compute (instr_to_rtl op_override_prefix i3). *)
 
   (* Compute (gpr (run one zero zero i) EAX). *)
   Goal (gpr (runCX_OP zero (repr 128) zero i3) EBX) = repr 65408.

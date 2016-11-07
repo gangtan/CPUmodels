@@ -1767,7 +1767,8 @@ Definition conv_SAHF: Conv unit :=
                     let set := set_op pre w in
                     let seg := get_segment_op2 pre DS op1 op2 in
                       p1 <- load seg op2;
-                      p2 <- load_int imm3;
+                      p2' <- load_int imm3;
+                      p2 <-  cast_u (opsize (op_override pre) w) p2';
                       p1ext <- cast_s (2*((opsize (op_override pre) w)+1)-1) p1;
                       p2ext <- cast_s (2*((opsize (op_override pre) w)+1)-1) p2;
                       res <- arith mul_op p1ext p2ext;
