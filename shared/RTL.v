@@ -13,8 +13,8 @@
 Require Import Coq.ZArith.ZArith.
 Require Coq.Strings.String.
 
-Require Import X86Model.Monad.
-Require Import X86Model.Maps.
+Require Import Monad.
+Require Import Maps.
 Require Import Bits.
 
 Require Import Flocq.Appli.Fappli_IEEE_bits.
