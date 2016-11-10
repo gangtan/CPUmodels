@@ -387,9 +387,9 @@ Module MIPS_Decode.
         (*Throw an exception if there was an overflow*)
         if_trap of_flag.
 
-  Definition conv_ADD (rop: roperand) : Conv unit :=
-    match rop with
-      | Rop rs rt rd _ =>
+  Definition conv_ADD (op: reg3_operand) : Conv unit :=
+    match op with
+      | Reg3_op rs rt rd =>
         a1 <- load_reg rs;
         a2 <- load_reg rt;
         sum <- arith add_op a1 a2;
@@ -397,17 +397,17 @@ Module MIPS_Decode.
         set_reg sum rd
     end.
 
-  Definition conv_ADDU (rop: roperand) : Conv unit :=
-    match rop with
-      | Rop rs rt rd _ =>
+  Definition conv_ADDU (op: reg3_operand) : Conv unit :=
+    match op with
+      | Reg3_op rs rt rd =>
         a1 <- load_reg rs;
         a2 <- load_reg rt;
         sum <- arith add_op a1 a2;
         set_reg sum rd
     end.
 
-  Definition conv_SUB (rop:roperand) : Conv unit :=
-    match rop with | Rop rs rt rd _ =>
+  Definition conv_SUB (op:reg3_operand) : Conv unit :=
+    match op with | Reg3_op rs rt rd =>
       a1 <- load_reg rs;
       a2 <- load_reg rt;
       diff <- arith sub_op a1 a2;
@@ -415,9 +415,8 @@ Module MIPS_Decode.
       set_reg diff rd
     end.
   
-
-  Definition conv_SUBU (rop:roperand) : Conv unit :=
-    match rop with | Rop rs rt rd _ =>
+  Definition conv_SUBU (op:reg3_operand) : Conv unit :=
+    match op with | Reg3_op rs rt rd =>
       a1 <- load_reg rs;
       a2 <- load_reg rt;
       diff <- arith sub_op a1 a2;
@@ -442,8 +441,8 @@ Module MIPS_Decode.
   Definition conv_ADDI := conv_ADDIs true.
   Definition conv_ADDIU := conv_ADDIs false.
   
-  Definition conv_MUL (rop: roperand) : Conv unit :=
-    match rop with | Rop rs rt rd _  =>
+  Definition conv_MUL (op: reg3_operand) : Conv unit :=
+    match op with | Reg3_op rs rt rd  =>
       a1 <- load_reg rs;
       a2 <- load_reg rt;
       prod <- arith mul_op a1 a2;
@@ -506,19 +505,21 @@ Module MIPS_Decode.
       set_reg a1s rt
     end.
   (*-----Logical Ops-------*)
-  Definition conv_log (op1: bit_vector_op) (rop: roperand) : Conv unit :=
-    match rop with
-      | Rop rs rt rd _ =>
+  Definition conv_log (op1: bit_vector_op) (op: reg3_operand) : Conv unit :=
+    match op with
+      | Reg3_op rs rt rd =>
         a1 <- load_reg rs;
         a2 <- load_reg rt;
         a3 <- arith op1 a1 a2;
         set_reg a3 rd
     end.
+
   Definition conv_AND := conv_log and_op.
   Definition conv_OR := conv_log or_op.
   Definition conv_XOR := conv_log xor_op.
-  Definition conv_NOR (rop: roperand) : Conv unit :=
-    match rop with | Rop rs rt rd _ => 
+
+  Definition conv_NOR (op: reg3_operand) : Conv unit :=
+    match op with | Reg3_op rs rt rd => 
       a1 <- load_reg rs;
       a2 <- load_reg rt;
       v_or <- arith or_op a1 a2;
@@ -551,8 +552,8 @@ Module MIPS_Decode.
   Definition conv_SRA := conv_sh shr_op.
   Definition conv_SRL := conv_sh shru_op.
 
-  Definition conv_shv (op1: bit_vector_op) (rop: roperand) : Conv unit :=
-    match rop with | Rop rs rt rd _ =>
+  Definition conv_shv (op1: bit_vector_op) (op: reg3_operand) : Conv unit :=
+    match op with | Reg3_op rs rt rd =>
       a1 <- load_reg rt;
       a2 <- load_reg rs;
       shamt5 <- cast_u 4 a2;
@@ -560,12 +561,13 @@ Module MIPS_Decode.
       a3 <- arith op1 a1 shamt;
       set_reg a3 rd
     end.
+
   Definition conv_SLLV := conv_shv shl_op.
   Definition conv_SRAV := conv_shv shru_op.
   Definition conv_SRLV := conv_shv shr_op.
 
-  Definition conv_set (op1: test_op) (rop: roperand) : Conv unit :=
-    match rop with | Rop rs rt rd _ =>
+  Definition conv_set (op1: test_op) (op: reg3_operand) : Conv unit :=
+    match op with | Reg3_op rs rt rd =>
       pone <- load_Z size32 1;
       pzero <- load_Z size32 0;
       a1 <- load_reg rs;
@@ -790,7 +792,7 @@ Module MIPS_Decode.
 
   (*Single argument comparison branches*)
   Definition conv_Bcond1 (c:condition1) (bzop:bz_operand) : Conv unit :=
-    match bzop with | BZop rs i =>
+    match bzop with | BZ_op rs i =>
       newpc <- b_getnewpc i;
       a1 <- load_reg rs;
       condf <- conv_cond1 c a1;
@@ -798,7 +800,7 @@ Module MIPS_Decode.
     end.
 
   Definition conv_Bcondl1 (c:condition1) (bzop:bz_operand) : Conv unit :=
-    match bzop with | BZop rs i =>
+    match bzop with | BZ_op rs i =>
       curpc <- get_pc;
       pfour <- load_Z size32 4;
       retpc <- arith add_op curpc pfour;

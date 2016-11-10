@@ -46,18 +46,22 @@ Inductive roperand : Set :=
 | Rop : register -> register -> register -> int5 -> roperand
 .
 
+(* three-register operands *)
+Inductive reg3_operand : Set := 
+| Reg3_op: register -> register -> register -> reg3_operand.
+
 (* Operands for bgez, bgezal, ...; they compare a register with zero
    and conditionally make a pc-relative jump based on an offset
    operand *)
 Inductive bz_operand : Set :=
-| BZop : register -> int16 -> bz_operand.
+| BZ_op : register -> int16 -> bz_operand.
 
 Inductive instr : Set :=
-| ADD : roperand -> instr
+| ADD : reg3_operand -> instr
 | ADDI : ioperand -> instr
 | ADDIU : ioperand -> instr
-| ADDU : roperand -> instr
-| AND : roperand -> instr
+| ADDU : reg3_operand -> instr
+| AND : reg3_operand -> instr
 | ANDI : ioperand -> instr
 | BEQ : ioperand -> instr
 | BGEZ : bz_operand -> instr
@@ -81,29 +85,28 @@ Inductive instr : Set :=
 | LW : ioperand -> instr
 | MFHI : roperand -> instr
 | MFLO : roperand -> instr
-| MUL : roperand -> instr
+| MUL : reg3_operand -> instr
 | MULT : roperand -> instr
 | MULTU : roperand -> instr
-| NOR : roperand -> instr
-| OR : roperand -> instr
+| NOR : reg3_operand -> instr
+| OR : reg3_operand -> instr
 | ORI : ioperand -> instr
 | SB : ioperand -> instr
 | SEB : roperand -> instr
 | SEH : roperand -> instr
 | SH : ioperand -> instr
 | SLL : roperand -> instr
-| SLLV : roperand -> instr
-| SLT : roperand -> instr
+| SLLV : reg3_operand -> instr
+| SLT : reg3_operand -> instr
 | SLTI : ioperand -> instr
 | SLTIU : ioperand -> instr
-| SLTU : roperand -> instr
+| SLTU : reg3_operand -> instr
 | SRA : roperand -> instr
-| SRAV : roperand -> instr
+| SRAV : reg3_operand -> instr
 | SRL : roperand -> instr
-| SRLV : roperand -> instr
-| SUB : roperand -> instr
-| SUBU : roperand -> instr
+| SRLV : reg3_operand -> instr
+| SUB : reg3_operand -> instr
+| SUBU : reg3_operand -> instr
 | SW : ioperand -> instr
-| XOR : roperand -> instr
-| XORI : ioperand -> instr
-.
+| XOR : reg3_operand -> instr
+| XORI : ioperand -> instr.

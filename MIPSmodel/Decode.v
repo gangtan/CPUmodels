@@ -185,18 +185,29 @@ Local Open Scope Z_scope.
       end).
   Definition r_p (opcode: string) (fcode: string) (InstCon: roperand -> instr) : grammar instruction_t :=
     r_p_gen opcode reg reg reg shamt_p ((bits fcode)@(fun _ => tt %%Unit_t)) InstCon. 
-  Definition r_p_zsf (opcode: string) (fcode: string) (InstCon: roperand -> instr)
-    : grammar instruction_t :=
-    r_p_gen opcode reg reg reg shamt0_p (cfcode_p fcode) InstCon.
   Definition shift_p (fcode: string) (InstCon: roperand -> instr) : grammar instruction_t :=
     r_p_gen "000000" reg0_p reg reg shamt_p (cfcode_p fcode) InstCon.
 
+  (* a generic parser for parsing instructions that accept three register *)
+  Definition reg3_p (opcode: string) (fcode: string) (InstCon: reg3_operand -> instr)
+    : grammar instruction_t :=
+    opcode $$ reg $ reg $ reg $ "00000" $$ bits fcode @
+    (fun p =>
+      match p with
+        | (r1,(r2,(r3,_))) => InstCon (Reg3_op r1 r2 r3) %% instruction_t
+      end).
+
+  (* Definition r_p_zsf (opcode: string) (fcode: string) (InstCon: roperand -> instr) *)
+  (*   : grammar instruction_t := *)
+  (*   r_p_gen opcode reg reg reg shamt0_p (cfcode_p fcode) InstCon. *)
+
+
   (*Specific Instruction Parsers*)
-  Definition ADD_p := r_p_zsf "000000" "100000" ADD.
+  Definition ADD_p := reg3_p "000000" "100000" ADD.
   Definition ADDI_p := i_p "001000" ADDI.
   Definition ADDIU_p := i_p "001001" ADDIU.
-  Definition ADDU_p := r_p_zsf "000000" "100001" ADDU.
-  Definition AND_p := r_p_zsf "000000" "100100" AND.
+  Definition ADDU_p := reg3_p "000000" "100001" ADDU.
+  Definition AND_p := reg3_p "000000" "100100" AND.
   Definition ANDI_p := i_p "001100" ANDI.
   Definition BEQ_p := i_p "000100" BEQ.
 
@@ -205,7 +216,7 @@ Local Open Scope Z_scope.
     opcode1 $$ rs_p $ opcode2 $$ immf_p @
     (fun p =>
       match p with
-        | (r1,immval) => InstCon (BZop r1 immval)
+        | (r1,immval) => InstCon (BZ_op r1 immval)
       end %% instruction_t).
 
   Definition BGEZ_p := bz_p_gen "000001" reg "00001" imm_p BGEZ.
@@ -230,30 +241,30 @@ Local Open Scope Z_scope.
   Definition LW_p := i_p "100101" LHU.
   Definition MFHI_p := r_p_gen "000000" reg0_p reg0_p reg shamt0_p (cfcode_p "010000") MFHI.
   Definition MFLO_p := r_p_gen "000000" reg0_p reg0_p reg shamt0_p (cfcode_p "010010") MFLO.
-  Definition MUL_p := r_p_zsf "000000" "000010" MUL.
+  Definition MUL_p := reg3_p "000000" "000010" MUL.
   Definition MULT_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011000") MULT.
   Definition MULTU_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011001") MULTU.
-  Definition NOR_p := r_p_zsf "000000" "100111" NOR.
-  Definition OR_p := r_p_zsf "000000" "100101" OR.
+  Definition NOR_p := reg3_p "000000" "100111" NOR.
+  Definition OR_p := reg3_p "000000" "100101" OR.
   Definition ORI_p := i_p "001101" ORI.
   Definition SB_p := i_p "101000" SB.
   Definition SEB_p := r_p_gen "011111" reg0_p reg reg (cshamt_p "10000") (cfcode_p "100000") SEB.
   Definition SEH_p := r_p_gen "011111" reg0_p reg reg (cshamt_p "11000") (cfcode_p "100000") SEH.
   Definition SH_p := i_p "101001" SH.
   Definition SLL_p := shift_p "000000" SLL.
-  Definition SLLV_p := r_p_zsf "000000" "000100" SLLV.
-  Definition SLT_p := r_p_zsf "000000" "101010" SLT.
+  Definition SLLV_p := reg3_p "000000" "000100" SLLV.
+  Definition SLT_p := reg3_p "000000" "101010" SLT.
   Definition SLTI_p := i_p "001010" SLTI.
-  Definition SLTU_p := r_p_zsf "000000" "101011" SLTU.
+  Definition SLTU_p := reg3_p "000000" "101011" SLTU.
   Definition SLTIU_p := i_p "001011" SLTIU.
   Definition SRA_p := shift_p "000011" SRA.
-  Definition SRAV_p := r_p_zsf "000000" "000111" SRAV.
+  Definition SRAV_p := reg3_p "000000" "000111" SRAV.
   Definition SRL_p := shift_p "000010" SRL.
-  Definition SRLV_p := r_p_zsf "000000" "000110" SRLV.
-  Definition SUB_p := r_p_zsf "000000" "100010" SUB.
-  Definition SUBU_p := r_p_zsf "000000" "100011" SUBU.
+  Definition SRLV_p := reg3_p "000000" "000110" SRLV.
+  Definition SUB_p := reg3_p "000000" "100010" SUB.
+  Definition SUBU_p := reg3_p "000000" "100011" SUBU.
   Definition SW_p := i_p "101011" SW.
-  Definition XOR_p := r_p_zsf "000000" "100110" XOR.
+  Definition XOR_p := reg3_p "000000" "100110" XOR.
   Definition XORI_p := i_p "001110" XORI.
 
   
