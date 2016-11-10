@@ -453,8 +453,8 @@ Module MIPS_Decode.
       set_lo rand2
     end.
 
-  Definition conv_MULTs caster (rop: roperand) : Conv unit :=
-    match rop with | Rop rs rt _ _ =>
+  Definition conv_MULTs caster (op: reg2_operand) : Conv unit :=
+    match op with | Reg2_op rs rt =>
       a1 <- load_reg rs;
       a2 <- load_reg rt;
       a1e <- caster a1;
@@ -467,12 +467,12 @@ Module MIPS_Decode.
       set_hi prodhi;;
       set_lo prodlo
     end.
-  Definition conv_MULT (rop:roperand) : Conv unit := conv_MULTs (cast_s 63) rop.
-  Definition conv_MULTU (rop:roperand) : Conv unit := conv_MULTs (cast_u 63) rop.
+  Definition conv_MULT (op:reg2_operand) : Conv unit := conv_MULTs (cast_s 63) op.
+  Definition conv_MULTU (op:reg2_operand) : Conv unit := conv_MULTs (cast_u 63) op.
 
   (*How is the signed modulus taken?*)
-  Definition conv_DIVs (divop:bit_vector_op) (modop:bit_vector_op) (rop: roperand) : Conv unit :=
-    match rop with | Rop rs rt _ _ =>
+  Definition conv_DIVs (divop:bit_vector_op) (modop:bit_vector_op) (op: reg2_operand) : Conv unit :=
+    match op with | Reg2_op rs rt =>
       a1 <- load_reg rs;
       a2 <- load_reg rt;
       pzero <- load_Z size32 0;
@@ -486,16 +486,14 @@ Module MIPS_Decode.
   Definition conv_DIV := conv_DIVs divs_op mods_op.
   Definition conv_DIVU := conv_DIVs divu_op modu_op.
 
-  Definition conv_MFHI (rop: roperand) : Conv unit :=
-    match rop with | Rop _ _ rd _ =>
-      hi <- get_hi;
-      set_reg hi rd
-    end.
-  Definition conv_MFLO (rop: roperand) : Conv unit :=
-    match rop with | Rop _ _ rd _ =>
-      lo <- get_lo;
-      set_reg lo rd
-    end.
+  Definition conv_MFHI (rd: register) : Conv unit :=
+    hi <- get_hi;
+    set_reg hi rd.
+
+  Definition conv_MFLO (rd: register) : Conv unit :=
+    lo <- get_lo;
+    set_reg lo rd.
+
   Definition conv_LUI (iop:ioperand) : Conv unit :=
     match iop with | Iop _ rt i =>
       pi <- load_int i;
@@ -540,14 +538,15 @@ Module MIPS_Decode.
   Definition conv_ORI := conv_logi or_op.
   Definition conv_XORI := conv_logi xor_op.
 
-  Definition conv_sh (op1: bit_vector_op) (rop: roperand) : Conv unit :=
-    match rop with | Rop _ rt rd sa =>
+  Definition conv_sh (op1: bit_vector_op) (op: reg2sh_operand) : Conv unit :=
+    match op with | Reg2sh_op rt rd sa =>
       a1 <- load_reg rt;
       si <- load_int sa;
       a2 <- cast_u size32 si;
       a1s <- arith op1 a1 a2;
       set_reg a1s rd
     end.
+
   Definition conv_SLL := conv_sh shl_op.
   Definition conv_SRA := conv_sh shr_op.
   Definition conv_SRL := conv_sh shru_op.
@@ -597,16 +596,16 @@ Module MIPS_Decode.
   Definition conv_SLTI := conv_seti (cast_s size32) (lt_op).
   Definition conv_SLTIU := conv_seti (cast_u size32) (ltu_op).
 
-  Definition conv_SEB (rop:roperand) : Conv unit :=
-    match rop with | Rop _ rt rd _ =>
+  Definition conv_SEB (op:reg2_operand) : Conv unit :=
+    match op with | Reg2_op rt rd =>
       a1 <- load_reg rt;
       a1b <- cast_u size8 a1;
       a1bc <- cast_s size32 a1b;
       set_reg a1bc rd
     end.
 
-  Definition conv_SEH (rop:roperand) : Conv unit :=
-    match rop with | Rop _ rt rd _ =>
+  Definition conv_SEH (op:reg2_operand) : Conv unit :=
+    match op with | Reg2_op rt rd =>
       a1 <- load_reg rt;
       a1h <- cast_u size16 a1;
       a1hc <- cast_s size32 a1h;
@@ -719,26 +718,23 @@ Module MIPS_Decode.
 
   Definition conv_J (jop: joperand) : Conv unit := conv_Jl false jop.
   Definition conv_JAL (jop: joperand) : Conv unit := conv_Jl true jop.
-  
-  Definition conv_JRl (linkflag: bool) (rop:roperand) : Conv unit :=
-    match rop with | Rop rs _ rd _ =>
+
+  Definition conv_JALR (op:reg2sh_operand) : Conv unit := 
+    match op with | Reg2sh_op rs rd _ =>
       if (register_eq_dec rs rd) then (emit error_rtl) else (
         curpc <- get_pc;
         newpc <- load_reg rs;
-        match (linkflag) with
-          |true =>
-            pfour <- load_Z size32 4;
-            retpc <- arith add_op curpc pfour;
-            set_bdelay newpc;;
-            set_reg retpc rd
-          |false=>
-            set_bdelay newpc
-        end
+        pfour <- load_Z size32 4;
+        retpc <- arith add_op curpc pfour;
+        set_bdelay newpc;;
+        set_reg retpc rd
       )
     end.
 
-  Definition conv_JALR (rop:roperand) : Conv unit := conv_JRl true rop.
-  Definition conv_JR (rop:roperand) : Conv unit := conv_JRl false rop.
+  Definition conv_JR (rs: register) : Conv unit := 
+    curpc <- get_pc;
+    newpc <- load_reg rs;
+    set_bdelay newpc.
 
   Definition b_getnewpc s (i: int s) : Conv (rtl_exp size32) :=
     curpc <- get_pc;

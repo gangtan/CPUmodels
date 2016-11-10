@@ -42,13 +42,19 @@ Inductive ioperand : Set :=
 Inductive joperand : Set :=
 | Jop : int26 -> joperand
 .
-Inductive roperand : Set :=
-| Rop : register -> register -> register -> int5 -> roperand
-.
+
+(* two-register operands *)
+Inductive reg2_operand : Set := 
+| Reg2_op: register -> register -> reg2_operand.
 
 (* three-register operands *)
 Inductive reg3_operand : Set := 
 | Reg3_op: register -> register -> register -> reg3_operand.
+
+
+(* operands with two registers and a shift amount *)
+Inductive reg2sh_operand : Set := 
+| Reg2sh_op: register -> register -> int5 -> reg2sh_operand.
 
 (* Operands for bgez, bgezal, ...; they compare a register with zero
    and conditionally make a pc-relative jump based on an offset
@@ -71,39 +77,39 @@ Inductive instr : Set :=
 | BLTZ : bz_operand -> instr
 | BLTZAL : bz_operand -> instr
 | BNE : ioperand -> instr
-| DIV : roperand -> instr
-| DIVU : roperand -> instr
+| DIV : reg2_operand -> instr
+| DIVU : reg2_operand -> instr
 | J : joperand -> instr
 | JAL : joperand -> instr
-| JALR : roperand -> instr
-| JR : roperand -> instr
+| JALR : reg2sh_operand -> instr
+| JR : register -> instr
 | LB : ioperand -> instr
 | LBU : ioperand -> instr
 | LH : ioperand -> instr
 | LHU : ioperand -> instr
 | LUI : ioperand -> instr
 | LW : ioperand -> instr
-| MFHI : roperand -> instr
-| MFLO : roperand -> instr
+| MFHI : register -> instr
+| MFLO : register -> instr
 | MUL : reg3_operand -> instr
-| MULT : roperand -> instr
-| MULTU : roperand -> instr
+| MULT : reg2_operand -> instr
+| MULTU : reg2_operand -> instr
 | NOR : reg3_operand -> instr
 | OR : reg3_operand -> instr
 | ORI : ioperand -> instr
 | SB : ioperand -> instr
-| SEB : roperand -> instr
-| SEH : roperand -> instr
+| SEB : reg2_operand -> instr
+| SEH : reg2_operand -> instr
 | SH : ioperand -> instr
-| SLL : roperand -> instr
+| SLL : reg2sh_operand -> instr
 | SLLV : reg3_operand -> instr
 | SLT : reg3_operand -> instr
 | SLTI : ioperand -> instr
 | SLTIU : ioperand -> instr
 | SLTU : reg3_operand -> instr
-| SRA : roperand -> instr
+| SRA : reg2sh_operand -> instr
 | SRAV : reg3_operand -> instr
-| SRL : roperand -> instr
+| SRL : reg2sh_operand -> instr
 | SRLV : reg3_operand -> instr
 | SUB : reg3_operand -> instr
 | SUBU : reg3_operand -> instr

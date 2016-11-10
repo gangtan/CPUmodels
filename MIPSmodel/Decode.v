@@ -147,16 +147,7 @@ Local Open Scope Z_scope.
   Definition bitsmatch (s:string): grammar Unit_t := 
     (bits s) @ (fun _ => tt: interp Unit_t ).
   Notation "! s" := (bitsmatch s) (at level 60).
- 
-  Definition creg_p (s:string) : grammar register_t :=
-    ((bits s)@(fun _ => Reg (Word.repr (string2int s)) %% register_t)).
-  Definition reg0_p : grammar register_t :=
-    creg_p "00000".
-  Definition cshamt_p (s:string) : grammar shamt5_t :=
-    let sfval := @Word.repr 4 (string2int s) in
-    ((bits s)@(fun _ => sfval %% shamt5_t)).
-  Definition shamt0_p : grammar shamt5_t :=
-    cshamt_p "00000".
+
   Definition cfcode_p (s:string) : grammar Unit_t :=
     ((bits s)@(fun _ => tt %%Unit_t)).
 
@@ -168,27 +159,35 @@ Local Open Scope Z_scope.
       match p with
         | (r1,(r2,immval)) => InstCon (Iop r1 r2 immval)
       end %% instruction_t).
+
   Definition i_p (opcode: string) (InstCon : ioperand -> instr) : grammar instruction_t :=
     i_p_gen opcode reg reg imm_p InstCon.
+
   Definition j_p_gen (opcode: string) (targetf_p : grammar target26_t) (InstCon : joperand -> instr) 
     : grammar instruction_t :=
     opcode $$ targetf_p @
     (fun tval => InstCon (Jop tval) %% instruction_t).
+
   Definition j_p (opcode: string) (InstCon: joperand -> instr) : grammar instruction_t :=
     j_p_gen opcode target_p InstCon.
-  Definition r_p_gen (opcode: string) (rs_p: grammar register_t) (rt_p: grammar register_t)
-    (rd_p: grammar register_t) (shamtf_p: grammar shamt5_t) (fcode_p: grammar Unit_t) (InstCon: roperand ->instr):=
-    opcode $$ rs_p $ rt_p $ rd_p $ shamtf_p $ fcode_p @
+
+  Definition shift_p (fcode: string) (InstCon: reg2sh_operand -> instr) : grammar instruction_t :=
+    "000000" $$ "00000" $$ reg $ reg $ shamt_p $ bits fcode @
     (fun p =>
       match p with
-        | (r1,(r2,(r3,(shval,_)))) => InstCon (Rop r1 r2 r3 shval) %% instruction_t
+        | (r1,(r2,(shval,_))) => InstCon (Reg2sh_op r1 r2 shval) %% instruction_t
       end).
-  Definition r_p (opcode: string) (fcode: string) (InstCon: roperand -> instr) : grammar instruction_t :=
-    r_p_gen opcode reg reg reg shamt_p ((bits fcode)@(fun _ => tt %%Unit_t)) InstCon. 
-  Definition shift_p (fcode: string) (InstCon: roperand -> instr) : grammar instruction_t :=
-    r_p_gen "000000" reg0_p reg reg shamt_p (cfcode_p fcode) InstCon.
 
-  (* a generic parser for parsing instructions that accept three register *)
+  (* a generic parser for parsing instructions that accept two registers *)
+  Definition reg2_p (opcode: string) (fcode: string) (InstCon: reg2_operand -> instr)
+    : grammar instruction_t :=
+    opcode $$ reg $ reg $ "00000" $$ "00000" $$ bits fcode @
+    (fun p =>
+      match p with
+        | (r1,(r2,_)) => InstCon (Reg2_op r1 r2) %% instruction_t
+      end).
+
+  (* a generic parser for parsing instructions that accept three registers *)
   Definition reg3_p (opcode: string) (fcode: string) (InstCon: reg3_operand -> instr)
     : grammar instruction_t :=
     opcode $$ reg $ reg $ reg $ "00000" $$ bits fcode @
@@ -196,11 +195,6 @@ Local Open Scope Z_scope.
       match p with
         | (r1,(r2,(r3,_))) => InstCon (Reg3_op r1 r2 r3) %% instruction_t
       end).
-
-  (* Definition r_p_zsf (opcode: string) (fcode: string) (InstCon: roperand -> instr) *)
-  (*   : grammar instruction_t := *)
-  (*   r_p_gen opcode reg reg reg shamt0_p (cfcode_p fcode) InstCon. *)
-
 
   (*Specific Instruction Parsers*)
   Definition ADD_p := reg3_p "000000" "100000" ADD.
@@ -227,29 +221,68 @@ Local Open Scope Z_scope.
   Definition BLTZAL_p := bz_p_gen "000001" reg "10000" imm_p BLTZAL.
 
   Definition BNE_p := i_p "000101" BNE.
-  Definition DIV_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011010") DIV.
-  Definition DIVU_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011011") DIVU.
+  Definition DIV_p := reg2_p "000000" "011010" DIV.
+  Definition DIVU_p := reg2_p "000000" "011011" DIVU.
   Definition J_p := j_p "000010" J.
   Definition JAL_p := j_p "000011" JAL.
-  Definition JALR_p := r_p_gen "000000" reg reg0_p reg shamt_p (cfcode_p "001001") JALR.
-  Definition JR_p := r_p_gen "000000" reg reg0_p reg0_p shamt_p (cfcode_p "001000") JR.
+
+  Definition JALR_p := 
+    "000000" $$ reg $ "00000" $$ reg $ shamt_p $ bits "001001" @
+    (fun p =>
+      match p with
+        | (r1,(r2,(shval,_))) => JALR (Reg2sh_op r1 r2 shval) %% instruction_t
+      end).
+
+  Definition JR_p := 
+    "000000" $$ reg $ "00000" $$ "00000" $$ "00000" $$ bits "001000" @
+    (fun p =>
+      match p with
+        | (r1,_) => JR r1 %% instruction_t
+      end).
+
   Definition LB_p := i_p "100000" LB.
   Definition LBU_p := i_p "100100" LBU.
   Definition LH_p := i_p "100001" LH.
   Definition LHU_p := i_p "100101" LHU.
   Definition LUI_p := i_p "001111" LUI.
   Definition LW_p := i_p "100101" LHU.
-  Definition MFHI_p := r_p_gen "000000" reg0_p reg0_p reg shamt0_p (cfcode_p "010000") MFHI.
-  Definition MFLO_p := r_p_gen "000000" reg0_p reg0_p reg shamt0_p (cfcode_p "010010") MFLO.
+
+  Definition MFHI_p := 
+    "000000" $$ "00000" $$ "00000" $$ reg $ "00000" $$ bits "010000" @
+    (fun p =>
+      match p with
+        | (r1,_) => MFHI r1 %% instruction_t
+      end).
+
+  Definition MFLO_p := 
+    "000000" $$ "00000" $$ "00000" $$ reg $ "00000" $$ bits "010010" @
+    (fun p =>
+      match p with
+        | (r1,_) => MFLO r1 %% instruction_t
+      end).
+
   Definition MUL_p := reg3_p "000000" "000010" MUL.
-  Definition MULT_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011000") MULT.
-  Definition MULTU_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011001") MULTU.
+  Definition MULT_p := reg2_p "000000" "011000" MULT.
+  Definition MULTU_p := reg2_p "000000" "011001" MULTU.
   Definition NOR_p := reg3_p "000000" "100111" NOR.
   Definition OR_p := reg3_p "000000" "100101" OR.
   Definition ORI_p := i_p "001101" ORI.
   Definition SB_p := i_p "101000" SB.
-  Definition SEB_p := r_p_gen "011111" reg0_p reg reg (cshamt_p "10000") (cfcode_p "100000") SEB.
-  Definition SEH_p := r_p_gen "011111" reg0_p reg reg (cshamt_p "11000") (cfcode_p "100000") SEH.
+
+  Definition SEB_p := 
+    "011111" $$ "00000" $$ reg $ reg $ "10000" $$ bits "100000" @
+    (fun p =>
+      match p with
+        | (r1,(r2,_)) => SEB (Reg2_op r1 r2) %% instruction_t
+      end).
+
+  Definition SEH_p := 
+    "011111" $$ "00000" $$ reg $ reg $ "11000" $$ bits "100000" @
+    (fun p =>
+      match p with
+        | (r1,(r2,_)) => SEH (Reg2_op r1 r2) %% instruction_t
+      end).
+
   Definition SH_p := i_p "101001" SH.
   Definition SLL_p := shift_p "000000" SLL.
   Definition SLLV_p := reg3_p "000000" "000100" SLLV.
