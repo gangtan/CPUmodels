@@ -27,16 +27,13 @@ Definition sign_extend8_32(w:int8) : int32 := Word.repr (Word.signed w).
 Definition zero_extend16_32(w:int16) : int32 := Word.repr (Word.unsigned w).
 Definition sign_extend16_32(w:int16) : int32 := Word.repr (Word.signed w).
 
-Definition int26 := Word.int 25.
-Definition int5 := Word.int 4.
-
 Inductive register : Set := 
-| Reg : nat -> register
-.
+| Reg : int5 -> register.
+
 Definition register_eq_dec : forall (x y:register), {x=y} + {x<>y}.
   intros.
   decide equality.
-  apply eq_nat_dec.
+  apply Word.eq_dec.
 Defined.
 
 Inductive ioperand : Set := 
@@ -49,6 +46,12 @@ Inductive roperand : Set :=
 | Rop : register -> register -> register -> int5 -> roperand
 .
 
+(* Operands for bgez, bgezal, ...; they compare a register with zero
+   and conditionally make a pc-relative jump based on an offset
+   operand *)
+Inductive bz_operand : Set :=
+| BZop : register -> int16 -> bz_operand.
+
 Inductive instr : Set :=
 | ADD : roperand -> instr
 | ADDI : ioperand -> instr
@@ -57,12 +60,12 @@ Inductive instr : Set :=
 | AND : roperand -> instr
 | ANDI : ioperand -> instr
 | BEQ : ioperand -> instr
-| BGEZ : ioperand -> instr
-| BGEZAL : ioperand -> instr
-| BGTZ : ioperand -> instr
-| BLEZ : ioperand -> instr
-| BLTZ : ioperand -> instr
-| BLTZAL : ioperand -> instr
+| BGEZ : bz_operand -> instr
+| BGEZAL : bz_operand -> instr
+| BGTZ : bz_operand -> instr
+| BLEZ : bz_operand -> instr
+| BLTZ : bz_operand -> instr
+| BLTZAL : bz_operand -> instr
 | BNE : ioperand -> instr
 | DIV : roperand -> instr
 | DIVU : roperand -> instr

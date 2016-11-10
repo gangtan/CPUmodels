@@ -139,13 +139,17 @@ Local Open Scope Z_scope.
 
   Definition anybit : grammar Char_t := Any.
   Definition field(n:nat) := (field' n) @ (bits2int n).
-  Definition reg := (field 5) @ ((fun z => Reg (Zabs_nat z)) : _ -> interp register_t).
+  Definition reg := (field 5) @ ((fun z => Reg (Word.repr z)) : _ -> interp register_t).
   Definition imm_p := (field 16) @ (@Word.repr 15 : _ -> interp imm16_t).
   Definition target_p := (field 26) @ (@Word.repr 25 : _ -> interp target26_t).
   Definition shamt_p := (field 5) @ (@Word.repr 4 : _ -> interp shamt5_t).
+
+  Definition bitsmatch (s:string): grammar Unit_t := 
+    (bits s) @ (fun _ => tt: interp Unit_t ).
+  Notation "! s" := (bitsmatch s) (at level 60).
  
   Definition creg_p (s:string) : grammar register_t :=
-    ((bits s)@(fun _ => Reg (Zabs_nat (string2int s)) %% register_t)).
+    ((bits s)@(fun _ => Reg (Word.repr (string2int s)) %% register_t)).
   Definition reg0_p : grammar register_t :=
     creg_p "00000".
   Definition cshamt_p (s:string) : grammar shamt5_t :=
@@ -195,12 +199,22 @@ Local Open Scope Z_scope.
   Definition AND_p := r_p_zsf "000000" "100100" AND.
   Definition ANDI_p := i_p "001100" ANDI.
   Definition BEQ_p := i_p "000100" BEQ.
-  Definition BGEZ_p := i_p_gen "000001" reg (creg_p "00001") imm_p BGEZ.
-  Definition BGEZAL_p := i_p_gen "000001" reg (creg_p "10001") imm_p BGEZAL.
-  Definition BGTZ_p := i_p_gen "000111" reg reg0_p imm_p BGTZ.
-  Definition BLEZ_p := i_p_gen "000110" reg reg0_p imm_p BLEZ.
-  Definition BLTZ_p := i_p_gen "000001" reg reg0_p imm_p BLTZ.
-  Definition BLTZAL_p := i_p_gen "000001" reg (creg_p "10000") imm_p BLTZAL.
+
+  Definition bz_p_gen (opcode1: string) (rs_p: grammar register_t) (opcode2: string)
+    (immf_p : grammar imm16_t) (InstCon : bz_operand -> instr):=
+    opcode1 $$ rs_p $ opcode2 $$ immf_p @
+    (fun p =>
+      match p with
+        | (r1,immval) => InstCon (BZop r1 immval)
+      end %% instruction_t).
+
+  Definition BGEZ_p := bz_p_gen "000001" reg "00001" imm_p BGEZ.
+  Definition BGEZAL_p := bz_p_gen "000001" reg "10001" imm_p BGEZAL.
+  Definition BGTZ_p := bz_p_gen "000111" reg "00000" imm_p BGTZ.
+  Definition BLEZ_p := bz_p_gen "000110" reg "00000" imm_p BLEZ.
+  Definition BLTZ_p := bz_p_gen "000001" reg "00000" imm_p BLTZ.
+  Definition BLTZAL_p := bz_p_gen "000001" reg "10000" imm_p BLTZAL.
+
   Definition BNE_p := i_p "000101" BNE.
   Definition DIV_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011010") DIV.
   Definition DIVU_p := r_p_gen "000000" reg reg reg0_p shamt0_p (cfcode_p "011011") DIVU.

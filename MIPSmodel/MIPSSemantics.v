@@ -63,8 +63,9 @@ Module MIPS_MACHINE.
     match l in loc s' return int s' with 
       | reg_loc r => 
         match r with 
-          | Reg 0 => Word.zero
-          | _ => look (gp_regs m) r
+          | Reg i => 
+            if Word.eq i Word.zero then Word.zero
+            else look (gp_regs m) r
         end
       | hi_loc => hi_reg m
       | lo_loc => lo_reg m
@@ -76,8 +77,8 @@ Module MIPS_MACHINE.
   Definition set_gp_regs r v m := 
     {| gp_regs := 
        match r with 
-         | Reg 0 => gp_regs m
-         | _ => upd register_eq_dec (gp_regs m) r v  
+         | Reg i => if Word.eq i Word.zero then gp_regs m
+                    else upd register_eq_dec (gp_regs m) r v  
        end;
        hi_reg := hi_reg m;
        lo_reg := lo_reg m;
@@ -85,6 +86,7 @@ Module MIPS_MACHINE.
        bdelay_active_f := bdelay_active_f m;
        bdelay_pc_reg := bdelay_pc_reg m
     |}.
+
   Definition set_pc v m := 
     {| gp_regs := gp_regs m ;
        hi_reg := hi_reg m;
@@ -159,7 +161,6 @@ Module MIPS_Decode.
   Import MIPS_MACHINE.
   Import MIPS_RTL.
 
-Print MIPS_RTL.
   Local Open Scope monad_scope.
   Record conv_state := { c_rev_i : list rtl_instr ; c_next : Z }.
   Definition Conv(T:Type) := conv_state -> T * conv_state.
@@ -709,7 +710,7 @@ Print MIPS_RTL.
           | true => 
             pfour <- load_Z size32 4;
             pc4 <- arith add_op curpc pfour;
-            set_reg pc4 (Reg 31);;
+            set_reg pc4 (Reg (Word.repr 31));;
             set_bdelay newpc
         end
     end.
@@ -788,30 +789,31 @@ Print MIPS_RTL.
   Definition conv_BNE (iop:ioperand) : Conv unit := conv_Bcond2 Ne_cond iop.
 
   (*Single argument comparison branches*)
-  Definition conv_Bcond1 (c:condition1) (iop:ioperand) : Conv unit :=
-    match iop with | Iop rs _ i =>
+  Definition conv_Bcond1 (c:condition1) (bzop:bz_operand) : Conv unit :=
+    match bzop with | BZop rs i =>
       newpc <- b_getnewpc i;
       a1 <- load_reg rs;
       condf <- conv_cond1 c a1;
       set_bdelay_cond condf newpc
     end.
 
-  Definition conv_Bcondl1 (c:condition1) (iop:ioperand) : Conv unit :=
-    match iop with | Iop rs _ i =>
+  Definition conv_Bcondl1 (c:condition1) (bzop:bz_operand) : Conv unit :=
+    match bzop with | BZop rs i =>
       curpc <- get_pc;
       pfour <- load_Z size32 4;
       retpc <- arith add_op curpc pfour;
-      set_reg retpc (Reg 31);;
+      set_reg retpc (Reg (Word.repr 31));;
       newpc <- b_getnewpc i;
       a1 <- load_reg rs;
       condf <- conv_cond1 c a1;
       set_bdelay_cond condf newpc
     end.
-  Definition conv_BGEZ (iop:ioperand) : Conv unit := conv_Bcond1 Gez_cond iop.
+
+  Definition conv_BGEZ (bzop:bz_operand) : Conv unit := conv_Bcond1 Gez_cond bzop.
   Definition conv_BGEZAL := conv_Bcondl1 Gez_cond.
-  Definition conv_BGTZ (iop:ioperand) : Conv unit := conv_Bcond1 Gtz_cond iop.
-  Definition conv_BLEZ (iop:ioperand) : Conv unit := conv_Bcond1 Lez_cond iop.
-  Definition conv_BLTZ (iop:ioperand) : Conv unit := conv_Bcond1 Ltz_cond iop.
+  Definition conv_BGTZ (bzop:bz_operand) : Conv unit := conv_Bcond1 Gtz_cond bzop.
+  Definition conv_BLEZ (bzop:bz_operand) : Conv unit := conv_Bcond1 Lez_cond bzop.
+  Definition conv_BLTZ (bzop:bz_operand) : Conv unit := conv_Bcond1 Ltz_cond bzop.
   Definition conv_BLTZAL := conv_Bcondl1 Ltz_cond.
   (*---------End specific instruction implementations--------------*)
 
