@@ -13,8 +13,8 @@
 Require Import Coq.ZArith.ZArith.
 Require Coq.Strings.String.
 
-Require Import X86Model.Monad.
-Require Import X86Model.Maps.
+Require Import Monad.
+Require Import Maps.
 Require Import Bits.
 
 Require Import Flocq.Appli.Fappli_IEEE_bits.
@@ -23,18 +23,6 @@ Require Import Flocq.Appli.Fappli_IEEE.
 Set Implicit Arguments.
 Unset Automatic Introduction.
 
-
-Definition size1 := 0.
-Definition size2 := 1.
-Definition size3 := 2.
-Definition size4 := 3.
-Definition size8 := 7.
-Definition size16 := 15.
-Definition size32 := 31.
-Definition size64 := 63.
-Definition size79 := 78.
-Definition size80 := 79.
-Definition int n := Word.int n.
 
 Module Type MACHINE_SIG.
   (** We abstract over locations which include things like registers, flags, the pc, 

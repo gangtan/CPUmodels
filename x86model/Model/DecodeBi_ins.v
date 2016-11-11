@@ -12,7 +12,7 @@ Require Import Coq.Program.Program.
 
 Require Import Coqlib.
 Require Import CommonTacs.
-Require Import X86Model.Maps.
+Require Import Shared.Maps.
 
 Unset Automatic Introduction.
 Set Implicit Arguments.
@@ -70,17 +70,12 @@ Set Implicit Arguments.
   Definition selector_t := User_t (BitVector_t 15).
 
   (* Mapping old definitions to new . *)
-  (* Definition parser r := wf_bigrammar r. *)
-  (* Definition result_m := interp. *)
-  (* Definition result := type. *)
-  (* Definition tipe_t := User_t. *)
   Notation char_t := Char_t.
   Notation list_t := List_t.
   Notation unit_t := Unit_t.
   Notation pair_t := Pair_t.
   Notation sum_t := Sum_t.
   Notation option_t := Option_t.
-  Definition Any_p := Any.
 
   Local Ltac localcrush :=
     intros;

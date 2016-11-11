@@ -1,15 +1,15 @@
-MODULES := Coqlib Tacs Maps Bits Int32 MIPSSyntax Monad Parser Decode RTL MIPSSemantics
-# DFACorrectness FastVerifier X86Lemmas VerifierCorrectness
+MODULES := MIPSSyntax ParserArg Xform Regexp RESet GrammarType Grammar BiGrammar Parser Decode MIPSSemantics DecodeBi
 VS 	:= $(MODULES:%=%.v)
 
 .PHONY: coq clean
 
 coq: Makefile.coq
+	$(MAKE) -C ../shared
 	$(MAKE) -f Makefile.coq
 
 Makefile.coq: Makefile $(VS:%=%)
 	echo $(VS)
-	coq_makefile $(VS) -o Makefile.coq
+	coq_makefile -R . MIPSModel -R ../shared Shared $(VS) -o Makefile.coq
 
 clean:: Makefile.coq
 	$(MAKE) -f Makefile.coq clean

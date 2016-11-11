@@ -4,14 +4,14 @@ Require Import ParserArg.
    would impede code extraction because of a Coq bug.  Instead, we
    introduce a bunch of definitions below to achieve some separation as
    long as we never directly use definitions in X86_PARSER_ARG *)
-Definition char_p := X86_PARSER_ARG.char_p.
-Definition char_dec := X86_PARSER_ARG.char_dec.
-Definition user_type := X86_PARSER_ARG.user_type.
-Definition user_type_dec := X86_PARSER_ARG.user_type_dec.
-Definition user_type_denote := X86_PARSER_ARG.user_type_denote.
-Definition token_id := X86_PARSER_ARG.token_id.
-Definition num_tokens := X86_PARSER_ARG.num_tokens.
-Definition token_id_to_chars := X86_PARSER_ARG.token_id_to_chars.
+Definition char_p := MIPS_PARSER_ARG.char_p.
+Definition char_dec := MIPS_PARSER_ARG.char_dec.
+Definition user_type := MIPS_PARSER_ARG.user_type.
+Definition user_type_dec := MIPS_PARSER_ARG.user_type_dec.
+Definition user_type_denote := MIPS_PARSER_ARG.user_type_denote.
+Definition token_id := MIPS_PARSER_ARG.token_id.
+Definition num_tokens := MIPS_PARSER_ARG.num_tokens.
+Definition token_id_to_chars := MIPS_PARSER_ARG.token_id_to_chars.
 
 (** The [type]s for our grammars. *)
 Inductive type : Type := 
