@@ -842,36 +842,162 @@ Local Open Scope Z_scope.
   Definition XOR_p := reg3_p "000000" "100110".
   Definition XORI_p := i_p "001110".
 
-To be organized.
+  Local Ltac ci_invertible_tac :=
+    apply strong_inv_imp_inv; unfold strong_invertible;
+    try clear_gt; split; [unfold printable | unfold parsable];
+    compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
+    [(clear_ast_defs; compute [ast_type inv_case]) | idtac]; intros;
+    [try (abstract (destruct_all; trivial); fail) |
+     try (abstract (
+            match goal with
+            | [ |- _ = ?w] => destruct w; inversion H; trivial
+            end); fail)].
 
-  (*Large grammar list*)
-  Definition instr_grammar_list : list (grammar instruction_t) := 
-    ADD_p :: ADDI_p :: ADDIU_p :: ADDU_p ::
-    AND_p :: ANDI_p :: BEQ_p :: BGEZ_p :: BGEZAL_p ::
-    BGTZ_p :: BLEZ_p :: BLTZ_p :: BLTZAL_p ::
-    BNE_p :: DIV_p :: DIVU_p :: J_p :: JAL_p :: JALR_p :: JR_p :: LB_p ::
-    LBU_p :: LH_p :: LHU_p :: LUI_p :: LW_p :: MFHI_p :: MFLO_p ::
-    MUL_p :: MULT_p :: MULTU_p :: NOR_p :: OR_p ::
-    ORI_p :: SB_p :: SEB_p :: SEH_p :: SH_p :: SLL_p :: 
-    SLLV_p :: SLT_p :: SLTI_p :: SLTU_p :: SLTIU_p :: SRA_p ::
-    SRL_p :: SRLV_p :: SUB_p :: SUBU_p :: SW_p :: XOR_p :: XORI_p ::
-    nil.
+  Definition instr_env : AST_Env instruction_t := 
+    {{0, ADD_p, (fun op => ADD op %% instruction_t)}} :::
+    {{1, ADDI_p, (fun op => ADDI op %% instruction_t)}} :::
+    {{2, ADDIU_p, (fun op => ADDIU op %% instruction_t)}} :::
+    {{3, ADDU_p, (fun op => ADDU op %% instruction_t)}} :::
+    {{4, AND_p, (fun op => AND op %% instruction_t)}} :::
+    {{5, ANDI_p, (fun op => ANDI op %% instruction_t)}} :::
+    {{6, BEQ_p, (fun op => BEQ op %% instruction_t)}} :::
+    {{7, BGEZ_p, (fun op => BGEZ op %% instruction_t)}} :::
+    {{8, BGEZAL_p, (fun op => BGEZAL op %% instruction_t)}} :::
+    {{9, BGTZ_p, (fun op => BGTZ op %% instruction_t)}} :::
+    {{10, BLEZ_p, (fun op => BLEZ op %% instruction_t)}} :::
+    {{11, BLTZ_p, (fun op => BLTZ op %% instruction_t)}} :::
+    {{12, BLTZAL_p, (fun op => BLTZAL op %% instruction_t)}} :::
+    {{13, BNE_p, (fun op => BNE op %% instruction_t)}} :::
+    {{14, DIV_p, (fun op => DIV op %% instruction_t)}} :::
+    {{15, DIVU_p, (fun op => DIVU op %% instruction_t)}} :::
+    {{16, J_p, (fun op => J op %% instruction_t)}} :::
+    {{17, JAL_p, (fun op => JAL op %% instruction_t)}} :::
+    {{18, JALR_p, (fun op => JALR op %% instruction_t)}} :::
+    {{19, JR_p, (fun op => JR op %% instruction_t)}} :::
+    {{20, LB_p, (fun op => LB op %% instruction_t)}} :::
+    {{21, LBU_p, (fun op => LBU op %% instruction_t)}} :::
+    {{22, LH_p, (fun op => LH op %% instruction_t)}} :::
+    {{23, LHU_p, (fun op => LHU op %% instruction_t)}} :::
+    {{24, LUI_p, (fun op => LUI op %% instruction_t)}} :::
+    {{25, LW_p, (fun op => LW op %% instruction_t)}} :::
+    {{26, MFHI_p, (fun op => MFHI op %% instruction_t)}} :::
+    {{27, MFLO_p, (fun op => MFLO op %% instruction_t)}} :::
+    {{28, MUL_p, (fun op => MUL op %% instruction_t)}} :::
+    {{29, MULT_p, (fun op => MULT op %% instruction_t)}} :::
+    {{30, MULTU_p, (fun op => MULTU op %% instruction_t)}} :::
+    {{31, NOR_p, (fun op => NOR op %% instruction_t)}} :::
+    {{32, OR_p, (fun op => OR op %% instruction_t)}} :::
+    {{33, ORI_p, (fun op => ORI op %% instruction_t)}} :::
+    {{34, SB_p, (fun op => SB op %% instruction_t)}} :::
+    {{35, SEB_p, (fun op => SEB op %% instruction_t)}} :::
+    {{36, SEH_p, (fun op => SEH op %% instruction_t)}} :::
+    {{37, SH_p, (fun op => SH op %% instruction_t)}} :::
+    {{38, SLL_p, (fun op => SLL op %% instruction_t)}} :::
+    {{39, SLLV_p, (fun op => SLLV op %% instruction_t)}} :::
+    {{40, SLT_p, (fun op => SLT op %% instruction_t)}} :::
+    {{41, SLTI_p, (fun op => SLTI op %% instruction_t)}} :::
+    {{42, SLTU_p, (fun op => SLTU op %% instruction_t)}} :::
+    {{43, SLTIU_p, (fun op => SLTIU op %% instruction_t)}} :::
+    {{44, SRA_p, (fun op => SRA op %% instruction_t)}} :::
+    {{45, SRAV_p, (fun op => SRAV op %% instruction_t)}} :::
+    {{46, SRL_p, (fun op => SRL op %% instruction_t)}} :::
+    {{47, SRLV_p, (fun op => SRLV op %% instruction_t)}} :::
+    {{48, SUB_p, (fun op => SUB op %% instruction_t)}} :::
+    {{49, SUBU_p, (fun op => SUBU op %% instruction_t)}} :::
+    {{50, SW_p, (fun op => SW op %% instruction_t)}} :::
+    {{51, XOR_p, (fun op => XOR op %% instruction_t)}} :::
+    {{52, XORI_p, (fun op => XORI op %% instruction_t)}} :::
+    ast_env_nil.
+  Hint Unfold instr_env: env_unfold_db.
 
-  Definition instr_grammar : grammar instruction_t :=
-    alts instr_grammar_list.
-  Definition instr_regexp := projT1 (split_grammar instr_grammar).
+  (* Definition instr_grammar_list : list (grammar instruction_t) :=  *)
+  (*   nil. *)
 
-  Definition parse_string (s: string) : list instr :=
+  Definition instr_bigrammar : wf_bigrammar instruction_t.
+    Time gen_ast_defs instr_env.
+    Time refine ((ast_bigrammar gt) @ (ast_map gt)
+               & (fun i =>
+                    match i with
+                      | ADD op => inv_case_some case0 op
+                      | ADDI op => inv_case_some case1 op
+                      | ADDIU op => inv_case_some case2 op
+                      | ADDU op => inv_case_some case3 op
+                      | AND op => inv_case_some case4 op
+                      | ANDI op => inv_case_some case5 op
+                      | BEQ op => inv_case_some case6 op
+                      | BGEZ op => inv_case_some case7 op
+                      | BGEZAL op => inv_case_some case8 op
+                      | BGTZ op => inv_case_some case9 op
+                      | BLEZ op => inv_case_some case10 op
+                      | BLTZ op => inv_case_some case11 op
+                      | BLTZAL op => inv_case_some case12 op
+                      | BNE op => inv_case_some case13 op
+                      | DIV op => inv_case_some case14 op
+                      | DIVU op => inv_case_some case15 op
+                      | J op => inv_case_some case16 op
+                      | JAL op => inv_case_some case17 op
+                      | JALR op => inv_case_some case18 op
+                      | JR op => inv_case_some case19 op
+                      | LB op => inv_case_some case20 op
+                      | LBU op => inv_case_some case21 op
+                      | LH op => inv_case_some case22 op
+                      | LHU op => inv_case_some case23 op
+                      | LUI op => inv_case_some case24 op
+                      | LW op => inv_case_some case25 op
+                      | MFHI op => inv_case_some case26 op
+                      | MFLO op => inv_case_some case27 op
+                      | MUL op => inv_case_some case28 op
+                      | MULT op => inv_case_some case29 op
+                      | MULTU op => inv_case_some case30 op
+                      | NOR op => inv_case_some case31 op
+                      | OR op => inv_case_some case32 op
+                      | ORI op => inv_case_some case33 op
+                      | SB op => inv_case_some case34 op
+                      | SEB op => inv_case_some case35 op
+                      | SEH op => inv_case_some case36 op
+                      | SH op => inv_case_some case37 op
+                      | SLL op => inv_case_some case38 op
+                      | SLLV op => inv_case_some case39 op
+                      | SLT op => inv_case_some case40 op
+                      | SLTI op => inv_case_some case41 op
+                      | SLTU op => inv_case_some case42 op
+                      | SLTIU op => inv_case_some case43 op
+                      | SRA op => inv_case_some case44 op
+                      | SRAV op => inv_case_some case45 op
+                      | SRL op => inv_case_some case46 op
+                      | SRLV op => inv_case_some case47 op
+                      | SUB op => inv_case_some case48 op
+                      | SUBU op => inv_case_some case49 op
+                      | SW op => inv_case_some case50 op
+                      | XOR op => inv_case_some case51 op
+                      | XORI op => inv_case_some case52 op
+                      (* | _ => None *)
+                    end)
+               & _). Time ci_invertible_tac.
+  Time Defined.
+
+  (** Starting constructing the mips parser *)
+
+  Require Import Parser.
+  Require Import Grammar.
+
+  Definition instr_grammar := 
+    bigrammar_to_grammar (proj1_sig instr_bigrammar).
+
+  Definition instr_regexp :=
+    projT1 (split_grammar instr_grammar).
+
+  Definition naive_parse_string (s: string) : list instr :=
     let cs := string_to_bool_list s in
     naive_parse instr_grammar cs.
 
   Definition test1 := 
-    match (parse_string "00001000000000000000000000000000") with
+    match (naive_parse_string "00001000000000000000000000000000") with
       | (J jop)::tl => 1
       | _ => 0
     end.
-  (* Eval compute in test1. *)
-
+  (* Time Eval compute in test1. *)
+  
   Definition word_explode (b:int32) : list bool :=
   let bs := Word.bits_of_Z 32 (Word.unsigned b) in
     (fix f (n:nat) : list bool := 
@@ -881,10 +1007,38 @@ To be organized.
       end
     ) 32%nat.
 
-  Definition parse_word (w:int32) : list instr :=
+  Definition naive_parse_word (w:int32) : list instr :=
     let cs := word_explode w in
     naive_parse instr_grammar cs.
-  
-(* End MIPS_PARSER. *)
 
-Log: 2 hours + 1 hour + 2 hours
+  Definition ini_decoder_state :=
+    initial_parser_state instr_grammar.
+
+  (* Preventing Coq from expanding the def of ini_decoder_state *)
+  Module Type ABSTRACT_INI_DECODER_STATE_SIG.
+    Parameter abs_ini_decoder_state :
+      instParserState instruction_t instr_regexp.
+    Parameter ini_decoder_state_eq :
+        abs_ini_decoder_state = ini_decoder_state.
+  End ABSTRACT_INI_DECODER_STATE_SIG.
+
+  Module ABSTRACT_INI_DECODER_STATE : ABSTRACT_INI_DECODER_STATE_SIG.
+    Definition abs_ini_decoder_state := ini_decoder_state.
+    Definition ini_decoder_state_eq := eq_refl ini_decoder_state.
+  End ABSTRACT_INI_DECODER_STATE.
+
+  Lemma byte_less_than_num_tokens (b:int8) :
+    (Z.to_nat (Word.intval _ b) < num_tokens)%nat.
+  Proof.
+    destruct b. destruct intrange. simpl. assert (256 = (Z.to_nat 256%Z))%nat. auto.
+    unfold num_tokens, ParserArg.MIPS_PARSER_ARG.num_tokens.
+    rewrite H. apply Z2Nat.inj_lt ; auto. omega.
+  Qed.
+
+  Definition ParseState_t := instParserState instruction_t instr_regexp.
+
+  Definition parse_byte (ps: ParseState_t) (byte:int8) :
+    ParseState_t * list instr :=
+    parse_token ps (byte_less_than_num_tokens byte).
+
+(* End MIPS_PARSER. *)

@@ -24,18 +24,6 @@ Set Implicit Arguments.
 Unset Automatic Introduction.
 
 
-Definition size1 := 0.
-Definition size2 := 1.
-Definition size3 := 2.
-Definition size4 := 3.
-Definition size8 := 7.
-Definition size16 := 15.
-Definition size32 := 31.
-Definition size64 := 63.
-Definition size79 := 78.
-Definition size80 := 79.
-Definition int n := Word.int n.
-
 Module Type MACHINE_SIG.
   (** We abstract over locations which include things like registers, flags, the pc, 
       segment registers, etc.  Our only assumption is that updates to distinct locations

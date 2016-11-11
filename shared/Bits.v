@@ -3842,16 +3842,34 @@ Implicit Arguments bool_to_int [wordsize_minus_one].
 Implicit Arguments neg [wordsize_minus_one].
 End Word.
 
-Definition int1 := Word.int 0.
-Definition int2 := Word.int 1.
-Definition int3 := Word.int 2.
-Definition int4 := Word.int 3.
-Definition int8 := Word.int 7.  
-Definition int11 := Word.int 10.
-Definition int16 := Word.int 15.
-Definition int32 := Word.int 31. 
-Definition int64 := Word.int 63.
-Definition int80 := Word.int 79.
+Definition size1:nat := 0.
+Definition size2:nat := 1.
+Definition size3:nat := 2.
+Definition size4:nat := 3.
+Definition size5:nat := 4.
+Definition size8:nat := 7.
+Definition size11:nat := 10.
+Definition size16:nat := 15.
+Definition size26:nat := 25.
+Definition size32:nat := 31.
+Definition size64:nat := 63.
+Definition size79:nat := 78.
+Definition size80:nat := 79.
+
+Definition int1 := Word.int size1.
+Definition int2 := Word.int size2.
+Definition int3 := Word.int size3.
+Definition int4 := Word.int size4.
+Definition int5 := Word.int size5.
+Definition int8 := Word.int size8.  
+Definition int11 := Word.int size11.
+Definition int16 := Word.int size16.
+Definition int26 := Word.int size26.
+Definition int32 := Word.int size32. 
+Definition int64 := Word.int size64.
+Definition int80 := Word.int size80.
+
+Definition int n := Word.int n.
 
 (** * Additional lemmas *)
 

@@ -67,26 +67,36 @@ Module MIPS_PARSER_ARG.
   Inductive tipe : Set := 
   | Int_t
   | Register_t
-  | Shamt5_t
-  | Imm16_t
-  | Target26_t
+  | BitVector_t : nat -> tipe (* a bit vector of a certain width *)
+  | Ioperand_t
+  | Joperand_t
+  | Reg2_operand_t
+  | Reg3_operand_t
+  | Reg2sh_operand_t
+  | BZ_operand_t
   | Instruction_t
   | UPair_t: tipe -> tipe -> tipe. 
 
   Definition tipe_eq : forall (t1 t2:tipe), {t1=t2} + {t1<>t2}.
     intros ; decide equality.
+    apply eq_nat_dec.
   Defined.
 
-  Definition int5 := Word.int 4.
-  Definition int26 := Word.int 25.
+  Definition Shamt5_t := BitVector_t size5.
+  Definition Imm16_t := BitVector_t size16.
+  Definition Target26_t := BitVector_t size26.
 
   Fixpoint tipe_m (t:tipe) := 
     match t with 
       | Int_t => Z
       | Register_t => register
-      | Shamt5_t => int5
-      | Imm16_t => int16
-      | Target26_t => int26
+      | BitVector_t n => Word.int n
+      | Ioperand_t => ioperand
+      | Joperand_t => joperand
+      | Reg2_operand_t => reg2_operand
+      | Reg3_operand_t => reg3_operand
+      | Reg2sh_operand_t => reg2sh_operand
+      | BZ_operand_t => bz_operand
       | Instruction_t => instr
       | UPair_t t1 t2 => (tipe_m t1 * (tipe_m t2))%type
     end.

@@ -144,10 +144,6 @@ Local Open Scope Z_scope.
   Definition target_p := (field 26) @ (@Word.repr 25 : _ -> interp target26_t).
   Definition shamt_p := (field 5) @ (@Word.repr 4 : _ -> interp shamt5_t).
 
-  Definition bitsmatch (s:string): grammar Unit_t := 
-    (bits s) @ (fun _ => tt: interp Unit_t ).
-  Notation "! s" := (bitsmatch s) (at level 60).
-
   Definition cfcode_p (s:string) : grammar Unit_t :=
     ((bits s)@(fun _ => tt %%Unit_t)).
 
