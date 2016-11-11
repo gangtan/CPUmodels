@@ -420,7 +420,7 @@ Local Open Scope Z_scope.
     in_bigrammar_rng (` (bits str)) (tuples_of_string str).
   Proof. generalize in_bits_intro; localsimpl. Qed.
   Hint Resolve bits_rng: ibr_rng_db.
- 
+
   Program Definition bitsmatch (s:string): wf_bigrammar Unit_t := 
     (bits s) @ (fun _ => tt:[|Unit_t|])
        & (fun _ => Some (tuples_of_string s)) & _.
@@ -617,15 +617,6 @@ Local Open Scope Z_scope.
   Definition imm_p: wf_bigrammar imm16_t := field_intn size16.
   Definition target_p: wf_bigrammar target26_t := field_intn size26.
   Definition shamt_p: wf_bigrammar shamt5_t := field_intn size5.
-
-  Program Definition bitsmatch (s:string): wf_bigrammar Unit_t := 
-    (bits s) @ (fun _ => tt:[|Unit_t|])
-       & (fun _ => Some (tuples_of_string s)) & _.
-  Notation "! s" := (bitsmatch s) (at level 60).
-
-  (* replace this with bitsmatch *)
-  (* Definition cfcode_p (s:string) : grammar Unit_t := *)
-  (*   ((bits s)@(fun _ => tt %%Unit_t)). *)
 
   (*Generic Instruction Format Parsers*)
 
