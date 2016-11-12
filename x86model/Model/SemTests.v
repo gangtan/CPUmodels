@@ -439,6 +439,46 @@ Module Test_SHLD.
        repr 65408.
   Proof. reflexivity. Qed.
 
+  Definition i3:instr := SHLD (Reg_op ECX) EBX (Imm_ri (repr 0)).
+
+  Goal gpr (run zero zero i3) ECX = repr 0.
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero zero i3) OF = repr 0.
+  Proof. reflexivity. Qed.
+
+  Goal flag (run zero zero i3) SF = repr 0.
+  Proof. reflexivity. Qed.
+
+  Definition i4:instr := SHLD (Reg_op EBX) EBX (Imm_ri (repr 1)).
+
+  (* Compute (instr_to_rtl no_prefix i4). *)
+  Check (run zero (repr 2147483749) i4).
+
+  Definition run1_i4: @RTL_ans unit * rtl_state.
+    let u := eval compute in (run zero (repr 2147483749) i4) in exact u.
+  Defined.
+
+  Goal intval 31 (gpr run1_i4 EBX) = intval 31 (repr 203).
+  Proof. reflexivity. Qed.
+
+  Goal flag run1_i4 CF = repr 1 /\ flag run1_i4 PF = repr 0 /\ 
+       flag run1_i4 ZF = repr 0 /\ flag run1_i4 SF = repr 0 /\
+       flag run1_i4 OF = repr 1.
+  Proof. compute. auto. Qed.
+
+  Definition run2_i4: @RTL_ans unit * rtl_state.
+    let u := eval compute in (run zero (repr 1073741824) i4) in exact u.
+  Defined.
+
+  Goal intval 31 (gpr run2_i4 EBX) = intval 31 (repr 2147483648).
+  Proof. reflexivity. Qed.
+
+  Goal flag run2_i4 CF = repr 0 /\ flag run2_i4 PF = repr 1 /\ 
+       flag run2_i4 ZF = repr 0 /\ flag run2_i4 SF = repr 1 /\
+       flag run2_i4 OF = repr 1.
+  Proof. compute. auto. Qed.
+
 End Test_SHLD.
 
 Module Test_SHRD.

@@ -1949,247 +1949,171 @@ Definition conv_SAHF: Conv unit :=
     set_flag CF cf;;
     set seg p3 op1.
 
+  Definition size65 := 64.
+
   Definition conv_SHLD pre (op1: operand) (r: register) ri :=
     let load := load_op pre true in
     let set := set_op pre true in
     let seg := get_segment_op pre DS op1 in
-      count <- (match ri with
-              | Reg_ri r => iload_op8 seg (Reg_op r) 
-              | Imm_ri i => load_int i
-             end);
+      count <- match ri with
+               | Reg_ri r => iload_op8 seg (Reg_op r)
+               | Imm_ri i => load_int i
+               end;
       thirtytwo <- load_Z _ 32;
       count <- arith modu_op count thirtytwo;
-      (* These aren't actually always undef'd, but they're sqirrely
-         so for now I'll just overapproximate *)
-      undef_flag CF;;
-      undef_flag OF;;
-      undef_flag SF;;
-      undef_flag ZF;;
-      undef_flag PF;;
-      undef_flag AF;;
+      opsize <- match (op_override pre) with
+                | true => load_Z size8 16
+                | false => load_Z size8 32
+                end;
+
+      (* Spec: If the count operand is 0, the flags are not *)
+      (*       affected. Also, no registers are affected. *)
+      zero <- load_Z size8 0;
+      count_not_zero <- test_neq count zero;
+
+      (* Spec: If the count is greater than the operand size, the *)
+      (*       result in the destination operand is undefined. *)
+      count_gt_opsize <- test ltu_op opsize count;
+
       p1 <- load seg op1;
       p2 <- load seg (Reg_op r);
-      shiftup <- (match (op_override pre) with
-                    | true => load_Z 63 16
-                    | false => load_Z 63 32
-                  end);
-      wide_p1 <- cast_u 63 p1;
+      shiftup <- cast_u size65 opsize;
+      wide_p1 <- cast_u size65 p1;
       wide_p1 <- arith shl_op wide_p1 shiftup;
-      wide_p2 <- cast_u 63 p2;
+      wide_p2 <- cast_u size65 p2;
       combined <- arith or_op wide_p1 wide_p2;
-      wide_count <- cast_u 63 count;
+      wide_count <- cast_u size65 count;
       shifted <- arith shl_op combined wide_count;
       shifted <- arith shru_op shifted shiftup;
-      newdest0 <- cast_u _ shifted;
-      maxcount <- (match (op_override pre) with
-                    | true => load_Z size8 16
-                    | false => load_Z size8 32
-                  end);
-      guard1 <- test ltu_op maxcount count;
-      guard2 <- test eq_op maxcount count;
-      guard <- arith or_op guard1 guard2;
-      newdest1 <- @choose _;
-      newdest <- if_exp guard newdest1 newdest0;
-      set seg newdest op1.
+      res <- cast_u _ shifted;
+
+      shifted_out <- arith shru_op shifted shiftup;
+      cf <- cast_u size1 shifted_out;
+
+      (* Spec: For a 1-bit shift, the OF flag is set if a sign change *)
+      (*       occurred; otherwise, it is cleared. For shifts greater than 1 *)
+      (*       bit, the OF flag is undefined. *)
+      one <- load_Z size8 1;
+      count_is_one <- test eq_op count one;
+      (* b0 and b1 are the sign bits of p1 and res, respectively *)
+      pzero <- load_Z _ 0;
+      b0 <- test lt_op p1 pzero;
+      b1 <- test lt_op res pzero;
+      of <- arith xor_op b0 b1;
+ 
+      zf <- test eq_op res pzero;
+
+      pf <- compute_parity res;
+
+      undef_cf <- @choose size1;
+      new_cf <- if_exp count_gt_opsize undef_cf cf;
+      if_set_loc count_not_zero new_cf (flag_loc CF);;
+
+      undef_of <- @choose size1;
+      new_of <- if_exp count_is_one of undef_of;
+      if_set_loc count_not_zero new_of (flag_loc OF);;
+
+      undef_sf <- @choose size1;
+      new_sf <- if_exp count_gt_opsize undef_sf b1;
+      if_set_loc count_not_zero new_sf (flag_loc SF);;
+
+      undef_zf <- @choose size1;
+      new_zf <- if_exp count_gt_opsize undef_zf zf;
+      if_set_loc count_not_zero new_zf (flag_loc ZF);;
+
+      undef_pf <- @choose size1;
+      new_pf <- if_exp count_gt_opsize undef_pf pf;
+      if_set_loc count_not_zero new_pf (flag_loc PF);;
+
+      undef_af <- @choose size1;
+      if_set_loc count_not_zero undef_af (flag_loc AF);;
+
+      (* important this goes last *)
+      undef_res <- @choose _;
+      newres <- if_exp count_gt_opsize undef_res res;
+      set seg newres op1.
 
   Definition conv_SHRD pre (op1: operand) (r: register) ri :=
     let load := load_op pre true in
     let set := set_op pre true in
     let seg := get_segment_op pre DS op1 in
-      count <- (match ri with
-              | Reg_ri r => iload_op8 seg (Reg_op r) 
-              | Imm_ri i => load_int i
-             end);
+      count <- match ri with
+               | Reg_ri r => iload_op8 seg (Reg_op r)
+               | Imm_ri i => load_int i
+               end;
       thirtytwo <- load_Z _ 32;
       count <- arith modu_op count thirtytwo;
-      (* These aren't actually always undef'd, but they're sqirrely
-         so for now I'll just overapproximate *)
-      undef_flag CF;;
-      undef_flag OF;;
-      undef_flag SF;;
-      undef_flag ZF;;
-      undef_flag PF;;
-      undef_flag AF;;
+      opsize <- match (op_override pre) with
+                | true => load_Z size8 16
+                | false => load_Z size8 32
+                end;
+
+      (* Spec: If the count operand is 0, the flags are not *)
+      (*        affected. Also, no registers are affected. *)
+      zero <- load_Z size8 0;
+      count_not_zero <- test_neq count zero;
+
+      (* Spec: If the count is greater than the operand size, the *)
+      (*        result in the destination operand is undefined. *)
+      count_gt_opsize <- test ltu_op opsize count;
+
       p1 <- load seg op1;
       p2 <- load seg (Reg_op r);
-      wide_p1 <- cast_u 63 p1;
-      shiftup <- (match (op_override pre) with
-                    | true => load_Z 63 16
-                    | false => load_Z 63 32
-                  end);
-      wide_p2 <- cast_u 63 p2;
+      wide_p1 <- cast_u size65 p1;
+      shiftup <- cast_u size65 opsize;
+      wide_p2 <- cast_u size65 p2;
       wide_p2 <- arith shl_op wide_p2 shiftup;
       combined <- arith or_op wide_p1 wide_p2;
-      wide_count <- cast_u 63 count;
-      shifted <- arith shru_op combined wide_count;
-      newdest0 <- cast_u _ shifted;
-      maxcount <- (match (op_override pre) with
-                    | true => load_Z size8 16
-                    | false => load_Z size8 32
-                  end);
-      guard1 <- test ltu_op maxcount count;
-      guard2 <- test eq_op maxcount count;
-      guard <- arith or_op guard1 guard2;
-      newdest1 <- @choose _;
-      newdest <- if_exp guard newdest1 newdest0;
-      set seg newdest op1.
+      (* add one more bit at the end so that we can compute the cf bit *)
+      one <- load_Z size65 1;
+      combined' <- arith shl_op combined one;
+      wide_count <- cast_u size65 count;
+      shifted <- arith shru_op combined' wide_count;
+      cf <- cast_u size1 shifted;
+      res' <- arith shru_op shifted one;
+      res <- cast_u _ res';
 
-  (* Definition size65 := 64. *)
+      (* Spec: For a 1-bit shift, the OF flag is set if a sign change *)
+      (*        occurred; otherwise, it is cleared. For shifts greater than 1 *)
+      (*        bit, the OF flag is undefined. *)
+      one_8 <- load_Z size8 1;
+      count_isone <- test eq_op count one_8;
+      (* b0 and b1 are the sign bits of p1 and res, respectively *)
+      pzero <- load_Z _ 0;
+      b0 <- test lt_op p1 pzero;
+      b1 <- test lt_op res pzero;
+      of <- arith xor_op b0 b1;
 
-  (* Definition conv_SHLD pre (op1: operand) (r: register) ri := *)
-  (*   let load := load_op pre true in *)
-  (*   let set := set_op pre true in *)
-  (*   let seg := get_segment_op pre DS op1 in *)
-  (*     count <- match ri with *)
-  (*              | Reg_ri r => iload_op8 seg (Reg_op r)  *)
-  (*              | Imm_ri i => load_int i *)
-  (*              end; *)
-  (*     thirtytwo <- load_Z _ 32; *)
-  (*     count <- arith modu_op count thirtytwo; *)
-  (*     opsize <- match (op_override pre) with *)
-  (*               | true => load_Z size8 16 *)
-  (*               | false => load_Z size8 32 *)
-  (*               end; *)
+      zf <- test eq_op res pzero;
 
-  (*     (* Spec: If the count operand is 0, the flags are not *)
-  (*        affected. Also, no registers are affected. *) *)
-  (*     zero <- load_Z size8 0; *)
-  (*     count_notzero <- test_neq count zero; *)
+      pf <- compute_parity res;
 
-  (*     (* Spec: If the count is greater than the operand size, the *)
-  (*        result in the destination operand is undefined. *) *)
-  (*     count_gt_opsize <- test ltu_op opsize count; *)
-  (*     undef_cf <- @choose size1; *)
-  (*     undef_of <- @choose size1; *)
-  (*     undef_sf <- @choose size1; *)
-  (*     undef_zf <- @choose size1; *)
-  (*     undef_pf <- @choose size1; *)
-  (*     undef_af <- @choose size1; *)
-  (*     undef_res <- @choose _; *)
+      undef_cf <- @choose size1;
+      new_cf <- if_exp count_gt_opsize undef_cf cf;
+      if_set_loc count_not_zero new_cf (flag_loc CF);;
 
-  (*     p1 <- load seg op1; *)
-  (*     p2 <- load seg (Reg_op r); *)
-  (*     shiftup <- cast_u size65 opsize; *)
-  (*     wide_p1 <- cast_u size65 p1; *)
-  (*     wide_p1 <- arith shl_op wide_p1 shiftup; *)
-  (*     wide_p2 <- cast_u size65 p2; *)
-  (*     combined <- arith or_op wide_p1 wide_p2; *)
-  (*     wide_count <- cast_u size65 count; *)
-  (*     shifted <- arith shl_op combined wide_count; *)
-  (*     shifted <- arith shru_op shifted shiftup; *)
-  (*     res <- cast_u _ shifted; *)
+      undef_of <- @choose size1;
+      new_of <- if_exp count_isone of undef_of;
+      if_set_loc count_not_zero new_of (flag_loc OF);;
 
-  (*     shifted_out <- arith shru_op shifted shiftup; *)
-  (*     cf <- cast_u _ shifted_out; *)
-  (*     new_cf <- if_exp count_gt_opsize undef_cf cf; *)
-
-  (*     (* Spec: For a 1-bit shift, the OF flag is set if a sign change *)
-  (*        occurred; otherwise, it is cleared. For shifts greater than 1 *)
-  (*        bit, the OF flag is undefined. *) *)
-  (*     one <- load_Z size8 1; *)
-  (*     count_isone <- test eq_op count one; *)
-  (*     (* b0 and b1 are the sign bits of p1 and res, respectively *) *)
-  (*     pzero <- load_Z _ 0; *)
-  (*     b0 <- test lt_op p1 pzero; *)
-  (*     b1 <- test lt_op res pzero; *)
-  (*     of <- arith xor_op b0 b1; *)
-  (*     new_of <- if_exp count_isone of undef_of; *)
-
-  (*     new_sf <- if_exp count_gt_opsize undef_sf b1; *)
+      undef_sf <- @choose size1;
+      new_sf <- if_exp count_gt_opsize undef_sf b1;
+      if_set_loc count_not_zero new_sf (flag_loc SF);;
  
-  (*     zf <- test eq_op res pzero; *)
-  (*     new_zf <- if_exp count_gt_opsize undef_zf zf; *)
+      undef_zf <- @choose size1;
+      new_zf <- if_exp count_gt_opsize undef_zf zf;
+      if_set_loc count_not_zero new_zf (flag_loc ZF);;
 
-  (*     pf <- compute_parity res; *)
-  (*     new_pf <- if_exp count_gt_opsize undef_pf pf; *)
+      undef_pf <- @choose size1;
+      new_pf <- if_exp count_gt_opsize undef_pf pf;
+      if_set_loc count_not_zero new_pf (flag_loc PF);;
 
-  (*     newres <- if_exp count_gt_opsize undef_res res; *)
-  (*     set seg newres op1;; *)
-  (*     if_set_loc count_notzero new_cf (flag_loc CF);; *)
-  (*     if_set_loc count_notzero new_of (flag_loc OF);; *)
-  (*     if_set_loc count_notzero new_sf (flag_loc SF);; *)
-  (*     if_set_loc count_notzero new_zf (flag_loc ZF);; *)
-  (*     if_set_loc count_notzero new_pf (flag_loc PF);; *)
-  (*     if_set_loc count_notzero undef_af (flag_loc AF). *)
+      undef_af <- @choose size1;
+      if_set_loc count_not_zero undef_af (flag_loc AF);;
 
-
-  (* Definition conv_SHRD pre (op1: operand) (r: register) ri := *)
-  (*   let load := load_op pre true in *)
-  (*   let set := set_op pre true in *)
-  (*   let seg := get_segment_op pre DS op1 in *)
-  (*     count <- match ri with *)
-  (*              | Reg_ri r => iload_op8 seg (Reg_op r)  *)
-  (*              | Imm_ri i => load_int i *)
-  (*              end; *)
-  (*     thirtytwo <- load_Z _ 32; *)
-  (*     count <- arith modu_op count thirtytwo; *)
-  (*     opsize <- match (op_override pre) with *)
-  (*               | true => load_Z size8 16 *)
-  (*               | false => load_Z size8 32 *)
-  (*               end; *)
-
-  (*     (* Spec: If the count operand is 0, the flags are not *)
-  (*        affected. Also, no registers are affected. *) *)
-  (*     zero <- load_Z size8 0; *)
-  (*     count_notzero <- test_neq count zero; *)
-
-  (*     (* Spec: If the count is greater than the operand size, the *)
-  (*        result in the destination operand is undefined. *) *)
-  (*     count_gt_opsize <- test ltu_op opsize count; *)
-  (*     undef_cf <- @choose size1; *)
-  (*     undef_of <- @choose size1; *)
-  (*     undef_sf <- @choose size1; *)
-  (*     undef_zf <- @choose size1; *)
-  (*     undef_pf <- @choose size1; *)
-  (*     undef_af <- @choose size1; *)
-  (*     undef_res <- @choose _; *)
-
-  (*     p1 <- load seg op1; *)
-  (*     p2 <- load seg (Reg_op r); *)
-  (*     wide_p1 <- cast_u size65 p1; *)
-  (*     shiftup <- cast_u size65 opsize; *)
-  (*     wide_p2 <- cast_u size65 p2; *)
-  (*     wide_p2 <- arith shl_op wide_p2 shiftup; *)
-  (*     combined <- arith or_op wide_p1 wide_p2; *)
-  (*     (* add one more bit at the end so that we can compute the cf bit *) *)
-  (*     one <- load_Z size65 1; *)
-  (*     combined' <- arith shl_op combined one; *)
-  (*     wide_count <- cast_u size65 count; *)
-  (*     shifted <- arith shru_op combined' wide_count; *)
-  (*     cf <- cast_u size1 shifted; *)
-  (*     res' <- arith shru_op shifted one; *)
-  (*     res <- cast_u _ res'; *)
-
-  (*     new_cf <- if_exp count_gt_opsize undef_cf cf; *)
-
-  (*     (* Spec: For a 1-bit shift, the OF flag is set if a sign change *)
-  (*        occurred; otherwise, it is cleared. For shifts greater than 1 *)
-  (*        bit, the OF flag is undefined. *) *)
-  (*     one_8 <- load_Z size8 1; *)
-  (*     count_isone <- test eq_op count one_8; *)
-  (*     (* b0 and b1 are the sign bits of p1 and res, respectively *) *)
-  (*     pzero <- load_Z _ 0; *)
-  (*     b0 <- test lt_op p1 pzero; *)
-  (*     b1 <- test lt_op res pzero; *)
-  (*     of <- arith xor_op b0 b1; *)
-  (*     new_of <- if_exp count_isone of undef_of; *)
-
-  (*     new_sf <- if_exp count_gt_opsize undef_sf b1; *)
- 
-  (*     zf <- test eq_op res pzero; *)
-  (*     new_zf <- if_exp count_gt_opsize undef_zf zf; *)
-
-  (*     pf <- compute_parity res; *)
-  (*     new_pf <- if_exp count_gt_opsize undef_pf pf; *)
-
-  (*     newres <- if_exp count_gt_opsize undef_res res; *)
-  (*     set seg newres op1;; *)
-  (*     if_set_loc count_notzero new_cf (flag_loc CF);; *)
-  (*     if_set_loc count_notzero new_of (flag_loc OF);; *)
-  (*     if_set_loc count_notzero new_sf (flag_loc SF);; *)
-  (*     if_set_loc count_notzero new_zf (flag_loc ZF);; *)
-  (*     if_set_loc count_notzero new_pf (flag_loc PF);; *)
-  (*     if_set_loc count_notzero undef_af (flag_loc AF). *)
+      undef_res <- @choose _;
+      newres <- if_exp count_gt_opsize undef_res res;
+      set seg newres op1.
 
   (************************)
   (* Binary Coded Dec Ops *)

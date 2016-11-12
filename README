@@ -27,3 +27,42 @@ x86model/semantics_trace
 MIPSmodel/
 	A Coq formalization of a MIPS processor
 
+------------------------------------------------------------
+
+Installation:
+
+* How to build the CPU models?
+
+You will need Coq 8.5pl2.
+
+- install the ocaml package manager opam
+- opam repo add coq-released https://coq.inria.fr/opam/released
+- opam install coq-flocq-2.5.1
+- For x86, go to x86model and type make
+- For MIPS, go to MIPSmodel and type make
+ 
+* How to build the validation tools? (sorry, haven't checked this for a while;
+  it may not working)
+
+First, build the x86 CPU model. Then, you will need OCaml 3.12 (or a more
+recent verison), and pin (http://www.pintool.org/). Please go to the
+x86model/semantics_trace directory and for further instructions.
+
+* How to build the RockSalt C driver? (sorry, haven't checked this for a while;
+  it may not working)
+
+You will need to install the developer version of native client first. Then,
+replace the native_client/src/trustaed/validator_x86/ncval.c file with ours,
+make sure the include for tables.h and driver.h are properly set, and build
+native client as usual. The resulting ncval binary can run RockSalt by
+passing the command line ragument --dfa.
+
+------------------------------------------------------------
+
+Todo list:
+
+- To be fixed: The Rocksalt directory is broken after changes to
+  x86Semantics.v
+
+- To be fixed: in x86Semantics.v, the flags are set
+  nondeterministically in SHL/SHR, although the manual doesn't say so
