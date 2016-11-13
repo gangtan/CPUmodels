@@ -13,9 +13,9 @@
 Require Import Coq.ZArith.ZArith.
 Require Coq.Strings.String.
 
-Require Import Monad.
-Require Import Maps.
-Require Import Bits.
+Require Import Shared.Monad.
+Require Import Shared.Maps.
+Require Import Shared.Bits.
 
 Require Import Flocq.Appli.Fappli_IEEE_bits.
 Require Import Flocq.Appli.Fappli_IEEE.
@@ -23,6 +23,7 @@ Require Import Flocq.Appli.Fappli_IEEE.
 Set Implicit Arguments.
 Unset Automatic Introduction.
 
+Definition int n := Word.int n.
 
 Module Type MACHINE_SIG.
   (** We abstract over locations which include things like registers, flags, the pc, 
@@ -187,7 +188,7 @@ Module RTL(M : MACHINE_SIG).
 
   Definition update_ps_env s (ps:pseudo_reg s) (v:int s) (env:pseudo_env) : pseudo_env.
     intros s ps v env s' ps'.
-    destruct (eq_nat_dec s s'). subst. destruct (eq_pseudo_reg ps ps'). subst. apply v.
+    destruct (Nat.eq_dec s s'). subst. destruct (eq_pseudo_reg ps ps'). subst. apply v.
     apply (env s' ps').
     apply (env s' ps').
   Defined.

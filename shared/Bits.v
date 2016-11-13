@@ -3869,8 +3869,6 @@ Definition int32 := Word.int size32.
 Definition int64 := Word.int size64.
 Definition int80 := Word.int size80.
 
-Definition int n := Word.int n.
-
 (** * Additional lemmas *)
 
 Lemma min_signed_mono n1 n2:
