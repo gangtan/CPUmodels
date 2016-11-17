@@ -17,9 +17,9 @@ Unset Automatic Introduction.
 Set Implicit Arguments.
 
   Require Import X86Syntax.
-  Require ParserArg.
+  Require X86Model.ParserArg.
   Import ParserArg.X86_PARSER_ARG.
-  Require Import BiGrammar.
+  Require Import X86Model.BiGrammar.
   Require Import DecodeBi_ins.
 
   Definition lock_p : wf_bigrammar lock_or_rep_t. 
@@ -537,8 +537,8 @@ Set Implicit Arguments.
                       | I_LSS op1 op2 => inv_case_some case27 (op1,op2)
                       | I_LTR op1 => inv_case_some case28 op1
                     end)
-               & _). ci_invertible_tac.
-  Defined.
+               & _). Time ci_invertible_tac.
+  Time Defined.
 
   Definition i_instr3_env : AST_Env i_instr3_t := 
     {{0, MOVCR_p, (fun v => match v with (d,(cr,r)) => I_MOVCR d cr r

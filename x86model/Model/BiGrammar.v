@@ -960,7 +960,7 @@ Fixpoint ast_bigrammar {rt tt} (gt:gr_tree rt tt):
     g1 |+| g2
   end.
 
-(** Combining bigrammars in a bigrammar tree using Alt. *)
+(** Combining the map functions in a bigrammar tree into a single map. *)
 Fixpoint ast_map {rt tt} (gt:gr_tree rt tt): [|ast_type tt|] -> [|rt|] :=
   match gt in gr_tree _ tt' return [|ast_type tt'|] -> [|rt|] with
   | GLeaf _ id g m => m
@@ -1063,6 +1063,7 @@ Ltac gen_gr_tree ast_env :=
       pose (gt:=g); clear ae
     end.
 
+(** Generate a tmember proof for each possible index *)
 Ltac gen_tm_cases gt len := 
   let rec gen_tm_cases_aux i := 
     let eq_len := (eval compute in (beq_nat i len)) in
