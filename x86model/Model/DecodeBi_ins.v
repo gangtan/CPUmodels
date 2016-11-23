@@ -23,9 +23,9 @@ Set Implicit Arguments.
      Module X86_BASE_PARSER := Parser.Parser(X86_PARSER_ARG).
   *)
   Require Import X86Syntax.
-  Require ParserArg.
+  Require X86Model.ParserArg.
   Import ParserArg.X86_PARSER_ARG.
-  Require Import BiGrammar.
+  Require Import X86Model.BiGrammar.
 
   Definition int_t := User_t Int_t.
   Definition register_t := User_t Register_t.
@@ -671,6 +671,7 @@ Set Implicit Arguments.
     (bitsmatch s $ p) @ (@snd _ _)
                       & (fun v => Some (tt, v)) & _.
   Infix "$$" := bitsleft (right associativity, at level 70).
+  Extraction Implicit bitsleft [t].
 
   Lemma in_bitsleft_intro: forall t (g: wf_bigrammar t) str s1 s2 v1 v2,
     in_bigrammar (` (bits str)) s1 v1 -> in_bigrammar (` g) s2 v2
@@ -795,7 +796,7 @@ Set Implicit Arguments.
   Qed.
   Hint Resolve reg_rng: ibr_rng_db.
 
-  Definition int_n : forall n, wf_bigrammar (User_t (BitVector_t n)).
+  Definition int_n : forall n, wf_bigrammar (bitvector_t n).
     intro;
     refine ((field (S n)) @ (@Word.repr n : _ ->  [|bitvector_t n|])
               & fun b => Some (@Word.unsigned n b) & _);
@@ -826,9 +827,91 @@ Set Implicit Arguments.
   Proof. unfold in_bigrammar_rng. intros; eexists; eapply in_int_n_intro. Qed.
   Hint Extern 1 (in_bigrammar_rng (` (int_n _)) _) => apply int_n_rng : ibr_rng_db.
 
+(* to be organized *)
+
+  Definition sig_cat (m:nat) (sig1 sig2: Z -> bool) : Z -> bool := 
+    fun i:Z => if (zlt i (Z.of_nat m)) then sig2 i
+               else sig1 (i-(Z.of_nat m)-1)%Z.
+
+  Definition sig_split (m:nat) (sig: Z -> bool) : (Z -> bool)*(Z -> bool) := 
+    let sig1 := fun i => sig (i+(Z.of_nat m)+1)%Z in
+    let sig2 := fun i => if zlt i (Z.of_nat m) then sig i else false in
+    (sig1,sig2).
+
+  Lemma sig_split_inv1 n m sig1 sig2:
+    Word.sig_eq_below n (fst (sig_split m (sig_cat m sig1 sig2))) sig1.
+  Proof. unfold Word.sig_eq_below, sig_split, sig_cat; simpl; intros.
+    destruct_head; try omega.
+    assert (H1:(z+(Z.of_nat m)+1-(Z.of_nat m)-1=z)%Z) by omega.
+    rewrite H1. trivial.
+  Qed.
+
+  Lemma sig_split_inv2 m sig1 sig2:
+    Word.sig_eq_below m (snd (sig_split m (sig_cat m sig1 sig2))) sig2.
+  Proof. unfold Word.sig_eq_below, sig_split, sig_cat; simpl; intros.
+    destruct_head; [trivial | omega].
+  Qed.    
+
+  Lemma sig_cat_inv m sig:
+    Word.sig_eq (sig_cat m (fst (sig_split m sig)) (snd (sig_split m sig)))
+                sig.
+  Proof. unfold Word.sig_eq, sig_split, sig_cat, pointwise_relation; 
+    simpl; intros.
+    assert (H1:(a-(Z.of_nat m)-1+(Z.of_nat m)+1=a)%Z) by omega.
+    rewrite H1.
+    destruct_head; trivial.
+  Qed.
+
+  Definition intn_cat n m (b1:Word.int n) (b2:Word.int m) : Word.int (n+m+1) :=
+    let sig1 := sig_of_intn b1 in
+    let sig2 := sig_of_intn b2 in
+    intn_of_sig (n+m+1) (sig_cat m sig1 sig2).
+
+  Definition intn_split n m (b:Word.int (n+m+1)): Word.int n * Word.int m :=
+    let sig:= sig_of_intn b in
+    let (sig1,sig2) := sig_split m sig in
+    (intn_of_sig n sig1, intn_of_sig m sig2).
+
+  (* Lemma intn_split_inv1 n m (b1:Word.int n) (b2:Word.int m): *)
+  (*   fst (intn_split n m (intn_cat b1 b2)) = b1. *)
+  (* Proof. unfold intn_split, intn_cat; intros. *)
+ 
+  Definition concat_little_endian n m
+             (p1: wf_bigrammar (bitvector_t n))
+             (p2: wf_bigrammar (bitvector_t m)) :
+    wf_bigrammar (bitvector_t (n+m+1)).
+    intros.
+    refine ((p1 $ p2)
+              @ (fun v: [|pair_t (bitvector_t n) (bitvector_t m)|] =>
+                   let b1 := Word.repr (Word.unsigned (fst v)) in
+                   let b2 := Word.repr (Word.unsigned (snd v)) in
+                   Word.add (Word.shl b2 (Word.repr (Z.of_nat n))) b1) :
+                  _ -> [|bitvector_t (n+m+1)|]
+              & (fun u =>
+                   let b2 := Word.repr 
+                              (Word.unsigned
+                                 (Word.shru u (Word.repr (Z.of_nat n)))) in
+                   let b1 := Word.repr (Word.unsigned u) in
+                   Some (b1,b2))
+              & _).
+  Admitted.
+
+(* use for the b equivalence                    *)
+(* Theorem zero_ext_shru_shl: *)
+(*   forall x,  *)
+(*   let y := repr (Z_of_nat wordsize - n) in *)
+(*   zero_ext n x = shru (shl x y) y. *)
+
   Definition byte : wf_bigrammar byte_t := int_n 7.
-  Definition halfword : wf_bigrammar half_t := int_n 15.
-  Definition word : wf_bigrammar word_t := int_n 31.
+
+  Definition halfword : wf_bigrammar half_t := 
+    concat_little_endian byte byte.
+
+  Definition word : wf_bigrammar word_t := 
+    concat_little_endian (concat_little_endian halfword byte) byte.
+
+  (* Definition halfword : wf_bigrammar half_t := int_n 15. *)
+  (* Definition word : wf_bigrammar word_t := int_n 31. *)
 
   Hint Extern 1 (in_bigrammar_rng (` byte) _) => apply int_n_rng.
   Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
@@ -906,7 +989,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold test_env: env_unfold_db.
 
-  Definition test_p : wf_bigrammar control_register_t.
+  Definition test_b : wf_bigrammar control_register_t.
     Time gen_ast_defs test_env.
     Time refine((ast_bigrammar gt) @ (ast_map gt)
              & (fun u =>
@@ -920,7 +1003,7 @@ Set Implicit Arguments.
   Time (destruct w; parsable_tac).
   Time Defined.
 
-  (* Definition test_p : wf_bigrammar _register_t. *)
+  (* Definition test_b : wf_bigrammar _register_t. *)
   (*   Time gen_ast_defs test_env. *)
   (*   Time refine(gr @ (mp: _ -> [|control_register_t|]) *)
   (*            & (fun u => *)
@@ -944,7 +1027,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold control_reg_env: env_unfold_db.
 
-  Definition control_reg_p : wf_bigrammar control_register_t.
+  Definition control_reg_b : wf_bigrammar control_register_t.
     gen_ast_defs control_reg_env.
     refine((ast_bigrammar gt) @ (ast_map gt)
              & (fun u =>
@@ -973,7 +1056,7 @@ Set Implicit Arguments.
    * depending upon the value of some control register.  My guess is that it's
    * okay for us to just consider this a fault. Something similar seems to
    * happen with the CR registers above -- e.g., we don't have a CR1. *)
-  Definition debug_reg_p : wf_bigrammar debug_register_t.
+  Definition debug_reg_b : wf_bigrammar debug_register_t.
     gen_ast_defs debug_reg_env.
     refine((ast_bigrammar gt) @ (ast_map gt)
               & (fun u => 
@@ -999,7 +1082,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold segment_reg_env: env_unfold_db.
 
-  Definition segment_reg_p : wf_bigrammar segment_register_t.
+  Definition segment_reg_b : wf_bigrammar segment_register_t.
     gen_ast_defs segment_reg_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => 
@@ -1027,7 +1110,7 @@ Set Implicit Arguments.
   Definition mmx_reg : wf_bigrammar mmx_register_t := field_intn 2.
   Definition sse_reg : wf_bigrammar sse_register_t := field_intn 2.
 
-  Definition scale_p :wf_bigrammar scale_t. 
+  Definition scale_b :wf_bigrammar scale_t. 
     refine ((field 2) @ (Z_to_scale : _ -> interp scale_t)
                       & (fun s => Some (scale_to_Z s)) & _);
     invertible_tac.
@@ -1038,7 +1121,7 @@ Set Implicit Arguments.
     - generalize Z_to_scale_inv. crush.
   Defined.
 
-  Lemma scale_rng : forall s, in_bigrammar_rng (` scale_p) s.
+  Lemma scale_rng : forall s, in_bigrammar_rng (` scale_b) s.
   Proof. 
     destruct s; apply in_bigrammar_rng_map;
     [exists 0%Z | exists 1%Z | exists 2%Z | exists 3%Z];
@@ -1248,8 +1331,8 @@ Set Implicit Arguments.
     destruct_all; crush.
   Qed.
 
-  Definition si_p: wf_bigrammar (option_t (pair_t scale_t register_t)). 
-    refine ((scale_p $ reg)
+  Definition si_b: wf_bigrammar (option_t (pair_t scale_t register_t)). 
+    refine ((scale_b $ reg)
             @ (fun p => match snd p with 
                           | ESP => None
                           | _ => Some p
@@ -1264,8 +1347,8 @@ Set Implicit Arguments.
     - ins_parsable_tac.
   Defined.
 
-  Lemma si_p_rng_some sc idx: 
-    in_bigrammar_rng (` si_p) (Some (sc, idx)) -> idx <> ESP.
+  Lemma si_b_rng_some sc idx: 
+    in_bigrammar_rng (` si_b) (Some (sc, idx)) -> idx <> ESP.
   Proof. unfold in_bigrammar_rng. intros sc idx H.
     destruct H as [s H].
     simpl in H.
@@ -1274,21 +1357,21 @@ Set Implicit Arguments.
     destruct idx'; crush.
   Qed.
 
-  Lemma si_p_rng_none : in_bigrammar_rng (` si_p) None.
-  Proof. unfold proj1_sig at 1; compute - [in_bigrammar_rng proj1_sig scale_p reg seq].
+  Lemma si_b_rng_none : in_bigrammar_rng (` si_b) None.
+  Proof. unfold proj1_sig at 1; compute - [in_bigrammar_rng proj1_sig scale_b reg seq].
     match goal with
       | [ |- in_bigrammar_rng (Map ?fi ?g) None] => 
         assert (H:None = (fst fi (Scale1, ESP))) by trivial;
         rewrite H; clear H; apply in_bigrammar_rng_map2
     end; ins_ibr_sim.
   Qed.
-  Hint Resolve si_p_rng_none: ibr_rng_db.
+  Hint Resolve si_b_rng_none: ibr_rng_db.
 
-  Definition sib_p := si_p $ reg.
+  Definition sib_b := si_b $ reg.
 
-  Lemma sib_p_rng_none r: in_bigrammar_rng (` sib_p) (None, r).
-  Proof. intros; unfold sib_p. ins_ibr_sim. Qed.
-  Hint Resolve sib_p_rng_none: ibr_rng_db.
+  Lemma sib_b_rng_none r: in_bigrammar_rng (` sib_b) (None, r).
+  Proof. intros; unfold sib_b. ins_ibr_sim. Qed.
+  Hint Resolve sib_b_rng_none: ibr_rng_db.
 
   Definition Address_op_inv op := 
     match op with
@@ -1332,7 +1415,7 @@ Set Implicit Arguments.
       | _ => None
     end.
 
-  Definition Reg_op_p : wf_bigrammar operand_t.
+  Definition Reg_op_b : wf_bigrammar operand_t.
     refine(reg @ (fun r => Reg_op r : interp operand_t)
                & (fun op => match op with
                               | Reg_op r => Some r
@@ -1341,56 +1424,56 @@ Set Implicit Arguments.
                & _); invertible_tac; ins_parsable_tac.
   Defined.
 
-  (* Definition modrm_gen_noreg_env (reg_t:type) (reg_p:wf_bigrammar reg_t) *)
+  (* Definition modrm_gen_noreg_env (reg_t:type) (reg_b:wf_bigrammar reg_t) *)
   (*           : AST_Env (pair_t reg_t address_t) := *)
   (*   (* mode 00 *) *)
-  (*   {{0, "00" $$ reg_p $ reg_no_esp_ebp, *)
+  (*   {{0, "00" $$ reg_b $ reg_no_esp_ebp, *)
   (*    fun v => *)
   (*      let (r1,base):=v in (r1, mkAddress (Word.repr 0) (Some base) None) *)
   (*      %% pair_t reg_t address_t}} ::: *)
-  (*   {{1, "00" $$ reg_p $ "100" $$ si_p $ reg_no_ebp, *)
+  (*   {{1, "00" $$ reg_b $ "100" $$ si_b $ reg_no_ebp, *)
   (*    fun v => match v with *)
   (*               | (r,(si,base)) => *)
   (*                 (r, mkAddress (Word.repr 0) (Some base) si) *)
   (*             end %% pair_t reg_t address_t}} ::: *)
-  (*   {{2, "00" $$ reg_p $ "100" $$ si_p $ "101" $$ word, *)
+  (*   {{2, "00" $$ reg_b $ "100" $$ si_b $ "101" $$ word, *)
   (*    fun v => match v with *)
   (*               | (r,(si,disp)) => (r, mkAddress disp None si) *)
   (*             end %% pair_t reg_t address_t}} ::: *)
-  (*   {{3, "00" $$ reg_p $ "101" $$ word, *)
+  (*   {{3, "00" $$ reg_b $ "101" $$ word, *)
   (*    fun v => let (r,disp):=v in (r, mkAddress disp None None) *)
   (*      %% pair_t reg_t address_t}} ::: *)
   (*   (* mode 01 *) *)
-  (*   {{4, "01" $$ reg_p $ reg_no_esp $ byte, *)
+  (*   {{4, "01" $$ reg_b $ reg_no_esp $ byte, *)
   (*    fun v => match v with *)
   (*               | (r,(bs,disp)) => *)
   (*                 (r, mkAddress (sign_extend8_32 disp) (Some bs) None) *)
   (*             end %% pair_t reg_t address_t}} ::: *)
-  (*   {{5, "01" $$ reg_p $ "100" $$ sib_p $ byte, *)
+  (*   {{5, "01" $$ reg_b $ "100" $$ sib_b $ byte, *)
   (*    fun v => match v with *)
   (*               | (r, ((si,bs),disp)) => *)
   (*                 (r, mkAddress (sign_extend8_32 disp) (Some bs) si) *)
   (*             end %% pair_t reg_t address_t}} ::: *)
   (*   (* mode 10 *) *)
-  (*   {{6, "10" $$ reg_p $ reg_no_esp $ word, *)
+  (*   {{6, "10" $$ reg_b $ reg_no_esp $ word, *)
   (*    fun v => match v with *)
   (*               | (r,(bs,disp)) => (r, mkAddress disp (Some bs) None) *)
   (*             end %% pair_t reg_t address_t}} ::: *)
-  (*   {{7, "10" $$ reg_p $ "100" $$ sib_p $ word, *)
+  (*   {{7, "10" $$ reg_b $ "100" $$ sib_b $ word, *)
   (*    fun v => match v with *)
   (*               | (r,((si,bs),disp)) => (r, mkAddress disp (Some bs) si) *)
   (*             end %% pair_t reg_t address_t}} ::: *)
   (*   ast_env_nil. *)
 
   (* Definition modrm_gen_noreg (reg_t: type) *)
-  (*   (reg_p: wf_bigrammar reg_t) : wf_bigrammar (pair_t reg_t address_t). *)
-  (*   intros; gen_ast_defs (modrm_gen_noreg_env reg_p). *)
+  (*   (reg_b: wf_bigrammar reg_t) : wf_bigrammar (pair_t reg_t address_t). *)
+  (*   intros; gen_ast_defs (modrm_gen_noreg_env reg_b). *)
   (*   refine (gr @ (mp:_ -> [|pair_t reg_t address_t|]) *)
   (*              & (fun u:[|pair_t reg_t address_t|] => *)
   (*                   let (r,addr) := u in *)
   (*                   match addr with *)
   (*                     | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} => *)
-  (*                       (* alternate encoding: mod00 case2, making reg in si_p be ESP *) *)
+  (*                       (* alternate encoding: mod00 case2, making reg in si_b be ESP *) *)
   (*                       inv_case_some case3 (r,disp) *)
   (*                     | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some si |} => *)
   (*                       (* special case: disp32[index*scale]; *)
@@ -1453,7 +1536,7 @@ Set Implicit Arguments.
   (*         ins_ibr_sim. apply reg_no_ebp_neq. trivial. *)
   (*       destruct si as [[sc idx] | ]. *)
   (*       * assert (idx <> ESP). *)
-  (*           ins_ibr_sim. eapply si_p_rng_some. eassumption. *)
+  (*           ins_ibr_sim. eapply si_b_rng_some. eassumption. *)
   (*         abstract (bg_pf_sim; printable_tac). *)
   (*       * abstract (bg_pf_sim; printable_tac; ins_ibr_sim). *)
   (*     + (* case 2 *) *)
@@ -1468,9 +1551,9 @@ Set Implicit Arguments.
   (*       destruct v as [r [[si bs] disp]]. *)
   (*       rewrite sign_shrink32_8_inv. *)
   (*       destruct si as [[sc idx] | ]. *)
-  (*       * unfold sib_p in *; *)
+  (*       * unfold sib_b in *; *)
   (*         assert (idx <> ESP). *)
-  (*           ins_ibr_sim. eapply si_p_rng_some. eassumption. *)
+  (*           ins_ibr_sim. eapply si_b_rng_some. eassumption. *)
   (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_sim). *)
   (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_sim). *)
   (*     + (* case 6 *) *)
@@ -1479,9 +1562,9 @@ Set Implicit Arguments.
   (*     + (* case 7 *) *)
   (*       destruct v as [r [[si bs] disp]]. *)
   (*       destruct si as [[sc idx] | ]. *)
-  (*       * unfold sib_p in *; *)
+  (*       * unfold sib_b in *; *)
   (*         assert (idx <> ESP). *)
-  (*           ins_ibr_sim. eapply si_p_rng_some. eassumption. *)
+  (*           ins_ibr_sim. eapply si_b_rng_some. eassumption. *)
   (*         abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_sim). *)
   (*       * abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_sim). *)
   (*   - destruct w as [r addr]. *)
@@ -1498,9 +1581,9 @@ Set Implicit Arguments.
     (* case 0 *)
     (reg_no_esp_ebp |+|
     (* case 1 *)
-     "100" $$ si_p $ reg_no_ebp) |+|
+     "100" $$ si_b $ reg_no_ebp) |+|
     (* case 2 *)
-    ("100" $$ si_p $ "101" $$ word |+|
+    ("100" $$ si_b $ "101" $$ word |+|
     (* case 3 *)
      "101" $$ word).
 
@@ -1509,14 +1592,14 @@ Set Implicit Arguments.
     (* case 0 *)
     reg_no_esp $ byte |+|
     (* case 1 *)
-    "100" $$ sib_p $ byte.
+    "100" $$ sib_b $ byte.
 
   (** Moderm mode 10 *)
   Definition rm10 := 
     (* case 0 *)
     reg_no_esp $ word |+|
     (* case 1 *)
-    "100" $$ sib_p $ word.
+    "100" $$ sib_b $ word.
 
   (** Same as modrm_gen but no mod "11" case; that is, the second must
       produce an address in a mem operand *)
@@ -1527,11 +1610,11 @@ Set Implicit Arguments.
      inverse function; didn't use the gen_ast_def tactic because the following
      version using inl/inr explicitly is a bit faster for proofs. *)
   Definition modrm_gen_noreg (reg_t: type)
-    (reg_p: wf_bigrammar reg_t) : wf_bigrammar (pair_t reg_t address_t).
+    (reg_b: wf_bigrammar reg_t) : wf_bigrammar (pair_t reg_t address_t).
     intros.
-    refine ((    ("00" $$ reg_p $ rm00) 
-             |+| ("01" $$ reg_p $ rm01)
-             |+| ("10" $$ reg_p $ rm10))
+    refine ((    ("00" $$ reg_b $ rm00) 
+             |+| ("01" $$ reg_b $ rm01)
+             |+| ("10" $$ reg_b $ rm10))
               @ (fun v => 
                    match v with
                      (* mode 00 *)
@@ -1581,7 +1664,7 @@ Set Implicit Arguments.
                     let (r,addr) := u in
                     match addr with
                       | {| addrDisp:=disp; addrBase:=None; addrIndex:=None |} =>
-                        (* alternate encoding: mod00 case2, making reg in si_p be ESP *)
+                        (* alternate encoding: mod00 case2, making reg in si_b be ESP *)
                         Some (inl (r, (inr (inr disp))))
                       | {| addrDisp:=disp; addrBase:=None; addrIndex:=Some si |} =>
                         (* special case: disp32[index*scale]; 
@@ -1651,7 +1734,7 @@ Set Implicit Arguments.
             ins_ibr_sim; apply reg_no_ebp_neq; trivial.
           destruct si as [[sc idx] | ].
           { assert (idx <> ESP).
-              ins_ibr_sim. eapply si_p_rng_some. eassumption.
+              ins_ibr_sim. eapply si_b_rng_some. eassumption.
             abstract (bg_pf_sim; printable_tac).
           }
           { abstract (bg_pf_sim; printable_tac; ins_ibr_sim). }
@@ -1671,9 +1754,9 @@ Set Implicit Arguments.
           destruct v as [[si bs] disp].
           rewrite sign_shrink32_8_inv.
           destruct si as [[sc idx] | ].
-          { unfold sib_p in *; 
+          { unfold sib_b in *; 
             assert (idx <> ESP).
-              ins_ibr_sim. eapply si_p_rng_some. eassumption.
+              ins_ibr_sim. eapply si_b_rng_some. eassumption.
             abstract (unfold rm00; bg_pf_sim;
                       try destruct_head; printable_tac; ins_ibr_sim). }
           { abstract (unfold rm00; bg_pf_sim;
@@ -1688,9 +1771,9 @@ Set Implicit Arguments.
         * (* case 1 *)
           destruct v as [[si bs] disp].
           destruct si as [[sc idx] | ].
-          { unfold rm00, rm01, sib_p in *; 
+          { unfold rm00, rm01, sib_b in *; 
             assert (idx <> ESP).
-              ins_ibr_sim. eapply si_p_rng_some. eassumption.
+              ins_ibr_sim. eapply si_b_rng_some. eassumption.
             abstract (bg_pf_sim; try destruct_head; printable_tac; ins_ibr_sim).
           }
           { abstract (unfold rm00, rm01; bg_pf_sim; 
@@ -1703,15 +1786,16 @@ Set Implicit Arguments.
                 apply Word.int_eq_true_iff2 in Hdisp_eq;
                 subst addrDisp; trivial).
   Defined.
+  Extraction Implicit modrm_gen_noreg [reg_t].
 
   (* Definition modrm_gen_noreg2 (reg_t res_t: type) *)
-  (*   (reg_p: wf_bigrammar reg_t)  *)
+  (*   (reg_b: wf_bigrammar reg_t)  *)
   (*   (addr_op: funinv address_t res_t)  (* the constructor that converts an *) *)
   (*                                      (* address to result and its inverse *) *)
   (*   (pf: strong_invertible addr_op) *)
   (*   : wf_bigrammar (pair_t reg_t res_t). *)
   (*   intros. *)
-  (*   refine ((modrm_gen_noreg reg_p) *)
+  (*   refine ((modrm_gen_noreg reg_b) *)
   (*             @ (fun v => match v with *)
   (*                           | (r, addr) => (r, fst addr_op addr) *)
   (*                         end %% (pair_t reg_t res_t)) *)
@@ -1738,9 +1822,10 @@ Set Implicit Arguments.
 
   (** a general modrm grammar for integer, floating-point, sse, mmx instructions *)
   Definition modrm_gen (reg_t: type)
-    (reg_p : wf_bigrammar reg_t)  (* the grammar that parse a register *)
+    (reg_b : wf_bigrammar reg_t)  (* the grammar that parse a register *)
     : wf_bigrammar (sum_t (pair_t reg_t address_t) (pair_t reg_t reg_t)) :=
-    modrm_gen_noreg reg_p |+| "11" $$ reg_p $ reg_p.
+    modrm_gen_noreg reg_b |+| "11" $$ reg_b $ reg_b.
+  Extraction Implicit modrm_gen [reg_t].
 
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern, and the pattern starting with "11" is excluded. *)
@@ -1764,9 +1849,9 @@ Set Implicit Arguments.
   (* Similar to mod/rm grammar except that the register field is fixed to a
    * particular bit-pattern*)
   Definition ext_op_modrm_gen (reg_t: type)
-    (reg_p: wf_bigrammar reg_t)
+    (reg_b: wf_bigrammar reg_t)
     (bs:string) : wf_bigrammar (sum_t address_t reg_t) :=
-    ext_op_modrm_noreg_ret_addr bs |+| "11" $$ bs $$ reg_p.
+    ext_op_modrm_noreg_ret_addr bs |+| "11" $$ bs $$ reg_b.
 
   (** modrm_reg returns a register as the first operand, and a second operand *)
   Definition modrm_ret_reg: wf_bigrammar (pair_t register_t operand_t).
@@ -1827,7 +1912,7 @@ Set Implicit Arguments.
   Defined.
 
   Definition seg_modrm : wf_bigrammar (pair_t segment_register_t operand_t).
-    refine((modrm_gen_noreg segment_reg_p |+| "11" $$ segment_reg_p $ reg)
+    refine((modrm_gen_noreg segment_reg_b |+| "11" $$ segment_reg_b $ reg)
            @ (fun v =>
                 match v with
                     | inl (sr, addr) => (sr, Address_op addr)
@@ -1844,7 +1929,7 @@ Set Implicit Arguments.
 
   (** An parser that parses immediates; takes the opsize override into account; 
       always returns a word *)
-  Definition imm_p (opsize_override: bool) : wf_bigrammar word_t. 
+  Definition imm_b (opsize_override: bool) : wf_bigrammar word_t. 
     intros.
     refine(match opsize_override with
              | false => word 
@@ -1864,19 +1949,19 @@ Set Implicit Arguments.
 
   (** ** Lemmas about previous parsers *)
 
-  Lemma modrm_gen_noreg_rng_inv reg_t (reg_p: wf_bigrammar reg_t)
+  Lemma modrm_gen_noreg_rng_inv reg_t (reg_b: wf_bigrammar reg_t)
         (r:[|reg_t|]) (addr:[|address_t|]):
-    in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r,addr) ->
-    in_bigrammar_rng (` reg_p) r.
+    in_bigrammar_rng (` (modrm_gen_noreg reg_b)) (r,addr) ->
+    in_bigrammar_rng (` reg_b) r.
   Proof. intros; unfold modrm_gen_noreg in *. 
          repeat (ins_ibr_sim || destruct_pr_var); crush. Qed.
 
   (* can prove a more precise range lemma if necessary *)
-  Lemma modrm_gen_noreg_rng reg_t (reg_p: wf_bigrammar reg_t)
+  Lemma modrm_gen_noreg_rng reg_t (reg_b: wf_bigrammar reg_t)
         (r1 r2:[|reg_t|]) addr: 
-    in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r1, addr) ->
-    in_bigrammar_rng (` reg_p) r2 -> 
-    in_bigrammar_rng (` (modrm_gen_noreg reg_p)) (r2, addr).
+    in_bigrammar_rng (` (modrm_gen_noreg reg_b)) (r1, addr) ->
+    in_bigrammar_rng (` reg_b) r2 -> 
+    in_bigrammar_rng (` (modrm_gen_noreg reg_b)) (r2, addr).
   Proof. intros; unfold modrm_gen_noreg in *. ins_ibr_sim.
     compute [fst].
     match goal with
@@ -1907,16 +1992,16 @@ Set Implicit Arguments.
     destruct v; subst op; [right | left]; eexists; trivial.
   Qed.
 
-  Lemma Reg_op_p_rng op : 
-    (exists r, op = Reg_op r) <-> in_bigrammar_rng (`Reg_op_p) op.
-  Proof. intros. unfold Reg_op_p; split; intro; ins_ibr_sim.
+  Lemma Reg_op_b_rng op : 
+    (exists r, op = Reg_op r) <-> in_bigrammar_rng (`Reg_op_b) op.
+  Proof. intros. unfold Reg_op_b; split; intro; ins_ibr_sim.
     - compute [fst]. generalize reg_rng. crush.
     - crush.
   Qed.
 
-  Lemma Reg_op_p_rng2 r: in_bigrammar_rng (`Reg_op_p) (Reg_op r).
-  Proof. intros; apply Reg_op_p_rng. eexists; trivial. Qed.
-  Hint Resolve Reg_op_p_rng2: ibr_rng_db.
+  Lemma Reg_op_b_rng2 r: in_bigrammar_rng (`Reg_op_b) (Reg_op r).
+  Proof. intros; apply Reg_op_b_rng. eexists; trivial. Qed.
+  Hint Resolve Reg_op_b_rng2: ibr_rng_db.
 
   Lemma modrm_ret_reg_rng_inv r op:
     in_bigrammar_rng (` modrm_ret_reg) (r,op) -> 
@@ -1950,24 +2035,24 @@ Set Implicit Arguments.
   Hint Extern 1 (in_bigrammar_rng (` (modrm_ret_reg)) (_, Address_op _)) =>
     eapply modrm_ret_reg_rng2; eassumption : ibr_rng_db.
 
-  Lemma imm_p_false_rng w: in_bigrammar_rng (` (imm_p false)) w.
-  Proof. unfold imm_p; intros. ins_ibr_sim. Qed.
+  Lemma imm_b_false_rng w: in_bigrammar_rng (` (imm_b false)) w.
+  Proof. unfold imm_b; intros. ins_ibr_sim. Qed.
 
-  Lemma imm_p_true_rng w:
+  Lemma imm_b_true_rng w:
     repr_in_signed_halfword w -> 
-    in_bigrammar_rng (` (imm_p true)) w.
-  Proof. unfold imm_p; intros. ins_ibr_sim. compute [fst].
+    in_bigrammar_rng (` (imm_b true)) w.
+  Proof. unfold imm_b; intros. ins_ibr_sim. compute [fst].
     exists (sign_shrink32_16 w); split.
       - ins_ibr_sim.
       - autorewrite with inv_db. trivial.
   Qed.
 
-  Lemma imm_p_rng w opsize_override:
+  Lemma imm_b_rng w opsize_override:
     repr_in_signed_halfword w -> 
-    in_bigrammar_rng (` (imm_p opsize_override)) w.
+    in_bigrammar_rng (` (imm_b opsize_override)) w.
   Proof. destruct opsize_override; intros.
-    - apply imm_p_true_rng; trivial.
-    - apply imm_p_false_rng.
+    - apply imm_b_true_rng; trivial.
+    - apply imm_b_false_rng.
   Qed.
 
   Lemma field_intn_rng n i: 
@@ -2012,10 +2097,10 @@ Set Implicit Arguments.
   Ltac ins_invertible_tac := 
     invertible_tac_gen unfold_invertible_ast ins_pf_sim ins_destruct_var.
 
-  Definition AAA_p : wf_bigrammar unit_t := ! "00110111".
-  Definition AAD_p : wf_bigrammar unit_t := ! "1101010100001010".
-  Definition AAM_p : wf_bigrammar unit_t := ! "1101010000001010".
-  Definition AAS_p : wf_bigrammar unit_t := ! "00111111".
+  Definition AAA_b : wf_bigrammar unit_t := ! "00110111".
+  Definition AAD_b : wf_bigrammar unit_t := ! "1101010100001010".
+  Definition AAM_b : wf_bigrammar unit_t := ! "1101010000001010".
+  Definition AAS_b : wf_bigrammar unit_t := ! "00111111".
 
   Definition logic_or_arith_env (opsize_override: bool) (opcode1 opcode2: string) : 
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
@@ -2037,7 +2122,7 @@ Set Implicit Arguments.
                   (false, (Reg_op r, Imm_op (zero_extend8_32 imm)))
               %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate word to register *)
-    {{3, "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_p opsize_override,
+    {{3, "1000" $$ "0001" $$ "11" $$ opcode2 $$ reg $ imm_b opsize_override,
      fun v => let (r, imm) := v in (true, (Reg_op r, Imm_op imm))
               %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend immediate byte to EAX *)
@@ -2045,7 +2130,7 @@ Set Implicit Arguments.
      fun imm => (false, (Reg_op EAX, Imm_op (zero_extend8_32 imm)))
               %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* word to EAX *)
-    {{5, opcode1 $$ "101" $$ imm_p opsize_override,
+    {{5, opcode1 $$ "101" $$ imm_b opsize_override,
      fun imm => (true, (Reg_op EAX, Imm_op imm))
               %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend immediate byte to memory *)
@@ -2060,7 +2145,7 @@ Set Implicit Arguments.
               %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate word to memory *)
     {{8, "1000" $$ "0001" $$ ext_op_modrm_noreg_ret_addr opcode2 $
-               imm_p opsize_override,
+               imm_b opsize_override,
      fun v => let (addr,imm) := v in 
               (true, (Address_op addr, Imm_op imm))
               %% pair_t bool_t (pair_t operand_t operand_t)}} :::
@@ -2068,7 +2153,7 @@ Set Implicit Arguments.
   Hint Unfold logic_or_arith_env : env_unfold_db.
 
   (* The parsing for ADC, ADD, AND, CMP, OR, SBB, SUB, and XOR can be shared *)
-  Definition logic_or_arith_p (opsize_override: bool)
+  Definition logic_or_arith_b (opsize_override: bool)
     (opcode1 : string) (* first 5 bits for most cases *)
     (opcode2 : string) (* when first 5 bits are 10000, the next byte has 3 bits
                       that determine the opcode *)
@@ -2137,7 +2222,7 @@ Set Implicit Arguments.
       destruct v as [r b]. 
       destruct r; ins_printable_tac.
       (* EAX case *)
-      apply imm_p_rng; apply repr_in_signed_extend; omega.
+      apply imm_b_rng; apply repr_in_signed_extend; omega.
     + (* case 2 *)
       destruct v as [r b]; destruct r; ins_printable_tac.
     + (* case 3 *)
@@ -2163,20 +2248,20 @@ Set Implicit Arguments.
       destruct wd; ins_pf_sim; parsable_tac.
   Defined.
 
-  Definition ADC_p s := logic_or_arith_p s "00010" "010".
-  Definition ADD_p s := logic_or_arith_p s "00000" "000".
-  Definition AND_p s := logic_or_arith_p s "00100" "100".
-  Definition CMP_p s := logic_or_arith_p s "00111" "111".
-  Definition OR_p  s := logic_or_arith_p s "00001" "001".
-  Definition SBB_p s := logic_or_arith_p s "00011" "011".
-  Definition SUB_p s := logic_or_arith_p s "00101" "101".
-  Definition XOR_p s := logic_or_arith_p s "00110" "110".
+  Definition ADC_b s := logic_or_arith_b s "00010" "010".
+  Definition ADD_b s := logic_or_arith_b s "00000" "000".
+  Definition AND_b s := logic_or_arith_b s "00100" "100".
+  Definition CMP_b s := logic_or_arith_b s "00111" "111".
+  Definition OR_b  s := logic_or_arith_b s "00001" "001".
+  Definition SBB_b s := logic_or_arith_b s "00011" "011".
+  Definition SUB_b s := logic_or_arith_b s "00101" "101".
+  Definition XOR_b s := logic_or_arith_b s "00110" "110".
 
-  Definition ARPL_p := "0110" $$ "0011" $$ modrm.
-  Definition BOUND_p := "0110" $$ "0010" $$ modrm.
-  Definition BSF_p := "0000" $$ "1111" $$ "1011" $$ "1100" $$ modrm.
-  Definition BSR_p := "0000" $$ "1111" $$ "1011" $$ "1101" $$ modrm.
-  Definition BSWAP_p : wf_bigrammar register_t := 
+  Definition ARPL_b := "0110" $$ "0011" $$ modrm.
+  Definition BOUND_b := "0110" $$ "0010" $$ modrm.
+  Definition BSF_b := "0000" $$ "1111" $$ "1011" $$ "1100" $$ modrm.
+  Definition BSR_b := "0000" $$ "1111" $$ "1011" $$ "1101" $$ modrm.
+  Definition BSWAP_b : wf_bigrammar register_t := 
     "0000" $$ "1111" $$ "1100" $$ "1" $$ reg.
 
   Definition bit_test_env (opcode1 opcode2: string) : 
@@ -2197,7 +2282,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold bit_test_env : env_unfold_db.
 
-  Definition bit_test_p (opcode1:string) (opcode2:string) : 
+  Definition bit_test_b (opcode1:string) (opcode2:string) : 
     wf_bigrammar (pair_t operand_t operand_t).
     intros. gen_ast_defs (bit_test_env opcode1 opcode2).
     refine ((ast_bigrammar gt) @ (ast_map gt)
@@ -2228,12 +2313,12 @@ Set Implicit Arguments.
               & _). ins_invertible_tac.
   Defined.
 
-  Definition BT_p := bit_test_p "100" "00".
-  Definition BTC_p := bit_test_p "111" "11".
-  Definition BTR_p := bit_test_p "110" "10".
-  Definition BTS_p := bit_test_p "101" "01".
+  Definition BT_b := bit_test_b "100" "00".
+  Definition BTC_b := bit_test_b "111" "11".
+  Definition BTR_b := bit_test_b "110" "10".
+  Definition BTS_b := bit_test_b "101" "01".
 
-  Definition CALL_p : 
+  Definition CALL_b : 
     wf_bigrammar (pair_t bool_t (pair_t bool_t (pair_t operand_t
                                                   (option_t selector_t)))).
     set (t:= (pair_t bool_t (pair_t bool_t (pair_t operand_t
@@ -2281,23 +2366,23 @@ Set Implicit Arguments.
              & _); unfold t. ins_invertible_tac.
   Defined.
 
-  Definition CDQ_p : wf_bigrammar unit_t := "1001" $$  ! "1001".
-  Definition CLC_p : wf_bigrammar unit_t := "1111" $$ ! "1000".
-  Definition CLD_p : wf_bigrammar unit_t := "1111" $$ ! "1100".
-  Definition CLI_p : wf_bigrammar unit_t := "1111" $$ ! "1010".
-  Definition CLTS_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "0110".
-  Definition CMC_p : wf_bigrammar unit_t := "1111" $$ ! "0101".
-  Definition CMPS_p : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
+  Definition CDQ_b : wf_bigrammar unit_t := "1001" $$  ! "1001".
+  Definition CLC_b : wf_bigrammar unit_t := "1111" $$ ! "1000".
+  Definition CLD_b : wf_bigrammar unit_t := "1111" $$ ! "1100".
+  Definition CLI_b : wf_bigrammar unit_t := "1111" $$ ! "1010".
+  Definition CLTS_b : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "0110".
+  Definition CMC_b : wf_bigrammar unit_t := "1111" $$ ! "0101".
+  Definition CMPS_b : wf_bigrammar Char_t := "1010" $$ "011" $$ anybit.
 
-  Definition CMPXCHG_p := 
+  Definition CMPXCHG_b := 
     "0000" $$ "1111" $$ "1011" $$ "000" $$ anybit $ modrm.
 
-  Definition CPUID_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ ! "0010".
-  Definition CWDE_p : wf_bigrammar unit_t := "1001" $$ ! "1000".
-  Definition DAA_p : wf_bigrammar unit_t := "0010" $$ ! "0111".
-  Definition DAS_p : wf_bigrammar unit_t := "0010" $$ ! "1111".
+  Definition CPUID_b : wf_bigrammar unit_t := "0000" $$ "1111" $$ "1010" $$ ! "0010".
+  Definition CWDE_b : wf_bigrammar unit_t := "1001" $$ ! "1000".
+  Definition DAA_b : wf_bigrammar unit_t := "0010" $$ ! "0111".
+  Definition DAS_b : wf_bigrammar unit_t := "0010" $$ ! "1111".
 
-  Definition DEC_p: wf_bigrammar (pair_t bool_t operand_t).
+  Definition DEC_b: wf_bigrammar (pair_t bool_t operand_t).
     refine(((* case 0 *)
             "1111" $$ "111" $$ anybit $ "11001" $$ reg |+|
             (* case 1 *)
@@ -2323,7 +2408,7 @@ Set Implicit Arguments.
              & _); ins_invertible_tac.
   Defined.
 
-  Definition DIV_p: wf_bigrammar (pair_t bool_t operand_t).
+  Definition DIV_b: wf_bigrammar (pair_t bool_t operand_t).
     refine (("1111" $$ "011" $$ anybit $ "11110" $$ reg |+|
              "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg_ret_addr "110")
               @ (fun v =>
@@ -2341,9 +2426,9 @@ Set Implicit Arguments.
               & _); ins_invertible_tac.
   Defined.
 
-  Definition HLT_p : wf_bigrammar unit_t := "1111" $$ ! "0100".
+  Definition HLT_b : wf_bigrammar unit_t := "1111" $$ ! "0100".
 
-  Definition IDIV_p: wf_bigrammar (pair_t bool_t operand_t).
+  Definition IDIV_b: wf_bigrammar (pair_t bool_t operand_t).
     refine (("1111" $$ "011" $$ anybit $ "11111" $$ reg |+|
              "1111" $$ "011" $$ anybit $ ext_op_modrm_noreg_ret_addr "111")
               @ (fun v =>
@@ -2362,7 +2447,7 @@ Set Implicit Arguments.
   Defined.
 
 
-  Definition IMUL_p (opsize_override:bool): 
+  Definition IMUL_b (opsize_override:bool): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t (pair_t (option_t operand_t)
                                                      (option_t word_t)))).
     intros.
@@ -2374,7 +2459,7 @@ Set Implicit Arguments.
             ((* case 2 *)
               "0110" $$ "1011" $$ modrm_ret_reg $ byte |+|
              (* case 3 *)
-              "0110" $$ "1001" $$ modrm_ret_reg $ imm_p opsize_override))
+              "0110" $$ "1001" $$ modrm_ret_reg $ imm_b opsize_override))
              @ (fun u =>
                   match u with
                     | inl (inl (w,op1)) => (w, (op1, (None, None)))
@@ -2430,7 +2515,7 @@ Set Implicit Arguments.
          ins_pf_sim; parsable_tac).
   Qed.
 
-  Definition IN_p: wf_bigrammar (pair_t char_t (option_t byte_t)).
+  Definition IN_b: wf_bigrammar (pair_t char_t (option_t byte_t)).
     refine (("1110" $$ "010" $$ anybit $ byte |+| 
              "1110" $$ "110" $$ anybit)
               @ (fun v => 
@@ -2446,7 +2531,7 @@ Set Implicit Arguments.
               & _); ins_invertible_tac.
   Defined.
 
-  Definition INC_p: wf_bigrammar (pair_t bool_t operand_t).
+  Definition INC_b: wf_bigrammar (pair_t bool_t operand_t).
     refine (("1111" $$ "111" $$ anybit $ "11000" $$ reg |+|
              "0100" $$ "0" $$ reg |+|
              "1111" $$ "111" $$ anybit $ ext_op_modrm_noreg_ret_addr "000")
@@ -2472,20 +2557,20 @@ Set Implicit Arguments.
         destruct w; ins_printable_tac.
   Defined.
 
-  Definition INS_p : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
+  Definition INS_b : wf_bigrammar Char_t := "0110" $$ "110" $$ anybit.
   
-  Definition INTn_p : wf_bigrammar byte_t := "1100" $$ "1101" $$ byte.
-  Definition INT_p : wf_bigrammar unit_t := "1100" $$ ! "1100".
-  Definition INTO_p : wf_bigrammar unit_t := "1100" $$ ! "1110".
+  Definition INTn_b : wf_bigrammar byte_t := "1100" $$ "1101" $$ byte.
+  Definition INT_b : wf_bigrammar unit_t := "1100" $$ ! "1100".
+  Definition INTO_b : wf_bigrammar unit_t := "1100" $$ ! "1110".
   
-  Definition INVD_p : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "1000".
+  Definition INVD_b : wf_bigrammar unit_t := "0000" $$ "1111" $$ "0000" $$ ! "1000".
 
-  Definition INVLPG_p: wf_bigrammar operand_t :=
+  Definition INVLPG_b: wf_bigrammar operand_t :=
     "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "111".
 
-  Definition IRET_p: wf_bigrammar unit_t := "1100" $$ ! "1111".
+  Definition IRET_b: wf_bigrammar unit_t := "1100" $$ ! "1111".
 
-  Definition Jcc_p: wf_bigrammar (pair_t condition_t word_t). 
+  Definition Jcc_b: wf_bigrammar (pair_t condition_t word_t). 
     refine (("0111" $$ tttn $ byte |+|
              "0000" $$ "1111" $$ "1000" $$ tttn $ word)
               @ (fun v => 
@@ -2502,7 +2587,7 @@ Set Implicit Arguments.
               & _); ins_invertible_tac.
   Defined.
 
-  Definition JCXZ_p := "1110" $$ "0011" $$ byte.
+  Definition JCXZ_b := "1110" $$ "0011" $$ byte.
 
   Definition JMP_env :
     AST_Env (pair_t bool_t
@@ -2536,7 +2621,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold JMP_env : env_unfold_db.
 
-  Definition JMP_p: 
+  Definition JMP_b: 
     wf_bigrammar (pair_t bool_t
                          (pair_t bool_t (pair_t operand_t (option_t selector_t)))).
     gen_ast_defs JMP_env.
@@ -2576,11 +2661,11 @@ Set Implicit Arguments.
               & _); clear_ast_defs; ins_invertible_tac.
   Defined.
 
-  Definition LAHF_p := "1001" $$ ! "1111".
-  Definition LAR_p := 
+  Definition LAHF_b := "1001" $$ ! "1111".
+  Definition LAR_b := 
     "0000" $$ "1111" $$ "0000" $$ "0010" $$ modrm.
-  Definition LDS_p := "1100" $$ "0101" $$ modrm.
-  Definition LEA_p: wf_bigrammar (pair_t operand_t operand_t).
+  Definition LDS_b := "1100" $$ "0101" $$ modrm.
+  Definition LEA_b: wf_bigrammar (pair_t operand_t operand_t).
     refine ("1000" $$ "1101" $$ modrm_noreg
              @ (fun v => (Reg_op (fst v), Address_op (snd v))
                            %% pair_t operand_t operand_t)
@@ -2592,16 +2677,16 @@ Set Implicit Arguments.
              & _); ins_invertible_tac.
   Defined.
 
-  Definition LEAVE_p := "1100" $$ !"1001".
-  Definition LES_p := "1100" $$ "0100" $$ modrm.
-  Definition LFS_p := "0000" $$ "1111" $$ "1011" $$ "0100" $$ modrm.
-  Definition LGDT_p : wf_bigrammar operand_t := 
+  Definition LEAVE_b := "1100" $$ !"1001".
+  Definition LES_b := "1100" $$ "0100" $$ modrm.
+  Definition LFS_b := "0000" $$ "1111" $$ "1011" $$ "0100" $$ modrm.
+  Definition LGDT_b : wf_bigrammar operand_t := 
     "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "010".
-  Definition LGS_p := "0000" $$ "1111" $$ "1011" $$ "0101" $$ modrm.
-  Definition LIDT_p := 
+  Definition LGS_b := "0000" $$ "1111" $$ "1011" $$ "0101" $$ modrm.
+  Definition LIDT_b := 
     "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "011".
 
-  Definition LLDT_p: wf_bigrammar operand_t. 
+  Definition LLDT_b: wf_bigrammar operand_t. 
     refine(("0000" $$ "1111" $$ "0000" $$ "0000" $$ "11" $$ "010" $$ reg 
              |+|
             "0000" $$ "1111" $$ "0000" $$ "0000"
@@ -2620,7 +2705,7 @@ Set Implicit Arguments.
              & _); ins_invertible_tac.
   Defined.
 
-  Definition LMSW_p : wf_bigrammar operand_t.
+  Definition LMSW_b : wf_bigrammar operand_t.
     refine (("0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ "110" $$ reg
              |+|
              "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11"
@@ -2641,20 +2726,20 @@ Set Implicit Arguments.
 
   (* JGM: note, this isn't really an instruction, but rather a prefix.  So it
      shouldn't be included in the list of instruction grammars. *)
-(*  Definition LOCK_p := "1111" $$ ! "0000" *)
+(*  Definition LOCK_b := "1111" $$ ! "0000" *)
 
-  Definition LODS_p := "1010" $$ "110" $$ anybit.
-  Definition LOOP_p := "1110" $$ "0010" $$ byte.
-  Definition LOOPZ_p := "1110" $$ "0001" $$ byte.
-  Definition LOOPNZ_p := "1110" $$ "0000" $$ byte.
+  Definition LODS_b := "1010" $$ "110" $$ anybit.
+  Definition LOOP_b := "1110" $$ "0010" $$ byte.
+  Definition LOOPZ_b := "1110" $$ "0001" $$ byte.
+  Definition LOOPNZ_b := "1110" $$ "0000" $$ byte.
 
-  Definition LSL_p := "0000" $$ "1111" $$ "0000" $$ "0011" $$ modrm.
-  Definition LSS_p := "0000" $$ "1111" $$ "1011" $$ "0010" $$ modrm.
-  Definition LTR_p := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "011".
+  Definition LSL_b := "0000" $$ "1111" $$ "0000" $$ "0011" $$ modrm.
+  Definition LSS_b := "0000" $$ "1111" $$ "1011" $$ "0010" $$ modrm.
+  Definition LTR_b := "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "011".
 
   (* This may not be right. Need to test this thoroughly. 
      There is no 8bit mode for CMOVcc *)
-  Definition CMOVcc_p := "0000" $$ "1111" $$ "0100" $$ tttn $ modrm.
+  Definition CMOVcc_b := "0000" $$ "1111" $$ "0100" $$ tttn $ modrm.
 
   Definition MOV_env (opsize_override:bool):
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
@@ -2667,7 +2752,7 @@ Set Implicit Arguments.
      fun v => match v with (w,(r1,op2)) => (w,(op2,Reg_op r1)) end
         %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate to reg *)
-    {{2, "1100" $$ "0111" $$ "11" $$ "000" $$ reg $ imm_p opsize_override,
+    {{2, "1100" $$ "0111" $$ "11" $$ "000" $$ reg $ imm_b opsize_override,
      fun v => match v with (r,imm) => (true, (Reg_op r, Imm_op imm)) end
         %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend byte to reg *)
@@ -2677,7 +2762,7 @@ Set Implicit Arguments.
               end
         %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate to reg; alternate encoding*)
-    {{4, "1011" $$ "1" $$ reg $ imm_p opsize_override,
+    {{4, "1011" $$ "1" $$ reg $ imm_b opsize_override,
      fun v => match v with (r,imm) => (true, (Reg_op r, Imm_op imm)) end
         %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* zero-extend byte to reg; alternate encoding *)
@@ -2688,7 +2773,7 @@ Set Implicit Arguments.
         %% pair_t bool_t (pair_t operand_t operand_t)}} :::
     (* immediate to mem *)
     {{6, "1100" $$ "0111" $$ ext_op_modrm_noreg_ret_addr "000"
-               $ imm_p opsize_override,
+               $ imm_b opsize_override,
      fun v => match v with
                   (addr,imm) => (true, (Address_op addr, Imm_op imm))
               end
@@ -2718,7 +2803,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold MOV_env : env_unfold_db.
 
-  Definition MOV_p (opsize_override:bool): 
+  Definition MOV_b (opsize_override:bool): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros. gen_ast_defs (MOV_env opsize_override).
     refine ((ast_bigrammar gt) @ (ast_map gt)
@@ -2777,16 +2862,16 @@ Set Implicit Arguments.
          destruct r; parsable_tac).
   Defined.
 
-  Definition MOVCR_p :=
+  Definition MOVCR_b :=
     "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "0" $$ "11"
-           $$ control_reg_p $ reg.
+           $$ control_reg_b $ reg.
 
-  Definition MOVDR_p := 
-    "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "111" $$ debug_reg_p $ reg.
+  Definition MOVDR_b := 
+    "0000" $$ "1111" $$ "0010" $$ "00" $$ anybit $ "111" $$ debug_reg_b $ reg.
 
-  Definition MOVSR_p := "1000" $$ "11" $$ anybit $ "0" $$ seg_modrm.
+  Definition MOVSR_b := "1000" $$ "11" $$ anybit $ "0" $$ seg_modrm.
   
-  Definition MOVBE_p : wf_bigrammar (pair_t operand_t operand_t). 
+  Definition MOVBE_b : wf_bigrammar (pair_t operand_t operand_t). 
     refine ("0000" $$ "1111" $$ "0011" $$ "1000" $$ "1111" $$ "000"
                    $$ anybit $ modrm_ret_reg
              @ (fun v: [|pair_t bool_t (pair_t register_t operand_t)|] => 
@@ -2810,22 +2895,22 @@ Set Implicit Arguments.
       destruct w; ins_pf_sim; printable_tac; ins_ibr_sim.
   Defined.
                                              
-  Definition MOVS_p := "1010" $$ "010" $$ anybit. 
-  Definition MOVSX_p := "0000" $$ "1111" $$ "1011" $$ "111" $$ anybit $ modrm.
-  Definition MOVZX_p := "0000" $$ "1111" $$ "1011" $$ "011" $$ anybit $ modrm.
+  Definition MOVS_b := "1010" $$ "010" $$ anybit. 
+  Definition MOVSX_b := "0000" $$ "1111" $$ "1011" $$ "111" $$ anybit $ modrm.
+  Definition MOVZX_b := "0000" $$ "1111" $$ "1011" $$ "011" $$ anybit $ modrm.
 
-  Definition MUL_p := "1111" $$ "011" $$ anybit $ ext_op_modrm "100". 
-  Definition NEG_p := "1111" $$ "011" $$ anybit $ ext_op_modrm "011".
+  Definition MUL_b := "1111" $$ "011" $$ anybit $ ext_op_modrm "100". 
+  Definition NEG_b := "1111" $$ "011" $$ anybit $ ext_op_modrm "011".
 
-  Definition NOP_p := 
+  Definition NOP_b := 
   (* The following is the same as the encoding of "XCHG EAX, EAX"
     "1001" $$ bits "0000" @ (fun _ => NOP None %% instruction_t)
   |+| *)
     "0000" $$ "1111" $$ "0001" $$ "1111" $$ ext_op_modrm "000". 
 
-  Definition NOT_p := "1111" $$ "011" $$ anybit $ ext_op_modrm "010".
+  Definition NOT_b := "1111" $$ "011" $$ anybit $ ext_op_modrm "010".
 
-  Definition OUT_p :wf_bigrammar (pair_t bool_t (option_t byte_t)).
+  Definition OUT_b :wf_bigrammar (pair_t bool_t (option_t byte_t)).
     refine ((("1110" $$ "011" $$ anybit $ byte) |+|
              ("1110" $$ "111" $$ anybit))
               @ (fun v =>
@@ -2841,9 +2926,9 @@ Set Implicit Arguments.
               & _); ins_invertible_tac.
   Defined.
 
-  Definition OUTS_p := "0110" $$ "111" $$ anybit.
+  Definition OUTS_b := "0110" $$ "111" $$ anybit.
 
-  Definition POP_p : wf_bigrammar operand_t. 
+  Definition POP_b : wf_bigrammar operand_t. 
     refine (("1000" $$ "1111" $$ ext_op_modrm "000" |+|
              "0101" $$ "1" $$ reg) 
               @ (fun v => 
@@ -2871,7 +2956,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold POPSR_env : env_unfold_db.
 
-  Definition POPSR_p : wf_bigrammar segment_register_t.
+  Definition POPSR_b : wf_bigrammar segment_register_t.
     gen_ast_defs POPSR_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => match u with
@@ -2885,8 +2970,8 @@ Set Implicit Arguments.
                & _); ins_invertible_tac.
   Defined.
 
-  Definition POPA_p := "0110" $$ ! "0001".
-  Definition POPF_p := "1001" $$ ! "1101".
+  Definition POPA_b := "0110" $$ ! "0001".
+  Definition POPF_b := "1001" $$ ! "1101".
 
   Definition PUSH_env : AST_Env (pair_t bool_t operand_t) :=
     {{0, "1111" $$ "1111" $$ ext_op_modrm_noreg_ret_addr "110", 
@@ -2900,7 +2985,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold PUSH_env : env_unfold_db.
 
-  Definition PUSH_p : wf_bigrammar (pair_t bool_t operand_t).
+  Definition PUSH_b : wf_bigrammar (pair_t bool_t operand_t).
     gen_ast_defs PUSH_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -2928,7 +3013,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold PUSHSR_env : env_unfold_db.
 
-  Definition PUSHSR_p : wf_bigrammar segment_register_t.
+  Definition PUSHSR_b : wf_bigrammar segment_register_t.
     gen_ast_defs PUSHSR_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => 
@@ -2943,10 +3028,10 @@ Set Implicit Arguments.
                & _); clear_ast_defs; ins_invertible_tac.
   Defined.
 
-  Definition PUSHA_p := "0110" $$ ! "0000".
-  Definition PUSHF_p := "1001" $$ ! "1100".
+  Definition PUSHA_b := "0110" $$ ! "0000".
+  Definition PUSHF_b := "1001" $$ ! "1100".
 
-  Definition rotate_p (extop:string): 
+  Definition rotate_b (extop:string): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t reg_or_immed_t)).
     intros.
     refine (("1101" $$ "000" $$ anybit $ ext_op_modrm extop |+|
@@ -2976,33 +3061,33 @@ Set Implicit Arguments.
       end; ins_parsable_tac.
   Defined.
                                     
-  Definition RCL_p := rotate_p "010".
-  Definition RCR_p := rotate_p "011".
+  Definition RCL_b := rotate_b "010".
+  Definition RCR_b := rotate_b "011".
 
-  Definition RDMSR_p := "0000" $$ "1111" $$ "0011" $$ ! "0010".
-  Definition RDPMC_p := "0000" $$ "1111" $$ "0011" $$ ! "0011".
-  Definition RDTSC_p := "0000" $$ "1111" $$ "0011" $$ ! "0001".
-  Definition RDTSCP_p := "0000" $$ "1111" $$ "0000" $$ "0001" $$ "1111"
+  Definition RDMSR_b := "0000" $$ "1111" $$ "0011" $$ ! "0010".
+  Definition RDPMC_b := "0000" $$ "1111" $$ "0011" $$ ! "0011".
+  Definition RDTSC_b := "0000" $$ "1111" $$ "0011" $$ ! "0001".
+  Definition RDTSCP_b := "0000" $$ "1111" $$ "0000" $$ "0001" $$ "1111"
                                 $$ ! "1001".
 
   (*
-  Definition REPINS_p := "1111" $$ "0011" $$ "0110" $$ "110" $$ anybit @ 
+  Definition REPINS_b := "1111" $$ "0011" $$ "0110" $$ "110" $$ anybit @ 
     (fun x => REPINS x %% instruction_t).
-  Definition REPLODS_p := "1111" $$ "0011" $$ "1010" $$ "110" $$ anybit @ 
+  Definition REPLODS_b := "1111" $$ "0011" $$ "1010" $$ "110" $$ anybit @ 
     (fun x => REPLODS x %% instruction_t).
-  Definition REPMOVS_p := "1111" $$ "0011" $$ "1010" $$ "010" $$ anybit @ 
+  Definition REPMOVS_b := "1111" $$ "0011" $$ "1010" $$ "010" $$ anybit @ 
     (fun x => REPMOVS x %% instruction_t).
-  Definition REPOUTS_p := "1111" $$ "0011" $$ "0110" $$ "111" $$ anybit @ 
+  Definition REPOUTS_b := "1111" $$ "0011" $$ "0110" $$ "111" $$ anybit @ 
     (fun x => REPOUTS x %% instruction_t).
-  Definition REPSTOS_p := "1111" $$ "0011" $$ "1010" $$ "101" $$ anybit @ 
+  Definition REPSTOS_b := "1111" $$ "0011" $$ "1010" $$ "101" $$ anybit @ 
     (fun x => REPSTOS x %% instruction_t).
-  Definition REPECMPS_p := "1111" $$ "0011" $$ "1010" $$ "011" $$ anybit @ 
+  Definition REPECMPS_b := "1111" $$ "0011" $$ "1010" $$ "011" $$ anybit @ 
     (fun x => REPECMPS x %% instruction_t).
-  Definition REPESCAS_p := "1111" $$ "0011" $$ "1010" $$ "111" $$ anybit @ 
+  Definition REPESCAS_b := "1111" $$ "0011" $$ "1010" $$ "111" $$ anybit @ 
     (fun x => REPESCAS x %% instruction_t).
-  Definition REPNECMPS_p := "1111" $$ "0010" $$ "1010" $$ "011" $$ anybit @ 
+  Definition REPNECMPS_b := "1111" $$ "0010" $$ "1010" $$ "011" $$ anybit @ 
     (fun x => REPNECMPS x %% instruction_t).
-  Definition REPNESCAS_p := "1111" $$ "0010" $$ "1010" $$ "111" $$ anybit @ 
+  Definition REPNESCAS_b := "1111" $$ "0010" $$ "1010" $$ "111" $$ anybit @ 
     (fun x => REPNESCAS x %% instruction_t).
   *)
 
@@ -3018,7 +3103,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold RET_env : env_unfold_db.
 
-  Definition RET_p : wf_bigrammar (pair_t bool_t (option_t half_t)).
+  Definition RET_b : wf_bigrammar (pair_t bool_t (option_t half_t)).
     gen_ast_defs RET_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => 
@@ -3031,16 +3116,16 @@ Set Implicit Arguments.
                & _); ins_invertible_tac.
   Defined.
 
-  Definition ROL_p := rotate_p "000".
-  Definition ROR_p := rotate_p "001".
-  Definition RSM_p := "0000" $$ "1111" $$ "1010" $$ ! "1010".
-  Definition SAHF_p := "1001" $$ ! "1110".
-  Definition SAR_p := rotate_p "111".
-  Definition SCAS_p := "1010" $$ "111" $$ anybit.
+  Definition ROL_b := rotate_b "000".
+  Definition ROR_b := rotate_b "001".
+  Definition RSM_b := "0000" $$ "1111" $$ "1010" $$ ! "1010".
+  Definition SAHF_b := "1001" $$ ! "1110".
+  Definition SAR_b := rotate_b "111".
+  Definition SCAS_b := "1010" $$ "111" $$ anybit.
 
   (* Intel manual says the reg field in modrm_ret_reg must be 000; however, it
      seems that an x86 processor accepts any combination in the reg field *)
-  Definition SETcc_p : wf_bigrammar (pair_t condition_t operand_t).
+  Definition SETcc_b : wf_bigrammar (pair_t condition_t operand_t).
     refine("0000" $$ "1111" $$ "1001" $$ tttn $ modrm_ret_reg
              @ (fun v => (fst v, snd (snd v)) %% pair_t condition_t operand_t)
              & (fun u:condition_type*operand => 
@@ -3054,9 +3139,9 @@ Set Implicit Arguments.
              & _); ins_invertible_tac.
   Defined.
 
-  Definition SGDT_p := "0000" $$ "1111" $$ "0000" $$ "0001"
+  Definition SGDT_b := "0000" $$ "1111" $$ "0000" $$ "0001"
                               $$ ext_op_modrm_noreg "000".
-  Definition SHL_p := rotate_p "100".
+  Definition SHL_b := rotate_b "100".
 
   Definition shiftdouble_env (opcode:string) : 
     AST_Env (pair_t operand_t (pair_t register_t reg_or_immed_t)) :=
@@ -3077,7 +3162,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold shiftdouble_env : env_unfold_db.
 
-  Definition shiftdouble_p (opcode:string) :
+  Definition shiftdouble_b (opcode:string) :
     wf_bigrammar (pair_t operand_t (pair_t register_t reg_or_immed_t)).
     intros; gen_ast_defs (shiftdouble_env opcode).
     refine ((ast_bigrammar gt) @ (ast_map gt)
@@ -3105,26 +3190,26 @@ Set Implicit Arguments.
       destruct r3; parsable_tac.
   Defined.
         
-  Definition SHLD_p := shiftdouble_p "01".
-  Definition SHR_p := rotate_p "101".
-  Definition SHRD_p := shiftdouble_p "11".
+  Definition SHLD_b := shiftdouble_b "01".
+  Definition SHR_b := rotate_b "101".
+  Definition SHRD_b := shiftdouble_b "11".
 
-  Definition SIDT_p := 
+  Definition SIDT_b := 
     "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm_noreg "001".
-  Definition SLDT_p := 
+  Definition SLDT_b := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "000".
-  Definition SMSW_p := 
+  Definition SMSW_b := 
     "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "100".
-  Definition STC_p := "1111" $$ ! "1001".
-  Definition STD_p := "1111" $$ ! "1101".
-  Definition STI_p := "1111" $$ ! "1011".
-  Definition STOS_p := "1010" $$ "101" $$ anybit.
-  Definition STR_p := 
+  Definition STC_b := "1111" $$ ! "1001".
+  Definition STD_b := "1111" $$ ! "1101".
+  Definition STI_b := "1111" $$ ! "1011".
+  Definition STOS_b := "1010" $$ "101" $$ anybit.
+  Definition STR_b := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "001".
 
   Definition TEST_env (opsize_override:bool) : 
     AST_Env (pair_t bool_t (pair_t operand_t operand_t)) :=
-    {{0, "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_p opsize_override,
+    {{0, "1111" $$ "0111" $$ ext_op_modrm "000" $ imm_b opsize_override,
      (fun v => (true, (fst v, Imm_op (snd v)))
                  %% pair_t bool_t (pair_t operand_t operand_t))}} :::
     {{1, "1111" $$ "0110" $$ ext_op_modrm "000" $ byte,
@@ -3135,7 +3220,7 @@ Set Implicit Arguments.
         match v with
           | (w,(r1,op2)) => (w, (Reg_op r1, op2))
         end %% pair_t bool_t (pair_t operand_t operand_t))}} :::
-    {{3, "1010" $$ "1001" $$ imm_p opsize_override,
+    {{3, "1010" $$ "1001" $$ imm_b opsize_override,
      (fun v => (true, (Imm_op v, Reg_op EAX))
                  %% pair_t bool_t (pair_t operand_t operand_t))}} :::
     {{4, "1010" $$ "1000" $$ byte,
@@ -3144,7 +3229,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold TEST_env : env_unfold_db.
 
-  Definition TEST_p (opsize_override: bool) : 
+  Definition TEST_b (opsize_override: bool) : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros; gen_ast_defs (TEST_env opsize_override).
     refine ((ast_bigrammar gt) @ (ast_map gt)
@@ -3189,15 +3274,15 @@ Set Implicit Arguments.
          ins_pf_sim; parsable_tac).
   Defined.
 
-  Definition UD2_p := "0000" $$ "1111" $$ "0000" $$ ! "1011".
-  Definition VERR_p := 
+  Definition UD2_b := "0000" $$ "1111" $$ "0000" $$ ! "1011".
+  Definition VERR_b := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "100".
-  Definition VERW_p := 
+  Definition VERW_b := 
     "0000" $$ "1111" $$ "0000" $$ "0000" $$ ext_op_modrm "101".
-  Definition WBINVD_p := "0000" $$ "1111" $$ "0000" $$ ! "1001".
-  Definition WRMSR_p := "0000" $$ "1111" $$ "0011" $$ ! "0000".
+  Definition WBINVD_b := "0000" $$ "1111" $$ "0000" $$ ! "1001".
+  Definition WRMSR_b := "0000" $$ "1111" $$ "0011" $$ ! "0000".
 
-  Definition XADD_p : 
+  Definition XADD_b : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     refine("0000" $$ "1111" $$ "1100" $$ "000" $$ anybit $ modrm
             @ (fun v => 
@@ -3209,7 +3294,7 @@ Set Implicit Arguments.
             & _); invertible_tac.
   Defined.
 
-  Definition XCHG_p : 
+  Definition XCHG_b : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     refine (("1000" $$ "011" $$ anybit $ modrm_ret_reg |+|
              "1001" $$ "0" $$ reg)
@@ -3245,7 +3330,7 @@ Set Implicit Arguments.
       + ins_printable_tac.
   Defined.
 
-  Definition XLAT_p := "1101" $$ ! "0111".
+  Definition XLAT_b := "1101" $$ ! "0111".
 
   (** ** Defs used in grammars for floating-point instructions *)
 
@@ -3262,7 +3347,7 @@ Set Implicit Arguments.
   Local Ltac fp_invertible_tac := 
     invertible_tac_gen unfold_invertible_ast ins_pf_sim fp_destruct_var.
 
-  Definition fpu_reg_op_p : wf_bigrammar fp_operand_t.
+  Definition fpu_reg_op_b : wf_bigrammar fp_operand_t.
     refine (fpu_reg @ (fun v => FPS_op v %% fp_operand_t)
                     & (fun u => match u with | FPS_op v => Some v | _ => None end)
                     & _); fp_invertible_tac.
@@ -3315,8 +3400,8 @@ Set Implicit Arguments.
   Hint Rewrite Z_to_fp_condition_type_inv: inv_db.
 
   (** ** Grammars for floating-point instructions, based on tables B.17 and B-39*)
-  Definition F2XM1_p := "11011" $$ "001111" $$ ! "10000".
-  Definition FABS_p :=  "11011" $$ "001111" $$ ! "00001".
+  Definition F2XM1_b := "11011" $$ "001111" $$ ! "10000".
+  Definition FABS_b :=  "11011" $$ "001111" $$ ! "00001".
 
   Definition fp_arith_env (bs0 bs1: string) :
     AST_Env (pair_t bool_t fp_operand_t) :=
@@ -3331,7 +3416,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold fp_arith_env : env_unfold_db.
 
-  Definition fp_arith_p (bs0 bs1: string) : 
+  Definition fp_arith_b (bs0 bs1: string) : 
     wf_bigrammar (pair_t bool_t fp_operand_t).
     intros; gen_ast_defs (fp_arith_env bs0 bs1).
     refine ((ast_bigrammar gt) @ (ast_map gt)
@@ -3346,20 +3431,20 @@ Set Implicit Arguments.
               & _); fp_invertible_tac.
   Defined.
 
-  Definition FADD_p := fp_arith_p "000" "000".
+  Definition FADD_b := fp_arith_b "000" "000".
 
   (* Possible todos: FADDP allows a fpu reg as an operand; can change the
      syntax of FADDP to take a fpureg as the argument, instead of
      fpu_operand; the same applies to many FPU instructions *)
-  Definition FADDP_p := "11011" $$ "110" $$ "11000" $$ fpu_reg_op_p.
+  Definition FADDP_b := "11011" $$ "110" $$ "11000" $$ fpu_reg_op_b.
 
-  Definition FBLD_p := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "100".
-  Definition FBSTP_p := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "110".
-  Definition FCHS_p := "11011" $$ "001111" $$ ! "00000".
+  Definition FBLD_b := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "100".
+  Definition FBSTP_b := "11011" $$ "111" $$ ext_op_modrm_FPM64_noreg "110".
+  Definition FCHS_b := "11011" $$ "001111" $$ ! "00000".
 
-  Definition FCMOVcc_p : 
+  Definition FCMOVcc_b : 
     wf_bigrammar (pair_t fp_condition_t fp_operand_t).
-    refine (("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg_op_p)
+    refine (("11011" $$ "01" $$ anybit $ "110" $$ anybit $ anybit $ fpu_reg_op_b)
               @ (fun v => 
                    match v with 
                        (b2, (b1, (b0, op))) => 
@@ -3387,7 +3472,7 @@ Set Implicit Arguments.
       autorewrite with inv_db. trivial.
   Defined.
 
-  Definition FCOM_p: wf_bigrammar fp_operand_t.
+  Definition FCOM_b: wf_bigrammar fp_operand_t.
     refine (("11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr "010" |+|
              "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr "010" |+|
              "11011" $$ "000" $$ "11010" $$ fpu_reg) 
@@ -3407,7 +3492,7 @@ Set Implicit Arguments.
               & _); fp_invertible_tac.
   Defined.
 
-  Definition FCOMP_p : wf_bigrammar fp_operand_t.
+  Definition FCOMP_b : wf_bigrammar fp_operand_t.
     refine (("11011" $$ "000" $$ ext_op_modrm_noreg_ret_addr "011" |+|
              "11011" $$ "100" $$ ext_op_modrm_noreg_ret_addr "011" |+|
              "11011" $$ "000" $$ "11011" $$ fpu_reg)
@@ -3427,19 +3512,19 @@ Set Implicit Arguments.
               & _); fp_invertible_tac.
   Defined.
 
-  Definition FCOMPP_p := "11011" $$ "110" $$ "11011" $$ ! "001".
-  Definition FCOMIP_p := "11011" $$ "111" $$ "11110" $$ fpu_reg_op_p. 
-  Definition FCOS_p := "11011" $$ "001" $$ "111" $$ ! "11111".
-  Definition FDECSTP_p := "11011" $$ "001" $$ "111" $$ ! "10110".
+  Definition FCOMPP_b := "11011" $$ "110" $$ "11011" $$ ! "001".
+  Definition FCOMIP_b := "11011" $$ "111" $$ "11110" $$ fpu_reg_op_b. 
+  Definition FCOS_b := "11011" $$ "001" $$ "111" $$ ! "11111".
+  Definition FDECSTP_b := "11011" $$ "001" $$ "111" $$ ! "10110".
 
-  Definition FDIV_p := fp_arith_p "110" "111".
-  Definition FDIVP_p := "11011" $$ "110" $$ "11111" $$ fpu_reg_op_p.
-  Definition FDIVR_p := fp_arith_p "111" "110".
-  Definition FDIVRP_p := "11011" $$ "110" $$ "11110" $$ fpu_reg_op_p.
-  Definition FFREE_p := "11011" $$ "101" $$ "11000" $$ fpu_reg_op_p.
+  Definition FDIV_b := fp_arith_b "110" "111".
+  Definition FDIVP_b := "11011" $$ "110" $$ "11111" $$ fpu_reg_op_b.
+  Definition FDIVR_b := fp_arith_b "111" "110".
+  Definition FDIVRP_b := "11011" $$ "110" $$ "11110" $$ fpu_reg_op_b.
+  Definition FFREE_b := "11011" $$ "101" $$ "11000" $$ fpu_reg_op_b.
 
   (* floating-point arith involving an integer as one of the operands *)
-  Definition fp_iarith_p (bs: string) : wf_bigrammar fp_operand_t.
+  Definition fp_iarith_b (bs: string) : wf_bigrammar fp_operand_t.
     intros.
     refine (("11011" $$ "110" $$ ext_op_modrm_noreg_ret_addr bs |+|
              "11011" $$ "010" $$ ext_op_modrm_noreg_ret_addr bs)
@@ -3457,13 +3542,13 @@ Set Implicit Arguments.
               & _); fp_invertible_tac.
   Defined.
 
-  Definition FIADD_p := fp_iarith_p "000".
-  Definition FICOM_p  := fp_iarith_p "010".
-  Definition FICOMP_p  := fp_iarith_p "011".
-  Definition FIDIV_p  := fp_iarith_p "110".
-  Definition FIDIVR_p  := fp_iarith_p "111".
+  Definition FIADD_b := fp_iarith_b "000".
+  Definition FICOM_b  := fp_iarith_b "010".
+  Definition FICOMP_b  := fp_iarith_b "011".
+  Definition FIDIV_b  := fp_iarith_b "110".
+  Definition FIDIVR_b  := fp_iarith_b "111".
 
-  Definition FILD_p : wf_bigrammar fp_operand_t.
+  Definition FILD_b : wf_bigrammar fp_operand_t.
     refine (("11011" $$ "111" $$ ext_op_modrm_noreg_ret_addr "000" |+|
              "11011" $$ "011" $$ ext_op_modrm_noreg_ret_addr "000" |+|
              "11011" $$ "111" $$ ext_op_modrm_noreg_ret_addr "101")
@@ -3483,10 +3568,10 @@ Set Implicit Arguments.
               & _); fp_invertible_tac.
   Defined.
 
-  Definition FIMUL_p := fp_iarith_p "001".
-  Definition FINCSTP_p := "11011" $$ "001111" $$ ! "10111".
+  Definition FIMUL_b := fp_iarith_b "001".
+  Definition FINCSTP_b := "11011" $$ "001111" $$ ! "10111".
 
-  Definition FIST_p : wf_bigrammar fp_operand_t.
+  Definition FIST_b : wf_bigrammar fp_operand_t.
     refine (("11011" $$ "111" $$ ext_op_modrm_noreg_ret_addr "010" |+|
              "11011" $$ "011" $$ ext_op_modrm_noreg_ret_addr "010")
               @ (fun v => 
@@ -3503,7 +3588,7 @@ Set Implicit Arguments.
               & _); fp_invertible_tac.
   Defined.
 
-  Definition FISTP_p : wf_bigrammar fp_operand_t.
+  Definition FISTP_b : wf_bigrammar fp_operand_t.
     refine (("11011" $$ "111" $$ ext_op_modrm_noreg_ret_addr "011" |+|
              "11011" $$ "011" $$ ext_op_modrm_noreg_ret_addr "011" |+|
              "11011" $$ "111" $$ ext_op_modrm_noreg_ret_addr "111")
@@ -3523,8 +3608,8 @@ Set Implicit Arguments.
               & _); fp_invertible_tac.
   Defined.
 
-  Definition FISUB_p := fp_iarith_p "100".
-  Definition FISUBR_p := fp_iarith_p "101".
+  Definition FISUB_b := fp_iarith_b "100".
+  Definition FISUBR_b := fp_iarith_b "101".
 
   Definition FLD_env : AST_Env fp_operand_t :=
     {{0, "11011" $$ "001" $$ ext_op_modrm_noreg_ret_addr "000",
@@ -3538,7 +3623,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold FLD_env : env_unfold_db.
 
-  Definition FLD_p: wf_bigrammar fp_operand_t.
+  Definition FLD_b: wf_bigrammar fp_operand_t.
     gen_ast_defs FLD_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -3552,27 +3637,27 @@ Set Implicit Arguments.
                & _); fp_invertible_tac.
   Defined.
 
-  Definition FLD1_p := "11011" $$ "001111" $$ ! "01000".
-  Definition FLDCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "101".
+  Definition FLD1_b := "11011" $$ "001111" $$ ! "01000".
+  Definition FLDCW_b := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "101".
 
-  Definition FLDENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "100". 
-  Definition FLDL2E_p := "11011" $$ "001111" $$ ! "01010".
-  Definition FLDL2T_p := "11011" $$ "001111" $$ ! "01001".
-  Definition FLDLG2_p := "11011" $$ "001111" $$ ! "01100".
-  Definition FLDLN2_p := "11011" $$ "001111" $$ ! "01101". 
-  Definition FLDPI_p := "11011" $$ "001111" $$ ! "01011".
-  Definition FLDZ_p := "11011" $$ "001111" $$ ! "01110".
+  Definition FLDENV_b := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "100". 
+  Definition FLDL2E_b := "11011" $$ "001111" $$ ! "01010".
+  Definition FLDL2T_b := "11011" $$ "001111" $$ ! "01001".
+  Definition FLDLG2_b := "11011" $$ "001111" $$ ! "01100".
+  Definition FLDLN2_b := "11011" $$ "001111" $$ ! "01101". 
+  Definition FLDPI_b := "11011" $$ "001111" $$ ! "01011".
+  Definition FLDZ_b := "11011" $$ "001111" $$ ! "01110".
 
-  Definition FMUL_p := fp_arith_p "001" "001".
+  Definition FMUL_b := fp_arith_b "001" "001".
 
-  Definition FMULP_p := "11011" $$ "110" $$ "11001" $$ fpu_reg_op_p. 
-  Definition FNCLEX_p := "11011" $$ "011111" $$ ! "00010".
-  Definition FNINIT_p := "11011" $$ "011111" $$ ! "00011".
-  Definition FNOP_p := "11011" $$ "001110" $$ ! "10000".
-  Definition FNSAVE_p := "11011101" $$ ext_op_modrm_FPM64_noreg "110".
-  Definition FNSTCW_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "111".
+  Definition FMULP_b := "11011" $$ "110" $$ "11001" $$ fpu_reg_op_b. 
+  Definition FNCLEX_b := "11011" $$ "011111" $$ ! "00010".
+  Definition FNINIT_b := "11011" $$ "011111" $$ ! "00011".
+  Definition FNOP_b := "11011" $$ "001110" $$ ! "10000".
+  Definition FNSAVE_b := "11011101" $$ ext_op_modrm_FPM64_noreg "110".
+  Definition FNSTCW_b := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "111".
 
-  Definition FNSTSW_p : wf_bigrammar (option_t fp_operand_t).
+  Definition FNSTSW_b : wf_bigrammar (option_t fp_operand_t).
     refine (("11011" $$ "111" $$ "111" $$ ! "00000" |+|
              "11011" $$ "101" $$ ext_op_modrm_FPM32_noreg "111")
               @ (fun v =>
@@ -3588,20 +3673,20 @@ Set Implicit Arguments.
               & _); invertible_tac.
   Defined.
 
-  Definition FPATAN_p := "11011" $$ "001111" $$ ! "10011".
-  Definition FPREM_p := "11011" $$ "001111" $$ ! "11000".
-  Definition FPREM1_p := "11011" $$ "001111" $$ ! "10101".
-  Definition FPTAN_p := "11011" $$ "001111" $$ ! "10010".
-  Definition FRNDINT_p := "11011" $$ "001111" $$ ! "11100".
+  Definition FPATAN_b := "11011" $$ "001111" $$ ! "10011".
+  Definition FPREM_b := "11011" $$ "001111" $$ ! "11000".
+  Definition FPREM1_b := "11011" $$ "001111" $$ ! "10101".
+  Definition FPTAN_b := "11011" $$ "001111" $$ ! "10010".
+  Definition FRNDINT_b := "11011" $$ "001111" $$ ! "11100".
 
-  Definition FRSTOR_p := "11011" $$ "101" $$ ext_op_modrm_FPM32_noreg "100".
+  Definition FRSTOR_b := "11011" $$ "101" $$ ext_op_modrm_FPM32_noreg "100".
 
-  Definition FSCALE_p := "11011" $$ "001111" $$ ! "11101".
-  Definition FSIN_p := "11011" $$ "001111" $$ ! "11110".
-  Definition FSINCOS_p := "11011" $$ "001111" $$ ! "11011".
-  Definition FSQRT_p := "11011" $$ "001111" $$ ! "11010".
+  Definition FSCALE_b := "11011" $$ "001111" $$ ! "11101".
+  Definition FSIN_b := "11011" $$ "001111" $$ ! "11110".
+  Definition FSINCOS_b := "11011" $$ "001111" $$ ! "11011".
+  Definition FSQRT_b := "11011" $$ "001111" $$ ! "11010".
 
-  Definition FST_p : wf_bigrammar fp_operand_t.
+  Definition FST_b : wf_bigrammar fp_operand_t.
     refine (("11011" $$ "001" $$ ext_op_modrm_noreg_ret_addr "010" |+|
              "11011" $$ "101" $$ ext_op_modrm_noreg_ret_addr "010" |+|
              "11011" $$ "101" $$ "11010" $$ fpu_reg)
@@ -3622,8 +3707,8 @@ Set Implicit Arguments.
   Defined.
 
   (* FSTCW's encoding is the same as FWAIT followed by FNSTCW *)
-  (* Definition FSTCW_p := "10011011" $$ "11011" $$ "001" $$ ext_op_modrm_FPM32 "111". *)
-  Definition FSTENV_p := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "110".
+  (* Definition FSTCW_b := "10011011" $$ "11011" $$ "001" $$ ext_op_modrm_FPM32 "111". *)
+  Definition FSTENV_b := "11011" $$ "001" $$ ext_op_modrm_FPM32_noreg "110".
 
   Definition FSTP_env : AST_Env fp_operand_t :=
     {{0, "11011" $$ "001" $$ ext_op_modrm_noreg_ret_addr "011",
@@ -3637,7 +3722,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold FSTP_env : env_unfold_db.
 
-  Definition FSTP_p: wf_bigrammar fp_operand_t.
+  Definition FSTP_b: wf_bigrammar fp_operand_t.
     gen_ast_defs FSTP_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -3651,24 +3736,24 @@ Set Implicit Arguments.
                & _); fp_invertible_tac.
   Defined.
 
-  Definition FSUB_p := fp_arith_p "100" "101".
-  Definition FSUBP_p := "11011" $$ "110" $$ "11101" $$ fpu_reg_op_p. 
-  Definition FSUBR_p := fp_arith_p "101" "100".
+  Definition FSUB_b := fp_arith_b "100" "101".
+  Definition FSUBP_b := "11011" $$ "110" $$ "11101" $$ fpu_reg_op_b. 
+  Definition FSUBR_b := fp_arith_b "101" "100".
 
-  Definition FSUBRP_p := "11011" $$ "110" $$ "11100" $$ fpu_reg_op_p. 
-  Definition FTST_p := "11011" $$ "001111" $$ ! "00100".
-  Definition FUCOM_p := "11011" $$ "101" $$ "11100" $$ fpu_reg_op_p. 
-  Definition FUCOMP_p := "11011" $$ "101" $$ "11101" $$ fpu_reg_op_p. 
-  Definition FUCOMPP_p := "11011" $$ "010111" $$ ! "01001".
-  Definition FUCOMI_p := "11011" $$ "011" $$ "11101" $$ fpu_reg_op_p. 
-  Definition FUCOMIP_p := "11011" $$ "111" $$ "11101" $$ fpu_reg_op_p.
-  Definition FXAM_p := "11011" $$ "001111" $$ ! "00101".
-  Definition FXCH_p := "11011" $$ "001" $$ "11001" $$ fpu_reg_op_p.
+  Definition FSUBRP_b := "11011" $$ "110" $$ "11100" $$ fpu_reg_op_b. 
+  Definition FTST_b := "11011" $$ "001111" $$ ! "00100".
+  Definition FUCOM_b := "11011" $$ "101" $$ "11100" $$ fpu_reg_op_b. 
+  Definition FUCOMP_b := "11011" $$ "101" $$ "11101" $$ fpu_reg_op_b. 
+  Definition FUCOMPP_b := "11011" $$ "010111" $$ ! "01001".
+  Definition FUCOMI_b := "11011" $$ "011" $$ "11101" $$ fpu_reg_op_b. 
+  Definition FUCOMIP_b := "11011" $$ "111" $$ "11101" $$ fpu_reg_op_b.
+  Definition FXAM_b := "11011" $$ "001111" $$ ! "00101".
+  Definition FXCH_b := "11011" $$ "001" $$ "11001" $$ fpu_reg_op_b.
 
-  Definition FXTRACT_p := "11011" $$ "001" $$ "1111" $$ ! "0100".
-  Definition FYL2X_p := "11011" $$ "001111" $$ ! "10001".
-  Definition FYL2XP1_p := "11011" $$ "001111" $$ ! "11001".
-  Definition FWAIT_p := ! "10011011".
+  Definition FXTRACT_b := "11011" $$ "001" $$ "1111" $$ ! "0100".
+  Definition FYL2X_b := "11011" $$ "001111" $$ ! "10001".
+  Definition FYL2XP1_b := "11011" $$ "001111" $$ ! "11001".
+  Definition FWAIT_b := ! "10011011".
 
   (** ** Definitions used in bigrammars for MMX instructions *)
 
@@ -3688,7 +3773,7 @@ Set Implicit Arguments.
   Local Ltac mmx_parsable_tac := 
     parsable_tac_gen ins_pf_sim mmx_destruct_var.
 
-  Definition MMX_Reg_op_p: wf_bigrammar mmx_operand_t.
+  Definition MMX_Reg_op_b: wf_bigrammar mmx_operand_t.
     refine (mmx_reg @ (fun r => MMX_Reg_op r : interp mmx_operand_t)
                     & (fun op => match op with 
                                    | MMX_Reg_op r => Some r
@@ -3731,7 +3816,7 @@ Set Implicit Arguments.
   Defined.
 
   (* grammar for the mmx granularity bits, allowing 8, 16, 32 bits. *)
-  Definition mmx_gg_p_8_16_32 : wf_bigrammar mmx_granularity_t.
+  Definition mmx_gg_b_8_16_32 : wf_bigrammar mmx_granularity_t.
     refine ((! "00" |+| ! "01" |+| ! "10")
               @ (fun v => 
                    match v with
@@ -3749,7 +3834,7 @@ Set Implicit Arguments.
               & _); ins_invertible_tac; mmx_parsable_tac.
   Defined.
 
-  Definition mmx_gg_p_8_16 : wf_bigrammar mmx_granularity_t.
+  Definition mmx_gg_b_8_16 : wf_bigrammar mmx_granularity_t.
     refine ((! "00" |+| ! "01")
               @ (fun v => 
                    match v with
@@ -3765,7 +3850,7 @@ Set Implicit Arguments.
               & _); ins_invertible_tac; mmx_parsable_tac.
   Defined.
 
-  Definition mmx_gg_p_16_32_64 : wf_bigrammar mmx_granularity_t.
+  Definition mmx_gg_b_16_32_64 : wf_bigrammar mmx_granularity_t.
     refine ((! "01" |+| ! "10" |+| ! "11")
               @ (fun v => 
                    match v with
@@ -3783,7 +3868,7 @@ Set Implicit Arguments.
               & _); ins_invertible_tac; mmx_parsable_tac.
   Defined.
 
-  Definition mmx_gg_p_16_32 : wf_bigrammar mmx_granularity_t.
+  Definition mmx_gg_b_16_32 : wf_bigrammar mmx_granularity_t.
     refine ((! "01" |+| ! "10")
               @ (fun v => 
                    match v with
@@ -3861,7 +3946,7 @@ Set Implicit Arguments.
 
   (** ** Bigrammars for MMX instructions *)
 
-  Definition EMMS_p := "0000" $$ "1111" $$ "0111" $$ ! "0111".
+  Definition EMMS_b := "0000" $$ "1111" $$ "0111" $$ ! "0111".
 
   Definition MOVD_env : AST_Env (pair_t mmx_operand_t mmx_operand_t) :=
     (* gpreg to and from mmxreg *)
@@ -3879,7 +3964,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold MOVD_env : env_unfold_db.
 
-  Definition MOVD_p : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
+  Definition MOVD_b : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
     gen_ast_defs MOVD_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -3895,7 +3980,7 @@ Set Implicit Arguments.
       destruct v as [d [mr r]]; destruct d; printable_tac; ins_ibr_sim.
   Defined.
 
-  Definition MOVQ_p : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
+  Definition MOVQ_b : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
     refine (("0000" $$ "1111" $$ "011" $$ anybit $ "1111" $$ modrm_mmx)
              @ (fun v: [|pair_t char_t (pair_t mmx_operand_t mmx_operand_t)|] =>
                   let (d,v1):=v in let (op1,op2) :=v1 in
@@ -3918,59 +4003,59 @@ Set Implicit Arguments.
       mmx_pf_sim; printable_tac; ins_ibr_sim. 
   Defined.
 
-  Definition PACKSSDW_p := 
+  Definition PACKSSDW_b := 
     "0000" $$ "1111" $$ "0110" $$ "1011" $$ modrm_mmx.
 
-  Definition PACKSSWB_p := 
+  Definition PACKSSWB_b := 
     "0000" $$ "1111" $$ "0110" $$ "0011" $$ modrm_mmx.
 
-  Definition PACKUSWB_p := 
+  Definition PACKUSWB_b := 
     "0000" $$ "1111" $$ "0110" $$ "0111" $$ modrm_mmx.
 
-  Definition PADD_p := 
-    "0000" $$ "1111" $$ "1111" $$ "11" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+  Definition PADD_b := 
+    "0000" $$ "1111" $$ "1111" $$ "11" $$ mmx_gg_b_8_16_32 $ modrm_mmx. 
 
-  Definition PADDS_p := 
-    "0000" $$ "1111" $$ "1110" $$ "11" $$ mmx_gg_p_8_16 $ modrm_mmx.
+  Definition PADDS_b := 
+    "0000" $$ "1111" $$ "1110" $$ "11" $$ mmx_gg_b_8_16 $ modrm_mmx.
 
-  Definition PADDUS_p := 
-    "0000" $$ "1111" $$ "1101" $$ "11" $$ mmx_gg_p_8_16 $ modrm_mmx. 
+  Definition PADDUS_b := 
+    "0000" $$ "1111" $$ "1101" $$ "11" $$ mmx_gg_b_8_16 $ modrm_mmx. 
 
-  Definition PAND_p := 
+  Definition PAND_b := 
     "0000" $$ "1111" $$ "1101" $$ "1011" $$ modrm_mmx. 
 
-  Definition PANDN_p := 
+  Definition PANDN_b := 
     "0000" $$ "1111" $$ "1101" $$ "1111" $$ modrm_mmx. 
 
-  Definition PCMPEQ_p :=
-    "0000" $$ "1111" $$ "0111" $$ "01" $$ mmx_gg_p_8_16_32 $ modrm_mmx.
+  Definition PCMPEQ_b :=
+    "0000" $$ "1111" $$ "0111" $$ "01" $$ mmx_gg_b_8_16_32 $ modrm_mmx.
 
-  Definition PCMPGT_p := 
-    "0000" $$ "1111" $$ "0110" $$ "01" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+  Definition PCMPGT_b := 
+    "0000" $$ "1111" $$ "0110" $$ "01" $$ mmx_gg_b_8_16_32 $ modrm_mmx. 
 
-  Definition PMADDWD_p := 
+  Definition PMADDWD_b := 
     "0000" $$ "1111" $$ "1111" $$ "0101" $$ modrm_mmx. 
 
-  Definition PMULHUW_p := 
+  Definition PMULHUW_b := 
     "0000" $$ "1111" $$ "1110" $$ "0100" $$ modrm_mmx.
 
-  Definition PMULHW_p := 
+  Definition PMULHW_b := 
     "0000" $$ "1111" $$ "1110" $$ "0101" $$ modrm_mmx.
 
-  Definition PMULLW_p := 
+  Definition PMULLW_b := 
     "0000" $$ "1111" $$ "1101" $$ "0101" $$ modrm_mmx.
 
-  Definition POR_p := 
+  Definition POR_b := 
     "0000" $$ "1111" $$ "1110" $$ "1011" $$ modrm_mmx.
 
-  Definition pshift_p (bs:string) (gg_p:wf_bigrammar mmx_granularity_t) :
+  Definition pshift_b (bs:string) (gg_b:wf_bigrammar mmx_granularity_t) :
     wf_bigrammar (pair_t mmx_granularity_t
                          (pair_t mmx_operand_t mmx_operand_t)).
     intros.    
     refine (("0000" $$ "1111" $$ "11" $$ bs $$ "00"
-                $$ gg_p $ modrm_mmx_ret_reg |+|
+                $$ gg_b $ modrm_mmx_ret_reg |+|
              "0000" $$ "1111" $$ "0111" $$ "00"
-                $$ gg_p $ "11" $$ bs $$ "0" $$ mmx_reg $ byte)
+                $$ gg_b $ "11" $$ bs $$ "0" $$ mmx_reg $ byte)
               @ (fun v =>
                    match v with
                      | inl (gg,(r1,op2)) => (gg,(MMX_Reg_op r1, op2))
@@ -3996,26 +4081,26 @@ Set Implicit Arguments.
               & _); mmx_invertible_tac.
   Defined.
 
-  Definition PSLL_p := pshift_p "11" mmx_gg_p_16_32_64.
-  Definition PSRA_p := pshift_p "10" mmx_gg_p_16_32.
-  Definition PSRL_p := pshift_p "01" mmx_gg_p_16_32_64.
+  Definition PSLL_b := pshift_b "11" mmx_gg_b_16_32_64.
+  Definition PSRA_b := pshift_b "10" mmx_gg_b_16_32.
+  Definition PSRL_b := pshift_b "01" mmx_gg_b_16_32_64.
 
-  Definition PSUB_p := 
-    "0000" $$ "1111" $$ "1111" $$ "10" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+  Definition PSUB_b := 
+    "0000" $$ "1111" $$ "1111" $$ "10" $$ mmx_gg_b_8_16_32 $ modrm_mmx. 
 
-  Definition PSUBS_p := 
-    "0000" $$ "1111" $$ "1110" $$ "10" $$ mmx_gg_p_8_16 $ modrm_mmx. 
+  Definition PSUBS_b := 
+    "0000" $$ "1111" $$ "1110" $$ "10" $$ mmx_gg_b_8_16 $ modrm_mmx. 
 
-  Definition PSUBUS_p := 
-    "0000" $$ "1111" $$ "1101" $$ "10" $$ mmx_gg_p_8_16 $ modrm_mmx. 
+  Definition PSUBUS_b := 
+    "0000" $$ "1111" $$ "1101" $$ "10" $$ mmx_gg_b_8_16 $ modrm_mmx. 
 
-  Definition PUNPCKH_p := 
-    "0000" $$ "1111" $$ "0110" $$ "10" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+  Definition PUNPCKH_b := 
+    "0000" $$ "1111" $$ "0110" $$ "10" $$ mmx_gg_b_8_16_32 $ modrm_mmx. 
 
-  Definition PUNPCKL_p := 
-    "0000" $$ "1111" $$ "0110" $$ "00" $$ mmx_gg_p_8_16_32 $ modrm_mmx. 
+  Definition PUNPCKL_b := 
+    "0000" $$ "1111" $$ "0110" $$ "00" $$ mmx_gg_b_8_16_32 $ modrm_mmx. 
 
-  Definition PXOR_p := 
+  Definition PXOR_b := 
     "0000" $$ "1111" $$ "1110" $$ "1111" $$ modrm_mmx. 
 
   (** ** Bigrammars for SSE instructions *)
@@ -4032,7 +4117,7 @@ Set Implicit Arguments.
 
   Local Ltac sse_parsable_tac := parsable_tac_gen ins_pf_sim sse_destruct_var.
 
-  Definition SSE_XMM_Reg_op_p: wf_bigrammar sse_operand_t.
+  Definition SSE_XMM_Reg_op_b: wf_bigrammar sse_operand_t.
     refine (sse_reg @ (fun r => SSE_XMM_Reg_op r : interp sse_operand_t)
                     & (fun op => match op with
                                    | SSE_XMM_Reg_op r => Some r
@@ -4041,7 +4126,7 @@ Set Implicit Arguments.
                     & _); invertible_tac; sse_parsable_tac.
   Defined.
 
-  Definition SSE_GP_Reg_op_p: wf_bigrammar sse_operand_t.
+  Definition SSE_GP_Reg_op_b: wf_bigrammar sse_operand_t.
     refine (reg @ (fun r => SSE_GP_Reg_op r : interp sse_operand_t)
                 & (fun op => match op with
                                | SSE_GP_Reg_op r => Some r
@@ -4050,7 +4135,7 @@ Set Implicit Arguments.
                 & _); invertible_tac; sse_parsable_tac.
   Defined.
 
-  Definition SSE_MM_Reg_op_p: wf_bigrammar sse_operand_t.
+  Definition SSE_MM_Reg_op_b: wf_bigrammar sse_operand_t.
     refine (mmx_reg @ (fun r => SSE_MM_Reg_op r : interp sse_operand_t)
                 & (fun op => match op with
                                | SSE_MM_Reg_op r => Some r
@@ -4253,31 +4338,31 @@ Set Implicit Arguments.
   Local Ltac sse_invertible_tac := 
     invertible_tac_gen unfold_invertible_ast sse_pf_sim sse_destruct_var.
 
-  Definition ADDPS_p := 
+  Definition ADDPS_b := 
     "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm. 
 
-  Definition ADDSS_p := 
+  Definition ADDSS_b := 
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1000" $$ modrm_xmm. 
 
-  Definition ANDNPS_p := 
+  Definition ANDNPS_b := 
     "0000" $$ "1111" $$ "0101" $$ "0101" $$ modrm_xmm. 
 
-  Definition ANDPS_p := 
+  Definition ANDPS_b := 
     "0000" $$ "1111" $$ "0101" $$ "0100" $$ modrm_xmm. 
 
-  Definition CMPPS_p := 
+  Definition CMPPS_b := 
     "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm_byte.
 
-  Definition CMPSS_p := 
+  Definition CMPSS_b := 
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "1100" $$ "0010" $$ modrm_xmm_byte.
 
-  Definition COMISS_p :=
+  Definition COMISS_b :=
     "0000" $$ "1111" $$ "0010" $$ "1111" $$ modrm_xmm. 
 
-  Definition CVTPI2PS_p :=
+  Definition CVTPI2PS_b :=
     "0000" $$ "1111" $$ "0010" $$ "1010" $$ modrm_xmm.
 
-  Definition CVTPS2PI_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+  Definition CVTPS2PI_b : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     refine (("0000" $$ "1111" $$ "0010" $$ "1101" $$ "11" $$ sse_reg $ mmx_reg |+|
              "0000" $$ "1111" $$ "0010" $$ "1101" $$ modrm_xmm_noreg)
               @ (fun v => 
@@ -4299,7 +4384,7 @@ Set Implicit Arguments.
               & _); sse_invertible_tac.
   Defined.
 
-  Definition CVTSI2SS_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+  Definition CVTSI2SS_b : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     refine(("1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010"
                    $$ "1010" $$ "11" $$ sse_reg $ reg |+|
             "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0010"
@@ -4323,7 +4408,7 @@ Set Implicit Arguments.
              & _); sse_invertible_tac.
   Defined.
 
-  Definition ss2si_p (bs:string) :
+  Definition ss2si_b (bs:string) :
     wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     intros.
     refine (("1111" $$ "0011" $$ "0000" $$ "1111"
@@ -4349,35 +4434,35 @@ Set Implicit Arguments.
               & _); sse_invertible_tac.
   Defined.
 
-  Definition CVTSS2SI_p := ss2si_p "1101".
+  Definition CVTSS2SI_b := ss2si_b "1101".
 
-  Definition CVTTPS2PI_p :=
+  Definition CVTTPS2PI_b :=
     "0000" $$ "1111" $$ "0010" $$ "1100" $$ modrm_xmm. 
 
-  Definition CVTTSS2SI_p := ss2si_p "1100".
+  Definition CVTTSS2SI_b := ss2si_b "1100".
 
-  Definition DIVPS_p := 
+  Definition DIVPS_b := 
     "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm.
 
-  Definition DIVSS_p :=
+  Definition DIVSS_b :=
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1110" $$ modrm_xmm. 
 
-  Definition LDMXCSR_p := 
+  Definition LDMXCSR_b := 
     "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "010". 
 
-  Definition MAXPS_p := 
+  Definition MAXPS_b := 
     "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm. 
 
-  Definition MAXSS_p := 
+  Definition MAXSS_b := 
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1111" $$ modrm_xmm. 
 
-  Definition MINPS_p := 
+  Definition MINPS_b := 
     "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm. 
 
-  Definition MINSS_p :=
+  Definition MINSS_b :=
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1101" $$ modrm_xmm. 
 
-  Definition sse_mov_p (bs:string) : 
+  Definition sse_mov_b (bs:string) : 
     wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     intros.
     refine(bs $$ anybit $ modrm_xmm
@@ -4402,13 +4487,13 @@ Set Implicit Arguments.
       destruct d; sse_pf_sim; printable_tac; ins_ibr_sim.
   Defined.
 
-  Definition MOVAPS_p := sse_mov_p "000011110010100".
+  Definition MOVAPS_b := sse_mov_b "000011110010100".
 
-  Definition MOVHLPS_p :=
+  Definition MOVHLPS_b :=
     "0000" $$ "1111" $$ "0001" $$ "0010" $$ "11"
-           $$ SSE_XMM_Reg_op_p $ SSE_XMM_Reg_op_p.
+           $$ SSE_XMM_Reg_op_b $ SSE_XMM_Reg_op_b.
 
-  Definition sse_mov_ps_p (bs:string) : 
+  Definition sse_mov_ps_b (bs:string) : 
     wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     intros.
     refine ("0000" $$ "1111" $$ "0001" $$ bs $$ anybit $ modrm_xmm_noreg
@@ -4431,74 +4516,74 @@ Set Implicit Arguments.
       destruct d; sse_pf_sim; printable_tac; ins_ibr_sim.
   Defined.
 
-  Definition MOVHPS_p := sse_mov_ps_p "011".
+  Definition MOVHPS_b := sse_mov_ps_b "011".
 
-  Definition MOVLHPS_p :=
+  Definition MOVLHPS_b :=
     "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11"
-           $$ SSE_XMM_Reg_op_p $ SSE_XMM_Reg_op_p.
+           $$ SSE_XMM_Reg_op_b $ SSE_XMM_Reg_op_b.
 
-  Definition MOVLPS_p := sse_mov_ps_p "001".
+  Definition MOVLPS_b := sse_mov_ps_b "001".
 
-  Definition MOVMSKPS_p :=
+  Definition MOVMSKPS_b :=
     "0000" $$ "1111" $$ "0001" $$ "0110" $$ "11"
-           $$ SSE_GP_Reg_op_p $ SSE_XMM_Reg_op_p.
+           $$ SSE_GP_Reg_op_b $ SSE_XMM_Reg_op_b.
   
-  Definition MOVSS_p := sse_mov_p "11110011000011110001000".
-  Definition MOVUPS_p := sse_mov_p "000011110001000".
+  Definition MOVSS_b := sse_mov_b "11110011000011110001000".
+  Definition MOVUPS_b := sse_mov_b "000011110001000".
 
-  Definition MULPS_p :=
+  Definition MULPS_b :=
     "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm. 
 
-  Definition MULSS_p :=
+  Definition MULSS_b :=
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1001" $$ modrm_xmm.
 
-  Definition ORPS_p :=
+  Definition ORPS_b :=
     "0000" $$ "1111" $$ "0101" $$ "0110" $$ modrm_xmm.
 
-  Definition RCPPS_p :=
+  Definition RCPPS_b :=
     "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm. 
 
-  Definition RCPSS_p :=
+  Definition RCPSS_b :=
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0011" $$ modrm_xmm.
 
-  Definition RSQRTPS_p :=
+  Definition RSQRTPS_b :=
     "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm.
 
-  Definition RSQRTSS_p :=
+  Definition RSQRTSS_b :=
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0010" $$ modrm_xmm.
 
-  Definition SHUFPS_p :=
+  Definition SHUFPS_b :=
     "0000" $$ "1111" $$ "1100" $$ "0110" $$ modrm_xmm_byte.
 
-  Definition SQRTPS_p :=
+  Definition SQRTPS_b :=
     "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm.
 
-  Definition SQRTSS_p :=
+  Definition SQRTSS_b :=
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "0001" $$ modrm_xmm.
 
-  Definition STMXCSR_p := 
+  Definition STMXCSR_b := 
     "0000" $$ "1111" $$ "1010" $$ "1110" $$ ext_op_modrm_sse_noreg "011".
 
-  Definition SUBPS_p :=
+  Definition SUBPS_b :=
     "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm.
 
-  Definition SUBSS_p :=
+  Definition SUBSS_b :=
     "1111" $$ "0011" $$ "0000" $$ "1111" $$ "0101" $$ "1100" $$ modrm_xmm.
 
-  Definition UCOMISS_p :=
+  Definition UCOMISS_b :=
     "0000" $$ "1111" $$ "0010" $$ "1110" $$ modrm_xmm.
 
-  Definition UNPCKHPS_p :=
+  Definition UNPCKHPS_b :=
     "0000" $$ "1111" $$ "0001" $$ "0101" $$ modrm_xmm.
 
-  Definition UNPCKLPS_p :=
+  Definition UNPCKLPS_b :=
     "0000" $$ "1111" $$ "0001" $$ "0100" $$ modrm_xmm.
 
-  Definition XORPS_p :=
+  Definition XORPS_b :=
     "0000" $$ "1111" $$ "0101" $$ "0111" $$ modrm_xmm.
 
   (* possible todo: this needs to take operand-override prefix into account *)
-  Definition PAVGB_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+  Definition PAVGB_b : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     refine (("0000" $$ "1111" $$ "1110" $$ "0000" $$ modrm_mm_ret_reg |+|
              "0000" $$ "1111" $$ "1110" $$ "0011" $$ modrm_mm_ret_reg)
               @ (fun v =>
@@ -4519,11 +4604,11 @@ Set Implicit Arguments.
               & _); sse_invertible_tac.
   Defined.
 
-  Definition PEXTRW_p :=
+  Definition PEXTRW_b :=
     "0000" $$ "1111" $$ "1100" $$ "0101" $$ "11"
-           $$ SSE_GP_Reg_op_p $ SSE_MM_Reg_op_p $ byte.
+           $$ SSE_GP_Reg_op_b $ SSE_MM_Reg_op_b $ byte.
 
-  Definition PINSRW_p : 
+  Definition PINSRW_b : 
     wf_bigrammar (pair_t sse_operand_t (pair_t sse_operand_t byte_t)).
     refine (("0000" $$ "1111" $$ "1100" $$ "0100" $$ "11"
                     $$ mmx_reg $ reg $ byte |+|
@@ -4546,26 +4631,26 @@ Set Implicit Arguments.
               & _); sse_invertible_tac.
   Defined.
 
-  Definition PMAXSW_p :=
+  Definition PMAXSW_b :=
     "0000" $$ "1111" $$ "1110" $$ "1110" $$ modrm_mm.
 
-  Definition PMAXUB_p :=
+  Definition PMAXUB_b :=
     "0000" $$ "1111" $$ "1101" $$ "1110" $$ modrm_mm. 
 
-  Definition PMINSW_p :=
+  Definition PMINSW_b :=
     "0000" $$ "1111" $$ "1110" $$ "1010" $$ modrm_mm. 
 
-  Definition PMINUB_p :=
+  Definition PMINUB_b :=
     "0000" $$ "1111" $$ "1101" $$ "1010" $$ modrm_mm. 
 
-  Definition PMOVMSKB_p :=
+  Definition PMOVMSKB_b :=
     "0000" $$ "1111" $$ "1101" $$ "0111" $$ "11"
-           $$ SSE_GP_Reg_op_p $ SSE_MM_Reg_op_p.
+           $$ SSE_GP_Reg_op_b $ SSE_MM_Reg_op_b.
 
 (*
   Already done in MMX grammar section
 
- Definition PMULHUW_p :=
+ Definition PMULHUW_b :=
   "0000" $$ "1111" $$ "1110" $$ "0100" $$ "11" $$ mmx_reg $ mmx_reg @
     (fun p => let (a, b) := p in PMULHUW (SSE_MM_Reg_op a) (SSE_MM_Reg_op b) %% instruction_t)
   |+|
@@ -4573,10 +4658,10 @@ Set Implicit Arguments.
     (fun p => let (mem, mmx) := p in PMULHUW mem mmx %% instruction_t).
 *)
 
-  Definition PSADBW_p :=
+  Definition PSADBW_b :=
     "0000" $$ "1111" $$ "1111" $$ "0110" $$ modrm_mm.
 
-  Definition PSHUFW_p : 
+  Definition PSHUFW_b : 
     wf_bigrammar (pair_t sse_operand_t (pair_t sse_operand_t byte_t)).
     refine ("0000" $$ "1111" $$ "0111" $$ "0000" $$ modrm_mm $ byte 
               @ (fun v => 
@@ -4590,11 +4675,11 @@ Set Implicit Arguments.
               & _); sse_invertible_tac.
   Defined.
 
-  Definition MASKMOVQ_p :=
+  Definition MASKMOVQ_b :=
     "0000" $$ "1111" $$ "1111" $$ "0111" $$ "11"
-           $$ SSE_MM_Reg_op_p $ SSE_MM_Reg_op_p.
+           $$ SSE_MM_Reg_op_b $ SSE_MM_Reg_op_b.
 
-  Definition MOVNTPS_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+  Definition MOVNTPS_b : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     refine ("0000" $$ "1111" $$ "0010" $$ "1011" $$ modrm_xmm_noreg
               @ (fun v =>
                    match v with
@@ -4609,7 +4694,7 @@ Set Implicit Arguments.
               & _); sse_invertible_tac.
   Defined.
 
-  Definition MOVNTQ_p : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
+  Definition MOVNTQ_b : wf_bigrammar (pair_t sse_operand_t sse_operand_t).
     refine ("0000" $$ "1111" $$ "1110" $$ "0111" $$ modrm_mm_noreg
               @ (fun v =>
                    match v with
@@ -4624,25 +4709,21 @@ Set Implicit Arguments.
               & _); sse_invertible_tac.
   Defined.
 
-  Definition PREFETCHT0_p :=
+  Definition PREFETCHT0_b :=
     "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "001".
 
-  Definition PREFETCHT1_p :=
+  Definition PREFETCHT1_b :=
     "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "010". 
 
-  Definition PREFETCHT2_p := 
+  Definition PREFETCHT2_b := 
     "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "011". 
 
-  Definition PREFETCHNTA_p :=
+  Definition PREFETCHNTA_b :=
     "0000" $$ "1111" $$ "0001" $$ "1000" $$ ext_op_modrm_sse_noreg "000". 
 
-  Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111"
+  Definition SFENCE_b := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111"
                                 $$ ! "1000".
 
 
 (* End X86_PARSER. *)
 
-Extraction Implicit never [t].
-Extraction Implicit always [t].
-Extraction Implicit bitsleft [t].
-Extraction Implicit modrm_gen [reg_t].

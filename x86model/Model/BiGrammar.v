@@ -517,7 +517,9 @@ Local Ltac localcrush :=
 Obligation Tactic := localcrush.
 
 Program Definition empty : wf_bigrammar Unit_t := Eps.
+
 Program Definition never t : wf_bigrammar t := Zero t.
+Extraction Implicit never [t].
 
 Program Definition map t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2)
              (pf: invertible fi (` g)) : wf_bigrammar t2 := 
@@ -536,6 +538,7 @@ Next Obligation.
     + crush.
   - destruct (teq x w); crush.
 Defined.
+Extraction Implicit always [t].
 
 Program Definition seq t1 t2 (p1:wf_bigrammar t1) (p2:wf_bigrammar t2) : 
   wf_bigrammar (Pair_t t1 t2) :=
@@ -932,6 +935,7 @@ Fixpoint ast_type (tt: typetree): type :=
   | Node tt1 tt2 =>
     Sum_t (ast_type tt1) (ast_type tt2)
   end.
+Extraction Implicit ast_type [tt].
 
 (** A tree of bigrammars and semantic actions; it's indexed by the a
     result type rt and each semantic action produces rt values. The
@@ -948,6 +952,8 @@ Inductive gr_tree (rt:type): typetree -> Type :=
 | GNode: forall (id:index) (tt1 tt2:typetree),
     gr_tree rt tt1 -> gr_tree rt tt2 ->
     gr_tree rt (Node tt1 tt2).
+Extraction Implicit GLeaf [t].
+Extraction Implicit GNode [tt1 tt2].
 
 (** Combining bigrammars in a bigrammar tree using Alt. *)
 Fixpoint ast_bigrammar {rt tt} (gt:gr_tree rt tt): 
@@ -959,6 +965,7 @@ Fixpoint ast_bigrammar {rt tt} (gt:gr_tree rt tt):
     let g2:= ast_bigrammar gt2 in 
     g1 |+| g2
   end.
+Extraction Implicit ast_bigrammar [rt tt].
 
 (** Combining the map functions in a bigrammar tree into a single map. *)
 Fixpoint ast_map {rt tt} (gt:gr_tree rt tt): [|ast_type tt|] -> [|rt|] :=
@@ -972,6 +979,7 @@ Fixpoint ast_map {rt tt} (gt:gr_tree rt tt): [|ast_type tt|] -> [|rt|] :=
              | inr v2 => m2 v2
              end
   end.
+Extraction Implicit ast_map [rt tt].
 
 (** A relation between t and tt saying that t is a member of type
     tree tt. *)
@@ -979,6 +987,9 @@ Inductive tmember: type -> typetree -> Type :=
 | MLeaf: forall t, tmember t (Leaf t)
 | MLTree: forall t tt1 tt2, tmember t tt1 -> tmember t (Node tt1 tt2)
 | MRTree: forall t tt1 tt2, tmember t tt2 -> tmember t (Node tt1 tt2).
+Extraction Implicit MLeaf [t].
+Extraction Implicit MLTree [t tt1 tt2].
+Extraction Implicit MRTree [t tt1 tt2].
 
 (** Generate an inverse function for an AST env entry from a proof
     saying the entry is in the tree. *)
@@ -991,18 +1002,20 @@ Fixpoint inv_case {t tt} (m: tmember t tt):
   | MRTree _ m' =>
     fun v => inr (inv_case m' v)
   end.
+Extraction Implicit inv_case [t tt].
 
 Definition inv_case_some {t tt} (m: tmember t tt): 
   [|t|] -> option [|ast_type tt|] :=
   fun v => Some (inv_case m v).
+Extraction Implicit inv_case_some [t tt].
 
 (** Generate a tmember proof from the index of a bigrammar of a
     bigrammar tree. *)
-Fixpoint get_tm_by_idx (id:index) {rt tt} (gt: gr_tree rt tt): 
+Fixpoint get_tm_by_idx (id:index) {rt tt} (gt: gr_tree rt tt):
   {t : type & tmember t tt} :=
   match gt in gr_tree _ tt' return {t:type & tmember t tt'} with
   | @GLeaf _ id t g _ => existT _ t (MLeaf t)
-  | GNode id' tt1 tt2 => 
+  | GNode id' tt1 tt2 =>
     if N.leb id id' then
       let x := get_tm_by_idx id tt1 in
       match x with
@@ -1015,6 +1028,26 @@ Fixpoint get_tm_by_idx (id:index) {rt tt} (gt: gr_tree rt tt):
       end
   end.
 Arguments get_tm_by_idx (id)%N rt tt gt.
+Extraction Implicit get_tm_by_idx [rt tt].
+
+(* The problem with the above get_tm_by_idx is that I do not know
+   how to tell Coq erase type t during extraction; therefore,
+   I introduce a Ltac version of it and use this version in the
+   following devleopment *)
+Ltac get_tm_by_idx id gt :=
+  match gt with
+  | @GLeaf _ _ ?t ?g _ => constr:(MLeaf t)
+  | @GNode _ ?id' ?tt1 ?tt2 ?gt1 ?gt2 =>
+    let leb_id_id' := (eval compute in (N.leb id id')) in
+    match leb_id_id' with
+    | true => 
+      let tm := get_tm_by_idx id gt1 in
+      constr:(MLTree tt2 tm)
+    | false => 
+      let tm := get_tm_by_idx id gt2 in
+      constr:(MRTree tt1 tm)
+    end
+  end.
 
 (* tactic for converting an ast_env to a bigrammar tree; we could
    use a dependently typed heterogeneous list to avoid using tactics
@@ -1071,17 +1104,38 @@ Ltac gen_tm_cases gt len :=
         | true => idtac
         | false =>
           let inj:=fresh "case" in
+          let tm:= get_tm_by_idx (N.of_nat i) gt in
           (* another variation is to put the literal term
              "get_tm_by_idx (N.of_nat i) gt)" into the context and
              perform evaluation later during proofs; however, this
              would not speed up proofs *)
-          pose (inj:=projT2 (get_tm_by_idx (N.of_nat i) gt));
+          pose (inj:=tm);
           simpl in inj; 
           gen_tm_cases_aux (S i)
      end
   in let dummyf := constr:(()) in
      pose (case:=dummyf);
      gen_tm_cases_aux 0.
+
+(* Ltac gen_tm_cases gt len :=  *)
+(*   let rec gen_tm_cases_aux i :=  *)
+(*     let eq_len := (eval compute in (beq_nat i len)) in *)
+(*       match eq_len with *)
+(*         | true => idtac *)
+(*         | false => *)
+(*           let inj:=fresh "case" in *)
+(*           (* another variation is to put the literal term *)
+(*              "get_tm_by_idx (N.of_nat i) gt)" into the context and *)
+(*              perform evaluation later during proofs; however, this *)
+(*              would not speed up proofs *) *)
+(*           pose (inj:=projT2 (get_tm_by_idx (N.of_nat i) gt)); *)
+(*           simpl in inj;  *)
+(*           gen_tm_cases_aux (S i) *)
+(*      end *)
+(*   in let dummyf := constr:(()) in *)
+(*      pose (case:=dummyf); *)
+(*      gen_tm_cases_aux 0. *)
+
 
 Ltac gen_ast_defs ast_env := 
   pose (ae:=ast_env);
@@ -1091,6 +1145,7 @@ Ltac gen_ast_defs ast_env :=
     | (_, ?g) =>
       pose (gt:=g); clear ae;
       let len := env_length ae1 in
+      let gt:= eval unfold gt in gt in 
       gen_tm_cases gt len
     end.
 
@@ -1129,9 +1184,6 @@ Definition test_env: AST_Env Unit_t :=
   {{1, empty, (fun v => () %% Unit_t)}} :::
   {{2, empty, (fun v => () %% Unit_t)}} :::
   {{3, empty, (fun v => () %% Unit_t)}} :::
-  {{4, empty, (fun v => () %% Unit_t)}} :::
-  {{5, empty, (fun v => () %% Unit_t)}} :::
-  {{6, empty, (fun v => () %% Unit_t)}} :::
   ast_env_nil.
 Hint Unfold test_env: env_unfold_db.
 
@@ -1677,26 +1729,27 @@ Qed.
 
 (** * converting a [bigrammar] to a [grammar] *)
 Require Grammar.
-Module G:=Grammar.
 
-Fixpoint bigrammar_to_grammar t (g:bigrammar t): G.grammar t :=
+Fixpoint bigrammar_to_grammar t (g:bigrammar t): Grammar.grammar t :=
   match g with
-    | Eps => G.Eps
-    | Zero t => G.Zero t
-    | Char c => G.Char c
-    | Any => G.Any
-    | Cat g1 g2 => G.Cat (bigrammar_to_grammar g1)
+    | Eps => Grammar.Eps
+    | Zero t => Grammar.Zero t
+    | Char c => Grammar.Char c
+    | Any => Grammar.Any
+    | Cat g1 g2 => Grammar.Cat (bigrammar_to_grammar g1)
                                (bigrammar_to_grammar g2)
-    | Alt g1 g2 => G.Alt (bigrammar_to_grammar g1)
+    | Alt g1 g2 => Grammar.Alt (bigrammar_to_grammar g1)
                                (bigrammar_to_grammar g2)
-    | Star g => G.Star (bigrammar_to_grammar g)
-    | @Map t1 t2 fi g => G.Map t2 (fst fi) (bigrammar_to_grammar g)
+    | Star g => Grammar.Star (bigrammar_to_grammar g)
+    | @Map t1 t2 fi g => Grammar.Map t2 (fst fi) (bigrammar_to_grammar g)
   end.
+Extraction Implicit bigrammar_to_grammar [t].
 
 Lemma b2g_corr1 t (g:bigrammar t) s v : 
-  in_bigrammar g s v -> G.in_grammar (bigrammar_to_grammar g) s v.
+  in_bigrammar g s v -> Grammar.in_grammar (bigrammar_to_grammar g) s v.
 Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
 
 Lemma b2g_corr2 t (g:bigrammar t) s v : 
-  G.in_grammar (bigrammar_to_grammar g) s v -> in_bigrammar g s v.
+  Grammar.in_grammar (bigrammar_to_grammar g) s v -> in_bigrammar g s v.
 Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
+

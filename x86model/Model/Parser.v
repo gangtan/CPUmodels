@@ -18,7 +18,7 @@ Require Import Coq.Arith.Arith.
 Require Export Xform.
 Require Export Grammar.
 
-Require Import MSetsMore.
+Require Import Shared.MSetsMore.
 Require Shared.Vector.
 Require Import Regexp.
 
@@ -1540,21 +1540,28 @@ Section DFA.
     Definition nl := String (Ascii.ascii_of_nat 10) EmptyString.
 
     Definition entry_show {n ss} (e:entry_t n ss) : string := nat_show (next_state e).
+
     Fixpoint list_show' {A} (show:A -> string) (sep:string) (stop:string) (xs:list A) : 
       string := 
       match xs with 
         | nil => stop
         | x::xs' => (show x) ++ sep ++ (list_show' show sep stop xs')
       end.
+
     Definition list_show {A} (show:A -> string) (start sep stop:string) (xs:list A) :=
       start ++ (list_show' show sep stop xs).
+
     Definition entries_show {i ss} (xs:list (entry_t i ss)) : string := 
       nat_show i ++ ": " ++ (list_show entry_show "[" "," "]" xs).
+
     Definition transition_show {ss} (t:transition_t ss) : string := 
       entries_show (row_entries t).
+
     Definition transitions_show {ss} (ts:transitions_t ss) : string := 
       list_show transition_show "{" (";" ++ nl) "}" ts.
+
     Definition dfa_show (d:DFA) : string := transitions_show (dfa_transition d).
+
   End DFA_TO_STRING.
 
   (* reimporting list to cancel the effect of import the string library *)
@@ -2638,6 +2645,13 @@ Extraction Implicit build_table [r].
 Extraction Implicit transition_to_vtransition [r].
 Extraction Implicit dfa_to_vdfa [r].
 
+Extraction Implicit entry_show [r ss].
+Extraction Implicit entries_show [r ss].
+Extraction Implicit transition_show [r ss].
+Extraction Implicit transitions_show [r ss].
+Extraction Implicit dfa_show [r].
+
+
 (* Definition test0:= Eps. *)
 (* Definition test1 := Char true. *)
 (* Definition test2 := Cat (Char true) (Char false). *)
@@ -2666,6 +2680,7 @@ Definition coerce_dom (t1 t2:xtype) (H:t1=t2) (B:Type) (f:xt_interp t1->B) :
   xt_interp t2 -> B.
    rewrite <- H. trivial.
 Defined.
+Extraction Implicit coerce_dom [t1 t2].
 
 Section NAIVE_PARSE.
 
@@ -3314,6 +3329,14 @@ Section DFA_PARSE.
 
 End DFA_PARSE.
 
+Extraction Implicit instParserState [t r].
+Extraction Implicit coerce_dfa [r1 r2].
+Extraction Implicit initial_parser_state' [t].
+Extraction Implicit initial_parser_state [t].
+Extraction Implicit parse_token [t r].
+Extraction Implicit ps_extract_nil [t r].
+Extraction Implicit parse_tokens [t r].
+
 Section VDFA_PARSE.
   Opaque build_dfa.
 
@@ -3657,23 +3680,11 @@ Section VDFA_PARSE.
 
 End VDFA_PARSE.
 
-Extraction Implicit instParserState [t r].
-Extraction Implicit initial_parser_state' [t].
-Extraction Implicit initial_parser_state [t].
+Extraction Implicit vinstParserState [t r].
 Extraction Implicit vinitial_parser_state' [t].
 Extraction Implicit vinitial_parser_state [t].
-Extraction Implicit coerce_dfa [r1 r2].
-Extraction Implicit coerce_dom [t1 t2].
-Extraction Implicit parse_token [t r].
-Extraction Implicit ps_extract_nil [t r].
-Extraction Implicit parse_tokens [t r].
-Extraction Implicit dfa_show [r].
-Extraction Implicit transitions_show [r ss].
-Extraction Implicit transition_show [r ss].
-Extraction Implicit entries_show [r ss].
-Extraction Implicit entry_show [r ss].
+Extraction Implicit vps_extract_nil [t r].
 Extraction Implicit vparse_token [t r].
-
 
 (** [to_string] takes a grammar [a] and an abstract syntax value [v] of
     type [regexp_type a] and produces an optional string [s] with the property

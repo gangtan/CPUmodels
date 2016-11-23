@@ -22,7 +22,7 @@ Set Implicit Arguments.
   Require Import X86Model.BiGrammar.
   Require Import DecodeBi_ins.
 
-  Definition lock_p : wf_bigrammar lock_or_rep_t. 
+  Definition lock_b : wf_bigrammar lock_or_rep_t. 
     refine("1111" $$ ! "0000"
              @ (fun v => lock %% lock_or_rep_t)
              & (fun lr => 
@@ -34,7 +34,7 @@ Set Implicit Arguments.
     - destruct w; parsable_tac.
   Defined.
 
-  Definition rep_or_repn_p : wf_bigrammar lock_or_rep_t. 
+  Definition rep_or_repn_b : wf_bigrammar lock_or_rep_t. 
     refine ((("1111" $$ ! "0010") |+| ("1111" $$ ! "0011"))
               @ (fun v => 
                    match v with
@@ -51,7 +51,7 @@ Set Implicit Arguments.
     - destruct w; parsable_tac.
   Defined.
 
-  Definition rep_p : wf_bigrammar lock_or_rep_t. 
+  Definition rep_b : wf_bigrammar lock_or_rep_t. 
     refine ("1111" $$ ! "0011"
               @ (fun v => rep  %% lock_or_rep_t)
               & (fun u => 
@@ -63,7 +63,7 @@ Set Implicit Arguments.
     - destruct w; parsable_tac.
   Defined.
 
-  Definition lock_or_rep_p : wf_bigrammar lock_or_rep_t.
+  Definition lock_or_rep_b : wf_bigrammar lock_or_rep_t.
     refine (("1111" $$ ( ! "0000" |+| ! "0010" |+| ! "0011"))
               @ (fun v => 
                    match v with
@@ -91,7 +91,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold segment_override_env : env_unfold_db.
 
-  Definition segment_override_p : wf_bigrammar segment_register_t.
+  Definition segment_override_b : wf_bigrammar segment_register_t.
     gen_ast_defs segment_override_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u => 
@@ -124,14 +124,14 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold op_override_env : env_unfold_db.
 
-  Definition op_override_p : wf_bigrammar bool_t.
+  Definition op_override_b : wf_bigrammar bool_t.
     gen_ast_defs op_override_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun b:bool => if b then inv_case_some case0 () else None)
                & _); ins_invertible_tac.
   Defined.
 
-  (* Definition op_override_p : wf_bigrammar bool_t. *)
+  (* Definition op_override_b : wf_bigrammar bool_t. *)
   (*   refine ("0110" $$ ! "0110" *)
   (*             @ (fun v => true %% bool_t) *)
   (*             & (fun u => *)
@@ -142,7 +142,7 @@ Set Implicit Arguments.
   (*             & _); ins_invertible_tac. *)
   (* Defined. *)
 
-  Definition addr_override_p : wf_bigrammar bool_t.
+  Definition addr_override_b : wf_bigrammar bool_t.
     refine ("0110" $$ ! "0111"
               @ (fun v => true %% bool_t)
               & (fun u =>
@@ -153,16 +153,16 @@ Set Implicit Arguments.
               & _); ins_invertible_tac.
   Defined.
 
-  Lemma op_override_p_rng_inv op :
-    in_bigrammar_rng (` op_override_p) op -> op = true.
-  Proof. unfold op_override_p; intros; ins_ibr_sim. 
+  Lemma op_override_b_rng_inv op :
+    in_bigrammar_rng (` op_override_b) op -> op = true.
+  Proof. unfold op_override_b; intros; ins_ibr_sim. 
     compute [ast_type ast_bigrammar] in *.
     destruct_all; trivial.
   Qed.
 
-  (* Lemma op_override_p_rng_inv op : *)
-  (*   in_bigrammar_rng (` op_override_p) op -> op = true. *)
-  (* Proof. unfold op_override_p; intros; ins_ibr_sim. Qed. *)
+  (* Lemma op_override_b_rng_inv op : *)
+  (*   in_bigrammar_rng (` op_override_b) op -> op = true. *)
+  (* Proof. unfold op_override_b; intros; ins_ibr_sim. Qed. *)
 
   Definition opt2b (a: option bool) (default: bool) :=
     match a with
@@ -173,7 +173,7 @@ Set Implicit Arguments.
   (** In lock_or_rep, only rep can be used; 
       segment_override and op_override are allowed. *)
   Definition prefix_grammar_rep : wf_bigrammar prefix_t.
-    refine ((option_perm3 rep_p segment_override_p op_override_p)
+    refine ((option_perm3 rep_b segment_override_b op_override_b)
               @ (fun v => match v with (l, (s, op)) =>
                    mkPrefix l s (opt2b op false) false %% prefix_t end)
               & (fun u => 
@@ -201,7 +201,7 @@ Set Implicit Arguments.
   (** In lock_or_rep, either rep or repn can be used, but lock is disallowed;
       segment_override and op_override also allowed.*)
   Definition prefix_grammar_rep_or_repn : wf_bigrammar prefix_t.
-    refine ((option_perm3 rep_or_repn_p segment_override_p op_override_p)
+    refine ((option_perm3 rep_or_repn_b segment_override_b op_override_b)
               @ (fun v => match v with (l, (s, op)) =>
                    mkPrefix l s (opt2b op false) false %% prefix_t end)
               & (fun u => 
@@ -226,7 +226,7 @@ Set Implicit Arguments.
   (** In lock_or_rep, only lock can be used; 
       segment override is optional; op_override prefix *must* be used *)
   Definition prefix_grammar_lock_with_op_override : wf_bigrammar prefix_t.
-    refine ((option_perm3_variation lock_p segment_override_p op_override_p)
+    refine ((option_perm3_variation lock_b segment_override_b op_override_b)
               @ (fun v => match v with (l, (s, op)) =>
                    mkPrefix l s op false %% prefix_t end)
               & (fun u => 
@@ -243,7 +243,7 @@ Set Implicit Arguments.
   (** In lock_or_rep, only lock can be used; segment override is optional;
       and op_override *must not* be used. *)
   Definition prefix_grammar_lock_no_op_override : wf_bigrammar prefix_t.
-    refine ((option_perm2 lock_p segment_override_p)
+    refine ((option_perm2 lock_b segment_override_b)
               @ (fun v => match v with (l, s) =>
                    mkPrefix l s false false %% prefix_t end)
               & (fun u => 
@@ -259,7 +259,7 @@ Set Implicit Arguments.
   (** It cannot take a lock_or_rep prefix, must take op_override prefix,
       can optionally take segment-override prefix. *)
   Definition prefix_grammar_seg_with_op_override: wf_bigrammar prefix_t. 
-    refine ((option_perm2_variation segment_override_p op_override_p)
+    refine ((option_perm2_variation segment_override_b op_override_b)
               @ (fun v => match v with (s, op) =>
                    mkPrefix None s op false %% prefix_t end)
               & (fun u =>
@@ -275,7 +275,7 @@ Set Implicit Arguments.
   (** Cannot take a lock_or_rep prefix, but can optionally take segment or
       op override prefix. *)
   Definition prefix_grammar_seg_op_override: wf_bigrammar prefix_t. 
-    refine ((option_perm2 segment_override_p op_override_p)
+    refine ((option_perm2 segment_override_b op_override_b)
               @ (fun v => match v with (s, op) =>
                    mkPrefix None s (opt2b op false) false %% prefix_t end)
               & (fun u =>
@@ -299,7 +299,7 @@ Set Implicit Arguments.
 
   (** Only allows seg override prefix. *)
   Definition prefix_grammar_only_seg_override : wf_bigrammar prefix_t.
-    refine ((option_perm segment_override_p)
+    refine ((option_perm segment_override_b)
               @ (fun s => mkPrefix None s false false %% prefix_t)
               & (fun u => 
                    match op_override u, addr_override u, lock_rep u with
@@ -320,7 +320,7 @@ Set Implicit Arguments.
     match goal with
       | [H:in_bigrammar_rng (` (option_perm3_variation _ _ _)) (_,(_,_)) |- _] =>
         rewrite <- option_perm3_variation_rng in H; destruct H as [_ [_ H]];
-        apply op_override_p_rng_inv in H
+        apply op_override_b_rng_inv in H
     end.
     subst pre; trivial.
   Qed.
@@ -340,7 +340,7 @@ Set Implicit Arguments.
     match goal with
       | [H:in_bigrammar_rng (` (option_perm2_variation _ _)) (_,_) |- _] =>
         rewrite <- option_perm2_variation_rng in H; destruct H as [_ H];
-        apply op_override_p_rng_inv in H
+        apply op_override_b_rng_inv in H
     end.
     subst pre; trivial.
   Qed.
@@ -366,46 +366,46 @@ Set Implicit Arguments.
             end); fail)].
 
   Definition i_instr1_env : AST_Env i_instr1_t := 
-    {{0, AAA_p, (fun v => I_AAA %% i_instr1_t)}} :::
-    {{1, AAD_p, (fun v => I_AAD %% i_instr1_t)}} :::
-    {{2, AAM_p, (fun v => I_AAM %% i_instr1_t)}} :::
-    {{3, AAS_p, (fun v => I_AAS %% i_instr1_t)}} :::
-    {{4, CLC_p, (fun v => I_CLC %% i_instr1_t)}} :::
-    {{5, CLD_p, (fun v => I_CLD %% i_instr1_t)}} :::
-    {{6, CLI_p, (fun v => I_CLI %% i_instr1_t)}} :::
-    {{7, CLTS_p, (fun v => I_CLTS %% i_instr1_t)}} :::
-    {{8, CMC_p, (fun v => I_CMC %% i_instr1_t)}} :::
-    {{9, CPUID_p, (fun v => I_CPUID %% i_instr1_t)}} :::
-    {{10, DAA_p, (fun v => I_DAA %% i_instr1_t)}} :::
-    {{11, DAS_p, (fun v => I_DAS %% i_instr1_t)}} :::
-    {{12, HLT_p, (fun v => I_HLT %% i_instr1_t)}} :::
-    {{13, INT_p, (fun v => I_INT %% i_instr1_t)}} :::
-    {{14, INTO_p, (fun v => I_INTO %% i_instr1_t)}} :::
-    {{15, INVD_p, (fun v => I_INVD %% i_instr1_t)}} :::
-    {{16, IRET_p, (fun v => I_IRET %% i_instr1_t)}} :::
-    {{17, LAHF_p, (fun v => I_LAHF %% i_instr1_t)}} :::
-    {{18, LEAVE_p, (fun v => I_LEAVE %% i_instr1_t)}} :::
-    {{19, POPA_p, (fun v => I_POPA %% i_instr1_t)}} :::
-    {{20, POPF_p, (fun v => I_POPF %% i_instr1_t)}} :::
-    {{21, PUSHA_p, (fun v => I_PUSHA %% i_instr1_t)}} :::
-    {{22, PUSHF_p, (fun v => I_PUSHF %% i_instr1_t)}} :::
-    {{23, RDMSR_p, (fun v => I_RDMSR %% i_instr1_t)}} :::
-    {{24, RDPMC_p, (fun v => I_RDPMC %% i_instr1_t)}} :::
-    {{25, RDTSC_p, (fun v => I_RDTSC %% i_instr1_t)}} :::
-    {{26, RDTSCP_p, (fun v => I_RDTSCP %% i_instr1_t)}} :::
-    {{27, RSM_p, (fun v => I_RSM %% i_instr1_t)}} :::
-    {{28, SAHF_p, (fun v => I_SAHF %% i_instr1_t)}} :::
-    {{29, STC_p, (fun v => I_STC %% i_instr1_t)}} :::
-    {{30, STD_p, (fun v => I_STD %% i_instr1_t)}} :::
-    {{31, STI_p, (fun v => I_STI %% i_instr1_t)}} :::
-    {{32, UD2_p, (fun v => I_UD2 %% i_instr1_t)}} :::
-    {{33, WBINVD_p, (fun v => I_WBINVD %% i_instr1_t)}} :::
-    {{34, WRMSR_p, (fun v => I_WRMSR %% i_instr1_t)}} :::
-    {{35, XLAT_p, (fun v => I_XLAT %% i_instr1_t)}} :::
+    {{0, AAA_b, (fun v => I_AAA %% i_instr1_t)}} :::
+    {{1, AAD_b, (fun v => I_AAD %% i_instr1_t)}} :::
+    {{2, AAM_b, (fun v => I_AAM %% i_instr1_t)}} :::
+    {{3, AAS_b, (fun v => I_AAS %% i_instr1_t)}} :::
+    {{4, CLC_b, (fun v => I_CLC %% i_instr1_t)}} :::
+    {{5, CLD_b, (fun v => I_CLD %% i_instr1_t)}} :::
+    {{6, CLI_b, (fun v => I_CLI %% i_instr1_t)}} :::
+    {{7, CLTS_b, (fun v => I_CLTS %% i_instr1_t)}} :::
+    {{8, CMC_b, (fun v => I_CMC %% i_instr1_t)}} :::
+    {{9, CPUID_b, (fun v => I_CPUID %% i_instr1_t)}} :::
+    {{10, DAA_b, (fun v => I_DAA %% i_instr1_t)}} :::
+    {{11, DAS_b, (fun v => I_DAS %% i_instr1_t)}} :::
+    {{12, HLT_b, (fun v => I_HLT %% i_instr1_t)}} :::
+    {{13, INT_b, (fun v => I_INT %% i_instr1_t)}} :::
+    {{14, INTO_b, (fun v => I_INTO %% i_instr1_t)}} :::
+    {{15, INVD_b, (fun v => I_INVD %% i_instr1_t)}} :::
+    {{16, IRET_b, (fun v => I_IRET %% i_instr1_t)}} :::
+    {{17, LAHF_b, (fun v => I_LAHF %% i_instr1_t)}} :::
+    {{18, LEAVE_b, (fun v => I_LEAVE %% i_instr1_t)}} :::
+    {{19, POPA_b, (fun v => I_POPA %% i_instr1_t)}} :::
+    {{20, POPF_b, (fun v => I_POPF %% i_instr1_t)}} :::
+    {{21, PUSHA_b, (fun v => I_PUSHA %% i_instr1_t)}} :::
+    {{22, PUSHF_b, (fun v => I_PUSHF %% i_instr1_t)}} :::
+    {{23, RDMSR_b, (fun v => I_RDMSR %% i_instr1_t)}} :::
+    {{24, RDPMC_b, (fun v => I_RDPMC %% i_instr1_t)}} :::
+    {{25, RDTSC_b, (fun v => I_RDTSC %% i_instr1_t)}} :::
+    {{26, RDTSCP_b, (fun v => I_RDTSCP %% i_instr1_t)}} :::
+    {{27, RSM_b, (fun v => I_RSM %% i_instr1_t)}} :::
+    {{28, SAHF_b, (fun v => I_SAHF %% i_instr1_t)}} :::
+    {{29, STC_b, (fun v => I_STC %% i_instr1_t)}} :::
+    {{30, STD_b, (fun v => I_STD %% i_instr1_t)}} :::
+    {{31, STI_b, (fun v => I_STI %% i_instr1_t)}} :::
+    {{32, UD2_b, (fun v => I_UD2 %% i_instr1_t)}} :::
+    {{33, WBINVD_b, (fun v => I_WBINVD %% i_instr1_t)}} :::
+    {{34, WRMSR_b, (fun v => I_WRMSR %% i_instr1_t)}} :::
+    {{35, XLAT_b, (fun v => I_XLAT %% i_instr1_t)}} :::
     ast_env_nil.
   Hint Unfold i_instr1_env: env_unfold_db.
 
-  Definition i_instr1_p : wf_bigrammar i_instr1_t.
+  Definition i_instr1_b : wf_bigrammar i_instr1_t.
     Time gen_ast_defs i_instr1_env.
     Time refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -451,58 +451,58 @@ Set Implicit Arguments.
   Time Defined.
 
   Definition i_instr2_env : AST_Env i_instr2_t := 
-    {{0, ARPL_p, (fun v => match v with (op1,op2) => I_ARPL op1 op2
+    {{0, ARPL_b, (fun v => match v with (op1,op2) => I_ARPL op1 op2
                           end %% i_instr2_t)}} :::
-    {{1, BOUND_p, (fun v => match v with (op1,op2) => I_BOUND op1 op2
+    {{1, BOUND_b, (fun v => match v with (op1,op2) => I_BOUND op1 op2
                           end %% i_instr2_t)}} :::
-    {{2, BSF_p, (fun v => match v with (op1,op2) => I_BSF op1 op2
+    {{2, BSF_b, (fun v => match v with (op1,op2) => I_BSF op1 op2
                           end %% i_instr2_t)}} :::
-    {{3, BSR_p, (fun v => match v with (op1,op2) => I_BSR op1 op2
+    {{3, BSR_b, (fun v => match v with (op1,op2) => I_BSR op1 op2
                           end %% i_instr2_t)}} :::
-    {{4, BSWAP_p, (fun r => I_BSWAP r %% i_instr2_t)}} :::
-    {{5, BT_p, (fun v => match v with (op1,op2) => I_BT op1 op2
+    {{4, BSWAP_b, (fun r => I_BSWAP r %% i_instr2_t)}} :::
+    {{5, BT_b, (fun v => match v with (op1,op2) => I_BT op1 op2
                           end %% i_instr2_t)}} :::
-    {{6, CALL_p, (fun v => match v with
+    {{6, CALL_b, (fun v => match v with
                               (near,(abs,(op1,sel))) => I_CALL near abs op1 sel
                           end %% i_instr2_t)}} :::
-    {{7, IN_p, (fun v => match v with (w,p) => I_IN w p
+    {{7, IN_b, (fun v => match v with (w,p) => I_IN w p
                           end %% i_instr2_t)}} :::
-    {{8, INTn_p, (fun it => I_INTn it %% i_instr2_t)}} :::
-    {{9, INVLPG_p, (fun op => I_INVLPG op %% i_instr2_t)}} :::
-    {{10, Jcc_p, (fun v => match v with (ct,disp) => I_Jcc ct disp
+    {{8, INTn_b, (fun it => I_INTn it %% i_instr2_t)}} :::
+    {{9, INVLPG_b, (fun op => I_INVLPG op %% i_instr2_t)}} :::
+    {{10, Jcc_b, (fun v => match v with (ct,disp) => I_Jcc ct disp
                           end %% i_instr2_t)}} :::
-    {{11, JCXZ_p, (fun b => I_JCXZ b %% i_instr2_t)}} :::
-    {{12, JMP_p, (fun v => match v with
+    {{11, JCXZ_b, (fun b => I_JCXZ b %% i_instr2_t)}} :::
+    {{12, JMP_b, (fun v => match v with
                               (near,(abs,(op1,sel))) => I_JMP near abs op1 sel
                           end %% i_instr2_t)}} :::
-    {{13, LAR_p, (fun v => match v with (op1,op2) => I_LAR op1 op2
+    {{13, LAR_b, (fun v => match v with (op1,op2) => I_LAR op1 op2
                           end %% i_instr2_t)}} :::
-    {{14, LDS_p, (fun v => match v with (op1,op2) => I_LDS op1 op2
+    {{14, LDS_b, (fun v => match v with (op1,op2) => I_LDS op1 op2
                           end %% i_instr2_t)}} :::
-    {{15, LEA_p, (fun v => match v with (op1,op2) => I_LEA op1 op2
+    {{15, LEA_b, (fun v => match v with (op1,op2) => I_LEA op1 op2
                           end %% i_instr2_t)}} :::
-    {{16, LES_p, (fun v => match v with (op1,op2) => I_LES op1 op2
+    {{16, LES_b, (fun v => match v with (op1,op2) => I_LES op1 op2
                           end %% i_instr2_t)}} :::
-    {{17, LFS_p, (fun v => match v with (op1,op2) => I_LFS op1 op2
+    {{17, LFS_b, (fun v => match v with (op1,op2) => I_LFS op1 op2
                           end %% i_instr2_t)}} :::
-    {{18, LGDT_p, (fun op => I_LGDT op %% i_instr2_t)}} :::
-    {{19, LGS_p, (fun v => match v with (op1,op2) => I_LGS op1 op2
+    {{18, LGDT_b, (fun op => I_LGDT op %% i_instr2_t)}} :::
+    {{19, LGS_b, (fun v => match v with (op1,op2) => I_LGS op1 op2
                           end %% i_instr2_t)}} :::
-    {{20, LIDT_p, (fun op => I_LIDT op %% i_instr2_t)}} :::
-    {{21, LLDT_p, (fun op => I_LLDT op %% i_instr2_t)}} :::
-    {{22, LMSW_p, (fun op => I_LMSW op %% i_instr2_t)}} :::
-    {{23, LOOP_p, (fun di => I_LOOP di %% i_instr2_t)}} :::
-    {{24, LOOPZ_p, (fun di => I_LOOPZ di %% i_instr2_t)}} :::
-    {{25, LOOPNZ_p, (fun di => I_LOOPNZ di %% i_instr2_t)}} :::
-    {{26, LSL_p, (fun v => match v with (op1,op2) => I_LSL op1 op2
+    {{20, LIDT_b, (fun op => I_LIDT op %% i_instr2_t)}} :::
+    {{21, LLDT_b, (fun op => I_LLDT op %% i_instr2_t)}} :::
+    {{22, LMSW_b, (fun op => I_LMSW op %% i_instr2_t)}} :::
+    {{23, LOOP_b, (fun di => I_LOOP di %% i_instr2_t)}} :::
+    {{24, LOOPZ_b, (fun di => I_LOOPZ di %% i_instr2_t)}} :::
+    {{25, LOOPNZ_b, (fun di => I_LOOPNZ di %% i_instr2_t)}} :::
+    {{26, LSL_b, (fun v => match v with (op1,op2) => I_LSL op1 op2
                           end %% i_instr2_t)}} :::
-    {{27, LSS_p, (fun v => match v with (op1,op2) => I_LSS op1 op2
+    {{27, LSS_b, (fun v => match v with (op1,op2) => I_LSS op1 op2
                           end %% i_instr2_t)}} :::
-    {{28, LTR_p, (fun op => I_LTR op %% i_instr2_t)}} :::
+    {{28, LTR_b, (fun op => I_LTR op %% i_instr2_t)}} :::
     ast_env_nil.
   Hint Unfold i_instr2_env: env_unfold_db.
 
-  Definition i_instr2_p : wf_bigrammar i_instr2_t.
+  Definition i_instr2_b : wf_bigrammar i_instr2_t.
     gen_ast_defs i_instr2_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -541,38 +541,38 @@ Set Implicit Arguments.
   Time Defined.
 
   Definition i_instr3_env : AST_Env i_instr3_t := 
-    {{0, MOVCR_p, (fun v => match v with (d,(cr,r)) => I_MOVCR d cr r
+    {{0, MOVCR_b, (fun v => match v with (d,(cr,r)) => I_MOVCR d cr r
                           end %% i_instr3_t)}} :::
-    {{1, MOVDR_p, (fun v => match v with (d,(cr,r)) => I_MOVDR d cr r
+    {{1, MOVDR_b, (fun v => match v with (d,(cr,r)) => I_MOVDR d cr r
                           end %% i_instr3_t)}} :::
-    {{2, MOVSR_p, (fun v => match v with (d,(cr,r)) => I_MOVSR d cr r
+    {{2, MOVSR_b, (fun v => match v with (d,(cr,r)) => I_MOVSR d cr r
                           end %% i_instr3_t)}} :::
-    {{3, MOVBE_p, (fun v => match v with (op1,op2) => I_MOVBE op1 op2
+    {{3, MOVBE_b, (fun v => match v with (op1,op2) => I_MOVBE op1 op2
                           end %% i_instr3_t)}} :::
-    {{4, OUT_p, (fun v => match v with (w,p) => I_OUT w p
+    {{4, OUT_b, (fun v => match v with (w,p) => I_OUT w p
                           end %% i_instr3_t)}} :::
-    {{5, POP_p, (fun op => I_POP op %% i_instr3_t)}} :::
-    {{6, POPSR_p, (fun sr => I_POPSR sr %% i_instr3_t)}} :::
-    {{7, PUSH_p, (fun v => match v with (w,op1) => I_PUSH w op1
+    {{5, POP_b, (fun op => I_POP op %% i_instr3_t)}} :::
+    {{6, POPSR_b, (fun sr => I_POPSR sr %% i_instr3_t)}} :::
+    {{7, PUSH_b, (fun v => match v with (w,op1) => I_PUSH w op1
                           end %% i_instr3_t)}} :::
-    {{8, PUSHSR_p, (fun sr => I_PUSHSR sr %% i_instr3_t)}} :::
-    {{9, RCL_p, (fun v => match v with (w,(op1,ri)) => I_RCL w op1 ri
+    {{8, PUSHSR_b, (fun sr => I_PUSHSR sr %% i_instr3_t)}} :::
+    {{9, RCL_b, (fun v => match v with (w,(op1,ri)) => I_RCL w op1 ri
                           end %% i_instr3_t)}} :::
-    {{10, RCR_p, (fun v => match v with (w,(op1,ri)) => I_RCR w op1 ri
+    {{10, RCR_b, (fun v => match v with (w,(op1,ri)) => I_RCR w op1 ri
                           end %% i_instr3_t)}} :::
-    {{11, SETcc_p, (fun v => match v with (ct,op1) => I_SETcc ct op1
+    {{11, SETcc_b, (fun v => match v with (ct,op1) => I_SETcc ct op1
                           end %% i_instr3_t)}} :::
-    {{12, SGDT_p, (fun op => I_SGDT op %% i_instr3_t)}} :::
-    {{13, SIDT_p, (fun op => I_SIDT op %% i_instr3_t)}} :::
-    {{14, SLDT_p, (fun op => I_SLDT op %% i_instr3_t)}} :::
-    {{15, SMSW_p, (fun op => I_SMSW op %% i_instr3_t)}} :::
-    {{16, STR_p, (fun op => I_STR op %% i_instr3_t)}} :::
-    {{17, VERR_p, (fun op => I_VERR op %% i_instr3_t)}} :::
-    {{18, VERW_p, (fun op => I_VERW op %% i_instr3_t)}} :::
+    {{12, SGDT_b, (fun op => I_SGDT op %% i_instr3_t)}} :::
+    {{13, SIDT_b, (fun op => I_SIDT op %% i_instr3_t)}} :::
+    {{14, SLDT_b, (fun op => I_SLDT op %% i_instr3_t)}} :::
+    {{15, SMSW_b, (fun op => I_SMSW op %% i_instr3_t)}} :::
+    {{16, STR_b, (fun op => I_STR op %% i_instr3_t)}} :::
+    {{17, VERR_b, (fun op => I_VERR op %% i_instr3_t)}} :::
+    {{18, VERW_b, (fun op => I_VERW op %% i_instr3_t)}} :::
     ast_env_nil.
   Hint Unfold i_instr3_env: env_unfold_db.
 
-  Definition i_instr3_p : wf_bigrammar i_instr3_t.
+  Definition i_instr3_b : wf_bigrammar i_instr3_t.
     gen_ast_defs i_instr3_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -605,18 +605,18 @@ Set Implicit Arguments.
       ret" to avoid the branch prediction panelty in AMD processors; intel
       processor seems to just ignore the rep prefix in "rep ret". *)
   Definition prefix_grammar_rep_env : AST_Env i_instr4_t := 
-    {{0, INS_p, (fun v => I_INS v %% i_instr4_t)}} :::
-    {{1, OUTS_p, (fun v => I_OUTS v %% i_instr4_t)}} :::
-    {{2, MOVS_p, (fun v => I_MOVS v %% i_instr4_t)}} :::
-    {{3, LODS_p, (fun v => I_LODS v %% i_instr4_t)}} :::
-    {{4, STOS_p, (fun v => I_STOS v %% i_instr4_t)}} :::
-    {{5, RET_p, (fun v => I_RET (fst v) (snd v) %% i_instr4_t)}} :::
+    {{0, INS_b, (fun v => I_INS v %% i_instr4_t)}} :::
+    {{1, OUTS_b, (fun v => I_OUTS v %% i_instr4_t)}} :::
+    {{2, MOVS_b, (fun v => I_MOVS v %% i_instr4_t)}} :::
+    {{3, LODS_b, (fun v => I_LODS v %% i_instr4_t)}} :::
+    {{4, STOS_b, (fun v => I_STOS v %% i_instr4_t)}} :::
+    {{5, RET_b, (fun v => I_RET (fst v) (snd v) %% i_instr4_t)}} :::
     ast_env_nil.
      
   (** this set of instructions can take prefixes in prefix_grammar_repn *)
   Definition prefix_grammar_rep_or_repn_env : AST_Env i_instr4_t :=
-    {{10, CMPS_p, (fun v => I_CMPS v %% i_instr4_t)}} :::
-    {{11, SCAS_p, (fun v => I_SCAS v %% i_instr4_t)}} :::
+    {{10, CMPS_b, (fun v => I_CMPS v %% i_instr4_t)}} :::
+    {{11, SCAS_b, (fun v => I_SCAS v %% i_instr4_t)}} :::
     ast_env_nil.
 
   Hint Unfold prefix_grammar_rep_env 
@@ -637,34 +637,39 @@ Set Implicit Arguments.
                in i_instr4_grammar_env' in
     exact(ige).
   Defined.
+  Hint Unfold i_instr4_grammar_env: env_unfold_db.
 
   Definition i_instr4_grammar_type : typetree.
     let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
     let tt:=gen_ast_type ige in exact(tt).
   Defined.
 
-  Definition i_instr4_grammar : wf_bigrammar (pair_t prefix_t i_instr4_t).
-    let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
-        gen_gr_tree ige.
+  Definition i_instr4_b : wf_bigrammar (pair_t prefix_t i_instr4_t).
+    gen_ast_defs i_instr4_grammar_env.
+    let gt := eval unfold gt in gt in
+    let tm10:= get_tm_by_idx (N.of_nat 10) gt in
+    let tm11:= get_tm_by_idx (N.of_nat 11) gt in
+    pose (case10:=tm10);
+    pose (case11:=tm11).
     refine ((ast_bigrammar gt) @ (ast_map gt)
               & (fun u =>
                    match snd u with
                    | I_INS a1 => 
-                     inv_case_some (projT2 (get_tm_by_idx 0 gt)) (fst u, a1)
+                     inv_case_some case0 (fst u, a1)
                    | I_OUTS a1 => 
-                     inv_case_some (projT2 (get_tm_by_idx 1 gt)) (fst u, a1)
+                     inv_case_some case1 (fst u, a1)
                    | I_MOVS a1 =>
-                     inv_case_some (projT2 (get_tm_by_idx 2 gt)) (fst u, a1)
+                     inv_case_some case2 (fst u, a1)
                    | I_LODS a1 => 
-                     inv_case_some (projT2 (get_tm_by_idx 3 gt)) (fst u, a1)
+                     inv_case_some case3 (fst u, a1)
                    | I_STOS a1 =>
-                     inv_case_some (projT2 (get_tm_by_idx 4 gt)) (fst u, a1)
+                     inv_case_some case4 (fst u, a1)
                    | I_RET a1 a2 =>
-                     inv_case_some (projT2 (get_tm_by_idx 5 gt)) (fst u, (a1,a2))
+                     inv_case_some case5 (fst u, (a1,a2))
                    | I_CMPS a1 =>
-                     inv_case_some (projT2 (get_tm_by_idx 10 gt)) (fst u, a1)
+                     inv_case_some case10 (fst u, a1)
                    | I_SCAS a1 =>
-                     inv_case_some (projT2 (get_tm_by_idx 11 gt)) (fst u, a1)
+                     inv_case_some case11 (fst u, a1)
                    end)
               & _). ci_invertible_tac.
     - abstract (destruct w as [p ins]; destruct ins; inversion H; trivial).
@@ -676,82 +681,82 @@ Set Implicit Arguments.
       instr_grammars_lock_no_op_override_env since they allow op_override
       prefix to be optional. *)
   Definition prefix_lock_with_op_override_env : AST_Env i_instr5_t :=
-    {{0, ADC_p true, (fun v => match v with (b,(op1,op2)) => I_ADC b op1 op2 end
+    {{0, ADC_b true, (fun v => match v with (b,(op1,op2)) => I_ADC b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{1, ADD_p true, (fun v => match v with (b,(op1,op2)) => I_ADD b op1 op2 end
+    {{1, ADD_b true, (fun v => match v with (b,(op1,op2)) => I_ADD b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{2, AND_p true, (fun v => match v with (b,(op1,op2)) => I_AND b op1 op2 end
+    {{2, AND_b true, (fun v => match v with (b,(op1,op2)) => I_AND b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{3, DEC_p, (fun v => match v with (b,op) => I_DEC b op end
+    {{3, DEC_b, (fun v => match v with (b,op) => I_DEC b op end
                           %% i_instr5_t)}} :::
-    {{4, INC_p, (fun v => match v with (b,op) => I_INC b op end
+    {{4, INC_b, (fun v => match v with (b,op) => I_INC b op end
                           %% i_instr5_t)}} :::
-    {{5, NEG_p, (fun v => match v with (b,op) => I_NEG b op end
+    {{5, NEG_b, (fun v => match v with (b,op) => I_NEG b op end
                           %% i_instr5_t)}} :::
-    {{6, NOT_p, (fun v => match v with (b,op) => I_NOT b op end
+    {{6, NOT_b, (fun v => match v with (b,op) => I_NOT b op end
                           %% i_instr5_t)}} :::
-    {{7, OR_p true, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
+    {{7, OR_b true, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{8, SBB_p true, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
+    {{8, SBB_b true, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{9, SUB_p true, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
+    {{9, SUB_b true, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{10, XCHG_p, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
+    {{10, XCHG_b, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{11, XOR_p true, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
+    {{11, XOR_b true, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
                           %% i_instr5_t)}} :::
     ast_env_nil.
 
   (** Instructions that can take prefixes in
       prefix_grammar_lock_no_op_override *)
   Definition prefix_lock_no_op_override_env : AST_Env i_instr5_t :=
-    {{20, ADC_p false, (fun v => match v with (b,(op1,op2)) => I_ADC b op1 op2 end
+    {{20, ADC_b false, (fun v => match v with (b,(op1,op2)) => I_ADC b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{21, ADD_p false, (fun v => match v with (b,(op1,op2)) => I_ADD b op1 op2 end
+    {{21, ADD_b false, (fun v => match v with (b,(op1,op2)) => I_ADD b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{22, AND_p false, (fun v => match v with (b,(op1,op2)) => I_AND b op1 op2 end
+    {{22, AND_b false, (fun v => match v with (b,(op1,op2)) => I_AND b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{23, BTC_p, (fun v => match v with (op1,op2) => I_BTC op1 op2 end
+    {{23, BTC_b, (fun v => match v with (op1,op2) => I_BTC op1 op2 end
                           %% i_instr5_t)}} :::
-    {{24, BTR_p, (fun v => match v with (op1,op2) => I_BTR op1 op2 end
+    {{24, BTR_b, (fun v => match v with (op1,op2) => I_BTR op1 op2 end
                           %% i_instr5_t)}} :::
-    {{25, BTS_p, (fun v => match v with (op1,op2) => I_BTS op1 op2 end
+    {{25, BTS_b, (fun v => match v with (op1,op2) => I_BTS op1 op2 end
                           %% i_instr5_t)}} :::
-    {{26, CMPXCHG_p, (fun v => match v with (b,(op1,op2)) => I_CMPXCHG b op1 op2 end
+    {{26, CMPXCHG_b, (fun v => match v with (b,(op1,op2)) => I_CMPXCHG b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{27, DEC_p, (fun v => match v with (b,op) => I_DEC b op end
+    {{27, DEC_b, (fun v => match v with (b,op) => I_DEC b op end
                           %% i_instr5_t)}} :::
-    {{28, INC_p, (fun v => match v with (b,op) => I_INC b op end
+    {{28, INC_b, (fun v => match v with (b,op) => I_INC b op end
                           %% i_instr5_t)}} :::
-    {{29, NEG_p, (fun v => match v with (b,op) => I_NEG b op end
+    {{29, NEG_b, (fun v => match v with (b,op) => I_NEG b op end
                           %% i_instr5_t)}} :::
-    {{30, NOT_p, (fun v => match v with (b,op) => I_NOT b op end
+    {{30, NOT_b, (fun v => match v with (b,op) => I_NOT b op end
                           %% i_instr5_t)}} :::
-    {{31, OR_p false, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
+    {{31, OR_b false, (fun v => match v with (b,(op1,op2)) => I_OR b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{32, SBB_p false, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
+    {{32, SBB_b false, (fun v => match v with (b,(op1,op2)) => I_SBB b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{33, SUB_p false, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
+    {{33, SUB_b false, (fun v => match v with (b,(op1,op2)) => I_SUB b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{34, XADD_p, (fun v => match v with (b,(op1,op2)) => I_XADD b op1 op2 end
+    {{34, XADD_b, (fun v => match v with (b,(op1,op2)) => I_XADD b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{35, XCHG_p, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
+    {{35, XCHG_b, (fun v => match v with (b,(op1,op2)) => I_XCHG b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{36, XOR_p false, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
+    {{36, XOR_b false, (fun v => match v with (b,(op1,op2)) => I_XOR b op1 op2 end
                           %% i_instr5_t)}} :::
     ast_env_nil.
 
   (** This set of instructions can take prefixes in 
       prefix_grammar_seg_with_op_override. *)
   Definition prefix_seg_with_op_override_env : AST_Env i_instr5_t :=
-    {{40, CMP_p true, (fun v => match v with (b,(op1,op2)) => I_CMP b op1 op2 end
+    {{40, CMP_b true, (fun v => match v with (b,(op1,op2)) => I_CMP b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{41, IMUL_p true, (fun v => match v with (b,(op1,(opopt,iopt))) =>
+    {{41, IMUL_b true, (fun v => match v with (b,(op1,(opopt,iopt))) =>
                                    I_IMUL b op1 opopt iopt end
                           %% i_instr5_t)}} :::
-    {{42, MOV_p true, (fun v => match v with (b,(op1,op2)) => I_MOV b op1 op2 end
+    {{42, MOV_b true, (fun v => match v with (b,(op1,op2)) => I_MOV b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{43, TEST_p true, (fun v => match v with (b,(op1,op2)) => I_TEST b op1 op2 end
+    {{43, TEST_b true, (fun v => match v with (b,(op1,op2)) => I_TEST b op1 op2 end
                           %% i_instr5_t)}} :::
     ast_env_nil.
 
@@ -760,14 +765,14 @@ Set Implicit Arguments.
       prefix_grammar_seg_with_op_override; there are more instructions in
       this category. *)
   Definition prefix_only_seg_override_env : AST_Env i_instr5_t :=
-    {{50, CMP_p false, (fun v => match v with (b,(op1,op2)) => I_CMP b op1 op2 end
+    {{50, CMP_b false, (fun v => match v with (b,(op1,op2)) => I_CMP b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{51, IMUL_p false, (fun v => match v with (b,(op1,(opopt,iopt))) =>
+    {{51, IMUL_b false, (fun v => match v with (b,(op1,(opopt,iopt))) =>
                                    I_IMUL b op1 opopt iopt end
                           %% i_instr5_t)}} :::
-    {{52, MOV_p false, (fun v => match v with (b,(op1,op2)) => I_MOV b op1 op2 end
+    {{52, MOV_b false, (fun v => match v with (b,(op1,op2)) => I_MOV b op1 op2 end
                           %% i_instr5_t)}} :::
-    {{53, TEST_p false, (fun v => match v with (b,(op1,op2)) => I_TEST b op1 op2 end
+    {{53, TEST_b false, (fun v => match v with (b,(op1,op2)) => I_TEST b op1 op2 end
                           %% i_instr5_t)}} :::
     ast_env_nil.
 
@@ -895,14 +900,14 @@ Set Implicit Arguments.
      prefix * i_instr5 -> option [|i_instr5_grammar_type|].
     let fi := eval cbv beta
                delta [from_instr5 inv_case_some
-                      inv_case projT2 get_tm_by_idx N.of_nat N.leb N.compare
+                      inv_case projT2 N.of_nat N.leb N.compare
                       Pos.of_succ_nat Pos.compare Pos.compare_cont Pos.succ]
                iota zeta
                in from_instr5 in
        exact(fi).
   Defined.
 
-  Definition i_instr5_grammar : wf_bigrammar (pair_t prefix_t i_instr5_t).
+  Definition i_instr5_b : wf_bigrammar (pair_t prefix_t i_instr5_t).
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
         gen_gr_tree ige.
     refine ((ast_bigrammar gt) @ (ast_map gt)
@@ -961,39 +966,39 @@ Set Implicit Arguments.
   (** This set of instructions can take prefixes in
       prefix_grammar_seg_op_override. *)
   Definition i_instr6_env : AST_Env i_instr6_t := 
-    {{0, CDQ_p, (fun v => I_CDQ %% i_instr6_t)}} :::
-    {{1, CMOVcc_p, (fun v => match v with (ct,(op1,op2)) => I_CMOVcc ct op1 op2
+    {{0, CDQ_b, (fun v => I_CDQ %% i_instr6_t)}} :::
+    {{1, CMOVcc_b, (fun v => match v with (ct,(op1,op2)) => I_CMOVcc ct op1 op2
                           end %% i_instr6_t)}} :::
-    {{2, CWDE_p, (fun v => I_CWDE %% i_instr6_t)}} :::
-    {{3, DIV_p, (fun v => match v with (w,op1) => I_DIV w op1
+    {{2, CWDE_b, (fun v => I_CWDE %% i_instr6_t)}} :::
+    {{3, DIV_b, (fun v => match v with (w,op1) => I_DIV w op1
                           end %% i_instr6_t)}} :::
-    {{4, IDIV_p, (fun v => match v with (w,op1) => I_IDIV w op1
+    {{4, IDIV_b, (fun v => match v with (w,op1) => I_IDIV w op1
                           end %% i_instr6_t)}} :::
-    {{5, MOVSX_p, (fun v => match v with (w,(op1,op2)) => I_MOVSX w op1 op2
+    {{5, MOVSX_b, (fun v => match v with (w,(op1,op2)) => I_MOVSX w op1 op2
                           end %% i_instr6_t)}} :::
-    {{6, MOVZX_p, (fun v => match v with (w,(op1,op2)) => I_MOVZX w op1 op2
+    {{6, MOVZX_b, (fun v => match v with (w,(op1,op2)) => I_MOVZX w op1 op2
                           end %% i_instr6_t)}} :::
-    {{7, MUL_p, (fun v => match v with (w,op1) => I_MUL w op1
+    {{7, MUL_b, (fun v => match v with (w,op1) => I_MUL w op1
                           end %% i_instr6_t)}} :::
-    {{8, NOP_p, (fun op => I_NOP op %% i_instr6_t)}} :::
-    {{9, ROL_p, (fun v => match v with (w,(op1,ri)) => I_ROL w op1 ri
+    {{8, NOP_b, (fun op => I_NOP op %% i_instr6_t)}} :::
+    {{9, ROL_b, (fun v => match v with (w,(op1,ri)) => I_ROL w op1 ri
                           end %% i_instr6_t)}} :::
-    {{10, ROR_p, (fun v => match v with (w,(op1,ri)) => I_ROR w op1 ri
+    {{10, ROR_b, (fun v => match v with (w,(op1,ri)) => I_ROR w op1 ri
                           end %% i_instr6_t)}} :::
-    {{11, SAR_p, (fun v => match v with (w,(op1,ri)) => I_SAR w op1 ri
+    {{11, SAR_b, (fun v => match v with (w,(op1,ri)) => I_SAR w op1 ri
                           end %% i_instr6_t)}} :::
-    {{12, SHL_p, (fun v => match v with (w,(op1,ri)) => I_SHL w op1 ri
+    {{12, SHL_b, (fun v => match v with (w,(op1,ri)) => I_SHL w op1 ri
                           end %% i_instr6_t)}} :::
-    {{13, SHLD_p, (fun v => match v with (op1,(r,ri)) => I_SHLD op1 r ri
+    {{13, SHLD_b, (fun v => match v with (op1,(r,ri)) => I_SHLD op1 r ri
                           end %% i_instr6_t)}} :::
-    {{14, SHR_p, (fun v => match v with (w,(op1,ri)) => I_SHR w op1 ri
+    {{14, SHR_b, (fun v => match v with (w,(op1,ri)) => I_SHR w op1 ri
                           end %% i_instr6_t)}} :::
-    {{15, SHRD_p, (fun v => match v with (op1,(r,ri)) => I_SHRD op1 r ri
+    {{15, SHRD_b, (fun v => match v with (op1,(r,ri)) => I_SHRD op1 r ri
                           end %% i_instr6_t)}} :::
     ast_env_nil.
   Hint Unfold i_instr6_env: env_unfold_db.
 
-  Definition i_instr6_p : wf_bigrammar i_instr6_t.
+  Definition i_instr6_b : wf_bigrammar i_instr6_t.
     gen_ast_defs i_instr6_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -1019,58 +1024,58 @@ Set Implicit Arguments.
   Defined.
 
   Definition f_instr1_env : AST_Env f_instr1_t := 
-    {{0, F2XM1_p, (fun v => F_F2XM1 %% f_instr1_t)}} :::
-    {{1, FABS_p, (fun v => F_FABS %% f_instr1_t)}} :::
-    {{2, FADD_p, (fun v => match v with (z,op1) => F_FADD z op1
+    {{0, F2XM1_b, (fun v => F_F2XM1 %% f_instr1_t)}} :::
+    {{1, FABS_b, (fun v => F_FABS %% f_instr1_t)}} :::
+    {{2, FADD_b, (fun v => match v with (z,op1) => F_FADD z op1
                           end %% f_instr1_t)}} :::
-    {{3, FADDP_p, (fun op => F_FADDP op %% f_instr1_t)}} :::
-    {{4, FBLD_p, (fun op => F_FBLD op %% f_instr1_t)}} :::
-    {{5, FBSTP_p, (fun op => F_FBSTP op %% f_instr1_t)}} :::
-    {{6, FCHS_p, (fun v => F_FCHS %% f_instr1_t)}} :::
-    {{7, FCMOVcc_p, (fun v => match v with (ct,op1) => F_FCMOVcc ct op1
+    {{3, FADDP_b, (fun op => F_FADDP op %% f_instr1_t)}} :::
+    {{4, FBLD_b, (fun op => F_FBLD op %% f_instr1_t)}} :::
+    {{5, FBSTP_b, (fun op => F_FBSTP op %% f_instr1_t)}} :::
+    {{6, FCHS_b, (fun v => F_FCHS %% f_instr1_t)}} :::
+    {{7, FCMOVcc_b, (fun v => match v with (ct,op1) => F_FCMOVcc ct op1
                           end %% f_instr1_t)}} :::
-    {{8, FCOM_p, (fun op => F_FCOM op %% f_instr1_t)}} :::
-    {{9, FCOMP_p, (fun op => F_FCOMP op %% f_instr1_t)}} :::
-    {{10, FCOMPP_p, (fun v => F_FCOMPP %% f_instr1_t)}} :::
-    {{11, FCOMIP_p, (fun op => F_FCOMIP op %% f_instr1_t)}} :::
-    {{12, FCOS_p, (fun v => F_FCOS %% f_instr1_t)}} :::
-    {{13, FDECSTP_p, (fun v => F_FDECSTP %% f_instr1_t)}} :::
-    {{14, FDIV_p, (fun v => match v with (z,op1) => F_FDIV z op1
+    {{8, FCOM_b, (fun op => F_FCOM op %% f_instr1_t)}} :::
+    {{9, FCOMP_b, (fun op => F_FCOMP op %% f_instr1_t)}} :::
+    {{10, FCOMPP_b, (fun v => F_FCOMPP %% f_instr1_t)}} :::
+    {{11, FCOMIP_b, (fun op => F_FCOMIP op %% f_instr1_t)}} :::
+    {{12, FCOS_b, (fun v => F_FCOS %% f_instr1_t)}} :::
+    {{13, FDECSTP_b, (fun v => F_FDECSTP %% f_instr1_t)}} :::
+    {{14, FDIV_b, (fun v => match v with (z,op1) => F_FDIV z op1
                           end %% f_instr1_t)}} :::
-    {{15, FDIVP_p, (fun op => F_FDIVP op %% f_instr1_t)}} :::
-    {{16, FDIVR_p, (fun v => match v with (z,op1) => F_FDIVR z op1
+    {{15, FDIVP_b, (fun op => F_FDIVP op %% f_instr1_t)}} :::
+    {{16, FDIVR_b, (fun v => match v with (z,op1) => F_FDIVR z op1
                           end %% f_instr1_t)}} :::
-    {{17, FDIVRP_p, (fun op => F_FDIVRP op %% f_instr1_t)}} :::
-    {{18, FFREE_p, (fun op => F_FFREE op %% f_instr1_t)}} :::
-    {{19, FIADD_p, (fun op => F_FIADD op %% f_instr1_t)}} :::
-    {{20, FICOM_p, (fun op => F_FICOM op %% f_instr1_t)}} :::
-    {{21, FICOMP_p, (fun op => F_FICOMP op %% f_instr1_t)}} :::
-    {{22, FIDIV_p, (fun op => F_FIDIV op %% f_instr1_t)}} :::
-    {{23, FIDIVR_p, (fun op => F_FIDIVR op %% f_instr1_t)}} :::
-    {{24, FILD_p, (fun op => F_FILD op %% f_instr1_t)}} :::
-    {{25, FIMUL_p, (fun op => F_FIMUL op %% f_instr1_t)}} :::
-    {{26, FINCSTP_p, (fun v => F_FINCSTP %% f_instr1_t)}} :::
-    {{27, FIST_p, (fun op => F_FIST op %% f_instr1_t)}} :::
-    {{28, FISTP_p, (fun op => F_FISTP op %% f_instr1_t)}} :::
-    {{29, FISUB_p, (fun op => F_FISUB op %% f_instr1_t)}} :::
-    {{30, FISUBR_p, (fun op => F_FISUBR op %% f_instr1_t)}} :::
-    {{31, FLD_p, (fun op => F_FLD op %% f_instr1_t)}} :::
-    {{32, FLD1_p, (fun v => F_FLD1 %% f_instr1_t)}} :::
-    {{33, FLDCW_p, (fun op => F_FLDCW op %% f_instr1_t)}} :::
-    {{34, FLDENV_p, (fun op => F_FLDENV op %% f_instr1_t)}} :::
-    {{35, FLDL2E_p, (fun v => F_FLDL2E %% f_instr1_t)}} :::
-    {{36, FLDL2T_p, (fun v => F_FLDL2T %% f_instr1_t)}} :::
-    {{37, FLDLG2_p, (fun v => F_FLDLG2 %% f_instr1_t)}} :::
-    {{38, FLDLN2_p, (fun v => F_FLDLN2 %% f_instr1_t)}} :::
-    {{39, FLDPI_p, (fun v => F_FLDPI %% f_instr1_t)}} :::
-    {{40, FLDZ_p, (fun v => F_FLDZ %% f_instr1_t)}} :::
-    {{41, FMUL_p, (fun v => match v with (z,op1) => F_FMUL z op1
+    {{17, FDIVRP_b, (fun op => F_FDIVRP op %% f_instr1_t)}} :::
+    {{18, FFREE_b, (fun op => F_FFREE op %% f_instr1_t)}} :::
+    {{19, FIADD_b, (fun op => F_FIADD op %% f_instr1_t)}} :::
+    {{20, FICOM_b, (fun op => F_FICOM op %% f_instr1_t)}} :::
+    {{21, FICOMP_b, (fun op => F_FICOMP op %% f_instr1_t)}} :::
+    {{22, FIDIV_b, (fun op => F_FIDIV op %% f_instr1_t)}} :::
+    {{23, FIDIVR_b, (fun op => F_FIDIVR op %% f_instr1_t)}} :::
+    {{24, FILD_b, (fun op => F_FILD op %% f_instr1_t)}} :::
+    {{25, FIMUL_b, (fun op => F_FIMUL op %% f_instr1_t)}} :::
+    {{26, FINCSTP_b, (fun v => F_FINCSTP %% f_instr1_t)}} :::
+    {{27, FIST_b, (fun op => F_FIST op %% f_instr1_t)}} :::
+    {{28, FISTP_b, (fun op => F_FISTP op %% f_instr1_t)}} :::
+    {{29, FISUB_b, (fun op => F_FISUB op %% f_instr1_t)}} :::
+    {{30, FISUBR_b, (fun op => F_FISUBR op %% f_instr1_t)}} :::
+    {{31, FLD_b, (fun op => F_FLD op %% f_instr1_t)}} :::
+    {{32, FLD1_b, (fun v => F_FLD1 %% f_instr1_t)}} :::
+    {{33, FLDCW_b, (fun op => F_FLDCW op %% f_instr1_t)}} :::
+    {{34, FLDENV_b, (fun op => F_FLDENV op %% f_instr1_t)}} :::
+    {{35, FLDL2E_b, (fun v => F_FLDL2E %% f_instr1_t)}} :::
+    {{36, FLDL2T_b, (fun v => F_FLDL2T %% f_instr1_t)}} :::
+    {{37, FLDLG2_b, (fun v => F_FLDLG2 %% f_instr1_t)}} :::
+    {{38, FLDLN2_b, (fun v => F_FLDLN2 %% f_instr1_t)}} :::
+    {{39, FLDPI_b, (fun v => F_FLDPI %% f_instr1_t)}} :::
+    {{40, FLDZ_b, (fun v => F_FLDZ %% f_instr1_t)}} :::
+    {{41, FMUL_b, (fun v => match v with (z,op1) => F_FMUL z op1
                           end %% f_instr1_t)}} :::
-    {{42, FMULP_p, (fun op => F_FMULP op %% f_instr1_t)}} :::
+    {{42, FMULP_b, (fun op => F_FMULP op %% f_instr1_t)}} :::
     ast_env_nil.
   Hint Unfold f_instr1_env: env_unfold_db.
 
-  Definition f_instr1_p : wf_bigrammar f_instr1_t.
+  Definition f_instr1_b : wf_bigrammar f_instr1_t.
     gen_ast_defs f_instr1_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -1123,47 +1128,47 @@ Set Implicit Arguments.
   Defined.
 
   Definition f_instr2_env : AST_Env f_instr2_t := 
-    {{0, FNCLEX_p, (fun v => F_FNCLEX %% f_instr2_t)}} :::
-    {{1, FNINIT_p, (fun v => F_FNINIT %% f_instr2_t)}} :::
-    {{2, FNOP_p, (fun v => F_FNOP %% f_instr2_t)}} :::
-    {{3, FNSAVE_p, (fun op => F_FNSAVE op %% f_instr2_t)}} :::
-    {{4, FNSTCW_p, (fun op => F_FNSTCW op %% f_instr2_t)}} :::
-    {{5, FNSTSW_p, (fun op => F_FNSTSW op %% f_instr2_t)}} :::
-    {{6, FPATAN_p, (fun v => F_FPATAN %% f_instr2_t)}} :::
-    {{7, FPREM_p, (fun v => F_FPREM %% f_instr2_t)}} :::
-    {{8, FPREM1_p, (fun v => F_FPREM1 %% f_instr2_t)}} :::
-    {{9, FPTAN_p, (fun v => F_FPTAN %% f_instr2_t)}} :::
-    {{10, FRNDINT_p, (fun v => F_FRNDINT %% f_instr2_t)}} :::
-    {{11, FRSTOR_p, (fun op => F_FRSTOR op %% f_instr2_t)}} :::
-    {{12, FSCALE_p, (fun v => F_FSCALE %% f_instr2_t)}} :::
-    {{13, FSIN_p, (fun v => F_FSIN %% f_instr2_t)}} :::
-    {{14, FSINCOS_p, (fun v => F_FSINCOS %% f_instr2_t)}} :::
-    {{15, FSQRT_p, (fun v => F_FSQRT %% f_instr2_t)}} :::
-    {{16, FST_p, (fun op => F_FST op %% f_instr2_t)}} :::
-    {{17, FSTENV_p, (fun op => F_FSTENV op %% f_instr2_t)}} :::
-    {{18, FSTP_p, (fun op => F_FSTP op %% f_instr2_t)}} :::
-    {{19, FSUB_p, (fun v => match v with (z,op) => F_FSUB z op 
+    {{0, FNCLEX_b, (fun v => F_FNCLEX %% f_instr2_t)}} :::
+    {{1, FNINIT_b, (fun v => F_FNINIT %% f_instr2_t)}} :::
+    {{2, FNOP_b, (fun v => F_FNOP %% f_instr2_t)}} :::
+    {{3, FNSAVE_b, (fun op => F_FNSAVE op %% f_instr2_t)}} :::
+    {{4, FNSTCW_b, (fun op => F_FNSTCW op %% f_instr2_t)}} :::
+    {{5, FNSTSW_b, (fun op => F_FNSTSW op %% f_instr2_t)}} :::
+    {{6, FPATAN_b, (fun v => F_FPATAN %% f_instr2_t)}} :::
+    {{7, FPREM_b, (fun v => F_FPREM %% f_instr2_t)}} :::
+    {{8, FPREM1_b, (fun v => F_FPREM1 %% f_instr2_t)}} :::
+    {{9, FPTAN_b, (fun v => F_FPTAN %% f_instr2_t)}} :::
+    {{10, FRNDINT_b, (fun v => F_FRNDINT %% f_instr2_t)}} :::
+    {{11, FRSTOR_b, (fun op => F_FRSTOR op %% f_instr2_t)}} :::
+    {{12, FSCALE_b, (fun v => F_FSCALE %% f_instr2_t)}} :::
+    {{13, FSIN_b, (fun v => F_FSIN %% f_instr2_t)}} :::
+    {{14, FSINCOS_b, (fun v => F_FSINCOS %% f_instr2_t)}} :::
+    {{15, FSQRT_b, (fun v => F_FSQRT %% f_instr2_t)}} :::
+    {{16, FST_b, (fun op => F_FST op %% f_instr2_t)}} :::
+    {{17, FSTENV_b, (fun op => F_FSTENV op %% f_instr2_t)}} :::
+    {{18, FSTP_b, (fun op => F_FSTP op %% f_instr2_t)}} :::
+    {{19, FSUB_b, (fun v => match v with (z,op) => F_FSUB z op 
                            end %% f_instr2_t)}} :::
-    {{20, FSUBP_p, (fun op => F_FSUBP op %% f_instr2_t)}} :::
-    {{21, FSUBR_p, (fun v => match v with (z,op) => F_FSUBR z op 
+    {{20, FSUBP_b, (fun op => F_FSUBP op %% f_instr2_t)}} :::
+    {{21, FSUBR_b, (fun v => match v with (z,op) => F_FSUBR z op 
                            end %% f_instr2_t)}} :::
-    {{22, FSUBRP_p, (fun op => F_FSUBRP op %% f_instr2_t)}} :::
-    {{23, FTST_p, (fun v => F_FTST %% f_instr2_t)}} :::
-    {{24, FUCOM_p, (fun op => F_FUCOM op %% f_instr2_t)}} :::
-    {{25, FUCOMP_p, (fun op => F_FUCOMP op %% f_instr2_t)}} :::
-    {{26, FUCOMPP_p, (fun v => F_FUCOMPP %% f_instr2_t)}} :::
-    {{27, FUCOMI_p, (fun op => F_FUCOMI op %% f_instr2_t)}} :::
-    {{28, FUCOMIP_p, (fun op => F_FUCOMIP op %% f_instr2_t)}} :::
-    {{29, FXAM_p, (fun v => F_FXAM %% f_instr2_t)}} :::
-    {{30, FXCH_p, (fun op => F_FXCH op %% f_instr2_t)}} :::
-    {{31, FXTRACT_p, (fun v => F_FXTRACT %% f_instr2_t)}} :::
-    {{32, FYL2X_p, (fun v => F_FYL2X %% f_instr2_t)}} :::
-    {{33, FYL2XP1_p, (fun v => F_FYL2XP1 %% f_instr2_t)}} :::
-    {{34, FWAIT_p, (fun v => F_FWAIT %% f_instr2_t)}} :::
+    {{22, FSUBRP_b, (fun op => F_FSUBRP op %% f_instr2_t)}} :::
+    {{23, FTST_b, (fun v => F_FTST %% f_instr2_t)}} :::
+    {{24, FUCOM_b, (fun op => F_FUCOM op %% f_instr2_t)}} :::
+    {{25, FUCOMP_b, (fun op => F_FUCOMP op %% f_instr2_t)}} :::
+    {{26, FUCOMPP_b, (fun v => F_FUCOMPP %% f_instr2_t)}} :::
+    {{27, FUCOMI_b, (fun op => F_FUCOMI op %% f_instr2_t)}} :::
+    {{28, FUCOMIP_b, (fun op => F_FUCOMIP op %% f_instr2_t)}} :::
+    {{29, FXAM_b, (fun v => F_FXAM %% f_instr2_t)}} :::
+    {{30, FXCH_b, (fun op => F_FXCH op %% f_instr2_t)}} :::
+    {{31, FXTRACT_b, (fun v => F_FXTRACT %% f_instr2_t)}} :::
+    {{32, FYL2X_b, (fun v => F_FYL2X %% f_instr2_t)}} :::
+    {{33, FYL2XP1_b, (fun v => F_FYL2XP1 %% f_instr2_t)}} :::
+    {{34, FWAIT_b, (fun v => F_FWAIT %% f_instr2_t)}} :::
     ast_env_nil.
   Hint Unfold f_instr2_env: env_unfold_db.
 
-  Definition f_instr2_p : wf_bigrammar f_instr2_t.
+  Definition f_instr2_b : wf_bigrammar f_instr2_t.
     gen_ast_defs f_instr2_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -1208,63 +1213,63 @@ Set Implicit Arguments.
   Defined.
 
   Definition m_instr_env : AST_Env m_instr_t := 
-    {{0, EMMS_p, (fun v => M_EMMS %% m_instr_t)}} :::
-    {{1, MOVD_p, (fun v => match v with (op1,op2) => M_MOVD op1 op2
+    {{0, EMMS_b, (fun v => M_EMMS %% m_instr_t)}} :::
+    {{1, MOVD_b, (fun v => match v with (op1,op2) => M_MOVD op1 op2
                           end %% m_instr_t)}} :::
-    {{2, MOVQ_p, (fun v => match v with (op1,op2) => M_MOVQ op1 op2
+    {{2, MOVQ_b, (fun v => match v with (op1,op2) => M_MOVQ op1 op2
                           end %% m_instr_t)}} :::
-    {{3, PACKSSDW_p, (fun v => match v with (op1,op2) => M_PACKSSDW op1 op2
+    {{3, PACKSSDW_b, (fun v => match v with (op1,op2) => M_PACKSSDW op1 op2
                           end %% m_instr_t)}} :::
-    {{4, PACKSSWB_p, (fun v => match v with (op1,op2) => M_PACKSSWB op1 op2
+    {{4, PACKSSWB_b, (fun v => match v with (op1,op2) => M_PACKSSWB op1 op2
                           end %% m_instr_t)}} :::
-    {{5, PACKUSWB_p, (fun v => match v with (op1,op2) => M_PACKUSWB op1 op2
+    {{5, PACKUSWB_b, (fun v => match v with (op1,op2) => M_PACKUSWB op1 op2
                           end %% m_instr_t)}} :::
-    {{6, PADD_p, (fun v => match v with (gg,(op1,op2)) => M_PADD gg op1 op2
+    {{6, PADD_b, (fun v => match v with (gg,(op1,op2)) => M_PADD gg op1 op2
                           end %% m_instr_t)}} :::
-    {{7, PADDS_p, (fun v => match v with (gg,(op1,op2)) => M_PADDS gg op1 op2
+    {{7, PADDS_b, (fun v => match v with (gg,(op1,op2)) => M_PADDS gg op1 op2
                           end %% m_instr_t)}} :::
-    {{8, PADDUS_p, (fun v => match v with (gg,(op1,op2)) => M_PADDUS gg op1 op2
+    {{8, PADDUS_b, (fun v => match v with (gg,(op1,op2)) => M_PADDUS gg op1 op2
                           end %% m_instr_t)}} :::
-    {{9, PAND_p, (fun v => match v with (op1,op2) => M_PAND op1 op2
+    {{9, PAND_b, (fun v => match v with (op1,op2) => M_PAND op1 op2
                           end %% m_instr_t)}} :::
-    {{10, PANDN_p, (fun v => match v with (op1,op2) => M_PANDN op1 op2
+    {{10, PANDN_b, (fun v => match v with (op1,op2) => M_PANDN op1 op2
                           end %% m_instr_t)}} :::
-    {{11, PCMPEQ_p, (fun v => match v with (gg,(op1,op2)) => M_PCMPEQ gg op1 op2
+    {{11, PCMPEQ_b, (fun v => match v with (gg,(op1,op2)) => M_PCMPEQ gg op1 op2
                           end %% m_instr_t)}} :::
-    {{12, PCMPGT_p, (fun v => match v with (gg,(op1,op2)) => M_PCMPGT gg op1 op2
+    {{12, PCMPGT_b, (fun v => match v with (gg,(op1,op2)) => M_PCMPGT gg op1 op2
                           end %% m_instr_t)}} :::
-    {{13, PMADDWD_p, (fun v => match v with (op1,op2) => M_PMADDWD op1 op2
+    {{13, PMADDWD_b, (fun v => match v with (op1,op2) => M_PMADDWD op1 op2
                           end %% m_instr_t)}} :::
-    {{14, PMULHUW_p, (fun v => match v with (op1,op2) => M_PMULHUW op1 op2
+    {{14, PMULHUW_b, (fun v => match v with (op1,op2) => M_PMULHUW op1 op2
                           end %% m_instr_t)}} :::
-    {{15, PMULHW_p, (fun v => match v with (op1,op2) => M_PMULHW op1 op2
+    {{15, PMULHW_b, (fun v => match v with (op1,op2) => M_PMULHW op1 op2
                           end %% m_instr_t)}} :::
-    {{16, PMULLW_p, (fun v => match v with (op1,op2) => M_PMULLW op1 op2
+    {{16, PMULLW_b, (fun v => match v with (op1,op2) => M_PMULLW op1 op2
                           end %% m_instr_t)}} :::
-    {{17, POR_p, (fun v => match v with (op1,op2) => M_POR op1 op2
+    {{17, POR_b, (fun v => match v with (op1,op2) => M_POR op1 op2
                           end %% m_instr_t)}} :::
-    {{18, PSLL_p, (fun v => match v with (gg,(op1,op2)) => M_PSLL gg op1 op2
+    {{18, PSLL_b, (fun v => match v with (gg,(op1,op2)) => M_PSLL gg op1 op2
                           end %% m_instr_t)}} :::
-    {{19, PSRA_p, (fun v => match v with (gg,(op1,op2)) => M_PSRA gg op1 op2
+    {{19, PSRA_b, (fun v => match v with (gg,(op1,op2)) => M_PSRA gg op1 op2
                           end %% m_instr_t)}} :::
-    {{20, PSRL_p, (fun v => match v with (gg,(op1,op2)) => M_PSRL gg op1 op2
+    {{20, PSRL_b, (fun v => match v with (gg,(op1,op2)) => M_PSRL gg op1 op2
                           end %% m_instr_t)}} :::
-    {{21, PSUB_p, (fun v => match v with (gg,(op1,op2)) => M_PSUB gg op1 op2
+    {{21, PSUB_b, (fun v => match v with (gg,(op1,op2)) => M_PSUB gg op1 op2
                           end %% m_instr_t)}} :::
-    {{22, PSUBS_p, (fun v => match v with (gg,(op1,op2)) => M_PSUBS gg op1 op2
+    {{22, PSUBS_b, (fun v => match v with (gg,(op1,op2)) => M_PSUBS gg op1 op2
                           end %% m_instr_t)}} :::
-    {{23, PSUBUS_p, (fun v => match v with (gg,(op1,op2)) => M_PSUBUS gg op1 op2
+    {{23, PSUBUS_b, (fun v => match v with (gg,(op1,op2)) => M_PSUBUS gg op1 op2
                           end %% m_instr_t)}} :::
-    {{24, PUNPCKH_p, (fun v => match v with (gg,(op1,op2)) => M_PUNPCKH gg op1 op2
+    {{24, PUNPCKH_b, (fun v => match v with (gg,(op1,op2)) => M_PUNPCKH gg op1 op2
                           end %% m_instr_t)}} :::
-    {{25, PUNPCKL_p, (fun v => match v with (gg,(op1,op2)) => M_PUNPCKL gg op1 op2
+    {{25, PUNPCKL_b, (fun v => match v with (gg,(op1,op2)) => M_PUNPCKL gg op1 op2
                           end %% m_instr_t)}} :::
-    {{26, PXOR_p, (fun v => match v with (op1,op2) => M_PXOR op1 op2
+    {{26, PXOR_b, (fun v => match v with (op1,op2) => M_PXOR op1 op2
                           end %% m_instr_t)}} :::
     ast_env_nil.
   Hint Unfold m_instr_env: env_unfold_db.
 
-  Definition m_instr_p : wf_bigrammar m_instr_t.
+  Definition m_instr_b : wf_bigrammar m_instr_t.
     gen_ast_defs m_instr_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -1301,79 +1306,79 @@ Set Implicit Arguments.
   Defined.
 
   Definition s_instr1_env : AST_Env s_instr1_t := 
-    {{0, ADDPS_p, (fun v => match v with (op1,op2) => S_ADDPS op1 op2
+    {{0, ADDPS_b, (fun v => match v with (op1,op2) => S_ADDPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{1, ADDSS_p, (fun v => match v with (op1,op2) => S_ADDSS op1 op2
+    {{1, ADDSS_b, (fun v => match v with (op1,op2) => S_ADDSS op1 op2
                           end %% s_instr1_t)}} :::
-    {{2, ANDNPS_p, (fun v => match v with (op1,op2) => S_ANDNPS op1 op2
+    {{2, ANDNPS_b, (fun v => match v with (op1,op2) => S_ANDNPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{3, ANDPS_p, (fun v => match v with (op1,op2) => S_ANDPS op1 op2
+    {{3, ANDPS_b, (fun v => match v with (op1,op2) => S_ANDPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{4, CMPPS_p, (fun v => match v with (op1,(op2,imm)) => S_CMPPS op1 op2 imm
+    {{4, CMPPS_b, (fun v => match v with (op1,(op2,imm)) => S_CMPPS op1 op2 imm
                           end %% s_instr1_t)}} :::
-    {{5, CMPSS_p, (fun v => match v with (op1,(op2,imm)) => S_CMPSS op1 op2 imm
+    {{5, CMPSS_b, (fun v => match v with (op1,(op2,imm)) => S_CMPSS op1 op2 imm
                           end %% s_instr1_t)}} :::
-    {{6, COMISS_p, (fun v => match v with (op1,op2) => S_COMISS op1 op2
+    {{6, COMISS_b, (fun v => match v with (op1,op2) => S_COMISS op1 op2
                           end %% s_instr1_t)}} :::
-    {{7, CVTPI2PS_p, (fun v => match v with (op1,op2) => S_CVTPI2PS op1 op2
+    {{7, CVTPI2PS_b, (fun v => match v with (op1,op2) => S_CVTPI2PS op1 op2
                           end %% s_instr1_t)}} :::
-    {{8, CVTPS2PI_p, (fun v => match v with (op1,op2) => S_CVTPS2PI op1 op2
+    {{8, CVTPS2PI_b, (fun v => match v with (op1,op2) => S_CVTPS2PI op1 op2
                           end %% s_instr1_t)}} :::
-    {{9, CVTSI2SS_p, (fun v => match v with (op1,op2) => S_CVTSI2SS op1 op2
+    {{9, CVTSI2SS_b, (fun v => match v with (op1,op2) => S_CVTSI2SS op1 op2
                           end %% s_instr1_t)}} :::
-    {{10, CVTSS2SI_p, (fun v => match v with (op1,op2) => S_CVTSS2SI op1 op2
+    {{10, CVTSS2SI_b, (fun v => match v with (op1,op2) => S_CVTSS2SI op1 op2
                           end %% s_instr1_t)}} :::
-    {{11, CVTTPS2PI_p, (fun v => match v with (op1,op2) => S_CVTTPS2PI op1 op2
+    {{11, CVTTPS2PI_b, (fun v => match v with (op1,op2) => S_CVTTPS2PI op1 op2
                           end %% s_instr1_t)}} :::
-    {{12, CVTTSS2SI_p, (fun v => match v with (op1,op2) => S_CVTTSS2SI op1 op2
+    {{12, CVTTSS2SI_b, (fun v => match v with (op1,op2) => S_CVTTSS2SI op1 op2
                           end %% s_instr1_t)}} :::
-    {{13, DIVPS_p, (fun v => match v with (op1,op2) => S_DIVPS op1 op2
+    {{13, DIVPS_b, (fun v => match v with (op1,op2) => S_DIVPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{14, DIVSS_p, (fun v => match v with (op1,op2) => S_DIVSS op1 op2
+    {{14, DIVSS_b, (fun v => match v with (op1,op2) => S_DIVSS op1 op2
                           end %% s_instr1_t)}} :::
-    {{15, LDMXCSR_p, (fun op => S_LDMXCSR op %% s_instr1_t)}} :::
-    {{16, MAXPS_p, (fun v => match v with (op1,op2) => S_MAXPS op1 op2
+    {{15, LDMXCSR_b, (fun op => S_LDMXCSR op %% s_instr1_t)}} :::
+    {{16, MAXPS_b, (fun v => match v with (op1,op2) => S_MAXPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{17, MAXSS_p, (fun v => match v with (op1,op2) => S_MAXSS op1 op2
+    {{17, MAXSS_b, (fun v => match v with (op1,op2) => S_MAXSS op1 op2
                           end %% s_instr1_t)}} :::
-    {{18, MINPS_p, (fun v => match v with (op1,op2) => S_MINPS op1 op2
+    {{18, MINPS_b, (fun v => match v with (op1,op2) => S_MINPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{19, MINSS_p, (fun v => match v with (op1,op2) => S_MINSS op1 op2
+    {{19, MINSS_b, (fun v => match v with (op1,op2) => S_MINSS op1 op2
                           end %% s_instr1_t)}} :::
-    {{20, MOVAPS_p, (fun v => match v with (op1,op2) => S_MOVAPS op1 op2
+    {{20, MOVAPS_b, (fun v => match v with (op1,op2) => S_MOVAPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{21, MOVHLPS_p, (fun v => match v with (op1,op2) => S_MOVHLPS op1 op2
+    {{21, MOVHLPS_b, (fun v => match v with (op1,op2) => S_MOVHLPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{22, MOVHPS_p, (fun v => match v with (op1,op2) => S_MOVHPS op1 op2
+    {{22, MOVHPS_b, (fun v => match v with (op1,op2) => S_MOVHPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{23, MOVLHPS_p, (fun v => match v with (op1,op2) => S_MOVLHPS op1 op2
+    {{23, MOVLHPS_b, (fun v => match v with (op1,op2) => S_MOVLHPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{24, MOVLPS_p, (fun v => match v with (op1,op2) => S_MOVLPS op1 op2
+    {{24, MOVLPS_b, (fun v => match v with (op1,op2) => S_MOVLPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{25, MOVMSKPS_p, (fun v => match v with (op1,op2) => S_MOVMSKPS op1 op2
+    {{25, MOVMSKPS_b, (fun v => match v with (op1,op2) => S_MOVMSKPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{26, MOVSS_p, (fun v => match v with (op1,op2) => S_MOVSS op1 op2
+    {{26, MOVSS_b, (fun v => match v with (op1,op2) => S_MOVSS op1 op2
                           end %% s_instr1_t)}} :::
-    {{27, MOVUPS_p, (fun v => match v with (op1,op2) => S_MOVUPS op1 op2
+    {{27, MOVUPS_b, (fun v => match v with (op1,op2) => S_MOVUPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{28, MULPS_p, (fun v => match v with (op1,op2) => S_MULPS op1 op2
+    {{28, MULPS_b, (fun v => match v with (op1,op2) => S_MULPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{29, MULSS_p, (fun v => match v with (op1,op2) => S_MULSS op1 op2
+    {{29, MULSS_b, (fun v => match v with (op1,op2) => S_MULSS op1 op2
                           end %% s_instr1_t)}} :::
-    {{30, ORPS_p, (fun v => match v with (op1,op2) => S_ORPS op1 op2
+    {{30, ORPS_b, (fun v => match v with (op1,op2) => S_ORPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{31, RCPPS_p, (fun v => match v with (op1,op2) => S_RCPPS op1 op2
+    {{31, RCPPS_b, (fun v => match v with (op1,op2) => S_RCPPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{32, RCPSS_p, (fun v => match v with (op1,op2) => S_RCPSS op1 op2
+    {{32, RCPSS_b, (fun v => match v with (op1,op2) => S_RCPSS op1 op2
                           end %% s_instr1_t)}} :::
-    {{33, RSQRTPS_p, (fun v => match v with (op1,op2) => S_RSQRTPS op1 op2
+    {{33, RSQRTPS_b, (fun v => match v with (op1,op2) => S_RSQRTPS op1 op2
                           end %% s_instr1_t)}} :::
-    {{34, RSQRTSS_p, (fun v => match v with (op1,op2) => S_RSQRTSS op1 op2
+    {{34, RSQRTSS_b, (fun v => match v with (op1,op2) => S_RSQRTSS op1 op2
                           end %% s_instr1_t)}} :::
     ast_env_nil.
   Hint Unfold s_instr1_env: env_unfold_db.
 
-  Definition s_instr1_p : wf_bigrammar s_instr1_t.
+  Definition s_instr1_b : wf_bigrammar s_instr1_t.
     gen_ast_defs s_instr1_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -1418,60 +1423,60 @@ Set Implicit Arguments.
   Defined.
 
   Definition s_instr2_env : AST_Env s_instr2_t := 
-    {{0, SHUFPS_p, (fun v => match v with (op1,(op2,imm)) => S_SHUFPS op1 op2 imm
+    {{0, SHUFPS_b, (fun v => match v with (op1,(op2,imm)) => S_SHUFPS op1 op2 imm
                           end %% s_instr2_t)}} :::
-    {{1, SQRTPS_p, (fun v => match v with (op1,op2) => S_SQRTPS op1 op2
+    {{1, SQRTPS_b, (fun v => match v with (op1,op2) => S_SQRTPS op1 op2
                           end %% s_instr2_t)}} :::
-    {{2, SQRTSS_p, (fun v => match v with (op1,op2) => S_SQRTSS op1 op2
+    {{2, SQRTSS_b, (fun v => match v with (op1,op2) => S_SQRTSS op1 op2
                           end %% s_instr2_t)}} :::
-    {{3, STMXCSR_p, (fun op => S_STMXCSR op %% s_instr2_t)}} :::
-    {{4, SUBPS_p, (fun v => match v with (op1,op2) => S_SUBPS op1 op2
+    {{3, STMXCSR_b, (fun op => S_STMXCSR op %% s_instr2_t)}} :::
+    {{4, SUBPS_b, (fun v => match v with (op1,op2) => S_SUBPS op1 op2
                           end %% s_instr2_t)}} :::
-    {{5, SUBSS_p, (fun v => match v with (op1,op2) => S_SUBSS op1 op2
+    {{5, SUBSS_b, (fun v => match v with (op1,op2) => S_SUBSS op1 op2
                           end %% s_instr2_t)}} :::
-    {{6, UCOMISS_p, (fun v => match v with (op1,op2) => S_UCOMISS op1 op2
+    {{6, UCOMISS_b, (fun v => match v with (op1,op2) => S_UCOMISS op1 op2
                           end %% s_instr2_t)}} :::
-    {{7, UNPCKHPS_p, (fun v => match v with (op1,op2) => S_UNPCKHPS op1 op2
+    {{7, UNPCKHPS_b, (fun v => match v with (op1,op2) => S_UNPCKHPS op1 op2
                           end %% s_instr2_t)}} :::
-    {{8, UNPCKLPS_p, (fun v => match v with (op1,op2) => S_UNPCKLPS op1 op2
+    {{8, UNPCKLPS_b, (fun v => match v with (op1,op2) => S_UNPCKLPS op1 op2
                           end %% s_instr2_t)}} :::
-    {{9, XORPS_p, (fun v => match v with (op1,op2) => S_XORPS op1 op2
+    {{9, XORPS_b, (fun v => match v with (op1,op2) => S_XORPS op1 op2
                           end %% s_instr2_t)}} :::
-    {{10, PAVGB_p, (fun v => match v with (op1,op2) => S_PAVGB op1 op2
+    {{10, PAVGB_b, (fun v => match v with (op1,op2) => S_PAVGB op1 op2
                           end %% s_instr2_t)}} :::
-    {{11, PEXTRW_p, (fun v => match v with (op1,(op2,imm)) => S_PEXTRW op1 op2 imm
+    {{11, PEXTRW_b, (fun v => match v with (op1,(op2,imm)) => S_PEXTRW op1 op2 imm
                           end %% s_instr2_t)}} :::
-    {{12, PINSRW_p, (fun v => match v with (op1,(op2,imm)) => S_PINSRW op1 op2 imm
+    {{12, PINSRW_b, (fun v => match v with (op1,(op2,imm)) => S_PINSRW op1 op2 imm
                           end %% s_instr2_t)}} :::
-    {{13, PMAXSW_p, (fun v => match v with (op1,op2) => S_PMAXSW op1 op2
+    {{13, PMAXSW_b, (fun v => match v with (op1,op2) => S_PMAXSW op1 op2
                           end %% s_instr2_t)}} :::
-    {{14, PMAXUB_p, (fun v => match v with (op1,op2) => S_PMAXUB op1 op2
+    {{14, PMAXUB_b, (fun v => match v with (op1,op2) => S_PMAXUB op1 op2
                           end %% s_instr2_t)}} :::
-    {{15, PMINSW_p, (fun v => match v with (op1,op2) => S_PMINSW op1 op2
+    {{15, PMINSW_b, (fun v => match v with (op1,op2) => S_PMINSW op1 op2
                           end %% s_instr2_t)}} :::
-    {{16, PMINUB_p, (fun v => match v with (op1,op2) => S_PMINUB op1 op2
+    {{16, PMINUB_b, (fun v => match v with (op1,op2) => S_PMINUB op1 op2
                           end %% s_instr2_t)}} :::
-    {{17, PMOVMSKB_p, (fun v => match v with (op1,op2) => S_PMOVMSKB op1 op2
+    {{17, PMOVMSKB_b, (fun v => match v with (op1,op2) => S_PMOVMSKB op1 op2
                           end %% s_instr2_t)}} :::
-    {{18, PSADBW_p, (fun v => match v with (op1,op2) => S_PSADBW op1 op2
+    {{18, PSADBW_b, (fun v => match v with (op1,op2) => S_PSADBW op1 op2
                           end %% s_instr2_t)}} :::
-    {{19, PSHUFW_p, (fun v => match v with (op1,(op2,imm)) => S_PSHUFW op1 op2 imm
+    {{19, PSHUFW_b, (fun v => match v with (op1,(op2,imm)) => S_PSHUFW op1 op2 imm
                           end %% s_instr2_t)}} :::
-    {{20, MASKMOVQ_p, (fun v => match v with (op1,op2) => S_MASKMOVQ op1 op2
+    {{20, MASKMOVQ_b, (fun v => match v with (op1,op2) => S_MASKMOVQ op1 op2
                           end %% s_instr2_t)}} :::
-    {{21, MOVNTPS_p, (fun v => match v with (op1,op2) => S_MOVNTPS op1 op2
+    {{21, MOVNTPS_b, (fun v => match v with (op1,op2) => S_MOVNTPS op1 op2
                           end %% s_instr2_t)}} :::
-    {{22, MOVNTQ_p, (fun v => match v with (op1,op2) => S_MOVNTQ op1 op2
+    {{22, MOVNTQ_b, (fun v => match v with (op1,op2) => S_MOVNTQ op1 op2
                           end %% s_instr2_t)}} :::
-    {{23, PREFETCHT0_p, (fun op => S_PREFETCHT0 op %% s_instr2_t)}} :::
-    {{24, PREFETCHT1_p, (fun op => S_PREFETCHT1 op %% s_instr2_t)}} :::
-    {{25, PREFETCHT2_p, (fun op => S_PREFETCHT2 op %% s_instr2_t)}} :::
-    {{26, PREFETCHNTA_p, (fun op => S_PREFETCHNTA op %% s_instr2_t)}} :::
-    {{27, SFENCE_p, (fun v => S_SFENCE %% s_instr2_t)}} :::
+    {{23, PREFETCHT0_b, (fun op => S_PREFETCHT0 op %% s_instr2_t)}} :::
+    {{24, PREFETCHT1_b, (fun op => S_PREFETCHT1 op %% s_instr2_t)}} :::
+    {{25, PREFETCHT2_b, (fun op => S_PREFETCHT2 op %% s_instr2_t)}} :::
+    {{26, PREFETCHNTA_b, (fun op => S_PREFETCHNTA op %% s_instr2_t)}} :::
+    {{27, SFENCE_b, (fun v => S_SFENCE %% s_instr2_t)}} :::
     ast_env_nil.
   Hint Unfold s_instr2_env: env_unfold_db.
 
-  Definition s_instr2_p : wf_bigrammar s_instr2_t.
+  Definition s_instr2_b : wf_bigrammar s_instr2_t.
     gen_ast_defs s_instr2_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u =>
@@ -1508,8 +1513,8 @@ Set Implicit Arguments.
                & _). ci_invertible_tac.
   Defined.
 
-  Definition instr_grammar_env : AST_Env (pair_t prefix_t instruction_t) :=
-    {{0, prefix_grammar_only_seg_override $ i_instr1_p,
+  Definition instr_bigrammar_env : AST_Env (pair_t prefix_t instruction_t) :=
+    {{0, prefix_grammar_only_seg_override $ i_instr1_b,
         (fun v => 
            let (pre,hi):=v in
            let i := match hi with
@@ -1551,7 +1556,7 @@ Set Implicit Arguments.
                       | I_XLAT => XLAT
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{1, prefix_grammar_only_seg_override $ i_instr2_p,
+    {{1, prefix_grammar_only_seg_override $ i_instr2_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1586,7 +1591,7 @@ Set Implicit Arguments.
                       | I_LTR op => LTR op
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{2, prefix_grammar_only_seg_override $ i_instr3_p,
+    {{2, prefix_grammar_only_seg_override $ i_instr3_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1611,7 +1616,7 @@ Set Implicit Arguments.
                       | I_VERW op => VERW op
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{3, i_instr4_grammar,
+    {{3, i_instr4_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1625,7 +1630,7 @@ Set Implicit Arguments.
                       | I_SCAS b => SCAS b
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{4, i_instr5_grammar,
+    {{4, i_instr5_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1652,7 +1657,7 @@ Set Implicit Arguments.
                       | I_XOR w op1 op2 => XOR w op1 op2
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{5, prefix_grammar_seg_op_override $ i_instr6_p,
+    {{5, prefix_grammar_seg_op_override $ i_instr6_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1674,7 +1679,7 @@ Set Implicit Arguments.
                       | I_SHRD op1 r ri => SHRD op1 r ri
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{6, prefix_grammar_only_seg_override $ f_instr1_p,
+    {{6, prefix_grammar_only_seg_override $ f_instr1_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1723,7 +1728,7 @@ Set Implicit Arguments.
                       | F_FMULP op => FMULP op
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{7, prefix_grammar_only_seg_override $ f_instr2_p,
+    {{7, prefix_grammar_only_seg_override $ f_instr2_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1764,7 +1769,7 @@ Set Implicit Arguments.
                       | F_FWAIT => FWAIT
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{8, prefix_grammar_only_seg_override $ m_instr_p,
+    {{8, prefix_grammar_only_seg_override $ m_instr_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1797,7 +1802,7 @@ Set Implicit Arguments.
                       | M_PXOR op1 op2 => PXOR op1 op2
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{9, prefix_grammar_only_seg_override $ s_instr1_p,
+    {{9, prefix_grammar_only_seg_override $ s_instr1_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1838,7 +1843,7 @@ Set Implicit Arguments.
                       | S_RSQRTSS op1 op2 => RSQRTSS op1 op2
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
-    {{10, prefix_grammar_only_seg_override $ s_instr2_p,
+    {{10, prefix_grammar_only_seg_override $ s_instr2_b,
         (fun v =>
            let (pre,hi):=v in
            let i := match hi with
@@ -1873,10 +1878,10 @@ Set Implicit Arguments.
                     end
                in (pre,i) %% pair_t prefix_t instruction_t)}} :::
     ast_env_nil.
-  Hint Unfold instr_grammar_env: env_unfold_db.
+  Hint Unfold instr_bigrammar_env: env_unfold_db.
 
-  Definition instruction_grammar : wf_bigrammar (pair_t prefix_t instruction_t).
-    gen_ast_defs instr_grammar_env.
+  Definition instruction_bigrammar : wf_bigrammar (pair_t prefix_t instruction_t).
+    gen_ast_defs instr_bigrammar_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u:[|pair_t prefix_t instruction_t|] =>
                    let (pre,i):=u in
@@ -2203,10 +2208,10 @@ Set Implicit Arguments.
   Require Import Grammar.
 
   Definition instruction_regexp :=
-    projT1 (split_grammar (bigrammar_to_grammar (proj1_sig instruction_grammar))).
+    projT1 (split_grammar (bigrammar_to_grammar (proj1_sig instruction_bigrammar))).
 
   Definition ini_decoder_state :=
-    initial_parser_state (bigrammar_to_grammar (proj1_sig instruction_grammar)).
+    initial_parser_state (bigrammar_to_grammar (proj1_sig instruction_bigrammar)).
 
   (* Preventing Coq from expanding the def of ini_decoder_state *)
   Module Type ABSTRACT_INI_DECODER_STATE_SIG.
