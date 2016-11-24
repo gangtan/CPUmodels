@@ -231,7 +231,7 @@ Local Open Scope Z_scope.
     intros f1 f2 H.
     simpl. f_equiv.
     - apply H; nat_to_Z; omega.
-    - apply IHn. apply Word.sig_eq_below_downward. trivial.
+    - apply IHn. apply Word.sig_eq_below_downward_step. trivial.
   Qed.
 
   Lemma bitsn_of_sig_inv : forall n v, bitsn_of_sig n (sig_of_bitsn n v) = v.

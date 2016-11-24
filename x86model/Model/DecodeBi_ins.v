@@ -266,7 +266,7 @@ Set Implicit Arguments.
     intros f1 f2 H.
     simpl. f_equiv.
     - apply H; nat_to_Z; omega.
-    - apply IHn. apply Word.sig_eq_below_downward. trivial.
+    - apply IHn. apply Word.sig_eq_below_downward_step. trivial.
   Qed.
 
   Lemma bitsn_of_sig_inv : forall n v, bitsn_of_sig n (sig_of_bitsn n v) = v.
@@ -827,86 +827,17 @@ Set Implicit Arguments.
   Proof. unfold in_bigrammar_rng. intros; eexists; eapply in_int_n_intro. Qed.
   Hint Extern 1 (in_bigrammar_rng (` (int_n _)) _) => apply int_n_rng : ibr_rng_db.
 
-(* to be organized *)
-
-  Definition sig_cat (m:nat) (sig1 sig2: Z -> bool) : Z -> bool := 
-    fun i:Z => if (zlt i (Z.of_nat m)) then sig2 i
-               else sig1 (i-(Z.of_nat m))%Z.
-
-  Definition sig_split1 (m:nat) (sig: Z -> bool) : (Z -> bool) :=
-    fun i => sig (i+(Z.of_nat m))%Z.
-
-  Definition sig_split2 (m:nat) (sig: Z -> bool) : (Z -> bool) :=
-    fun i => if zlt i (Z.of_nat m) then sig i else false.
-
-  Lemma sig_split1_inv n m sig1 sig2:
-    Word.sig_eq_below n (sig_split1 m (sig_cat m sig1 sig2)) sig1.
-  Proof. unfold Word.sig_eq_below, sig_split1, sig_cat; simpl; intros.
-    destruct_head; try omega.
-    assert (H1:(z+(Z.of_nat m)-(Z.of_nat m)=z)%Z) by omega.
-    rewrite H1. trivial.
-  Qed.
-
-  Lemma sig_split2_inv m sig1 sig2:
-    Word.sig_eq_below m (sig_split2 m (sig_cat m sig1 sig2)) sig2.
-  Proof. unfold Word.sig_eq_below, sig_split2, sig_cat; simpl; intros.
-    destruct_head; [trivial | omega].
-  Qed.
-
-  Lemma sig_cat_inv m sig:
-    Word.sig_eq (sig_cat m (sig_split1 m sig) (sig_split2 m sig))
-                sig.
-  Proof. unfold Word.sig_eq, sig_split1, sig_split2, sig_cat, pointwise_relation; 
-    simpl; intros.
-    assert (H1:(a-(Z.of_nat m)+(Z.of_nat m)=a)%Z) by omega.
-    rewrite H1.
-    destruct_head; trivial.
-  Qed.
-
-  Instance sig_cat_exten n m:
-    Proper (Word.sig_eq_below n ==> Word.sig_eq_below m ==> Word.sig_eq_below (n+m))
-           (sig_cat m).
-  Proof. unfold Proper, respectful. 
-    intros n m sig1 sig1' H sig2 sig2' H1.
-    unfold sig_cat, Word.sig_eq_below. intros.
-    destruct (zlt z (Z.of_nat m)).
-    - apply H1. omega.
-    - apply H. nat_to_Z. omega.
-  Qed.
-
-  Instance sig_split1_exten n m:
-    Proper (Word.sig_eq_below (n+m) ==> Word.sig_eq_below n)
-           (sig_split1 m).
-  Proof. unfold Proper, respectful. intros n m sig sig' H.
-    unfold sig_split1, Word.sig_eq_below. simpl.
-    intros. apply H. nat_to_Z. omega.
-  Qed.
-
-  Instance sig_split2_exten n m:
-    Proper (Word.sig_eq_below m ==> Word.sig_eq_below n)
-           (sig_split2 m).
-  Proof. unfold Proper, respectful. intros n m sig sig' H.
-    unfold sig_split2, Word.sig_eq_below. simpl.
-    intros. destruct_head; [idtac | trivial].
-    apply H; omega.
-  Qed.
-
-Lemma sig_eq_below_downward_closed n m sig1 sig2: 
-  n<=m -> Word.sig_eq_below m sig1 sig2 -> Word.sig_eq_below n sig1 sig2.
-Proof. unfold Word.sig_eq_below. intros. 
-  apply H0. omega.
-Qed.
-
+  (* concatenate two bit-vector ints into a single one *)
   Definition intn_cat n m (b1:Word.int n) (b2:Word.int m) : Word.int (n+m+1) :=
     let sig1 := sig_of_intn b1 in
     let sig2 := sig_of_intn b2 in
-    intn_of_sig (n+m+1) (sig_cat (S m) sig1 sig2).
+    intn_of_sig (n+m+1) (Word.sig_cat (S m) sig1 sig2).
 
+  (* the inverses of intn_cat *)
   Definition intn_split1 n m (b:Word.int (n+m+1)): Word.int n  :=
-    intn_of_sig n (sig_split1 (S m) (sig_of_intn b)).
-
+    intn_of_sig n (Word.sig_split1 (S m) (sig_of_intn b)).
   Definition intn_split2 n m (b:Word.int (n+m+1)): Word.int m  :=
-    intn_of_sig m (sig_split2 (S m) (sig_of_intn b)).
+    intn_of_sig m (Word.sig_split2 (S m) (sig_of_intn b)).
 
   Lemma intn_of_sig_eq_intn n (b:Word.int n) sig:
     Word.sig_eq_below (S n) sig (sig_of_intn b) ->
@@ -922,12 +853,12 @@ Qed.
     assert (H: Word.sig_eq_below (S n + S m)
               (sig_of_intn
                    (intn_of_sig (n + m + 1)
-                      (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))))
-              (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))).
+                      (Word.sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))))
+              (Word.sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))).
       replace (S n + S m) with (S (n+m+1)) by omega.
       apply sig_of_intn_inv. 
     rewrite H.
-    apply sig_split1_inv.
+    apply Word.sig_split1_inv.
   Qed.
 
   Lemma intn_split2_inv n m (b1:Word.int n) (b2:Word.int m):
@@ -937,13 +868,13 @@ Qed.
     assert (H: Word.sig_eq_below (S n + S m)
               (sig_of_intn
                    (intn_of_sig (n + m + 1)
-                      (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))))
-              (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))).
+                      (Word.sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))))
+              (Word.sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))).
       replace (S n + S m) with (S (n+m+1)) by omega.
       apply sig_of_intn_inv. 
-    apply (@sig_eq_below_downward_closed (S m)) in H; [idtac | omega].
+    apply (@Word.sig_eq_below_downward_closed (S m)) in H; [idtac | omega].
     rewrite H.
-    apply sig_split2_inv.
+    apply Word.sig_split2_inv.
   Qed.
 
   Lemma intn_cat_inv n m (b:Word.int (n+m+1)):
@@ -952,7 +883,7 @@ Qed.
     apply intn_of_sig_eq_intn.
     replace (S (n+m+1)) with (S n + S m) by omega.
     repeat (rewrite (sig_of_intn_inv)).
-    rewrite sig_cat_inv. reflexivity.
+    rewrite Word.sig_cat_inv. reflexivity.
   Qed.
 
   (** parse two bitvectors and put them together by little endian;

@@ -109,6 +109,7 @@ Set Implicit Arguments.
   Definition op_s := "01100110".
 
   Definition op_override_b: wf_bigrammar bool_t.
+    op_s $$ Star (bits op_s)    
 
   Definition op_override_env : AST_Env bool_t :=
     {{0, ! op_s, (fun _ => true %% bool_t)}} :::

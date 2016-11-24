@@ -269,6 +269,18 @@ Definition sig_eq := pointwise_relation Z (@Logic.eq bool).
 Definition sig_eq_below n (f1 f2: Z -> bool) := 
   forall z, (0 <= z < Z_of_nat n)%Z -> f1 z = f2 z.
 
+(* concatenate two signature function at the boundary of m:
+   when >=m, use sig1; otherwise, use sig2 *)
+Definition sig_cat (m:nat) (sig1 sig2: Z -> bool) : Z -> bool := 
+  fun i:Z => if (zlt i (Z.of_nat m)) then sig2 i
+             else sig1 (i-(Z.of_nat m))%Z.
+
+(* The following two are the inverse functions of sig_cat *)
+Definition sig_split1 (m:nat) (sig: Z -> bool) : (Z -> bool) :=
+  fun i => sig (i+(Z.of_nat m))%Z.
+Definition sig_split2 (m:nat) (sig: Z -> bool) : (Z -> bool) :=
+  fun i => if zlt i (Z.of_nat m) then sig i else false.
+
 (** Bitwise logical ``and'', ``or'' and ``xor'' operations. *)
 
 Definition bitwise_binop (f: bool -> bool -> bool) (x y: int) :=
@@ -1235,12 +1247,18 @@ Qed.
 
 (** * Lemmas about equality between signature functions *)
 
-Global Instance sig_eq_below_downward n: 
+Global Instance sig_eq_below_downward_step n: 
   subrelation (sig_eq_below (S n)) (sig_eq_below n).
 Proof. unfold subrelation, predicate_implication,
          pointwise_lifting, Basics.impl.
   unfold sig_eq_below. intros.
   apply H. generalize (inj_lt n (S n)). omega.
+Qed.
+
+Lemma sig_eq_below_downward_closed n m sig1 sig2: 
+  (n<=m)%nat -> sig_eq_below m sig1 sig2 -> sig_eq_below n sig1 sig2.
+Proof. unfold sig_eq_below. intros. 
+  apply H0. omega.
 Qed.
 
 Global Instance sig_eq_below_equiv: 
@@ -1252,25 +1270,6 @@ Proof. unfold sig_eq_below; split.
     rewrite H, H2 by trivial. trivial.
 Qed.
 
-Global Instance Z_of_bits_exten: forall n, 
-  Proper (sig_eq_below n ==> Logic.eq) (Z_of_bits n).
-Proof. unfold Proper, respectful. 
-  unfold sig_eq_below; induction n; intros.
-  reflexivity.
-  simpl. rewrite inj_S in H. decEq. 
-  - apply H. omega. 
-  - apply IHn. intros; apply H. omega.
-Qed.
-
-(* Lemma Z_of_bits_exten : forall n f1 f2, *)
-(*   sig_eq_below n f1 f2 -> Z_of_bits n f1 = Z_of_bits n f2. *)
-(* Proof. unfold sig_eq_below; induction n; intros. *)
-(*   reflexivity. *)
-(*   simpl. rewrite inj_S in H. decEq.  *)
-(*   - apply H. omega.  *)
-(*   - apply IHn. intros; apply H. omega. *)
-(* Qed. *)
-
 Global Instance sig_eq_below_exten n: 
   Proper (sig_eq ==> sig_eq ==> iff) (sig_eq_below n).
 Proof. unfold Proper, respectful, sig_eq, 
@@ -1279,6 +1278,73 @@ Proof. unfold Proper, respectful, sig_eq,
   split; intros.
   - rewrite <- H. rewrite <- H2. auto.
   - rewrite H. rewrite H2. auto.
+Qed.
+
+Lemma sig_split1_inv n m sig1 sig2:
+  sig_eq_below n (sig_split1 m (sig_cat m sig1 sig2)) sig1.
+Proof. unfold sig_eq_below, sig_split1, sig_cat; simpl; intros.
+  destruct (zlt (z + Z.of_nat m) (Z.of_nat m)); try omega.
+  assert (H1:(z+(Z.of_nat m)-(Z.of_nat m)=z)%Z) by omega.
+  rewrite H1. trivial.
+Qed.
+
+Lemma sig_split2_inv m sig1 sig2:
+  sig_eq_below m (sig_split2 m (sig_cat m sig1 sig2)) sig2.
+Proof. unfold sig_eq_below, sig_split2, sig_cat; simpl; intros.
+  destruct (zlt z (Z.of_nat m)); [trivial | omega].
+Qed.
+
+Lemma sig_cat_inv m sig:
+  sig_eq (sig_cat m (sig_split1 m sig) (sig_split2 m sig)) sig.
+Proof. unfold sig_eq, sig_split1, sig_split2, sig_cat, pointwise_relation; 
+  simpl; intros.
+  assert (H1:(a-(Z.of_nat m)+(Z.of_nat m)=a)%Z) by omega.
+  rewrite H1.
+  destruct (zlt a (Z.of_nat m)); trivial.
+Qed.
+
+Global Instance sig_cat_exten n m:
+  Proper (sig_eq_below n ==> sig_eq_below m ==> sig_eq_below (n+m))
+         (sig_cat m).
+Proof. unfold Proper, respectful. 
+  intros sig1 sig1' H sig2 sig2' H1.
+  unfold sig_cat, sig_eq_below. intros.
+  destruct (zlt z (Z.of_nat m)).
+  - apply H1. omega.
+  - apply H. 
+    replace (Z.of_nat (n+m)) with (Z.of_nat n + Z.of_nat m) in *
+      by (rewrite Nat2Z.inj_add; trivial).
+    omega. 
+Qed.
+
+Global Instance sig_split1_exten n m:
+  Proper (sig_eq_below (n+m) ==> sig_eq_below n)
+         (sig_split1 m).
+Proof. unfold Proper, respectful. intros sig sig' H.
+  unfold sig_split1, sig_eq_below. simpl.
+  intros. apply H. 
+  replace (Z.of_nat (n+m)) with (Z.of_nat n + Z.of_nat m) in *
+    by (rewrite Nat2Z.inj_add; trivial).
+  omega.
+Qed.
+
+Global Instance sig_split2_exten n m:
+  Proper (sig_eq_below m ==> sig_eq_below n)
+         (sig_split2 m).
+Proof. unfold Proper, respectful. intros sig sig' H.
+  unfold sig_split2, sig_eq_below. simpl.
+  intros. destruct (zlt z (Z.of_nat m)); [idtac | trivial].
+  apply H; omega.
+Qed.
+
+Global Instance Z_of_bits_exten: forall n, 
+  Proper (sig_eq_below n ==> Logic.eq) (Z_of_bits n).
+Proof. unfold Proper, respectful. 
+  unfold sig_eq_below; induction n; intros.
+  reflexivity.
+  simpl. rewrite inj_S in H. decEq. 
+  - apply H. omega. 
+  - apply IHn. intros; apply H. omega.
 Qed.
 
 Lemma bits_of_Z_zero:
@@ -1792,15 +1858,12 @@ Proof.
   apply Z_of_bits_of_Z. apply eqm_unsigned_repr.
 Qed.
 
-
 Theorem shl_zero: forall x, shl x zero = x.
 Proof.
   intros. rewrite shl_mul_two_p. 
   change (repr (two_p (unsigned zero))) with one.
   apply mul_one.
 Qed.
-
-
 
 Theorem shl_mul:
   forall x y,
