@@ -831,113 +831,188 @@ Set Implicit Arguments.
 
   Definition sig_cat (m:nat) (sig1 sig2: Z -> bool) : Z -> bool := 
     fun i:Z => if (zlt i (Z.of_nat m)) then sig2 i
-               else sig1 (i-(Z.of_nat m)-1)%Z.
+               else sig1 (i-(Z.of_nat m))%Z.
 
-  Definition sig_split (m:nat) (sig: Z -> bool) : (Z -> bool)*(Z -> bool) := 
-    let sig1 := fun i => sig (i+(Z.of_nat m)+1)%Z in
-    let sig2 := fun i => if zlt i (Z.of_nat m) then sig i else false in
-    (sig1,sig2).
+  Definition sig_split1 (m:nat) (sig: Z -> bool) : (Z -> bool) :=
+    fun i => sig (i+(Z.of_nat m))%Z.
 
-  Lemma sig_split_inv1 n m sig1 sig2:
-    Word.sig_eq_below n (fst (sig_split m (sig_cat m sig1 sig2))) sig1.
-  Proof. unfold Word.sig_eq_below, sig_split, sig_cat; simpl; intros.
+  Definition sig_split2 (m:nat) (sig: Z -> bool) : (Z -> bool) :=
+    fun i => if zlt i (Z.of_nat m) then sig i else false.
+
+  Lemma sig_split1_inv n m sig1 sig2:
+    Word.sig_eq_below n (sig_split1 m (sig_cat m sig1 sig2)) sig1.
+  Proof. unfold Word.sig_eq_below, sig_split1, sig_cat; simpl; intros.
     destruct_head; try omega.
-    assert (H1:(z+(Z.of_nat m)+1-(Z.of_nat m)-1=z)%Z) by omega.
+    assert (H1:(z+(Z.of_nat m)-(Z.of_nat m)=z)%Z) by omega.
     rewrite H1. trivial.
   Qed.
 
-  Lemma sig_split_inv2 m sig1 sig2:
-    Word.sig_eq_below m (snd (sig_split m (sig_cat m sig1 sig2))) sig2.
-  Proof. unfold Word.sig_eq_below, sig_split, sig_cat; simpl; intros.
+  Lemma sig_split2_inv m sig1 sig2:
+    Word.sig_eq_below m (sig_split2 m (sig_cat m sig1 sig2)) sig2.
+  Proof. unfold Word.sig_eq_below, sig_split2, sig_cat; simpl; intros.
     destruct_head; [trivial | omega].
-  Qed.    
+  Qed.
 
   Lemma sig_cat_inv m sig:
-    Word.sig_eq (sig_cat m (fst (sig_split m sig)) (snd (sig_split m sig)))
+    Word.sig_eq (sig_cat m (sig_split1 m sig) (sig_split2 m sig))
                 sig.
-  Proof. unfold Word.sig_eq, sig_split, sig_cat, pointwise_relation; 
+  Proof. unfold Word.sig_eq, sig_split1, sig_split2, sig_cat, pointwise_relation; 
     simpl; intros.
-    assert (H1:(a-(Z.of_nat m)-1+(Z.of_nat m)+1=a)%Z) by omega.
+    assert (H1:(a-(Z.of_nat m)+(Z.of_nat m)=a)%Z) by omega.
     rewrite H1.
     destruct_head; trivial.
   Qed.
 
+  Instance sig_cat_exten n m:
+    Proper (Word.sig_eq_below n ==> Word.sig_eq_below m ==> Word.sig_eq_below (n+m))
+           (sig_cat m).
+  Proof. unfold Proper, respectful. 
+    intros n m sig1 sig1' H sig2 sig2' H1.
+    unfold sig_cat, Word.sig_eq_below. intros.
+    destruct (zlt z (Z.of_nat m)).
+    - apply H1. omega.
+    - apply H. nat_to_Z. omega.
+  Qed.
+
+  Instance sig_split1_exten n m:
+    Proper (Word.sig_eq_below (n+m) ==> Word.sig_eq_below n)
+           (sig_split1 m).
+  Proof. unfold Proper, respectful. intros n m sig sig' H.
+    unfold sig_split1, Word.sig_eq_below. simpl.
+    intros. apply H. nat_to_Z. omega.
+  Qed.
+
+  Instance sig_split2_exten n m:
+    Proper (Word.sig_eq_below m ==> Word.sig_eq_below n)
+           (sig_split2 m).
+  Proof. unfold Proper, respectful. intros n m sig sig' H.
+    unfold sig_split2, Word.sig_eq_below. simpl.
+    intros. destruct_head; [idtac | trivial].
+    apply H; omega.
+  Qed.
+
+Lemma sig_eq_below_downward_closed n m sig1 sig2: 
+  n<=m -> Word.sig_eq_below m sig1 sig2 -> Word.sig_eq_below n sig1 sig2.
+Proof. unfold Word.sig_eq_below. intros. 
+  apply H0. omega.
+Qed.
+
   Definition intn_cat n m (b1:Word.int n) (b2:Word.int m) : Word.int (n+m+1) :=
     let sig1 := sig_of_intn b1 in
     let sig2 := sig_of_intn b2 in
-    intn_of_sig (n+m+1) (sig_cat m sig1 sig2).
+    intn_of_sig (n+m+1) (sig_cat (S m) sig1 sig2).
 
-  Definition intn_split n m (b:Word.int (n+m+1)): Word.int n * Word.int m :=
-    let sig:= sig_of_intn b in
-    let (sig1,sig2) := sig_split m sig in
-    (intn_of_sig n sig1, intn_of_sig m sig2).
+  Definition intn_split1 n m (b:Word.int (n+m+1)): Word.int n  :=
+    intn_of_sig n (sig_split1 (S m) (sig_of_intn b)).
 
-  (* Lemma intn_split_inv1 n m (b1:Word.int n) (b2:Word.int m): *)
-  (*   fst (intn_split n m (intn_cat b1 b2)) = b1. *)
-  (* Proof. unfold intn_split, intn_cat; intros. *)
- 
-  Definition concat_little_endian n m
+  Definition intn_split2 n m (b:Word.int (n+m+1)): Word.int m  :=
+    intn_of_sig m (sig_split2 (S m) (sig_of_intn b)).
+
+  Lemma intn_of_sig_eq_intn n (b:Word.int n) sig:
+    Word.sig_eq_below (S n) sig (sig_of_intn b) ->
+    intn_of_sig n sig = b.
+  Proof. intros. rewrite <- (intn_of_sig_inv b).
+    rewrite H. trivial.
+  Qed.
+         
+  Lemma intn_split1_inv n m (b1:Word.int n) (b2:Word.int m):
+    intn_split1 n m (intn_cat b1 b2) = b1.
+  Proof. unfold intn_split1, intn_cat; intros.
+    apply intn_of_sig_eq_intn.
+    assert (H: Word.sig_eq_below (S n + S m)
+              (sig_of_intn
+                   (intn_of_sig (n + m + 1)
+                      (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))))
+              (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))).
+      replace (S n + S m) with (S (n+m+1)) by omega.
+      apply sig_of_intn_inv. 
+    rewrite H.
+    apply sig_split1_inv.
+  Qed.
+
+  Lemma intn_split2_inv n m (b1:Word.int n) (b2:Word.int m):
+    intn_split2 n m (intn_cat b1 b2) = b2.
+  Proof. unfold intn_split2, intn_cat; intros.
+    apply intn_of_sig_eq_intn.
+    assert (H: Word.sig_eq_below (S n + S m)
+              (sig_of_intn
+                   (intn_of_sig (n + m + 1)
+                      (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))))
+              (sig_cat (S m) (sig_of_intn b1) (sig_of_intn b2))).
+      replace (S n + S m) with (S (n+m+1)) by omega.
+      apply sig_of_intn_inv. 
+    apply (@sig_eq_below_downward_closed (S m)) in H; [idtac | omega].
+    rewrite H.
+    apply sig_split2_inv.
+  Qed.
+
+  Lemma intn_cat_inv n m (b:Word.int (n+m+1)):
+    intn_cat (intn_split1 n m b) (intn_split2 n m b) = b.
+  Proof. unfold intn_split1, intn_split2, intn_cat; intros.
+    apply intn_of_sig_eq_intn.
+    replace (S (n+m+1)) with (S n + S m) by omega.
+    repeat (rewrite (sig_of_intn_inv)).
+    rewrite sig_cat_inv. reflexivity.
+  Qed.
+
+  (** parse two bitvectors and put them together by little endian;
+      that is, put the second one before the first one. *)
+  Definition intn_cat_little n m
              (p1: wf_bigrammar (bitvector_t n))
              (p2: wf_bigrammar (bitvector_t m)) :
-    wf_bigrammar (bitvector_t (n+m+1)).
+    wf_bigrammar (bitvector_t (m+n+1)).
     intros.
     refine ((p1 $ p2)
-              @ (fun v: [|pair_t (bitvector_t n) (bitvector_t m)|] =>
-                   let b1 := Word.repr (Word.unsigned (fst v)) in
-                   let b2 := Word.repr (Word.unsigned (snd v)) in
-                   Word.add (Word.shl b2 (Word.repr (Z.of_nat n))) b1) :
-                  _ -> [|bitvector_t (n+m+1)|]
-              & (fun u =>
-                   let b2 := Word.repr 
-                              (Word.unsigned
-                                 (Word.shru u (Word.repr (Z.of_nat n)))) in
-                   let b1 := Word.repr (Word.unsigned u) in
-                   Some (b1,b2))
-              & _).
-  Admitted.
-
-(* use for the b equivalence                    *)
-(* Theorem zero_ext_shru_shl: *)
-(*   forall x,  *)
-(*   let y := repr (Z_of_nat wordsize - n) in *)
-(*   zero_ext n x = shru (shl x y) y. *)
+              @ (fun bs => intn_cat (snd bs) (fst bs)) :
+                  _ -> [|bitvector_t (m+n+1)|]
+              & (fun b =>
+                   Some (intn_split2 m n b, intn_split1 m n b))
+              & _). invertible_tac.
+    - exists v. destruct v as [b1 b2].
+      rewrite intn_split1_inv.
+      rewrite intn_split2_inv. auto.
+    - destruct v as [b1 b2]. inversion H0.
+      apply intn_cat_inv.
+  Defined.
 
   Definition byte : wf_bigrammar byte_t := int_n 7.
 
   Definition halfword : wf_bigrammar half_t := 
-    concat_little_endian byte byte.
+    intn_cat_little byte byte.
 
   Definition word : wf_bigrammar word_t := 
-    concat_little_endian (concat_little_endian halfword byte) byte.
+    intn_cat_little (intn_cat_little halfword byte) byte.
 
-  (* Definition halfword : wf_bigrammar half_t := int_n 15. *)
-  (* Definition word : wf_bigrammar word_t := int_n 31. *)
+  Lemma intn_cat_little_rng n m 
+    (p1:wf_bigrammar (bitvector_t n)) 
+    (p2:wf_bigrammar (bitvector_t m)) 
+    (v: [|bitvector_t (m+n+1)|]):
+    in_bigrammar_rng (` p1) (intn_split2 m n v) ->
+    in_bigrammar_rng (` p2) (intn_split1 m n v) ->
+    in_bigrammar_rng (` (@intn_cat_little n m p1 p2)) v.
+  Proof. unfold in_bigrammar_rng. intros.
+    destruct H as [s1 H]. destruct H0 as [s2 H0].
+    exists (s1 ++ s2)%list.
+    unfold intn_cat_little. simpl.
+    econstructor.
+      econstructor; try eassumption; trivial.
+      simpl. rewrite intn_cat_inv; trivial.
+  Qed.
 
-  Hint Extern 1 (in_bigrammar_rng (` byte) _) => apply int_n_rng.
-  Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply int_n_rng.
-  Hint Extern 1 (in_bigrammar_rng (` word) _) => apply int_n_rng.
+  Hint Extern 1 (in_bigrammar_rng (` (intn_cat_little ?p1 ?p2)) _) =>
+    apply (intn_cat_little_rng p1 p2): ibr_rng_db.
 
-  (* I used the above grammars for halfword and word because they are
-     easier for the proofs. The following defs of halfword and word from
-     the old Decode.v seems to be more efficient because they accumulate
-     one byte at a time.
-  Definition halfword := (byte $ byte) @ ((fun p =>
-      let b0 := Word.repr (Word.unsigned (fst p)) in
-      let b1 := Word.repr (Word.unsigned (snd p)) in
-        Word.or (Word.shl b1 (Word.repr 8)) b0): _ -> result_m half_t).
+  Hint Extern 1 (in_bigrammar_rng (` byte) _) => apply int_n_rng : ibr_rng_db.
 
-  Definition word := (byte $ byte $ byte $ byte) @
-    ((fun p => 
-        let b0 := zero_extend8_32 (fst p) in
-        let b1 := zero_extend8_32 (fst (snd p)) in
-        let b2 := zero_extend8_32 (fst (snd (snd p))) in
-        let b3 := zero_extend8_32 (snd (snd (snd p))) in
-         let w1 := Word.shl b1 (Word.repr 8) in
-         let w2 := Word.shl b2 (Word.repr 16) in
-         let w3 := Word.shl b3 (Word.repr 24) in
-          Word.or w3 (Word.or w2 (Word.or w1 b0)))
-    : _ -> result_m word_t).
-  *)
+  Lemma halfword_rng:
+    forall v, in_bigrammar_rng (` halfword) v.
+  Proof. unfold halfword. intros. ins_ibr_sim. Qed.
+  Hint Extern 1 (in_bigrammar_rng (` halfword) _) => apply halfword_rng: ibr_rng_db.
+
+  Lemma word_rng:
+    forall v, in_bigrammar_rng (` word) v.
+  Proof. unfold word. intros. ins_ibr_sim. Qed.
+  Hint Extern 1 (in_bigrammar_rng (` word) _) => apply word_rng: ibr_rng_db.
 
   Definition tttn : wf_bigrammar condition_t. 
     refine ((field 4) @ (Z_to_condition_type : _ -> [|condition_t|])
