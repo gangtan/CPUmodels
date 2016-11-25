@@ -614,6 +614,13 @@ Set Implicit Arguments.
   Program Definition bit (b:bool) : wf_bigrammar Char_t := Char b.
   Program Definition anybit : wf_bigrammar Char_t := Any.
 
+  Lemma bit_nonempty:
+    forall b, non_empty (` (bit b)).
+  Proof. unfold non_empty. unfold bit. simpl. intros.
+    intro Hc. in_bigrammar_inv. crush.
+  Qed.
+  Hint Resolve bit_nonempty: nonempty_db.
+
   Fixpoint bits (s:string) : wf_bigrammar (bits_n (String.length s)) := 
     match s with 
       | EmptyString => empty
@@ -645,6 +652,16 @@ Set Implicit Arguments.
   Proof. generalize in_bits_intro; localsimpl. Qed.
   Hint Resolve bits_rng: ibr_rng_db.
  
+  Lemma bits_nonempty:
+    forall s:string, s <> EmptyString -> non_empty (` (bits s)).
+  Proof. destruct s.
+    - intro H; contradict H; trivial.
+    - unfold bits; fold bits; intros.
+      apply seq_nonempty1.
+      nonempty_tac.
+  Qed.
+  Hint Resolve bits_nonempty: nonempty_db.
+
   Program Definition bitsmatch (s:string): wf_bigrammar Unit_t := 
     (bits s) @ (fun _ => tt:[|Unit_t|])
        & (fun _ => Some (tuples_of_string s)) & _.
@@ -666,6 +683,10 @@ Set Implicit Arguments.
     eapply in_bitsmatch_intro. eapply in_bits_intro.
   Qed.
   Hint Resolve bitsmatch_rng: ibr_rng_db.
+
+  Lemma bitsmatch_nonempty:
+    forall s:string, s <> EmptyString -> non_empty (` (bitsmatch s)).
+  Proof. unfold bitsmatch; intros. nonempty_tac. Qed.
 
   Program Definition bitsleft t (s:string) (p:wf_bigrammar t) : wf_bigrammar t :=
     (bitsmatch s $ p) @ (@snd _ _)

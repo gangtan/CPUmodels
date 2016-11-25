@@ -228,6 +228,8 @@ Fixpoint wf_grammar t (g:bigrammar t) : Prop :=
 Notation wf_bigrammar t := {g:bigrammar t | wf_grammar g}.
 
 Create HintDb ibr_rng_db.
+Create HintDb nonempty_db.
+
 Require Import Bits.
 (* "Create HintDb inv_db" would not create an empty rewrite db *)
 Hint Rewrite Word.bits_of_Z_of_bits Word.Z_of_bits_of_Z : inv_db.
@@ -338,6 +340,11 @@ Local Ltac localsimpl :=
       | _ => unfold invertible, printable, parsable, in_bigrammar_rng in *;
             in_bigrammar_inv; crush
     end.
+
+Ltac nonempty_tac :=
+  match goal with
+  | _ => auto with nonempty_db
+  end.
 
 (** * Lemmas about in_bigrammar_rng and other defs *)
 
@@ -527,6 +534,10 @@ Program Definition map t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2)
 Implicit Arguments map [t1 t2].
 Notation "g @ f & fi & pf" :=(map g (f, fi) pf) (at level 75).
 
+Program Definition star t (p:wf_bigrammar t) (pf:non_empty (` p)) :
+  wf_bigrammar (List_t t) :=
+  Star p.
+
 (* could also have the test return option(a=b) instead of {a=b}+{a<>b}. *)
 Program Definition always t (teq: forall (a b:interp t), {a=b}+{a<>b})
         (x:interp t) : wf_bigrammar t := 
@@ -682,6 +693,44 @@ Proof. intros; unfold union; split; intros.
     + exists (inl [|t|] v). split; ibr_prover.
     + exists (inr [|t|] v). split; ibr_prover.
 Qed.
+
+Lemma in_bigrammar_rng_star1 t (g:wf_bigrammar t) pf: 
+  in_bigrammar_rng (` (star g pf)) nil.
+Proof. unfold in_bigrammar_rng; unfold star; simpl; intros.
+  exists nil. apply InStar_eps; trivial.
+Qed.
+Hint Resolve in_bigrammar_rng_star1: ibr_rng_db.
+
+Lemma seq_nonempty t1 t2 (g1: wf_bigrammar t1) (g2: wf_bigrammar t2):
+  non_empty (` g1) \/ non_empty (` g2) -> non_empty (` (seq g1 g2)).
+Proof. unfold non_empty; intros.
+  unfold proj1_sig at 1, seq at 1.
+  intro Hc.
+  apply CatInv in Hc.
+  destruct Hc as [cs1 [cs2 [v1 [v2 Hc]]]].
+  break_hyp.
+  match goal with
+    | [H: nil = app _ _ |- _] => 
+      symmetry in H; apply app_eq_nil in H; break_hyp; subst
+  end.
+  crush_hyp.
+Qed.
+    
+Lemma seq_nonempty1 t1 t2 (g1: wf_bigrammar t1) (g2: wf_bigrammar t2):
+  non_empty (` g1) -> non_empty (` (seq g1 g2)).
+Proof. intros. apply seq_nonempty. auto. Qed.
+
+Lemma seq_nonempty2 t1 t2 (g1: wf_bigrammar t1) (g2: wf_bigrammar t2):
+  non_empty (` g2) -> non_empty (` (seq g1 g2)).
+Proof. intros. apply seq_nonempty. auto. Qed.
+
+Lemma map_nonempty t1 t2 (g:wf_bigrammar t1) (fi:funinv t1 t2) pf:
+  non_empty (` g) -> non_empty (` (map g fi pf)).
+Proof. unfold non_empty, map. simpl; intros.
+  intro Hc. in_bigrammar_inv. crush_hyp.
+Qed.
+Hint Resolve map_nonempty: nonempty_db.
+
 
 Definition pred_options t (g1 g2: wf_bigrammar t) := 
   forall x: [|t|], ({in_bigrammar_rng (` g1) x} + {in_bigrammar_rng (` g2) x}) +

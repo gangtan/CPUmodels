@@ -108,31 +108,38 @@ Set Implicit Arguments.
 
   Definition op_s := "01100110".
 
+  Lemma op_s_nonempty: non_empty (` (! op_s)).
+  Proof. apply bitsmatch_nonempty. unfold op_s. crush. Qed.
+
   Definition op_override_b: wf_bigrammar bool_t.
-    op_s $$ Star (bits op_s)    
-
-  Definition op_override_env : AST_Env bool_t :=
-    {{0, ! op_s, (fun _ => true %% bool_t)}} :::
-    {{1, ! (op_s ++ op_s), (fun _ => true %% bool_t)}} :::
-    {{2, ! (op_s ++ op_s ++ op_s), (fun _ => true %% bool_t)}} :::
-    {{3, ! (op_s ++ op_s ++ op_s ++ op_s), (fun _ => true %% bool_t)}} :::
-    {{4, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s), 
-        (fun _ => true %% bool_t)}} :::
-    {{5, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s),
-        (fun _ => true %% bool_t)}} :::
-    {{6, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s),
-        (fun _ => true %% bool_t)}} :::
-    {{7, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s),
-       (fun _ => true %% bool_t)}} :::
-    ast_env_nil.
-  Hint Unfold op_override_env : env_unfold_db.
-
-  Definition op_override_b : wf_bigrammar bool_t.
-    gen_ast_defs op_override_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
-               & (fun b:bool => if b then inv_case_some case0 () else None)
-               & _); ins_invertible_tac.
+    refine((op_s $$ star (! op_s) op_s_nonempty)
+             @ (fun _ => true %% bool_t)
+             & (fun b:bool => if b then Some nil else None)
+             & _); ins_invertible_tac.
   Defined.
+
+  (* Definition op_override_env : AST_Env bool_t := *)
+  (*   {{0, ! op_s, (fun _ => true %% bool_t)}} ::: *)
+  (*   {{1, ! (op_s ++ op_s), (fun _ => true %% bool_t)}} ::: *)
+  (*   {{2, ! (op_s ++ op_s ++ op_s), (fun _ => true %% bool_t)}} ::: *)
+  (*   {{3, ! (op_s ++ op_s ++ op_s ++ op_s), (fun _ => true %% bool_t)}} ::: *)
+  (*   {{4, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s),  *)
+  (*       (fun _ => true %% bool_t)}} ::: *)
+  (*   {{5, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s), *)
+  (*       (fun _ => true %% bool_t)}} ::: *)
+  (*   {{6, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s), *)
+  (*       (fun _ => true %% bool_t)}} ::: *)
+  (*   {{7, ! (op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s ++ op_s), *)
+  (*      (fun _ => true %% bool_t)}} ::: *)
+  (*   ast_env_nil. *)
+  (* Hint Unfold op_override_env : env_unfold_db. *)
+
+  (* Definition op_override_b : wf_bigrammar bool_t. *)
+  (*   gen_ast_defs op_override_env. *)
+  (*   refine ((ast_bigrammar gt) @ (ast_map gt) *)
+  (*              & (fun b:bool => if b then inv_case_some case0 () else None) *)
+  (*              & _); ins_invertible_tac. *)
+  (* Defined. *)
 
   (* Definition op_override_b : wf_bigrammar bool_t. *)
   (*   refine ("0110" $$ ! "0110" *)
@@ -158,10 +165,14 @@ Set Implicit Arguments.
 
   Lemma op_override_b_rng_inv op :
     in_bigrammar_rng (` op_override_b) op -> op = true.
-  Proof. unfold op_override_b; intros; ins_ibr_sim. 
-    compute [ast_type ast_bigrammar] in *.
-    destruct_all; trivial.
-  Qed.
+  Proof. unfold op_override_b; intros; ins_ibr_sim. Qed.
+
+  (* Lemma op_override_b_rng_inv op : *)
+  (*   in_bigrammar_rng (` op_override_b) op -> op = true. *)
+  (* Proof. unfold op_override_b; intros; ins_ibr_sim.  *)
+  (*   compute [ast_type ast_bigrammar] in *. *)
+  (*   destruct_all; trivial. *)
+  (* Qed. *)
 
   (* Lemma op_override_b_rng_inv op : *)
   (*   in_bigrammar_rng (` op_override_b) op -> op = true. *)
