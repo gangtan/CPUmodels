@@ -864,21 +864,21 @@ Definition enc_VERW (op1:operand) : Enc (list bool) :=
 Definition enc_WBINVD := ret (s2bl "0000111100001001").
 Definition enc_WRMSR := ret (s2bl "0000111100110000").
 
-
 Definition enc_XADD (w:bool)(op1 op2:operand) : Enc (list bool) :=
   l1 <- enc_modrm op2 op1; ret (s2bl "000011111100000" ++ enc_bit w ++ l1).
+
 Definition enc_XCHG (w:bool)(op1 op2:operand) : Enc (list bool) :=
   match op1, op2 with
     | Reg_op EAX, Reg_op r2 => 
-       if w then invalid else ret (s2bl "10010" ++ enc_bit w ++ enc_reg r2)
-    | Reg_op r1, Reg_op EAX =>
-       if w then invalid else ret (s2bl "10010" ++ enc_bit w ++ enc_reg r1)
+       if w then ret (s2bl "10010" ++ enc_reg r2)
+       else ret (s2bl "1000011" ++ enc_bit w ++ s2bl "11" ++ enc_reg r2 ++ enc_reg EAX)
     | Reg_op r1, Reg_op r2 => 
       ret (s2bl "1000011" ++ enc_bit w ++ s2bl "11" ++ enc_reg r2 ++ enc_reg r1)
   (*  | Reg_op r1, Address_op a2 => l1 <- enc_modrm op1 op2; ret (s2bl "1000011" ++ enc_bit w ++ l1) *)
     | Address_op a1, Reg_op r2 => l1 <- enc_modrm op2 op1; ret (s2bl "1000011" ++ enc_bit w ++ l1) 
     |  _, _ => invalid
   end.
+
 Definition enc_XLAT := ret (s2bl "11010111").
 Definition enc_XOR := enc_logic_or_arith "00110" "110".
 
@@ -2165,12 +2165,17 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
     else
       invalid.
 
-Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
+  Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
   if (check_pre_seg_with_op_override pre) then
     match i with 
-    | IMUL w op1 opopt iopt => enc_IMUL (op_override pre) w op1 opopt iopt
-    | MOV w op1 op2 => enc_MOV (op_override pre) w op1 op2
-    | TEST w op1 op2 => enc_TEST (op_override pre) w op1 op2
+    | CMP w op1 op2 => 
+      enc_CMP (op_override pre) w op1 op2
+    | IMUL w op1 opopt iopt => 
+      enc_IMUL (op_override pre) w op1 opopt iopt
+    | MOV w op1 op2 => 
+      enc_MOV (op_override pre) w op1 op2
+    | TEST w op1 op2 => 
+      enc_TEST (op_override pre) w op1 op2
     | _ => invalid
     end
   else
@@ -2304,6 +2309,7 @@ Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
     | FWAIT => enc_FWAIT
 
     | HLT => enc_HLT
+    | IMUL w op1 opopt iopt => enc_IMUL (op_override pre) w op1 opopt iopt
     | IN w p => enc_IN w p
 
     | INTn it => enc_INTn it
@@ -2333,6 +2339,7 @@ Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
     | LSL op1 op2 => enc_LSL op1 op2
     | LSS op1 op2 => enc_LSS op1 op2
     | LTR  op1 => enc_LTR op1
+    | MOV w op1 op2 => enc_MOV (op_override pre) w op1 op2
     | MOVCR d cr r => enc_MOVCR d cr r
     | MOVDR d dr r => enc_MOVDR d dr r
     | MOVSR d sr op1 => enc_MOVSR d sr op1
@@ -2363,6 +2370,7 @@ Definition enc_seg_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
     | STD => enc_STD
     | STI => enc_STI
     | STR op1 => enc_STR op1
+    | TEST w op1 op2 => enc_TEST (op_override pre) w op1 op2
     | UD2 => enc_UD2
     | VERR op1 => enc_VERR op1
     | VERW op1 => enc_VERW op1
@@ -2830,9 +2838,22 @@ Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | XCHG false op1 op2 => enc_lock_no_op_override_instr pre i
 
     (*Fifth type *)
-    | IMUL w op1 opopt iopt => enc_seg_with_op_override_instr pre i
-    | MOV w op1 op2 => enc_seg_with_op_override_instr pre i
-    | TEST w op1 op2 => enc_seg_with_op_override_instr pre i
+    | CMP w op1 op2 => 
+      if (op_override pre) then
+        enc_seg_with_op_override_instr pre i
+      else enc_seg_override_instr pre i
+    | IMUL w op1 opopt iopt => 
+      if (op_override pre) then
+        enc_seg_with_op_override_instr pre i
+      else enc_seg_override_instr pre i
+    | MOV w op1 op2 => 
+      if (op_override pre) then
+        enc_seg_with_op_override_instr pre i
+      else enc_seg_override_instr pre i
+    | TEST w op1 op2 =>
+      if (op_override pre) then
+        enc_seg_with_op_override_instr pre i
+      else enc_seg_override_instr pre i
 
     (*Sixth type *)
     | CDQ => enc_seg_op_override_instr pre i

@@ -1062,7 +1062,7 @@ Local Open Scope Z_scope.
     "1000" $$ "011" $$ anybit $ modrm @ 
     (fun p => match p with | (w,(op1,op2)) => XCHG w op2 op1 end %% instruction_t)
   |+|
-    "1001" $$ "0" $$ reg @ (fun r => XCHG false (Reg_op EAX) (Reg_op r) %% instruction_t).
+    "1001" $$ "0" $$ reg @ (fun r => XCHG true (Reg_op EAX) (Reg_op r) %% instruction_t).
 
   Definition XLAT_p := "1101" $$ bits "0111" @ (fun _ => XLAT %% instruction_t).
 

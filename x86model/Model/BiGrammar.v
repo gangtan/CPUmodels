@@ -449,6 +449,7 @@ Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
     | Map fi g =>
       fun v => x <- snd fi v; pretty_print g x
   end.
+Extraction Implicit pretty_print [t].
 
 Lemma pretty_print_corr1: forall t (g:bigrammar t) (v:interp t) s,
   pretty_print g v = Some s -> wf_grammar g -> in_bigrammar g s v.

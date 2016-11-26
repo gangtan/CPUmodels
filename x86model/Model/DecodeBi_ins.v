@@ -3328,7 +3328,7 @@ Set Implicit Arguments.
               @ (fun v => 
                    match v with
                      | inl (w,(r1,op2)) => (w, (op2, Reg_op r1))
-                     | inr r1 => (false, (Reg_op EAX, Reg_op r1))
+                     | inr r1 => (true, (Reg_op EAX, Reg_op r1))
                    end %% pair_t bool_t (pair_t operand_t operand_t))
               & (fun u:[|pair_t bool_t (pair_t operand_t operand_t)|] => 
                    let (w,u1):=u in
@@ -3338,8 +3338,8 @@ Set Implicit Arguments.
                        match op1 with
                          | Reg_op r1 =>
                            if (register_eq_dec r2 EAX) then
-                             if w then Some (inl (w,(r1,op2)))
-                             else Some (inr r1)
+                             if w then Some (inr r1)
+                             else Some (inl (w,(r1,op2)))
                            else Some (inl (w,(r1,op2)))
                          | _ => None
                        end
@@ -3351,7 +3351,7 @@ Set Implicit Arguments.
                      | _ => None
                    end)
               & _); ins_invertible_tac.
-    - destruct_sum.  
+    - destruct_sum.
       + destruct v as [w [r1 op2]]; ins_pf_sim; bg_pf_sim;
         destruct w; printable_tac; ins_ibr_sim.
       + ins_printable_tac.
