@@ -9,6 +9,9 @@
    the License, or (at your option) any later version.
 *)
 
+(* GT: this file is deprecated; the new x86 bigrammar in X86BG
+   specifies decoding and encoding simultaneously *)
+
 (* This file provides simple bit-level parsing combinators for disassembling
  * Intel IA32 (x86) 32-bit binaries. *)
 Require Import Coq.Init.Logic.
@@ -1973,7 +1976,7 @@ Definition SFENCE_p := "0000" $$ "1111" $$ "1010" $$ "1110" $$ "1111" $$
      used; segment override is optional; op_override prefix *must* be used
      *)
   (* note: added INC and DEC to this group; experiments suggest that these
-     instrs can take operand-overrde prefix *)
+     instrs can take operand-override prefix *)
   Definition instr_grammars_lock_with_op_override := 
     ADD_p true :: ADC_p true :: AND_p true :: DEC_p :: INC_p ::NEG_p :: NOT_p :: OR_p true
     :: SBB_p true :: SUB_p true :: XOR_p true :: XCHG_p :: nil.

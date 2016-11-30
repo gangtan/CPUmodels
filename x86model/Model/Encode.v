@@ -1,13 +1,19 @@
 (* This file encodes Intel IA32 (x86) 32-bit instructions into 
- * their binary form. *)
+ * their binary form. Gang Tan *)
 
 Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
 
 Require Import Coqlib.
+Require Import Bits.
 Require Import X86Syntax.
 Require Import Shared.Monad.
 Local Open Scope monad_scope.
+
+(** * An encoder derived from x86 bigrammars *)
+
+Require Import X86Model.BiGrammar.
+Require Import X86Model.X86BG.
 
 (* an encoding monad *)
 Definition Enc (T:Type) := option T.
@@ -22,6 +28,30 @@ Defined.
 Definition invalid (T:Type) : Enc T := @None T.
 Implicit Arguments invalid [T].
 
+Definition bits_to_bytes (lbits: list bool) : Enc (list int8) :=
+  let to_bytes := 
+    (fix to_bytes (lbits:list bool) n (acc:int8) res :=
+      match lbits with
+        | nil => if (Nat.eqb n 7) then ret res else invalid
+        | b::lbits' => 
+          let acc' := 
+              if b then Word.add (Word.shl acc Word.one) Word.one
+              else (Word.shl acc Word.one)
+          in
+            if (Nat.eqb n 0) then
+              to_bytes lbits' 7%nat Word.zero (acc'::res)
+            else
+              to_bytes lbits' (Nat.pred n) acc' res
+      end)%Z
+  in
+  lbytes <- to_bytes lbits 7 (Word.zero) nil;
+  ret (List.rev lbytes).
+
+Definition x86_encode pre ins : Enc (list int8) :=
+  lbits <- pretty_print (proj1_sig instr_bigrammar) (pre,ins);
+  bits_to_bytes lbits.
+
+(** * A manually written encoder; not realy necessary to keep *)
 
 Inductive op_size : Set := OpSize8 | OpSize16 | OpSize32.
 
@@ -186,10 +216,24 @@ Implicit Arguments int_explode [sz].
 Definition enc_byte (i: int8) : list bool :=
   int_explode i 8.
 
+(* testing if a signed (n1+1)-bit immediate can be represented in a
+   (n2+1)-bit immediate without loss of precision *)
+Definition repr_in_signed n1 n2 (w:Word.int n1) :=
+  andb (zle (Word.min_signed n2) (Word.signed w))
+       (zle (Word.signed w) (Word.max_signed n2)).
+
+Definition repr_in_signed_byte (w:int32) := repr_in_signed 31 7 w.
+Definition repr_in_signed_halfword (w:int32) := repr_in_signed 31 15 w.
+
 (* testing if a signed 32-bit immediate can be represented in a byte;
    that is, if it's within [-128,127] *)
-Definition repr_in_signed_byte (imm:int32) :=
-  andb (Word.lt imm (Word.repr 128)) (Word.lt (Word.repr (-129)) imm).
+(* Definition repr_in_signed_byte (imm:int32) := *)
+(*   andb (Word.lt imm (Word.repr 128)) (Word.lt (Word.repr (-129)) imm). *)
+
+(* testing if a signed 32-bit immediate can be represented in a 16-bit half word;
+   that is, if it's within [-65536,65535] *)
+(* Definition repr_in_signed_halfword (imm:int32) := *)
+(*   andb (Word.lt imm (Word.repr 65536)) (Word.lt (Word.repr (-65537)) imm). *)
 
 (* encode a byte from an int32;  
    return invalid if i isn't a valid byte: not between (-128,127) *)
@@ -203,11 +247,6 @@ Definition enc_halfword (i: int16) : list bool :=
     let b1 := Word.and i (Word.repr 255) in
     let hw := Word.or (Word.shl b1 (Word.repr 8)) b0 in
       int_explode hw 16.
-
-(* testing if a signed 32-bit immediate can be represented in a 16-bit half word;
-   that is, if it's within [-65536,65535] *)
-Definition repr_in_signed_halfword (imm:int32) :=
-  andb (Word.lt imm (Word.repr 65536)) (Word.lt (Word.repr (-65537)) imm).
 
 Definition enc_halfword_i32 (i: int32) : Enc (list bool) :=
   if (repr_in_signed_halfword i) then
@@ -522,11 +561,11 @@ Definition enc_IMUL (op_override:bool)
          we can use the case of 32-bit immediates *)
       if (repr_in_signed_byte imm3) then 
         l1 <- enc_modrm op1 op2; 
-        l_imm3 <- enc_imm op_override true imm3;
+        l_imm3 <- enc_imm op_override false imm3;
         ret (s2bl "01101011" ++ l1 ++ l_imm3)
       else
         l1 <- enc_modrm op1 op2; 
-        l_imm3 <- enc_imm op_override false imm3;
+        l_imm3 <- enc_imm op_override true imm3;
         ret (s2bl "01101001" ++ l1 ++ l_imm3)
     | _ , _ => invalid
   end.
@@ -2047,6 +2086,7 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
   Definition check_pre_rep_or_repn (pre: X86Syntax.prefix) : bool :=
     let (lr, seg, op_o, addr_o) := pre in
     match lr, addr_o with
+    | Some rep, false => true
     | Some repn, false => true
     | None, false => true
     | _, _  => false
@@ -2099,7 +2139,7 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
 
 (*Groupings of instructions based on prefixes, as specified by Decode.v *)
   Definition enc_rep_instr (pre: X86Syntax.prefix) (i : instr) :=
-    if(check_pre_rep pre) then
+    if (check_pre_rep pre) then
       match i with 
       | INS w => enc_INS w
       | OUTS w => enc_OUTS w
@@ -2113,7 +2153,7 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
       invalid.
 
   Definition enc_rep_or_repn_instr (pre: X86Syntax.prefix) (i : instr) :=  
-    if(check_pre_rep_or_repn pre) then
+    if (check_pre_rep_or_repn pre) then
       match i with 
       | CMPS w => enc_CMPS w
       | SCAS w => enc_SCAS w
@@ -2123,11 +2163,13 @@ Definition enc_prefix (pre:X86Syntax.prefix) : Enc (list bool) :=
       invalid.
 
   Definition enc_lock_with_op_override_instr (pre: X86Syntax.prefix) (i : instr) :=
-    if(check_pre_lock_with_op_override pre) then
+    if (check_pre_lock_with_op_override pre) then
       match i with 
       | ADD w op1 op2 => enc_ADD (op_override pre) w op1 op2
       | ADC w op1 op2 => enc_ADC (op_override pre) w op1 op2
       | AND w op1 op2 => enc_AND (op_override pre) w op1 op2
+      | DEC w op1 => enc_DEC w op1
+      | INC w op1 => enc_INC w op1
       | NEG w op1 => enc_NEG w op1
       | NOT w op1 => enc_NOT w op1
       | OR w op1 op2 => enc_OR (op_override pre) w op1 op2
@@ -2794,7 +2836,7 @@ Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
       enc_all_instr pre i
    else
     match i with
-    (*First type of prefix constraints *)
+
     | INS w => enc_rep_instr pre i
     | OUTS w => enc_rep_instr pre i
     | MOVS w => enc_rep_instr pre i
@@ -2802,42 +2844,52 @@ Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | STOS w => enc_rep_instr pre i
     | RET ss disp => enc_rep_instr pre i
 
-    (*Second type *)
     | CMPS w => enc_rep_or_repn_instr pre i
     | SCAS w => enc_rep_or_repn_instr pre i
 
-    (*Third type *)
-    | ADD true op1 op2 => enc_lock_with_op_override_instr pre i
-    | ADC true op1 op2 =>enc_lock_with_op_override_instr pre i
-    | AND true op1 op2 => enc_lock_with_op_override_instr pre i
-    | NEG true op1 => enc_lock_with_op_override_instr pre i
-    | NOT true op1 => enc_lock_with_op_override_instr pre i
-    | OR true op1 op2 => enc_lock_with_op_override_instr pre i
-    | SBB true op1 op2 =>  enc_lock_with_op_override_instr pre i
-    | SUB true op1 op2 => enc_lock_with_op_override_instr pre i
-    | XOR true op1 op2 => enc_lock_with_op_override_instr pre i
-    | XCHG true op1 op2 => enc_lock_with_op_override_instr pre i
+    | ADD w op1 op2 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | ADC w op1 op2 =>
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | AND w op1 op2 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | DEC w op1 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | INC w op1 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | NEG w op1 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | NOT w op1 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | OR w op1 op2 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | SBB w op1 op2 =>  
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | SUB w op1 op2 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | XOR w op1 op2 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
+    | XCHG w op1 op2 => 
+      if (op_override pre) then enc_lock_with_op_override_instr pre i
+      else enc_lock_no_op_override_instr pre i
 
-    (*Fourth type*)
-    | ADD false op1 op2 => enc_lock_no_op_override_instr pre i
-    | ADC false op1 op2 => enc_lock_no_op_override_instr pre i
-    | AND false op1 op2 => enc_lock_no_op_override_instr pre i
     | BTC op1 op2 => enc_lock_no_op_override_instr pre i
     | BTR op1 op2 => enc_lock_no_op_override_instr pre i
     | BTS op1 op2 => enc_lock_no_op_override_instr pre i
     | CMPXCHG w op1 op2 => enc_lock_no_op_override_instr pre i
-    | DEC false op1 => enc_lock_no_op_override_instr pre i
-    | INC false op1 => enc_lock_no_op_override_instr pre i
-    | NEG false op1 => enc_lock_no_op_override_instr pre i
-    | NOT false op1 => enc_lock_no_op_override_instr pre i
-    | OR false op1 op2 => enc_lock_no_op_override_instr pre i
-    | SBB false op1 op2 => enc_lock_no_op_override_instr pre i
-    | SUB false op1 op2 => enc_lock_no_op_override_instr pre i
-    | XOR false op1 op2 => enc_lock_no_op_override_instr pre i
-    | XADD false op1 op2 => enc_lock_no_op_override_instr pre i
-    | XCHG false op1 op2 => enc_lock_no_op_override_instr pre i
+    | XADD w op1 op2 => enc_lock_no_op_override_instr pre i
 
-    (*Fifth type *)
     | CMP w op1 op2 => 
       if (op_override pre) then
         enc_seg_with_op_override_instr pre i
@@ -2855,7 +2907,6 @@ Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
         enc_seg_with_op_override_instr pre i
       else enc_seg_override_instr pre i
 
-    (*Sixth type *)
     | CDQ => enc_seg_op_override_instr pre i
     | CMOVcc ct op1 op2 => enc_seg_op_override_instr pre i
     | CWDE => enc_seg_op_override_instr pre i
@@ -2873,7 +2924,6 @@ Definition enc_all_instr (pre:X86Syntax.prefix) (i:instr) : Enc (list bool) :=
     | SHR w op1 ri => enc_seg_op_override_instr pre i
     | SHRD w op1 ri => enc_seg_op_override_instr pre i
 
-    (*Final type *)
     | _ => enc_seg_override_instr pre i
     end.
 
@@ -2883,22 +2933,9 @@ Definition enc_pre_instr pre ins : Enc (list bool) :=
   ret (l1 ++ l2).
 
 (* encode instrs and output a list of bytes *)
-Definition enc_pre_instr_bytes pre ins : Enc (list Z) :=
-  let to_bytes := 
-    (fix to_bytes lbits n (acc:Z) res :=
-      match lbits with
-        | nil => if (Zeq_bool n 7) then ret res else invalid
-        | b::lbits' => 
-          let acc' := Word.Z_shift_add b acc in
-            if (Zeq_bool n 0) then
-              to_bytes lbits' 7 0 (acc'::res)
-            else
-              to_bytes lbits' (n-1) acc' res
-      end)%Z
-  in
+Definition enc_pre_instr_bytes pre ins : Enc (list int8) :=
   lbits <- enc_pre_instr pre ins;
-  lbytes <- to_bytes lbits 7%Z 0%Z nil;
-  ret (List.rev lbytes).
+  bits_to_bytes lbits.
 
 (*
  80483fd:	55                   	push   ebp
@@ -2909,4 +2946,3 @@ Definition enc_pre_instr_bytes pre ins : Enc (list Z) :=
 (* Definition emptyPrefix := mkPrefix None None false false. *)
 (* Eval compute in (enc_pre_instr_bytes emptyPrefix (PUSH true (Reg_op EBP))). *)
 (* Eval compute in (enc_pre_instr_bytes emptyPrefix (MOV true (Reg_op ESP) (Reg_op EBP))). *)
-

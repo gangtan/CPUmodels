@@ -1,4 +1,4 @@
-(** Gang Tan: Bi-directional grammars for both parsing and pretty-printing *)
+(** Gang Tan: Bi-directional grammars for x86 parsing and pretty-printing *)
 
 (* This file glues all individual x86 instruction bigrammars in
    Decode_ins.v into one big bigrammar. *)
@@ -20,7 +20,7 @@ Set Implicit Arguments.
   Require X86Model.ParserArg.
   Import ParserArg.X86_PARSER_ARG.
   Require Import X86Model.BiGrammar.
-  Require Import DecodeBi_ins.
+  Require Import X86BG_ins.
 
   Definition lock_b : wf_bigrammar lock_or_rep_t. 
     refine("1111" $$ ! "0000"
@@ -1894,7 +1894,7 @@ Set Implicit Arguments.
     ast_env_nil.
   Hint Unfold instr_bigrammar_env: env_unfold_db.
 
-  Definition instruction_bigrammar : wf_bigrammar (pair_t prefix_t instruction_t).
+  Definition instr_bigrammar : wf_bigrammar (pair_t prefix_t instruction_t).
     gen_ast_defs instr_bigrammar_env.
     refine ((ast_bigrammar gt) @ (ast_map gt)
                & (fun u:[|pair_t prefix_t instruction_t|] =>
@@ -2221,18 +2221,18 @@ Set Implicit Arguments.
   Require Import Parser.
   Require Import Grammar.
 
-  Definition instruction_regexp :=
-    projT1 (split_grammar (bigrammar_to_grammar (proj1_sig instruction_bigrammar))).
+  Definition instr_regexp :=
+    projT1 (split_grammar (bigrammar_to_grammar (proj1_sig instr_bigrammar))).
 
   Definition ini_decoder_state :=
-    initial_parser_state (bigrammar_to_grammar (proj1_sig instruction_bigrammar)).
+    initial_parser_state (bigrammar_to_grammar (proj1_sig instr_bigrammar)).
 
   (* Preventing Coq from expanding the def of ini_decoder_state *)
   Module Type ABSTRACT_INI_DECODER_STATE_SIG.
     Parameter abs_ini_decoder_state :
       instParserState
         (Pair_t prefix_t instruction_t)
-        instruction_regexp.
+        instr_regexp.
     Parameter ini_decoder_state_eq :
         abs_ini_decoder_state = ini_decoder_state.
   End ABSTRACT_INI_DECODER_STATE_SIG.
@@ -2251,7 +2251,7 @@ Set Implicit Arguments.
   Qed.
 
   Definition ParseState_t := instParserState (Pair_t prefix_t instruction_t)
-                                             instruction_regexp.
+                                             instr_regexp.
 
   Definition parse_byte (ps: ParseState_t) (byte:int8) :
     ParseState_t * list (prefix * instr) :=
