@@ -9,6 +9,8 @@
    the License, or (at your option) any later version.
 *)
 
+(* GT: this file is deprecated; use MIPSBG.v instead *)
+
 (* This file provides simple bit-level parsing combinators for disassembling
  * MIPS 32-bit binaries. *)
 Require Import Coq.Init.Logic.

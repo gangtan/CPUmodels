@@ -19,7 +19,6 @@ Require Import Shared.RTL.
 Require Import Shared.Monad.
 
 Require Import MIPSModel.Parser.
-Require Import MIPSModel.Decode.
 Require Import MIPSModel.MIPSSyntax.
 
 Set Implicit Arguments.
@@ -157,7 +156,7 @@ End MIPS_MACHINE.
 
 Module MIPS_RTL := RTL.RTL(MIPS_MACHINE).
 
-Module MIPS_Decode.
+Module MIPS_Compile.
   Import MIPS_MACHINE.
   Import MIPS_RTL.
 
@@ -897,11 +896,11 @@ Module MIPS_Decode.
       end
     ).
 
-End MIPS_Decode.
+End MIPS_Compile.
 
 Local Open Scope Z_scope.
 Local Open Scope monad_scope.
-Import MIPS_Decode.
+Import MIPS_Compile.
 Import MIPS_RTL.
 Import MIPS_MACHINE.
 
@@ -912,5 +911,5 @@ Fixpoint RTL_step_list l :=
   end.
 
 Definition step_ins inst: RTL unit := 
-  RTL_step_list (MIPS_Decode.instr_to_rtl inst).
+  RTL_step_list (MIPS_Compile.instr_to_rtl inst).
 

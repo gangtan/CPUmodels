@@ -1,4 +1,4 @@
-MODULES := MIPSSyntax ParserArg Xform Regexp RESet GrammarType Grammar BiGrammar Parser Decode MIPSSemantics DecodeBi
+MODULES := MIPSSyntax ParserArg Xform Regexp RESet GrammarType Grammar BiGrammar Parser MIPSBG MIPSSemantics Decode 
 VS 	:= $(MODULES:%=%.v)
 
 .PHONY: coq clean
