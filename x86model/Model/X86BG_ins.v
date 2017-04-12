@@ -1018,7 +1018,7 @@ Set Implicit Arguments.
 
   Definition test_b : wf_bigrammar control_register_t.
     Time gen_ast_defs test_env.
-    Time refine((ast_bigrammar gt) @ (ast_map gt)
+    Time refine((comb_bigrammar gt) @ (comb_map gt)
              & (fun u =>
                   match u with
                     | CR0 => inv_case_some case0 ()
@@ -1056,7 +1056,7 @@ Set Implicit Arguments.
 
   Definition control_reg_b : wf_bigrammar control_register_t.
     gen_ast_defs control_reg_env.
-    refine((ast_bigrammar gt) @ (ast_map gt)
+    refine((comb_bigrammar gt) @ (comb_map gt)
              & (fun u =>
                   match u with
                     | CR0 => inv_case_some case0 ()
@@ -1085,7 +1085,7 @@ Set Implicit Arguments.
    * happen with the CR registers above -- e.g., we don't have a CR1. *)
   Definition debug_reg_b : wf_bigrammar debug_register_t.
     gen_ast_defs debug_reg_env.
-    refine((ast_bigrammar gt) @ (ast_map gt)
+    refine((comb_bigrammar gt) @ (comb_map gt)
               & (fun u => 
                    match u with
                      | DR0 => inv_case_some case0 ()
@@ -1111,7 +1111,7 @@ Set Implicit Arguments.
 
   Definition segment_reg_b : wf_bigrammar segment_register_t.
     gen_ast_defs segment_reg_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u => 
                     match u with
                       | ES => inv_case_some case0 ()
@@ -1178,7 +1178,7 @@ Set Implicit Arguments.
      definitions. *)
   Definition reg_no_esp : wf_bigrammar register_t. 
     gen_ast_defs reg_no_esp_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun r => match r with
                           | EAX => inv_case_some case0 ()
                           | ECX => inv_case_some case1 ()
@@ -2188,7 +2188,7 @@ Set Implicit Arguments.
     intros.
     gen_ast_defs (logic_or_arith_env opsize_override opcode1 opcode2).
     refine(
-        ((ast_bigrammar gt) @ (ast_map gt)
+        ((comb_bigrammar gt) @ (comb_map gt)
             & (fun u: [|pair_t bool_t (pair_t operand_t operand_t)|] =>
                let (w, ops) := u in
                let (op1, op2) := ops in
@@ -2312,7 +2312,7 @@ Set Implicit Arguments.
   Definition bit_test_b (opcode1:string) (opcode2:string) : 
     wf_bigrammar (pair_t operand_t operand_t).
     intros. gen_ast_defs (bit_test_env opcode1 opcode2).
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
               & (fun u: [|pair_t operand_t operand_t|] =>
                    let (op1,op2):=u in
                    match op1 with
@@ -2652,7 +2652,7 @@ Set Implicit Arguments.
     wf_bigrammar (pair_t bool_t
                          (pair_t bool_t (pair_t operand_t (option_t selector_t)))).
     gen_ast_defs JMP_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
               & (fun u: [|pair_t bool_t
                            (pair_t bool_t (pair_t operand_t (option_t selector_t)))|]
                  =>
@@ -2735,7 +2735,7 @@ Set Implicit Arguments.
   Definition LMSW_b : wf_bigrammar operand_t.
     refine (("0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ "110" $$ reg
              |+|
-             "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11"
+             "0000" $$ "1111" $$ "0000" $$ "0001"
                 $$ ext_op_modrm_noreg_ret_addr "110" )
              @ (fun v =>
                   match v with
@@ -2833,7 +2833,7 @@ Set Implicit Arguments.
   Definition MOV_b (opsize_override:bool): 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros. gen_ast_defs (MOV_env opsize_override).
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
               & (fun u: [|pair_t bool_t (pair_t operand_t operand_t)|] => 
                    let (w,u1):=u in
                    let (op1,op2):=u1 in
@@ -2985,7 +2985,7 @@ Set Implicit Arguments.
 
   Definition POPSR_b : wf_bigrammar segment_register_t.
     gen_ast_defs POPSR_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u => match u with
                              | ES => inv_case_some case0 ()
                              | SS => inv_case_some case1 ()
@@ -3014,7 +3014,7 @@ Set Implicit Arguments.
 
   Definition PUSH_b : wf_bigrammar (pair_t bool_t operand_t).
     gen_ast_defs PUSH_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | (true, Address_op addr) => inv_case_some case0 addr
@@ -3042,7 +3042,7 @@ Set Implicit Arguments.
 
   Definition PUSHSR_b : wf_bigrammar segment_register_t.
     gen_ast_defs PUSHSR_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u => 
                     match u with
                       | ES => inv_case_some case0 ()
@@ -3132,7 +3132,7 @@ Set Implicit Arguments.
 
   Definition RET_b : wf_bigrammar (pair_t bool_t (option_t half_t)).
     gen_ast_defs RET_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u => 
                     match u with
                       | (true, None) => inv_case_some case0 ()
@@ -3192,7 +3192,7 @@ Set Implicit Arguments.
   Definition shiftdouble_b (opcode:string) :
     wf_bigrammar (pair_t operand_t (pair_t register_t reg_or_immed_t)).
     intros; gen_ast_defs (shiftdouble_env opcode).
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u:[|pair_t operand_t (pair_t register_t reg_or_immed_t)|] => 
                     let (op1,u1):=u in
                     let (r2,ri):=u1 in
@@ -3259,7 +3259,7 @@ Set Implicit Arguments.
   Definition TEST_b (opsize_override: bool) : 
     wf_bigrammar (pair_t bool_t (pair_t operand_t operand_t)).
     intros; gen_ast_defs (TEST_env opsize_override).
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u:[|pair_t bool_t (pair_t operand_t operand_t)|] => 
                     let (w,u1) := u in
                     let (op1,op2):=u1 in
@@ -3446,7 +3446,7 @@ Set Implicit Arguments.
   Definition fp_arith_b (bs0 bs1: string) : 
     wf_bigrammar (pair_t bool_t fp_operand_t).
     intros; gen_ast_defs (fp_arith_env bs0 bs1).
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
               & (fun u =>
                    match u with
                      | (true, FPM32_op addr) => inv_case_some case0 addr
@@ -3652,7 +3652,7 @@ Set Implicit Arguments.
 
   Definition FLD_b: wf_bigrammar fp_operand_t.
     gen_ast_defs FLD_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | FPM32_op addr => inv_case_some case0 addr
@@ -3751,7 +3751,7 @@ Set Implicit Arguments.
 
   Definition FSTP_b: wf_bigrammar fp_operand_t.
     gen_ast_defs FSTP_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | FPM32_op addr => inv_case_some case0 addr
@@ -3993,7 +3993,7 @@ Set Implicit Arguments.
 
   Definition MOVD_b : wf_bigrammar (pair_t mmx_operand_t mmx_operand_t).
     gen_ast_defs MOVD_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | (MMX_Reg_op mr, GP_Reg_op r) => inv_case_some case0 (true,(mr,r))

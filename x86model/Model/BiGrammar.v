@@ -451,7 +451,7 @@ Fixpoint pretty_print t (g:bigrammar t) : interp t -> option (list char_p) :=
   end.
 Extraction Implicit pretty_print [t].
 
-Lemma pretty_print_corr1: forall t (g:bigrammar t) (v:interp t) s,
+Lemma pretty_print_corr2: forall t (g:bigrammar t) (v:interp t) s,
   pretty_print g v = Some s -> wf_grammar g -> in_bigrammar g s v.
 Proof. 
   induction g; try (localsimpl; fail).
@@ -480,7 +480,7 @@ Proof.
     guess v H2. crush.
 Qed.
 
-Lemma pretty_print_corr2: forall t (g:bigrammar t) (v:interp t) s,
+Lemma pretty_print_corr1: forall t (g:bigrammar t) (v:interp t) s,
   in_bigrammar g s v -> wf_grammar g -> exists s', pretty_print g v = Some s'.
 Proof. 
   induction g; try (localsimpl; fail).
@@ -503,7 +503,7 @@ Proof.
           destruct H as [s1' H]; rewrite H
       end.
       assert (s1' <> nil).
-        use_lemma pretty_print_corr1 by crush.
+        use_lemma pretty_print_corr2 by crush.
         match goal with
           | [H: in_bigrammar g s1' v1 |- _] => contradict H; crush
         end.
@@ -591,12 +591,12 @@ Definition union t (g1 g2:wf_bigrammar t) : wf_bigrammar t.
   - destruct_pr_var.
     + remember_destruct_head as v1; eauto.
       remember_destruct_head as v2.
-      * localsimpl. eexists. eauto using pretty_print_corr2, pretty_print_corr1.
-      * localsimpl. generalize pretty_print_corr2; crush_hyp.
+      * localsimpl. eexists. eauto using pretty_print_corr1, pretty_print_corr2.
+      * localsimpl. generalize pretty_print_corr1; crush_hyp.
     + localsimpl.
-      remember_destruct_head as v1; eauto 6 using pretty_print_corr1.
+      remember_destruct_head as v1; eauto 6 using pretty_print_corr2.
       remember_destruct_head as v2; eauto 6.
-      generalize pretty_print_corr2; crush_hyp.
+      generalize pretty_print_corr1; crush_hyp.
   - remember_head_in_hyp as e1; destruct e1; try crush.
     remember_head_in_hyp as e2; destruct e2; crush.
 Defined.
@@ -979,13 +979,13 @@ Inductive typetree: Type :=
 | Node: typetree -> typetree -> typetree.
 
 (** The interpreation of a type tree. *)
-Fixpoint ast_type (tt: typetree): type :=
+Fixpoint interp_ttype (tt: typetree): type :=
   match tt with
   | Leaf t => t
   | Node tt1 tt2 =>
-    Sum_t (ast_type tt1) (ast_type tt2)
+    Sum_t (interp_ttype tt1) (interp_ttype tt2)
   end.
-Extraction Implicit ast_type [tt].
+Extraction Implicit interp_ttype [tt].
 
 (** A tree of bigrammars and semantic actions; it's indexed by the a
     result type rt and each semantic action produces rt values. The
@@ -996,40 +996,40 @@ Extraction Implicit ast_type [tt].
     equal to the ids of the left-tree leafs and should be small than
     the ids of the right-tree leafs; this enables a binary search from
     ids to types. *)
-Inductive gr_tree (rt:type): typetree -> Type :=
-| GLeaf: forall (id:index) (t:type) (g:wf_bigrammar t), 
-    ([|t|] -> [|rt|]) -> gr_tree rt (Leaf t)
-| GNode: forall (id:index) (tt1 tt2:typetree),
-    gr_tree rt tt1 -> gr_tree rt tt2 ->
-    gr_tree rt (Node tt1 tt2).
-Extraction Implicit GLeaf [t].
-Extraction Implicit GNode [tt1 tt2].
+Inductive bgr_tree (rt:type): typetree -> Type :=
+| BLeaf: forall (id:index) (t:type) (g:wf_bigrammar t), 
+    ([|t|] -> [|rt|]) -> bgr_tree rt (Leaf t)
+| BNode: forall (id:index) (tt1 tt2:typetree),
+    bgr_tree rt tt1 -> bgr_tree rt tt2 ->
+    bgr_tree rt (Node tt1 tt2).
+Extraction Implicit BLeaf [t].
+Extraction Implicit BNode [tt1 tt2].
 
 (** Combining bigrammars in a bigrammar tree using Alt. *)
-Fixpoint ast_bigrammar {rt tt} (gt:gr_tree rt tt): 
-  wf_bigrammar (ast_type tt) :=
-  match gt in gr_tree _ tt' return wf_bigrammar (ast_type tt') with
-  | GLeaf _ id g m => g
-  | GNode _ gt1 gt2 => 
-    let g1:= ast_bigrammar gt1 in
-    let g2:= ast_bigrammar gt2 in 
+Fixpoint comb_bigrammar {rt tt} (gt:bgr_tree rt tt): 
+  wf_bigrammar (interp_ttype tt) :=
+  match gt in bgr_tree _ tt' return wf_bigrammar (interp_ttype tt') with
+  | BLeaf _ id g m => g
+  | BNode _ gt1 gt2 => 
+    let g1:= comb_bigrammar gt1 in
+    let g2:= comb_bigrammar gt2 in 
     g1 |+| g2
   end.
-Extraction Implicit ast_bigrammar [rt tt].
+Extraction Implicit comb_bigrammar [rt tt].
 
 (** Combining the map functions in a bigrammar tree into a single map. *)
-Fixpoint ast_map {rt tt} (gt:gr_tree rt tt): [|ast_type tt|] -> [|rt|] :=
-  match gt in gr_tree _ tt' return [|ast_type tt'|] -> [|rt|] with
-  | GLeaf _ id g m => m
-  | GNode _ gt1 gt2 => 
-    let m1:= ast_map gt1 in
-    let m2:= ast_map gt2 in
+Fixpoint comb_map {rt tt} (gt:bgr_tree rt tt): [|interp_ttype tt|] -> [|rt|] :=
+  match gt in bgr_tree _ tt' return [|interp_ttype tt'|] -> [|rt|] with
+  | BLeaf _ id g m => m
+  | BNode _ gt1 gt2 => 
+    let m1:= comb_map gt1 in
+    let m2:= comb_map gt2 in
     fun v => match v with
              | inl v1 => m1 v1
              | inr v2 => m2 v2
              end
   end.
-Extraction Implicit ast_map [rt tt].
+Extraction Implicit comb_map [rt tt].
 
 (** A relation between t and tt saying that t is a member of type
     tree tt. *)
@@ -1044,8 +1044,8 @@ Extraction Implicit MRTree [t tt1 tt2].
 (** Generate an inverse function for an AST env entry from a proof
     saying the entry is in the tree. *)
 Fixpoint inv_case {t tt} (m: tmember t tt): 
-  [|t|] -> [|ast_type tt|] :=
-  match m in tmember t' tt' return [|t'|] -> [|ast_type tt'|] with
+  [|t|] -> [|interp_ttype tt|] :=
+  match m in tmember t' tt' return [|t'|] -> [|interp_ttype tt'|] with
   | MLeaf t => fun v => v
   | MLTree _ m' =>
     fun v => inl (inv_case m' v)
@@ -1055,17 +1055,17 @@ Fixpoint inv_case {t tt} (m: tmember t tt):
 Extraction Implicit inv_case [t tt].
 
 Definition inv_case_some {t tt} (m: tmember t tt): 
-  [|t|] -> option [|ast_type tt|] :=
+  [|t|] -> option [|interp_ttype tt|] :=
   fun v => Some (inv_case m v).
 Extraction Implicit inv_case_some [t tt].
 
 (** Generate a tmember proof from the index of a bigrammar of a
     bigrammar tree. *)
-Fixpoint get_tm_by_idx (id:index) {rt tt} (gt: gr_tree rt tt):
+Fixpoint get_tm_by_idx (id:index) {rt tt} (gt: bgr_tree rt tt):
   {t : type & tmember t tt} :=
-  match gt in gr_tree _ tt' return {t:type & tmember t tt'} with
-  | @GLeaf _ id t g _ => existT _ t (MLeaf t)
-  | GNode id' tt1 tt2 =>
+  match gt in bgr_tree _ tt' return {t:type & tmember t tt'} with
+  | @BLeaf _ id t g _ => existT _ t (MLeaf t)
+  | BNode id' tt1 tt2 =>
     if N.leb id id' then
       let x := get_tm_by_idx id tt1 in
       match x with
@@ -1086,8 +1086,8 @@ Extraction Implicit get_tm_by_idx [rt tt].
    following devleopment *)
 Ltac get_tm_by_idx id gt :=
   match gt with
-  | @GLeaf _ _ ?t ?g _ => constr:(MLeaf t)
-  | @GNode _ ?id' ?tt1 ?tt2 ?gt1 ?gt2 =>
+  | @BLeaf _ _ ?t ?g _ => constr:(MLeaf t)
+  | @BNode _ ?id' ?tt1 ?tt2 ?gt1 ?gt2 =>
     let leb_id_id' := (eval compute in (N.leb id id')) in
     match leb_id_id' with
     | true => 
@@ -1104,7 +1104,7 @@ Ltac get_tm_by_idx id gt :=
    for this one, but that would require a non-standard induction
    principle as the list is split into two halves; so this is
    sufficient for now. *)
-Ltac get_gr_tree ast_env := 
+Ltac get_bgr_tree ast_env := 
     match type of ast_env with
     | AST_Env ?rt =>
       match ast_env with
@@ -1112,24 +1112,24 @@ Ltac get_gr_tree ast_env :=
         let gt := type of g in
         match gt with
         | wf_bigrammar ?t => 
-          constr:(id, GLeaf rt id g f)
+          constr:(id, BLeaf rt id g f)
         end
       | ast_env_nil => fail (* should not happen *)
       | _ => 
         let aepair := env_split ast_env in
         match aepair with
         | (?ael, ?aer) =>
-          match get_gr_tree ael with
+          match get_bgr_tree ael with
           | (?id1, ?gr1) =>
-            match get_gr_tree aer with
+            match get_bgr_tree aer with
             | (?id2, ?gr2) =>
               let gt := eval compute in (N.ltb id1 id2) in
                   match gt with
-                  | false => constr:(id1, GNode id1 gr1 gr2)
+                  | false => constr:(id1, BNode id1 gr1 gr2)
                   (* since the index in a node should be the biggest in
                     its left-tree node, we still use id1 in the Node
                     constructon *)
-                  | true => constr:(id2, GNode id1 gr1 gr2)
+                  | true => constr:(id2, BNode id1 gr1 gr2)
                   end
             end
           end
@@ -1137,11 +1137,11 @@ Ltac get_gr_tree ast_env :=
       end
     end.
 
-Ltac gen_gr_tree ast_env :=
+Ltac gen_bgr_tree ast_env :=
   pose (ae:=ast_env);
   autounfold with env_unfold_db in ae;
   let ae1 := eval cbv delta [ae] in ae in
-    match get_gr_tree ae1 with
+    match get_bgr_tree ae1 with
     | (_, ?g) =>
       pose (gt:=g); clear ae
     end.
@@ -1191,7 +1191,7 @@ Ltac gen_ast_defs ast_env :=
   pose (ae:=ast_env);
   autounfold with env_unfold_db in ae;
   let ae1 := eval cbv delta [ae] in ae in
-    match get_gr_tree ae1 with
+    match get_bgr_tree ae1 with
     | (_, ?g) =>
       pose (gt:=g); clear ae;
       let len := env_length ae1 in
@@ -1199,11 +1199,11 @@ Ltac gen_ast_defs ast_env :=
       gen_tm_cases gt len
     end.
 
-Ltac gen_ast_type ast_env :=
-  match get_gr_tree ast_env with
+Ltac gen_ttype ast_env :=
+  match get_bgr_tree ast_env with
   | (_, ?gt) =>
     match type of gt with
-    | gr_tree _ ?tt => tt
+    | bgr_tree _ ?tt => tt
     end
   end.
 
@@ -1216,14 +1216,14 @@ Ltac clear_gt :=
   match goal with
   | [gt := _ |- _] =>
     match type of gt with
-    | gr_tree _ _ => compute [gt] in *; clear gt
+    | bgr_tree _ _ => compute [gt] in *; clear gt
     end
   end.
 
 Ltac unfold_invertible_ast := 
   unfold invertible; try clear_gt; split; [unfold printable | unfold parsable]; 
-  compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
-  [(clear_ast_defs; compute [ast_type inv_case]) | idtac];
+  compute [snd fst]; compute [comb_bigrammar comb_map inv_case_some];
+  [(clear_ast_defs; compute [interp_ttype inv_case]) | idtac];
   intros.
 
 Ltac ast_invertible_tac := 
@@ -1240,7 +1240,7 @@ Hint Unfold test_env: env_unfold_db.
 Goal True.
   gen_ast_defs test_env.
   let ae:= eval unfold test_env in test_env in
-  let tt:= get_gr_tree ae in
+  let tt:= get_bgr_tree ae in
   pose tt.
   trivial.
 Qed.

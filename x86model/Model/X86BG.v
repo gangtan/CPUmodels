@@ -93,7 +93,7 @@ Set Implicit Arguments.
 
   Definition segment_override_b : wf_bigrammar segment_register_t.
     gen_ast_defs segment_override_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u => 
                     match u with 
                       | CS => inv_case_some case0 ()
@@ -136,7 +136,7 @@ Set Implicit Arguments.
 
   (* Definition op_override_b : wf_bigrammar bool_t. *)
   (*   gen_ast_defs op_override_env. *)
-  (*   refine ((ast_bigrammar gt) @ (ast_map gt) *)
+  (*   refine ((comb_bigrammar gt) @ (comb_map gt) *)
   (*              & (fun b:bool => if b then inv_case_some case0 () else None) *)
   (*              & _); ins_invertible_tac. *)
   (* Defined. *)
@@ -170,7 +170,7 @@ Set Implicit Arguments.
   (* Lemma op_override_b_rng_inv op : *)
   (*   in_bigrammar_rng (` op_override_b) op -> op = true. *)
   (* Proof. unfold op_override_b; intros; ins_ibr_sim.  *)
-  (*   compute [ast_type ast_bigrammar] in *. *)
+  (*   compute [interp_ttype comb_bigrammar] in *. *)
   (*   destruct_all; trivial. *)
   (* Qed. *)
 
@@ -371,8 +371,8 @@ Set Implicit Arguments.
   Local Ltac ci_invertible_tac :=
     apply strong_inv_imp_inv; unfold strong_invertible;
     try clear_gt; split; [unfold printable | unfold parsable];
-    compute [snd fst]; compute [ast_bigrammar ast_map inv_case_some];
-    [(clear_ast_defs; compute [ast_type inv_case]) | idtac]; intros;
+    compute [snd fst]; compute [comb_bigrammar comb_map inv_case_some];
+    [(clear_ast_defs; compute [interp_ttype inv_case]) | idtac]; intros;
     [try (abstract (destruct_all; trivial); fail) |
      try (abstract (
             match goal with
@@ -421,7 +421,7 @@ Set Implicit Arguments.
 
   Definition i_instr1_b : wf_bigrammar i_instr1_t.
     Time gen_ast_defs i_instr1_env.
-    Time refine ((ast_bigrammar gt) @ (ast_map gt)
+    Time refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | I_AAA => inv_case_some case0 ()
@@ -518,7 +518,7 @@ Set Implicit Arguments.
 
   Definition i_instr2_b : wf_bigrammar i_instr2_t.
     gen_ast_defs i_instr2_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | I_ARPL op1 op2 => inv_case_some case0 (op1,op2)
@@ -588,7 +588,7 @@ Set Implicit Arguments.
 
   Definition i_instr3_b : wf_bigrammar i_instr3_t.
     gen_ast_defs i_instr3_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | I_MOVCR d cr r => inv_case_some case0 (d,(cr,r))
@@ -655,7 +655,7 @@ Set Implicit Arguments.
 
   Definition i_instr4_grammar_type : typetree.
     let ige := eval unfold i_instr4_grammar_env in i_instr4_grammar_env in
-    let tt:=gen_ast_type ige in exact(tt).
+    let tt:=gen_ttype ige in exact(tt).
   Defined.
 
   Definition i_instr4_b : wf_bigrammar (pair_t prefix_t i_instr4_t).
@@ -665,7 +665,7 @@ Set Implicit Arguments.
     let tm11:= get_tm_by_idx (N.of_nat 11) gt in
     pose (case10:=tm10);
     pose (case11:=tm11).
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
               & (fun u =>
                    match snd u with
                    | I_INS a1 => 
@@ -822,12 +822,12 @@ Set Implicit Arguments.
 
   Definition i_instr5_grammar_type : type.
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
-    let tt:=gen_ast_type ige in exact(ast_type tt).
+    let tt:=gen_ttype ige in exact(interp_ttype tt).
   Defined.
 
   Definition from_instr5 (u:prefix * i_instr5) : option [|i_instr5_grammar_type|].
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
-      gen_gr_tree ige.
+      gen_bgr_tree ige.
     let gt' := eval cbv delta [gt] in gt in
         gen_tm_cases gt' 54%nat.
     intro.
@@ -923,8 +923,8 @@ Set Implicit Arguments.
 
   Definition i_instr5_b : wf_bigrammar (pair_t prefix_t i_instr5_t).
     let ige := eval unfold i_instr5_grammar_env in i_instr5_grammar_env in
-        gen_gr_tree ige.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+        gen_bgr_tree ige.
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & from_instr5'
                & _). unfold from_instr5'; unfold_invertible_ast.
     - Time abstract (
@@ -1014,7 +1014,7 @@ Set Implicit Arguments.
 
   Definition i_instr6_b : wf_bigrammar i_instr6_t.
     gen_ast_defs i_instr6_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | I_CDQ => inv_case_some case0 ()
@@ -1091,7 +1091,7 @@ Set Implicit Arguments.
 
   Definition f_instr1_b : wf_bigrammar f_instr1_t.
     gen_ast_defs f_instr1_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | F_F2XM1 => inv_case_some case0 ()
@@ -1184,7 +1184,7 @@ Set Implicit Arguments.
 
   Definition f_instr2_b : wf_bigrammar f_instr2_t.
     gen_ast_defs f_instr2_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | F_FNCLEX => inv_case_some case0 ()
@@ -1285,7 +1285,7 @@ Set Implicit Arguments.
 
   Definition m_instr_b : wf_bigrammar m_instr_t.
     gen_ast_defs m_instr_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | M_EMMS => inv_case_some case0 ()
@@ -1394,7 +1394,7 @@ Set Implicit Arguments.
 
   Definition s_instr1_b : wf_bigrammar s_instr1_t.
     gen_ast_defs s_instr1_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | S_ADDPS op1 op2 => inv_case_some case0 (op1,op2)
@@ -1492,7 +1492,7 @@ Set Implicit Arguments.
 
   Definition s_instr2_b : wf_bigrammar s_instr2_t.
     gen_ast_defs s_instr2_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u =>
                     match u with
                       | S_SHUFPS op1 op2 imm => inv_case_some case0 (op1,(op2,imm))
@@ -1896,7 +1896,7 @@ Set Implicit Arguments.
 
   Definition instr_bigrammar : wf_bigrammar (pair_t prefix_t instruction_t).
     gen_ast_defs instr_bigrammar_env.
-    refine ((ast_bigrammar gt) @ (ast_map gt)
+    refine ((comb_bigrammar gt) @ (comb_map gt)
                & (fun u:[|pair_t prefix_t instruction_t|] =>
                    let (pre,i):=u in
                    match i with

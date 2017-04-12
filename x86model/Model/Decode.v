@@ -720,7 +720,7 @@ Local Open Scope Z_scope.
     "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ "110" $$ reg @ 
       (fun r => LMSW (Reg_op r) %% instruction_t)
   |+|
-    "0000" $$ "1111" $$ "0000" $$ "0001" $$ "11" $$ ext_op_modrm "110" @ 
+    "0000" $$ "1111" $$ "0000" $$ "0001" $$ ext_op_modrm "110" @ 
       (fun x => LMSW x %% instruction_t).
 
   (* JGM: note, this isn't really an instruction, but rather a prefix.  So it
